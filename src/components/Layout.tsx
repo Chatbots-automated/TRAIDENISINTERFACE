@@ -1,0 +1,168 @@
+import React, { useState, useEffect } from 'react';
+import { getChatThreads, signOut } from '../lib/supabase';
+import { 
+  Menu, 
+  X, 
+  Settings, 
+  MessageSquare,
+  FileText,
+  Users,
+  Database,
+  LogOut
+} from 'lucide-react';
+import type { AppUser } from '../types';
+
+interface LayoutProps {
+  user: AppUser;
+  children: React.ReactNode;
+}
+
+export default function Layout({ 
+  user, 
+  children
+}: LayoutProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      window.location.reload();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
+      {/* Mobile sidebar backdrop */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
+        lg:translate-x-0 lg:static lg:inset-0
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <div className="flex items-center space-x-3">
+              <img 
+                src="https://www.traidenis.lt/uploads/_CGSmartImage/logo-3-f9c894761c0d1c7191c757e629c358ef.webp" 
+                alt="Traidenis Logo" 
+                className="w-8 h-8 object-contain"
+              />
+              <div>
+                <h1 className="text-lg font-bold text-gray-900">Traidenis</h1>
+                <p className="text-xs text-green-600 font-medium">Knowledge Base</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-1 rounded-md hover:bg-gray-100"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* User info */}
+          <div className="p-4 border-b bg-gradient-to-r from-green-50 to-blue-50">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
+                <span className="text-white text-sm font-medium">
+                  {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {user.display_name || user.email}
+                </p>
+                <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="flex-1 p-4">
+            <h2 className="text-sm font-semibold text-green-700 mb-3">Navigation</h2>
+            <div className="space-y-1">
+              <div className="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-green-50 to-blue-50 text-green-700 border border-green-200">
+                <Database className="w-4 h-4" />
+                <span className="text-sm font-medium">Knowledge Base</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="p-4 border-t">
+            <div className="space-y-1">
+              <button className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 text-gray-700">
+                <Settings className="w-4 h-4" />
+                <span className="text-sm">Settings</span>
+              </button>
+              <button 
+                onClick={handleSignOut}
+                className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span className="text-sm">Sign Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <div className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-green-100 px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-md hover:bg-gray-100"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              
+              <div>
+                <img 
+                  src="https://www.traidenis.lt/uploads/_CGSmartImage/logo-3-f9c894761c0d1c7191c757e629c358ef.webp" 
+                  alt="Traidenis Logo" 
+                  className="w-6 h-6 object-contain lg:hidden"
+                />
+                  <h1 className="text-lg font-semibold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+                    Traidenis Knowledge Base
+                </h1>
+                  <p className="text-sm text-green-600">
+                  Chat with AI and manage documents
+                </p>
+              </div>
+              </div>
+
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-1 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-1">
+                <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-green-600">
+                  <MessageSquare className="w-4 h-4" />
+                </button>
+                <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-blue-600">
+                  <FileText className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Page content */}
+        <div className="flex-1 overflow-hidden">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
