@@ -49,12 +49,31 @@ export const signUp = async (email: string, password: string, fullName?: string)
 };
 
 export const signIn = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  try {
+    // Query app_users table for email and password
+    const { data: userData, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .single();
 
-  return { data, error };
+    if (error || !userData) {
+      return { data: null, error: { message: 'Invalid email or password' } };
+    }
+
+    // Return user data in the expected format
+    return { 
+      data: { 
+        user: userData,
+        session: { user: userData } 
+      }, 
+      error: null 
+    };
+  } catch (error: any) {
+    console.error('Login error:', error);
+    return { data: null, error: { message: 'Invalid email or password' } };
+  }
 };
 
 export const signOut = async () => {
@@ -63,46 +82,21 @@ export const signOut = async () => {
 };
 
 export const getCurrentUser = async () => {
-  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-  
-  if (authError || !authUser) {
-    return { user: null, error: authError };
-  }
-
-  // Get app_users record
-  const { data: appUser, error: appUserError } = await supabase
-    .from('app_users')
-    .select('*')
-    .eq('id', authUser.id)
-    .single();
-
-  if (appUserError) {
-    console.error('Error fetching app user:', appUserError);
-    return { user: null, error: appUserError };
-  }
-
-  return { user: appUser, error: null };
+  // Since we're not using Supabase Auth, we need to track the current user differently
+  // For now, return null to force login
+  return { user: null, error: null };
 };
 
 // Admin functions
 export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
   try {
-    // Create the auth user with actual password
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password, // Use actual password
-    });
-
-    if (authError) {
-      return { data: null, error: authError };
-    }
-
-    // Create app_users record without password (handled by Supabase Auth)
+    // Create app_users record with password
     const { data: appUserData, error: appUserError } = await supabase
       .from('app_users')
       .insert([{
-        id: authData.user?.id,
+        id: crypto.randomUUID(),
         email: email,
+        password: password,
         display_name: displayName,
         is_admin: isAdmin
       }])
