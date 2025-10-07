@@ -92,7 +92,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       console.log('Uploading file:', file.name, 'to webhook...');
       
-      const response = await fetch('https://209f05431d92.ngrok-free.app/webhook-test/88b13b24-9857-49f4-a713-41b2964177f7', {
+      const response = await fetch('https://209f05431d92.ngrok-free.app/webhook/88b13b24-9857-49f4-a713-41b2964177f7', {
         method: 'POST',
         headers: {
           'ngrok-skip-browser-warning': 'true'
