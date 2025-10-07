@@ -62,6 +62,9 @@ export const signIn = async (email: string, password: string) => {
       return { data: null, error: { message: 'Invalid email or password' } };
     }
 
+    // Store user in localStorage for session persistence
+    localStorage.setItem('currentUser', JSON.stringify(userData));
+    
     // Return user data in the expected format
     return { 
       data: { 
@@ -77,14 +80,29 @@ export const signIn = async (email: string, password: string) => {
 };
 
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
-  return { error };
+  try {
+    // Remove user from localStorage
+    localStorage.removeItem('currentUser');
+    return { error: null };
+  } catch (error) {
+    console.error('Error signing out:', error);
+    return { error };
+  }
 };
 
 export const getCurrentUser = async () => {
-  // Since we're not using Supabase Auth, we need to track the current user differently
-  // For now, return null to force login
-  return { user: null, error: null };
+  try {
+    // Check localStorage for current user
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      const userData = JSON.parse(storedUser);
+      return { user: userData, error: null };
+    }
+    return { user: null, error: null };
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return { user: null, error: null };
+  }
 };
 
 // Admin functions
