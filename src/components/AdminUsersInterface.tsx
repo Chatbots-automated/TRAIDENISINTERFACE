@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/supabase';
 import type { AppUser } from '../types';
 
