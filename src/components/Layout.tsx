@@ -53,7 +53,7 @@ export default function Layout({
           <div className="flex items-center justify-between p-4 border-b">
             <div className="flex items-center space-x-3">
               <img 
-                src="https://www.traidenis.lt/uploads/_CGSmartImage/logo-3-f9c894761c0d1c7191c757e629c358ef.webp" 
+                src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj" 
                 alt="Traidenis Logo" 
                 className="w-8 h-8 object-contain"
               />
@@ -132,7 +132,7 @@ export default function Layout({
               
               <div>
                 <img 
-                  src="https://www.traidenis.lt/uploads/_CGSmartImage/logo-3-f9c894761c0d1c7191c757e629c358ef.webp" 
+                  src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj" 
                   alt="Traidenis Logo" 
                   className="w-6 h-6 object-contain lg:hidden"
                 />
