@@ -49,54 +49,12 @@ export const signUp = async (email: string, password: string, fullName?: string)
 };
 
 export const signIn = async (email: string, password: string) => {
-  try {
-    // Query app_users table directly for email and password match
-    const { data: appUser, error: queryError } = await supabase
-      .from('app_users')
-      .select('*')
-      .eq('email', email)
-      .eq('password', password)
-      .single();
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-    if (queryError || !appUser) {
-      console.error('Login failed - user not found or wrong credentials:', queryError);
-      return { data: null, error: { message: 'Invalid email or password' } };
-    }
-
-    console.log('Login successful for user:', appUser.email);
-    
-    // Try to sign in with Supabase Auth using dummy password
-    try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password: 'dummy-password-' + appUser.id,
-      });
-
-      if (authError) {
-        // If auth user doesn't exist, create it
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email,
-          password: 'dummy-password-' + appUser.id,
-        });
-
-        if (signUpError) {
-          console.error('Failed to create auth user:', signUpError);
-          return { data: null, error: signUpError };
-        }
-
-        return { data: signUpData, error: null };
-      }
-
-      return { data: authData, error: null };
-    } catch (authError) {
-      console.error('Auth error:', authError);
-      // Even if auth fails, we validated the credentials, so return success
-      return { data: { user: { id: appUser.id, email: appUser.email } }, error: null };
-    }
-  } catch (error: any) {
-    console.error('Sign in error:', error);
-    return { data: null, error };
-  }
+  return { data, error };
 };
 
 export const signOut = async () => {
@@ -129,24 +87,23 @@ export const getCurrentUser = async () => {
 // Admin functions
 export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
   try {
-    // First create the auth user
+    // Create the auth user with actual password
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
-      password: 'dummy-password-' + Date.now(), // Dummy password for auth
+      password, // Use actual password
     });
 
     if (authError) {
       return { data: null, error: authError };
     }
 
-    // Create app_users record with actual password
+    // Create app_users record without password (handled by Supabase Auth)
     const { data: appUserData, error: appUserError } = await supabase
       .from('app_users')
       .insert([{
         id: authData.user?.id,
         email: email,
         display_name: displayName,
-        password: password,
         is_admin: isAdmin
       }])
       .select()
