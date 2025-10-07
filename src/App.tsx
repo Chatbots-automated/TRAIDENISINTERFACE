@@ -3,11 +3,12 @@ import { getCurrentUser, getOrCreateDefaultProject } from './lib/supabase';
 import Layout from './components/Layout';
 import ChatInterface from './components/ChatInterface';
 import DocumentsInterface from './components/DocumentsInterface';
+import AdminUsersInterface from './components/AdminUsersInterface';
 import AuthForm from './components/AuthForm';
-import { MessageSquare, FileText } from 'lucide-react';
+import { MessageSquare, FileText, Users } from 'lucide-react';
 import type { AppUser } from './types';
 
-type ViewMode = 'chat' | 'documents' | 'members';
+type ViewMode = 'chat' | 'documents' | 'users';
 
 function App() {
   const [user, setUser] = useState<AppUser | null>(null);
@@ -81,20 +82,8 @@ function App() {
         return <ChatInterface user={user} projectId={projectId} />;
       case 'documents':
         return <DocumentsInterface user={user} projectId={projectId} />;
-      case 'members':
-        return (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Coming Soon
-              </h3>
-              <p className="text-gray-500">
-                Additional features will be added here
-              </p>
-            </div>
-          </div>
-        );
+      case 'users':
+        return <AdminUsersInterface user={user} />;
       default:
         return null;
     }
@@ -132,6 +121,22 @@ function App() {
               <span>Documents</span>
             </div>
           </button>
+          
+          {user.is_admin && (
+            <button
+              onClick={() => setViewMode('users')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                viewMode === 'users'
+                  ? 'border-purple-500 text-purple-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-purple-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Users className="w-4 h-4" />
+                <span>Users</span>
+              </div>
+            </button>
+          )}
         </div>
       </div>
 

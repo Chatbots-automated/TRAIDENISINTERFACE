@@ -49,11 +49,44 @@ export const signUp = async (email: string, password: string, fullName?: string)
 };
 
 export const signIn = async (email: string, password: string) => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-  return { data, error };
+  try {
+    // Query app_users table for email and password
+    const { data: appUser, error: queryError } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .single();
+
+    if (queryError || !appUser) {
+      return { data: null, error: { message: 'Invalid email or password' } };
+    }
+
+    // If credentials are valid, sign in with Supabase Auth using a dummy password
+    // This is a workaround since we're using custom password validation
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password: 'dummy-password-' + appUser.id, // Use consistent dummy password
+    });
+
+    // If auth fails, try to create the auth user first
+    if (authError) {
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password: 'dummy-password-' + appUser.id,
+      });
+
+      if (signUpError) {
+        return { data: null, error: signUpError };
+      }
+
+      return { data: signUpData, error: null };
+    }
+
+    return { data: authData, error: null };
+  } catch (error: any) {
+    return { data: null, error };
+  }
 };
 
 export const signOut = async () => {
@@ -83,6 +116,101 @@ export const getCurrentUser = async () => {
   return { user: appUser, error: null };
 };
 
+// Admin functions
+export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
+  try {
+    // First create the auth user
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password: 'dummy-password-' + Date.now(), // Dummy password for auth
+    });
+
+    if (authError) {
+      return { data: null, error: authError };
+    }
+
+    // Create app_users record with actual password
+    const { data: appUserData, error: appUserError } = await supabase
+      .from('app_users')
+      .insert([{
+        id: authData.user?.id,
+        email: email,
+        display_name: displayName,
+        password: password,
+        is_admin: isAdmin
+      }])
+      .select()
+      .single();
+
+    if (appUserError) {
+      console.error('Error creating app user:', appUserError);
+      return { data: null, error: appUserError };
+    }
+
+    return { data: appUserData, error: null };
+  } catch (error: any) {
+    return { data: null, error };
+  }
+};
+
+export const getAllUsers = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('id, email, display_name, is_admin, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error getting users:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getAllUsers:', error);
+    return { data: null, error };
+  }
+};
+
+export const updateUserByAdmin = async (userId: string, updates: { display_name?: string; is_admin?: boolean; password?: string }) => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating user:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in updateUserByAdmin:', error);
+    return { data: null, error };
+  }
+};
+
+export const deleteUserByAdmin = async (userId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .delete()
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error deleting user:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in deleteUserByAdmin:', error);
+    return { data: null, error };
+  }
+};
 // Project management
 export const getOrCreateDefaultProject = async (userId: string, userEmail: string) => {
   try {
