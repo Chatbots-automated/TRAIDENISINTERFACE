@@ -31,6 +31,8 @@ interface Message {
   author_ref?: string;
 }
 
+type QueryType = 'Komercinio pasiūlymo užklausa' | 'Bendra užklausa' | 'Nestandartinių gaminių užklausa' | null;
+
 export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [currentThread, setCurrentThread] = useState<Thread | null>(null);
@@ -39,6 +41,9 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [loading, setLoading] = useState(false);
   const [threadsLoading, setThreadsLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [showQueryTypeModal, setShowQueryTypeModal] = useState(false);
+  const [selectedQueryType, setSelectedQueryType] = useState<QueryType>(null);
+  const [pendingMessage, setPendingMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load threads on component mount
@@ -150,18 +155,27 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     e.preventDefault();
     if (!newMessage.trim() || !currentThread || loading) return;
 
-    const messageText = newMessage.trim();
+    // Show query type selection modal
+    setPendingMessage(newMessage.trim());
     setNewMessage('');
+    setShowQueryTypeModal(true);
+  };
+
+  const handleQueryTypeSelected = async (queryType: QueryType) => {
+    if (!queryType || !pendingMessage || !currentThread) return;
+
+    setSelectedQueryType(queryType);
+    setShowQueryTypeModal(false);
     setLoading(true);
 
     try {
-      console.log('Sending message:', messageText, 'to thread:', currentThread.id);
+      console.log('Sending message:', pendingMessage, 'to thread:', currentThread.id, 'with query type:', queryType);
 
       // Add user message to UI immediately
       const userMessage: Message = {
         id: Date.now().toString(),
         role: 'user',
-        content: messageText,
+        content: pendingMessage,
         timestamp: new Date().toISOString(),
         author_ref: user.email || ''
       };
@@ -171,7 +185,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       const { error: userMessageError } = await sendMessage(
         projectId,
         currentThread.id,
-        messageText,
+        pendingMessage,
         'user',
         user.email || ''
       );
@@ -185,12 +199,13 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         console.log('Sending to webhook...');
         const webhookResponse = await fetch('https://209f05431d92.ngrok-free.app/webhook-test/191506f6-9e4b-4c76-ab99-d1b4af9f2379', {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'ngrok-skip-browser-warning': 'true'
           },
           body: JSON.stringify({
-            question: messageText,
+            question: pendingMessage,
+            query_type: queryType,
             chat_id: currentThread.id,
             parent_id: currentThread.id,
             user_id: user.id,
@@ -250,11 +265,19 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       console.error('Error sending message:', error);
     } finally {
       setLoading(false);
+      setPendingMessage('');
+      setSelectedQueryType(null);
     }
   };
 
+  const queryTypes: QueryType[] = [
+    'Komercinio pasiūlymo užklausa',
+    'Bendra užklausa',
+    'Nestandartinių gaminių užklausa'
+  ];
+
   return (
-    <div className="flex h-full bg-white">
+    <div className="flex h-full bg-white relative">
       {/* Left Sidebar - Threads */}
       <div className="w-80 border-r border-gray-200 flex flex-col">
         {/* Header */}
@@ -435,6 +458,41 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           </div>
         )}
       </div>
+
+      {/* Query Type Selection Modal */}
+      {showQueryTypeModal && (
+        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Pasirinkite užklausos tipą
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Prieš siųsdami žinutę, pasirinkite užklausos kategorią:
+            </p>
+            <div className="space-y-3">
+              {queryTypes.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => handleQueryTypeSelected(type)}
+                  className="w-full p-4 text-left border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all"
+                >
+                  <span className="font-medium text-gray-900">{type}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setShowQueryTypeModal(false);
+                setNewMessage(pendingMessage);
+                setPendingMessage('');
+              }}
+              className="mt-4 w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              Atšaukti
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
