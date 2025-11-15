@@ -197,7 +197,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       // Send to webhook
       try {
         console.log('Sending to webhook...');
-        const webhookResponse = await fetch('https://209f05431d92.ngrok-free.app/webhook-test/191506f6-9e4b-4c76-ab99-d1b4af9f2379', {
+        const webhookResponse = await fetch('https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
