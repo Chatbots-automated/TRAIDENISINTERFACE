@@ -200,8 +200,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         const webhookResponse = await fetch('https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': 'true'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             question: pendingMessage,
