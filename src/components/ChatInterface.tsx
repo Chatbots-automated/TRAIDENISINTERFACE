@@ -44,7 +44,10 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [showQueryTypeModal, setShowQueryTypeModal] = useState(false);
   const [selectedQueryType, setSelectedQueryType] = useState<QueryType>(null);
   const [pendingMessage, setPendingMessage] = useState('');
+  const [streamingContent, setStreamingContent] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamingMessageIdRef = useRef<string | null>(null);
 
   // Load threads on component mount
   useEffect(() => {
@@ -62,6 +65,13 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Auto scroll during streaming
+  useEffect(() => {
+    if (isStreaming && streamingContent) {
+      scrollToBottom();
+    }
+  }, [isStreaming, streamingContent]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -194,9 +204,18 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         console.error('Error saving user message:', userMessageError);
       }
 
-      // Send to webhook
+      // Send to webhook with streaming
       try {
         console.log('Sending to webhook...');
+
+        // Create streaming message ID
+        const streamingMessageId = (Date.now() + 1).toString();
+        streamingMessageIdRef.current = streamingMessageId;
+
+        // Start streaming
+        setIsStreaming(true);
+        setStreamingContent('');
+
         const webhookResponse = await fetch('https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6', {
           method: 'POST',
           headers: {
@@ -212,41 +231,106 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           })
         });
 
-        if (webhookResponse.ok) {
-          const aiResponse = await webhookResponse.json();
-          console.log('AI response:', aiResponse);
-          
-          if (aiResponse.response) {
-            // Add AI message to UI
-            const aiMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              role: 'assistant',
-              content: aiResponse.response,
-              timestamp: new Date().toISOString(),
-              author_ref: 'ai-assistant'
-            };
-            setMessages(prev => [...prev, aiMessage]);
-
-            // Save AI message to chat_history
-            const { error: aiMessageError } = await sendMessage(
-              projectId,
-              currentThread.id,
-              aiResponse.response,
-              'assistant',
-              'ai-assistant'
-            );
-
-            if (aiMessageError) {
-              console.error('Error saving AI message:', aiMessageError);
-            }
-          }
-        } else {
+        if (!webhookResponse.ok) {
           console.error('Webhook response not ok:', webhookResponse.status);
           throw new Error(`Webhook returned ${webhookResponse.status}`);
         }
+
+        const reader = webhookResponse.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullResponse = '';
+
+        if (reader) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+
+              if (done) {
+                console.log('Stream complete');
+                break;
+              }
+
+              const chunk = decoder.decode(value, { stream: true });
+              console.log('Received chunk:', chunk);
+
+              // Parse the chunk - handle both SSE format and plain text
+              const lines = chunk.split('\n');
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  // SSE format
+                  const data = line.slice(6).trim();
+                  if (data && data !== '[DONE]') {
+                    try {
+                      const parsed = JSON.parse(data);
+                      if (parsed.response) {
+                        fullResponse += parsed.response;
+                        setStreamingContent(fullResponse);
+                      }
+                    } catch (e) {
+                      // If not JSON, treat as plain text
+                      fullResponse += data;
+                      setStreamingContent(fullResponse);
+                    }
+                  }
+                } else if (line.trim() && !line.startsWith(':')) {
+                  // Plain text or newline-delimited JSON
+                  try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.response) {
+                      fullResponse += parsed.response;
+                      setStreamingContent(fullResponse);
+                    }
+                  } catch (e) {
+                    // Treat as plain text chunk
+                    fullResponse += line;
+                    setStreamingContent(fullResponse);
+                  }
+                }
+              }
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        }
+
+        // Streaming complete - add final message to chat
+        setIsStreaming(false);
+
+        if (fullResponse) {
+          const aiMessage: Message = {
+            id: streamingMessageId,
+            role: 'assistant',
+            content: fullResponse,
+            timestamp: new Date().toISOString(),
+            author_ref: 'ai-assistant'
+          };
+          setMessages(prev => [...prev, aiMessage]);
+
+          // Save AI message to chat_history
+          const { error: aiMessageError } = await sendMessage(
+            projectId,
+            currentThread.id,
+            fullResponse,
+            'assistant',
+            'ai-assistant'
+          );
+
+          if (aiMessageError) {
+            console.error('Error saving AI message:', aiMessageError);
+          }
+        }
+
+        // Clear streaming state
+        setStreamingContent('');
+        streamingMessageIdRef.current = null;
+
       } catch (webhookError) {
         console.error('Webhook error:', webhookError);
-        
+        setIsStreaming(false);
+        setStreamingContent('');
+        streamingMessageIdRef.current = null;
+
         // Add error message
         const errorMessage: Message = {
           id: (Date.now() + 2).toString(),
@@ -396,8 +480,25 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                   </div>
                 </div>
               ))}
-              
-              {loading && (
+
+              {isStreaming && streamingContent && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Bot className="w-4 h-4" />
+                      <span className="text-xs opacity-75">AI Assistant</span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{streamingContent}</p>
+                    <div className="flex items-center space-x-1 mt-1">
+                      <div className="w-1 h-1 bg-gray-600 rounded-full animate-pulse" />
+                      <div className="w-1 h-1 bg-gray-600 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                      <div className="w-1 h-1 bg-gray-600 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {loading && !isStreaming && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
                     <div className="flex items-center space-x-2">
@@ -411,7 +512,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                   </div>
                 </div>
               )}
-              
+
               <div ref={messagesEndRef} />
             </div>
 
