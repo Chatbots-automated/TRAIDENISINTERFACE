@@ -3,6 +3,7 @@ import { Upload, FileText, X, Search, Filter, CreditCard as Edit3, Trash2, Eye, 
 import { Document } from '../types';
 import { createDocument, updateDocument, deleteDocument, getDocuments } from '../lib/supabase';
 import { searchDocumentsClient, SearchResult } from '../lib/vectorSearch';
+import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
 interface DocumentsInterfaceProps {

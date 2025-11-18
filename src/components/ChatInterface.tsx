@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Send, 
-  Plus, 
-  MessageSquare, 
-  Bot, 
+import {
+  Send,
+  Plus,
+  MessageSquare,
+  Bot,
   User as UserIcon,
   Loader2
 } from 'lucide-react';
 import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '../lib/supabase';
+import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
 interface ChatInterfaceProps {
@@ -216,7 +217,20 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         setIsStreaming(true);
         setStreamingContent('');
 
-        const webhookResponse = await fetch('https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6', {
+        const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
+        const startTime = Date.now();
+
+        await appLogger.logChat({
+          action: 'response_started',
+          userId: user.id,
+          userEmail: user.email,
+          threadId: currentThread.id,
+          messagePreview: pendingMessage,
+          queryType: queryType || undefined,
+          metadata: { webhook_url: webhookUrl }
+        });
+
+        const webhookResponse = await fetch(webhookUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -231,8 +245,35 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           })
         });
 
+        const responseTimeMs = Date.now() - startTime;
+
         if (!webhookResponse.ok) {
           console.error('Webhook response not ok:', webhookResponse.status);
+
+          await appLogger.logAPI({
+            action: 'webhook_call',
+            userId: user.id,
+            userEmail: user.email,
+            endpoint: webhookUrl,
+            method: 'POST',
+            statusCode: webhookResponse.status,
+            responseTimeMs,
+            level: 'error',
+            metadata: { query_type: queryType, thread_id: currentThread.id }
+          });
+
+          await appLogger.logError({
+            action: 'webhook_failed',
+            error: `Webhook returned ${webhookResponse.status}`,
+            userId: user.id,
+            userEmail: user.email,
+            metadata: {
+              webhook_url: webhookUrl,
+              status: webhookResponse.status,
+              thread_id: currentThread.id
+            }
+          });
+
           throw new Error(`Webhook returned ${webhookResponse.status}`);
         }
 
@@ -297,6 +338,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         // Streaming complete - add final message to chat
         setIsStreaming(false);
 
+        const finalResponseTime = Date.now() - startTime;
+
         if (fullResponse) {
           const aiMessage: Message = {
             id: streamingMessageId,
@@ -319,17 +362,66 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           if (aiMessageError) {
             console.error('Error saving AI message:', aiMessageError);
           }
+
+          await appLogger.logChat({
+            action: 'response_received',
+            userId: user.id,
+            userEmail: user.email,
+            threadId: currentThread.id,
+            messagePreview: fullResponse,
+            queryType: queryType || undefined,
+            responseTimeMs: finalResponseTime,
+            metadata: { response_length: fullResponse.length }
+          });
+
+          await appLogger.logAPI({
+            action: 'webhook_call',
+            userId: user.id,
+            userEmail: user.email,
+            endpoint: webhookUrl,
+            method: 'POST',
+            statusCode: 200,
+            responseTimeMs: finalResponseTime,
+            metadata: {
+              query_type: queryType,
+              thread_id: currentThread.id,
+              response_length: fullResponse.length
+            }
+          });
         }
 
         // Clear streaming state
         setStreamingContent('');
         streamingMessageIdRef.current = null;
 
-      } catch (webhookError) {
+      } catch (webhookError: any) {
         console.error('Webhook error:', webhookError);
         setIsStreaming(false);
         setStreamingContent('');
         streamingMessageIdRef.current = null;
+
+        await appLogger.logChat({
+          action: 'response_failed',
+          userId: user.id,
+          userEmail: user.email,
+          threadId: currentThread.id,
+          messagePreview: pendingMessage,
+          queryType: queryType || undefined,
+          level: 'error',
+          metadata: { error: webhookError.message }
+        });
+
+        await appLogger.logError({
+          action: 'chat_webhook_error',
+          error: webhookError,
+          userId: user.id,
+          userEmail: user.email,
+          metadata: {
+            thread_id: currentThread.id,
+            query_type: queryType,
+            message: pendingMessage
+          }
+        });
 
         // Add error message
         const errorMessage: Message = {

@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { appLogger } from './appLogger';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -23,6 +24,11 @@ export const signUp = async (email: string, password: string, fullName?: string)
   });
 
   if (authError) {
+    await appLogger.logAuth({
+      action: 'signup_failed',
+      userEmail: email,
+      metadata: { error: authError.message, display_name: fullName }
+    });
     return { data: null, error: authError };
   }
 
@@ -41,8 +47,21 @@ export const signUp = async (email: string, password: string, fullName?: string)
 
     if (appUserError) {
       console.error('Error creating app user:', appUserError);
+      await appLogger.logAuth({
+        action: 'signup_failed',
+        userId: authData.user.id,
+        userEmail: email,
+        metadata: { error: appUserError.message, display_name: fullName }
+      });
       return { data: authData, error: appUserError };
     }
+
+    await appLogger.logAuth({
+      action: 'signup_success',
+      userId: authData.user.id,
+      userEmail: email,
+      metadata: { display_name: fullName }
+    });
   }
 
   return { data: authData, error: null };
@@ -59,30 +78,58 @@ export const signIn = async (email: string, password: string) => {
       .single();
 
     if (error || !userData) {
+      await appLogger.logAuth({
+        action: 'login_failed',
+        userEmail: email,
+        metadata: { error: 'Invalid credentials' }
+      });
       return { data: null, error: { message: 'Invalid email or password' } };
     }
 
     // Store user in localStorage for session persistence
     localStorage.setItem('currentUser', JSON.stringify(userData));
-    
+
+    await appLogger.logAuth({
+      action: 'login_success',
+      userId: userData.id,
+      userEmail: email,
+      metadata: { is_admin: userData.is_admin }
+    });
+
     // Return user data in the expected format
-    return { 
-      data: { 
+    return {
+      data: {
         user: userData,
-        session: { user: userData } 
-      }, 
-      error: null 
+        session: { user: userData }
+      },
+      error: null
     };
   } catch (error: any) {
     console.error('Login error:', error);
+    await appLogger.logAuth({
+      action: 'login_failed',
+      userEmail: email,
+      level: 'error',
+      metadata: { error: error.message }
+    });
     return { data: null, error: { message: 'Invalid email or password' } };
   }
 };
 
 export const signOut = async () => {
   try {
+    const { user } = await getCurrentUser();
     // Remove user from localStorage
     localStorage.removeItem('currentUser');
+
+    if (user) {
+      await appLogger.logAuth({
+        action: 'logout',
+        userId: user.id,
+        userEmail: user.email
+      });
+    }
+
     return { error: null };
   } catch (error) {
     console.error('Error signing out:', error);
@@ -108,6 +155,8 @@ export const getCurrentUser = async () => {
 // Admin functions
 export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
   try {
+    const { user: adminUser } = await getCurrentUser();
+
     // Create app_users record with password
     const { data: appUserData, error: appUserError } = await supabase
       .from('app_users')
@@ -123,11 +172,34 @@ export const createUserByAdmin = async (email: string, password: string, display
 
     if (appUserError) {
       console.error('Error creating app user:', appUserError);
+      await appLogger.logUserManagement({
+        action: 'user_created',
+        userId: adminUser?.id,
+        userEmail: adminUser?.email,
+        targetUserEmail: email,
+        level: 'error',
+        metadata: { error: appUserError.message, is_admin: isAdmin }
+      });
       return { data: null, error: appUserError };
     }
 
+    await appLogger.logUserManagement({
+      action: 'user_created',
+      userId: adminUser?.id,
+      userEmail: adminUser?.email,
+      targetUserId: appUserData.id,
+      targetUserEmail: email,
+      metadata: { display_name: displayName, is_admin: isAdmin }
+    });
+
     return { data: appUserData, error: null };
   } catch (error: any) {
+    await appLogger.logError({
+      action: 'create_user_by_admin_failed',
+      error,
+      level: 'error',
+      metadata: { target_email: email }
+    });
     return { data: null, error };
   }
 };
@@ -153,6 +225,15 @@ export const getAllUsers = async () => {
 
 export const updateUserByAdmin = async (userId: string, updates: { display_name?: string; is_admin?: boolean; password?: string }) => {
   try {
+    const { user: adminUser } = await getCurrentUser();
+
+    // Get target user email
+    const { data: targetUser } = await supabase
+      .from('app_users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
     const { data, error } = await supabase
       .from('app_users')
       .update(updates)
@@ -162,8 +243,26 @@ export const updateUserByAdmin = async (userId: string, updates: { display_name?
 
     if (error) {
       console.error('Error updating user:', error);
+      await appLogger.logUserManagement({
+        action: 'user_updated',
+        userId: adminUser?.id,
+        userEmail: adminUser?.email,
+        targetUserId: userId,
+        targetUserEmail: targetUser?.email,
+        level: 'error',
+        metadata: { error: error.message, updates }
+      });
       throw error;
     }
+
+    await appLogger.logUserManagement({
+      action: 'user_updated',
+      userId: adminUser?.id,
+      userEmail: adminUser?.email,
+      targetUserId: userId,
+      targetUserEmail: targetUser?.email,
+      metadata: { updates }
+    });
 
     return { data, error: null };
   } catch (error) {
@@ -174,6 +273,15 @@ export const updateUserByAdmin = async (userId: string, updates: { display_name?
 
 export const deleteUserByAdmin = async (userId: string) => {
   try {
+    const { user: adminUser } = await getCurrentUser();
+
+    // Get target user email before deleting
+    const { data: targetUser } = await supabase
+      .from('app_users')
+      .select('email')
+      .eq('id', userId)
+      .single();
+
     const { data, error } = await supabase
       .from('app_users')
       .delete()
@@ -181,8 +289,25 @@ export const deleteUserByAdmin = async (userId: string) => {
 
     if (error) {
       console.error('Error deleting user:', error);
+      await appLogger.logUserManagement({
+        action: 'user_deleted',
+        userId: adminUser?.id,
+        userEmail: adminUser?.email,
+        targetUserId: userId,
+        targetUserEmail: targetUser?.email,
+        level: 'error',
+        metadata: { error: error.message }
+      });
       throw error;
     }
+
+    await appLogger.logUserManagement({
+      action: 'user_deleted',
+      userId: adminUser?.id,
+      userEmail: adminUser?.email,
+      targetUserId: userId,
+      targetUserEmail: targetUser?.email
+    });
 
     return { data, error: null };
   } catch (error) {
