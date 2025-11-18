@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { getChatThreads, signOut } from '../lib/supabase';
-import { 
-  Menu, 
-  X, 
-  Settings, 
+import {
+  Menu,
+  X,
+  Settings,
   MessageSquare,
   FileText,
   Users,
@@ -11,17 +11,19 @@ import {
   LogOut
 } from 'lucide-react';
 import type { AppUser } from '../types';
+import SettingsModal from './SettingsModal';
 
 interface LayoutProps {
   user: AppUser;
   children: React.ReactNode;
 }
 
-export default function Layout({ 
-  user, 
+export default function Layout({
+  user,
   children
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleSignOut = async () => {
     try {
@@ -101,11 +103,14 @@ export default function Layout({
           {/* Footer */}
           <div className="p-4 border-t">
             <div className="space-y-1">
-              <button className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 text-gray-700">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 text-gray-700"
+              >
                 <Settings className="w-4 h-4" />
                 <span className="text-sm">Settings</span>
               </button>
-              <button 
+              <button
                 onClick={handleSignOut}
                 className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors"
               >
@@ -116,6 +121,13 @@ export default function Layout({
           </div>
         </div>
       </div>
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        user={user}
+      />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
