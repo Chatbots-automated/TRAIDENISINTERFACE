@@ -1,12 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, User, Activity, AlertCircle } from 'lucide-react';
+import React, { useMemo, useState, useEffect } from 'react';
+import {
+  X,
+  RefreshCw,
+  Filter,
+  ChevronDown,
+  ChevronRight,
+  Calendar,
+  User,
+  Activity,
+  AlertCircle,
+  Server,
+  Plus,
+} from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { AppUser } from '../types';
 
 interface LogsViewerProps {
-  isOpen: boolean;
-  onClose: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
   user: AppUser;
+  embed?: boolean;
 }
 
 interface LogEntry {
@@ -22,27 +35,44 @@ interface LogEntry {
   created_at: string;
 }
 
-export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
+interface TableOption {
+  label: string;
+  value: string;
+}
+
+const DEFAULT_TABLE_OPTIONS: TableOption[] = [
+  { label: 'Application Logs', value: 'application_logs' },
+  { label: 'Chat Threads', value: 'chat_items' },
+  { label: 'Documents', value: 'documents' },
+  { label: 'Users', value: 'app_users' },
+  { label: 'Project Members', value: 'project_members' },
+];
+
+export default function LogsViewer({ isOpen = false, onClose, user, embed = false }: LogsViewerProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedLevel, setSelectedLevel] = useState<string>('all');
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [tableOptions, setTableOptions] = useState<TableOption[]>(DEFAULT_TABLE_OPTIONS);
+  const [selectedTable, setSelectedTable] = useState<string>(DEFAULT_TABLE_OPTIONS[0].value);
+  const [customTable, setCustomTable] = useState('');
+  const [genericRows, setGenericRows] = useState<Record<string, any>[]>([]);
+  const [tableError, setTableError] = useState<string | null>(null);
 
   const categories = ['all', 'auth', 'chat', 'document', 'user_management', 'system', 'api', 'error'];
   const levels = ['all', 'debug', 'info', 'warn', 'error', 'critical'];
+  const isApplicationLogs = selectedTable === 'application_logs';
+  const isActive = embed || isOpen;
 
-  useEffect(() => {
-    if (isOpen) {
-      loadLogs();
-    }
-  }, [isOpen, selectedCategory, selectedLevel]);
-
-  const loadLogs = async () => {
+  const loadApplicationLogs = async () => {
     try {
       setLoading(true);
+      setTableError(null);
+      setExpandedLog(null);
+      setGenericRows([]);
       let query = supabase
-        .from('application_logs')
+        .from('application_logs' as any)
         .select('*')
         .order('timestamp', { ascending: false })
         .limit(100);
@@ -68,6 +98,49 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadGenericRows = async () => {
+    try {
+      setLoading(true);
+      setTableError(null);
+      setExpandedLog(null);
+      setLogs([]);
+      const { data, error } = await supabase
+        .from(selectedTable as any)
+        .select('*')
+        .limit(100);
+
+      if (error) {
+        throw error;
+      }
+
+      setGenericRows(data || []);
+    } catch (error: any) {
+      console.error(`Error loading data from ${selectedTable}:`, error);
+      setGenericRows([]);
+      setTableError(error.message || 'Unable to load table data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshCurrentView = () => {
+    if (isApplicationLogs) {
+      loadApplicationLogs();
+    } else {
+      loadGenericRows();
+    }
+  };
+
+  const handleAddCustomTable = () => {
+    const cleaned = customTable.trim();
+    if (!cleaned) return;
+    if (!tableOptions.some((option) => option.value === cleaned)) {
+      setTableOptions((prev) => [...prev, { label: cleaned, value: cleaned }]);
+    }
+    setSelectedTable(cleaned);
+    setCustomTable('');
   };
 
   const getLevelColor = (level: string) => {
@@ -113,80 +186,156 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
     return date.toLocaleString();
   };
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isActive || !isApplicationLogs) return;
+    loadApplicationLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, isApplicationLogs, selectedCategory, selectedLevel]);
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 to-blue-50">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white rounded-lg shadow-sm">
-              <Activity className="w-6 h-6 text-green-600" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-semibold text-gray-900">Application Logs</h2>
-              <p className="text-sm text-gray-600">View system activity and events</p>
-            </div>
+  useEffect(() => {
+    if (!isActive || isApplicationLogs) return;
+    loadGenericRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, isApplicationLogs, selectedTable]);
+
+  if (!embed && !isOpen) return null;
+
+  const columns = useMemo(() => {
+    if (isApplicationLogs || genericRows.length === 0) return [];
+    const keys = new Set<string>();
+    genericRows.forEach((row) => {
+      Object.keys(row || {}).forEach((key) => keys.add(key));
+    });
+    return Array.from(keys);
+  }, [genericRows, isApplicationLogs]);
+
+  const formatValue = (value: any) => {
+    if (value === null || value === undefined) return '—';
+    if (typeof value === 'object') {
+      return JSON.stringify(value, null, 2);
+    }
+    return value.toString();
+  };
+
+  const innerContent = (
+    <div className="w-full h-full flex flex-col">
+      <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-green-50 to-blue-50">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-white rounded-lg shadow-sm">
+            <Activity className="w-6 h-6 text-green-600" />
           </div>
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">
+              {isApplicationLogs ? 'Application Logs' : 'Supabase Table Explorer'}
+            </h2>
+            <p className="text-sm text-gray-600">
+              {isApplicationLogs
+                ? 'View system activity and events'
+                : `Browsing latest rows from "${selectedTable}"`}
+            </p>
+          </div>
+        </div>
+        {!embed && (
           <button
             onClick={onClose}
             className="p-2 hover:bg-white rounded-lg transition-colors"
           >
             <X className="w-5 h-5 text-gray-500" />
           </button>
-        </div>
+        )}
+      </div>
 
-        {/* Filters */}
-        <div className="flex items-center space-x-4 p-4 border-b border-gray-200 bg-gray-50">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
           <div className="flex items-center space-x-2">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Filters:</span>
+            <Server className="w-4 h-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Table</span>
           </div>
-
-          {/* Category Filter */}
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
-          >
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat === 'all' ? 'All Categories' : cat.replace('_', ' ')}
-              </option>
-            ))}
-          </select>
-
-          {/* Level Filter */}
-          <select
-            value={selectedLevel}
-            onChange={(e) => setSelectedLevel(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
-          >
-            {levels.map((level) => (
-              <option key={level} value={level}>
-                {level === 'all' ? 'All Levels' : level.toUpperCase()}
-              </option>
-            ))}
-          </select>
-
+          <div className="flex-1 flex flex-col sm:flex-row gap-3">
+            <select
+              value={selectedTable}
+              onChange={(e) => setSelectedTable(e.target.value)}
+              className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+            >
+              {tableOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <div className="flex items-center space-x-2">
+              <input
+                type="text"
+                value={customTable}
+                onChange={(e) => setCustomTable(e.target.value)}
+                placeholder="Custom table..."
+                className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              />
+              <button
+                onClick={handleAddCustomTable}
+                className="inline-flex items-center justify-center px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
           <button
-            onClick={loadLogs}
+            onClick={refreshCurrentView}
             disabled={loading}
-            className="ml-auto px-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 flex items-center space-x-2"
+            className="inline-flex items-center justify-center px-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
         </div>
 
-        {/* Logs List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <RefreshCw className="w-8 h-8 animate-spin text-green-600" />
+        {isApplicationLogs && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center space-x-2">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-medium text-gray-700">Filters</span>
             </div>
-          ) : logs.length === 0 ? (
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+            >
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat === 'all' ? 'All Categories' : cat.replace('_', ' ')}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={selectedLevel}
+              onChange={(e) => setSelectedLevel(e.target.value)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
+            >
+              {levels.map((level) => (
+                <option key={level} value={level}>
+                  {level === 'all' ? 'All Levels' : level.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-white">
+        {tableError && (
+          <div className="flex items-center space-x-2 p-3 rounded-xl bg-red-50 text-red-700 border border-red-100">
+            <AlertCircle className="w-5 h-5" />
+            <span className="text-sm">{tableError}</span>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <RefreshCw className="w-8 h-8 animate-spin text-green-600" />
+          </div>
+        ) : isApplicationLogs ? (
+          logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-gray-500">
               <AlertCircle className="w-12 h-12 mb-3" />
               <p className="text-lg font-medium">No logs found</p>
@@ -237,7 +386,6 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
                   </div>
                 </button>
 
-                {/* Expanded Details */}
                 {expandedLog === log.id && (
                   <div className="px-4 pb-4 border-t border-gray-100">
                     <div className="mt-3 space-y-2">
@@ -264,15 +412,85 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
                 )}
               </div>
             ))
-          )}
-        </div>
+          )
+        ) : genericRows.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+            <AlertCircle className="w-12 h-12 mb-3" />
+            <p className="text-lg font-medium">No rows found</p>
+            <p className="text-sm">Try switching tables or refreshing.</p>
+          </div>
+        ) : (
+          genericRows.map((row, index) => (
+            <div
+              key={row.id || row.uuid || `${selectedTable}-${index}`}
+              className="border border-gray-200 rounded-xl overflow-hidden bg-white"
+            >
+              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <div>
+                  <p className="text-sm font-semibold text-gray-700">{selectedTable}</p>
+                  <p className="text-xs text-gray-500">Row #{index + 1}</p>
+                </div>
+                {row.id && (
+                  <span className="text-xs font-mono text-gray-500 truncate max-w-[200px]">
+                    {row.id}
+                  </span>
+                )}
+              </div>
+              <div className="p-4 overflow-x-auto">
+                {columns.length > 0 ? (
+                  <table className="min-w-full text-sm">
+                    <tbody>
+                      {columns.map((column) => (
+                        <tr key={column} className="border-b border-gray-50">
+                          <td className="py-2 pr-4 font-medium text-gray-500 whitespace-nowrap align-top">
+                            {column.replace(/_/g, ' ')}
+                          </td>
+                          <td className="py-2 text-gray-900">
+                            {typeof row[column] === 'object' && row[column] !== null ? (
+                              <pre className="bg-gray-50 rounded-lg p-2 text-xs overflow-x-auto">
+                                {formatValue(row[column])}
+                              </pre>
+                            ) : (
+                              formatValue(row[column])
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <pre className="text-xs text-gray-700 bg-gray-50 rounded-lg p-3 overflow-x-auto">
+                    {JSON.stringify(row, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50">
-          <p className="text-xs text-gray-500 text-center">
-            Showing {logs.length} log entries
-          </p>
-        </div>
+      <div className="p-4 border-t border-gray-200 bg-gray-50">
+        <p className="text-xs text-gray-500 text-center">
+          {isApplicationLogs
+            ? `Showing ${logs.length} log entries`
+            : `Showing ${genericRows.length} rows from ${selectedTable}`}
+        </p>
+      </div>
+      </div>
+  );
+
+  if (embed) {
+    return (
+      <div className="rounded-2xl border border-gray-200 shadow-sm bg-white overflow-hidden">
+        {innerContent}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+        {innerContent}
       </div>
     </div>
   );

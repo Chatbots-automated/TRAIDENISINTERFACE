@@ -11,6 +11,80 @@ import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
+const normalizeContentChunk = (input: any): string => {
+  if (input === null || input === undefined) {
+    return '';
+  }
+
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  if (typeof input === 'number' || typeof input === 'boolean') {
+    return String(input);
+  }
+
+  if (Array.isArray(input)) {
+    return input.map(normalizeContentChunk).join('');
+  }
+
+  if (typeof input === 'object') {
+    if (input.text) {
+      return normalizeContentChunk(input.text);
+    }
+
+    if (input.content) {
+      return normalizeContentChunk(input.content);
+    }
+
+    // OpenAI-style delta chunks
+    if (Array.isArray(input.delta?.content)) {
+      return input.delta.content
+        .map((item: any) => normalizeContentChunk(item?.text ?? item))
+        .join('');
+    }
+
+    if (input.delta) {
+      return normalizeContentChunk(input.delta);
+    }
+
+    if (Array.isArray(input.choices)) {
+      return input.choices
+        .map((choice: any) => normalizeContentChunk(choice?.delta ?? choice?.message))
+        .join('');
+    }
+
+    if (input.data) {
+      return normalizeContentChunk(input.data);
+    }
+  }
+
+  return '';
+};
+
+const extractTextFromPayload = (payload: any): string => {
+  if (!payload) {
+    return '';
+  }
+
+  if (typeof payload === 'string' || typeof payload === 'number' || typeof payload === 'boolean') {
+    return String(payload);
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.map(extractTextFromPayload).join('');
+  }
+
+  const possibleFields = ['response', 'token', 'text', 'message', 'answer', 'content'];
+  for (const field of possibleFields) {
+    if (payload[field]) {
+      return normalizeContentChunk(payload[field]);
+    }
+  }
+
+  return normalizeContentChunk(payload);
+};
+
 interface ChatInterfaceProps {
   user: AppUser;
   projectId: string;
@@ -230,11 +304,14 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           metadata: { webhook_url: webhookUrl }
         });
 
+        const controller = new AbortController();
         const webhookResponse = await fetch(webhookUrl, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream'
           },
+          signal: controller.signal,
           body: JSON.stringify({
             question: pendingMessage,
             query_type: queryType,
@@ -280,10 +357,30 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         const reader = webhookResponse.body?.getReader();
         const decoder = new TextDecoder();
         let fullResponse = '';
+        let buffer = '';
+        const appendChunk = (chunkText: string) => {
+          if (!chunkText) return;
+          fullResponse += chunkText;
+          setStreamingContent(fullResponse);
+        };
+
+        const handlePayload = (rawPayload: string) => {
+          if (!rawPayload) return;
+          let chunkText = '';
+          try {
+            const parsed = JSON.parse(rawPayload);
+            chunkText = extractTextFromPayload(parsed);
+          } catch (_err) {
+            chunkText = rawPayload;
+          }
+          appendChunk(chunkText);
+        };
+
+        let streamComplete = false;
 
         if (reader) {
           try {
-            while (true) {
+            while (!streamComplete) {
               const { done, value } = await reader.read();
 
               if (done) {
@@ -291,48 +388,59 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                 break;
               }
 
-              const chunk = decoder.decode(value, { stream: true });
-              console.log('Received chunk:', chunk);
+              buffer += decoder.decode(value, { stream: true });
 
-              // Parse the chunk - handle both SSE format and plain text
-              const lines = chunk.split('\n');
+              let newlineIndex = buffer.indexOf('\n');
+              while (newlineIndex !== -1) {
+                const line = buffer.slice(0, newlineIndex).replace(/\r$/, '');
+                buffer = buffer.slice(newlineIndex + 1);
 
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  // SSE format
-                  const data = line.slice(6).trim();
-                  if (data && data !== '[DONE]') {
-                    try {
-                      const parsed = JSON.parse(data);
-                      if (parsed.response) {
-                        fullResponse += parsed.response;
-                        setStreamingContent(fullResponse);
-                      }
-                    } catch (e) {
-                      // If not JSON, treat as plain text
-                      fullResponse += data;
-                      setStreamingContent(fullResponse);
-                    }
-                  }
-                } else if (line.trim() && !line.startsWith(':')) {
-                  // Plain text or newline-delimited JSON
-                  try {
-                    const parsed = JSON.parse(line);
-                    if (parsed.response) {
-                      fullResponse += parsed.response;
-                      setStreamingContent(fullResponse);
-                    }
-                  } catch (e) {
-                    // Treat as plain text chunk
-                    fullResponse += line;
-                    setStreamingContent(fullResponse);
-                  }
+                const trimmedLine = line.trim();
+                if (!trimmedLine) {
+                  newlineIndex = buffer.indexOf('\n');
+                  continue;
+                }
+
+                if (
+                  trimmedLine === '[DONE]' ||
+                  trimmedLine === 'data: [DONE]' ||
+                  trimmedLine === 'data:[DONE]'
+                ) {
+                  streamComplete = true;
+                  break;
+                }
+
+                if (trimmedLine.startsWith('data:')) {
+                  handlePayload(trimmedLine.slice(5).trim());
+                } else if (!trimmedLine.startsWith(':')) {
+                  handlePayload(trimmedLine);
+                }
+
+                newlineIndex = buffer.indexOf('\n');
+              }
+            }
+
+            if (!streamComplete && buffer.trim()) {
+              const remaining = buffer.trim();
+              if (
+                remaining !== '[DONE]' &&
+                remaining !== 'data: [DONE]' &&
+                remaining !== 'data:[DONE]'
+              ) {
+                if (remaining.startsWith('data:')) {
+                  handlePayload(remaining.slice(5).trim());
+                } else if (!remaining.startsWith(':')) {
+                  handlePayload(remaining);
                 }
               }
             }
           } finally {
             reader.releaseLock();
           }
+        } else {
+          // Fallback: not a readable stream, just append the text response
+          const fallbackText = await webhookResponse.text();
+          handlePayload(fallbackText);
         }
 
         // Streaming complete - add final message to chat
