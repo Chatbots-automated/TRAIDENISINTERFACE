@@ -5,7 +5,9 @@ import {
   MessageSquare,
   Bot,
   User as UserIcon,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
@@ -34,6 +36,21 @@ interface Message {
 
 type QueryType = 'Komercinio pasiūlymo užklausa' | 'Bendra užklausa' | 'Nestandartinių gaminių užklausa' | null;
 
+// Query type tag configuration
+interface QueryTagConfig {
+  tag: string;
+  label: string;
+  queryType: QueryType;
+}
+
+const QUERY_TAGS: QueryTagConfig[] = [
+  { tag: '/General', label: 'General', queryType: 'Bendra užklausa' },
+  { tag: '/Commercial', label: 'Commercial', queryType: 'Komercinio pasiūlymo užklausa' },
+  { tag: '/Custom', label: 'Custom Products', queryType: 'Nestandartinių gaminių užklausa' },
+];
+
+const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
+
 export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [currentThread, setCurrentThread] = useState<Thread | null>(null);
@@ -42,13 +59,14 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [loading, setLoading] = useState(false);
   const [threadsLoading, setThreadsLoading] = useState(true);
   const [creating, setCreating] = useState(false);
-  const [showQueryTypeModal, setShowQueryTypeModal] = useState(false);
-  const [selectedQueryType, setSelectedQueryType] = useState<QueryType>(null);
-  const [pendingMessage, setPendingMessage] = useState('');
+  const [currentQueryTag, setCurrentQueryTag] = useState<QueryTagConfig>(DEFAULT_QUERY_TAG);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Load threads on component mount
   useEffect(() => {
@@ -73,6 +91,18 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       scrollToBottom();
     }
   }, [isStreaming, streamingContent]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
+        setShowTagDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
@@ -178,27 +208,20 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     e.preventDefault();
     if (!newMessage.trim() || !currentThread || loading) return;
 
-    // Show query type selection modal
-    setPendingMessage(newMessage.trim());
+    const messageToSend = newMessage.trim();
+    const queryType = currentQueryTag.queryType;
+
     setNewMessage('');
-    setShowQueryTypeModal(true);
-  };
-
-  const handleQueryTypeSelected = async (queryType: QueryType) => {
-    if (!queryType || !pendingMessage || !currentThread) return;
-
-    setSelectedQueryType(queryType);
-    setShowQueryTypeModal(false);
     setLoading(true);
 
     try {
-      console.log('Sending message:', pendingMessage, 'to thread:', currentThread.id, 'with query type:', queryType);
+      console.log('Sending message:', messageToSend, 'to thread:', currentThread.id, 'with query type:', queryType);
 
       // Add user message to UI immediately
       const userMessage: Message = {
         id: Date.now().toString(),
         role: 'user',
-        content: pendingMessage,
+        content: messageToSend,
         timestamp: new Date().toISOString(),
         author_ref: user.email || ''
       };
@@ -208,7 +231,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       const { error: userMessageError } = await sendMessage(
         projectId,
         currentThread.id,
-        pendingMessage,
+        messageToSend,
         'user',
         user.email || ''
       );
@@ -223,9 +246,9 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         userId: user.id,
         userEmail: user.email,
         threadId: currentThread.id,
-        messagePreview: pendingMessage,
+        messagePreview: messageToSend,
         queryType: queryType || undefined,
-        metadata: { message_length: pendingMessage.length }
+        metadata: { message_length: messageToSend.length }
       });
 
       // Send to webhook with streaming
@@ -248,7 +271,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           userId: user.id,
           userEmail: user.email,
           threadId: currentThread.id,
-          messagePreview: pendingMessage,
+          messagePreview: messageToSend,
           queryType: queryType || undefined,
           metadata: { webhook_url: webhookUrl }
         });
@@ -259,7 +282,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            question: pendingMessage,
+            question: messageToSend,
             query_type: queryType,
             chat_id: currentThread.id,
             parent_id: currentThread.id,
@@ -564,7 +587,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           userId: user.id,
           userEmail: user.email,
           threadId: currentThread.id,
-          messagePreview: pendingMessage,
+          messagePreview: messageToSend,
           queryType: queryType || undefined,
           level: 'error',
           metadata: { error: webhookError.message }
@@ -578,7 +601,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           metadata: {
             thread_id: currentThread.id,
             query_type: queryType,
-            message: pendingMessage
+            message: messageToSend
           }
         });
 
@@ -599,16 +622,16 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       console.error('Error sending message:', error);
     } finally {
       setLoading(false);
-      setPendingMessage('');
-      setSelectedQueryType(null);
     }
   };
 
-  const queryTypes: QueryType[] = [
-    'Komercinio pasiūlymo užklausa',
-    'Bendra užklausa',
-    'Nestandartinių gaminių užklausa'
-  ];
+  // Handle tag selection from dropdown
+  const handleTagSelect = (tag: QueryTagConfig) => {
+    setCurrentQueryTag(tag);
+    setShowTagDropdown(false);
+    // Focus back to the input
+    inputRef.current?.focus();
+  };
 
   return (
     <div className="flex h-full bg-white relative overflow-hidden">
@@ -767,17 +790,60 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input */}
+            {/* Message Input with Query Type Tag */}
             <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0">
               <form onSubmit={handleSendMessage} className="flex space-x-3">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  disabled={loading}
-                />
+                <div className="flex-1 flex items-center border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent bg-white">
+                  {/* Query Type Tag with Dropdown */}
+                  <div className="relative" ref={tagDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowTagDropdown(!showTagDropdown)}
+                      disabled={loading}
+                      className="flex items-center space-x-1 px-3 py-2 bg-blue-100 text-blue-700 font-medium text-sm rounded-l-lg hover:bg-blue-200 transition-colors border-r border-gray-200 disabled:opacity-50"
+                    >
+                      <span>{currentQueryTag.tag}</span>
+                      {showTagDropdown ? (
+                        <ChevronDown className="w-3 h-3" />
+                      ) : (
+                        <ChevronUp className="w-3 h-3" />
+                      )}
+                    </button>
+
+                    {/* Dropdown Menu (drops UP since input is at bottom) */}
+                    {showTagDropdown && (
+                      <div className="absolute bottom-full left-0 mb-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                        <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
+                          Select Query Type
+                        </div>
+                        {QUERY_TAGS.map((tag) => (
+                          <button
+                            key={tag.tag}
+                            type="button"
+                            onClick={() => handleTagSelect(tag)}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors flex items-center justify-between ${
+                              currentQueryTag.tag === tag.tag ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            }`}
+                          >
+                            <span className="font-medium">{tag.tag}</span>
+                            <span className="text-xs text-gray-500">{tag.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Text Input */}
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Type your message..."
+                    className="flex-1 px-3 py-2 border-0 focus:ring-0 focus:outline-none rounded-r-lg"
+                    disabled={loading}
+                  />
+                </div>
                 <button
                   type="submit"
                   disabled={loading || !newMessage.trim()}
@@ -810,40 +876,6 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         )}
       </div>
 
-      {/* Query Type Selection Modal */}
-      {showQueryTypeModal && (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Pasirinkite užklausos tipą
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Prieš siųsdami žinutę, pasirinkite užklausos kategorią:
-            </p>
-            <div className="space-y-3">
-              {queryTypes.map((type) => (
-                <button
-                  key={type}
-                  onClick={() => handleQueryTypeSelected(type)}
-                  className="w-full p-4 text-left border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all"
-                >
-                  <span className="font-medium text-gray-900">{type}</span>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setShowQueryTypeModal(false);
-                setNewMessage(pendingMessage);
-                setPendingMessage('');
-              }}
-              className="mt-4 w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Atšaukti
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
