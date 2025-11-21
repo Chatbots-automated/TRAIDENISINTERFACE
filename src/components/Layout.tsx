@@ -35,7 +35,7 @@ export default function Layout({
   };
 
   return (
-    <div className="h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
+    <div className="h-screen max-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex overflow-hidden">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
@@ -130,7 +130,7 @@ export default function Layout({
       />
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Top bar */}
         <div className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-green-100 px-4 py-3">
           <div className="flex items-center justify-between">
@@ -171,7 +171,7 @@ export default function Layout({
         </div>
 
         {/* Page content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {children}
         </div>
       </div>
