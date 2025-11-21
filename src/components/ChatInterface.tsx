@@ -12,7 +12,7 @@ import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
 interface ChatInterfaceProps {
-  user: AppUser;x
+  user: AppUser;
   projectId: string;
 }
 
@@ -273,6 +273,13 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         console.log('Body Type:', webhookResponse.body?.constructor.name);
         console.log('Response OK:', webhookResponse.ok);
 
+        const contentType = webhookResponse.headers.get('content-type') || '';
+        console.log('Content-Type:', contentType);
+        const isStreamingResponse = contentType.includes('text/event-stream') ||
+                                   contentType.includes('application/x-ndjson') ||
+                                   contentType.includes('text/plain');
+        console.log('Is Streaming Response:', isStreamingResponse);
+
         const responseTimeMs = Date.now() - startTime;
 
         if (!webhookResponse.ok) {
@@ -305,19 +312,54 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           throw new Error(`Webhook returned ${webhookResponse.status}`);
         }
 
-        const reader = webhookResponse.body?.getReader();
-        const decoder = new TextDecoder();
         let fullResponse = '';
 
-        console.log('=== STREAM READING DEBUG ===');
-        console.log('Reader available:', !!reader);
+        // Check if response might be a complete JSON (not streaming)
+        if (!isStreamingResponse || contentType.includes('application/json')) {
+          console.log('📦 Attempting to read as complete JSON response...');
+          try {
+            const jsonResponse = await webhookResponse.json();
+            console.log('✅ Received complete JSON:', jsonResponse);
 
-        if (!reader) {
-          console.error('❌ No reader available - response body is null');
-          throw new Error('Response body is not readable');
+            // Extract text from various possible fields
+            if (jsonResponse.response) {
+              fullResponse = jsonResponse.response;
+            } else if (jsonResponse.output) {
+              fullResponse = jsonResponse.output;
+            } else if (jsonResponse.text) {
+              fullResponse = jsonResponse.text;
+            } else if (jsonResponse.message) {
+              fullResponse = jsonResponse.message;
+            } else if (jsonResponse.data) {
+              fullResponse = typeof jsonResponse.data === 'string' ? jsonResponse.data : JSON.stringify(jsonResponse.data);
+            } else {
+              console.warn('⚠️ Unknown JSON structure:', Object.keys(jsonResponse));
+              fullResponse = JSON.stringify(jsonResponse);
+            }
+
+            console.log('✅ Extracted response text, length:', fullResponse.length);
+
+            // Simulate streaming by updating UI
+            setStreamingContent(fullResponse);
+          } catch (e) {
+            console.error('❌ Failed to parse as JSON:', e);
+            // Fall through to streaming attempt
+          }
         }
 
-        if (reader) {
+        // If we didn't get a response from JSON parsing, try streaming
+        if (!fullResponse) {
+          console.log('=== ATTEMPTING STREAM READING ===');
+          const reader = webhookResponse.body?.getReader();
+          const decoder = new TextDecoder();
+
+          console.log('Reader available:', !!reader);
+
+          if (!reader) {
+            console.error('❌ No reader available - response body is null');
+            throw new Error('Response body is not readable');
+          }
+
           try {
             let chunkCount = 0;
             while (true) {
