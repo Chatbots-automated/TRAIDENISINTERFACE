@@ -314,12 +314,18 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
 
         let fullResponse = '';
 
-        // Check if response might be a complete JSON (not streaming)
-        if (!isStreamingResponse || contentType.includes('application/json')) {
-          console.log('📦 Attempting to read as complete JSON response...');
+        // Read response body as text to avoid locking the stream
+        console.log('📦 Reading response body as text...');
+        const responseText = await webhookResponse.text();
+        console.log('✅ Received response text, length:', responseText.length);
+        console.log('📄 First 200 chars:', responseText.substring(0, 200));
+
+        // Try to parse as single JSON object
+        if (contentType.includes('application/json')) {
           try {
-            const jsonResponse = await webhookResponse.json();
-            console.log('✅ Received complete JSON:', jsonResponse);
+            const jsonResponse = JSON.parse(responseText);
+            console.log('✅ Parsed as single JSON object');
+            console.log('📋 Available fields:', Object.keys(jsonResponse));
 
             // Extract text from various possible fields
             if (jsonResponse.response) {
@@ -338,161 +344,116 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             }
 
             console.log('✅ Extracted response text, length:', fullResponse.length);
-
-            // Simulate streaming by updating UI
             setStreamingContent(fullResponse);
           } catch (e) {
-            console.error('❌ Failed to parse as JSON:', e);
-            // Fall through to streaming attempt
-          }
-        }
+            console.log('⚠️ Not a single JSON object, trying newline-delimited JSON...');
+            // Try parsing as newline-delimited JSON (NDJSON)
+            const lines = responseText.split('\n');
+            console.log(`📝 Split into ${lines.length} lines`);
 
-        // If we didn't get a response from JSON parsing, try streaming
-        if (!fullResponse) {
-          console.log('=== ATTEMPTING STREAM READING ===');
-          const reader = webhookResponse.body?.getReader();
-          const decoder = new TextDecoder();
+            for (const line of lines) {
+              if (!line.trim()) continue;
 
-          console.log('Reader available:', !!reader);
+              try {
+                const parsed = JSON.parse(line);
+                console.log('  ✓ Parsed JSON line:', parsed);
+                console.log('  📋 Available fields:', Object.keys(parsed));
 
-          if (!reader) {
-            console.error('❌ No reader available - response body is null');
-            throw new Error('Response body is not readable');
-          }
+                // Handle multiple possible response formats from n8n
+                let textContent = null;
 
-          try {
-            let chunkCount = 0;
-            while (true) {
-              const { done, value } = await reader.read();
+                if (parsed.response) {
+                  textContent = parsed.response;
+                  console.log('  ✓ Found "response" field');
+                } else if (parsed.data) {
+                  textContent = parsed.data;
+                  console.log('  ✓ Found "data" field');
+                } else if (parsed.message) {
+                  textContent = parsed.message;
+                  console.log('  ✓ Found "message" field');
+                } else if (parsed.output) {
+                  textContent = parsed.output;
+                  console.log('  ✓ Found "output" field');
+                } else if (parsed.text) {
+                  textContent = parsed.text;
+                  console.log('  ✓ Found "text" field');
+                } else if (parsed.type === 'chunk' && parsed.data) {
+                  textContent = parsed.data;
+                  console.log('  ✓ Found n8n chunk with data');
+                } else if (parsed.type === 'message' && parsed.data) {
+                  textContent = parsed.data;
+                  console.log('  ✓ Found n8n message with data');
+                } else if (parsed.type === 'item' && parsed.content) {
+                  textContent = parsed.content;
+                  console.log('  ✓ Found n8n item with content');
+                } else {
+                  console.log('  ⚠️ No recognized text field in JSON');
+                  console.log('  💡 Full JSON:', JSON.stringify(parsed));
+                }
 
-              if (done) {
-                console.log('✅ Stream complete - Total chunks:', chunkCount);
-                console.log('Final response length:', fullResponse.length);
-                break;
-              }
-
-              chunkCount++;
-              const chunk = decoder.decode(value, { stream: true });
-              console.log(`📦 Chunk #${chunkCount} (${chunk.length} bytes):`, chunk.substring(0, 100));
-
-              // Parse the chunk - handle both SSE format and plain text
-              const lines = chunk.split('\n');
-              console.log(`  → Split into ${lines.length} lines`);
-
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  // SSE format
-                  const data = line.slice(6).trim();
-                  console.log('  📨 SSE data:', data.substring(0, 50));
-                  if (data && data !== '[DONE]') {
-                    try {
-                      const parsed = JSON.parse(data);
-                      console.log('  ✓ Parsed JSON:', parsed);
-                      console.log('  📋 Available fields:', Object.keys(parsed));
-
-                      // Handle multiple possible response formats
-                      let textContent = null;
-
-                      if (parsed.response) {
-                        textContent = parsed.response;
-                        console.log('  ✓ Found "response" field');
-                      } else if (parsed.data) {
-                        textContent = parsed.data;
-                        console.log('  ✓ Found "data" field');
-                      } else if (parsed.message) {
-                        textContent = parsed.message;
-                        console.log('  ✓ Found "message" field');
-                      } else if (parsed.output) {
-                        textContent = parsed.output;
-                        console.log('  ✓ Found "output" field');
-                      } else if (parsed.text) {
-                        textContent = parsed.text;
-                        console.log('  ✓ Found "text" field');
-                      } else if (parsed.type === 'chunk' && parsed.data) {
-                        textContent = parsed.data;
-                        console.log('  ✓ Found n8n chunk with data');
-                      } else if (parsed.type === 'message' && parsed.data) {
-                        textContent = parsed.data;
-                        console.log('  ✓ Found n8n message with data');
-                      } else if (parsed.type === 'item' && parsed.content) {
-                        textContent = parsed.content;
-                        console.log('  ✓ Found n8n item with content');
-                      } else {
-                        console.log('  ⚠️ No recognized text field in JSON');
-                        console.log('  💡 Full JSON:', JSON.stringify(parsed));
-                      }
-
-                      if (textContent) {
-                        fullResponse += textContent;
-                        setStreamingContent(fullResponse);
-                        console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
-                      }
-                    } catch (e) {
-                      // If not JSON, treat as plain text
-                      console.log('  ℹ️ Not JSON, treating as plain text');
-                      fullResponse += data;
-                      setStreamingContent(fullResponse);
-                    }
-                  }
-                } else if (line.trim() && !line.startsWith(':')) {
-                  // Plain text or newline-delimited JSON
-                  console.log('  📝 Plain/JSON line:', line.substring(0, 50));
-                  try {
-                    const parsed = JSON.parse(line);
-                    console.log('  ✓ Parsed JSON:', parsed);
-                    console.log('  📋 Available fields:', Object.keys(parsed));
-
-                    // Handle multiple possible response formats from n8n
-                    let textContent = null;
-
-                    if (parsed.response) {
-                      textContent = parsed.response;
-                      console.log('  ✓ Found "response" field');
-                    } else if (parsed.data) {
-                      textContent = parsed.data;
-                      console.log('  ✓ Found "data" field');
-                    } else if (parsed.message) {
-                      textContent = parsed.message;
-                      console.log('  ✓ Found "message" field');
-                    } else if (parsed.output) {
-                      textContent = parsed.output;
-                      console.log('  ✓ Found "output" field');
-                    } else if (parsed.text) {
-                      textContent = parsed.text;
-                      console.log('  ✓ Found "text" field');
-                    } else if (parsed.type === 'chunk' && parsed.data) {
-                      textContent = parsed.data;
-                      console.log('  ✓ Found n8n chunk with data');
-                    } else if (parsed.type === 'message' && parsed.data) {
-                      textContent = parsed.data;
-                      console.log('  ✓ Found n8n message with data');
-                    } else if (parsed.type === 'item' && parsed.content) {
-                      textContent = parsed.content;
-                      console.log('  ✓ Found n8n item with content');
-                    } else {
-                      console.log('  ⚠️ No recognized text field in JSON');
-                      console.log('  💡 Full JSON:', JSON.stringify(parsed));
-                    }
-
-                    if (textContent) {
-                      fullResponse += textContent;
-                      setStreamingContent(fullResponse);
-                      console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
-                    }
-                  } catch (e) {
-                    // Treat as plain text chunk
-                    console.log('  ℹ️ Not JSON, treating as plain text');
-                    fullResponse += line;
-                    setStreamingContent(fullResponse);
-                  }
-                } else if (line.trim()) {
-                  console.log('  🔇 Skipped line (comment):', line.substring(0, 30));
+                if (textContent) {
+                  fullResponse += textContent;
+                  setStreamingContent(fullResponse);
+                  console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
+                }
+              } catch (lineError) {
+                console.log('  ℹ️ Line is not JSON, treating as plain text:', line.substring(0, 50));
+                if (line.trim()) {
+                  fullResponse += line;
+                  setStreamingContent(fullResponse);
                 }
               }
             }
-          } finally {
-            reader.releaseLock();
           }
+        } else if (isStreamingResponse) {
+          // Handle SSE or plain text streaming format
+          console.log('📡 Processing as streaming format (SSE or plain text)');
+          const lines = responseText.split('\n');
+          console.log(`📝 Split into ${lines.length} lines`);
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              // SSE format
+              const data = line.slice(6).trim();
+              console.log('  📨 SSE data:', data.substring(0, 50));
+              if (data && data !== '[DONE]') {
+                try {
+                  const parsed = JSON.parse(data);
+                  console.log('  ✓ Parsed JSON:', parsed);
+
+                  let textContent = null;
+                  if (parsed.response) {
+                    textContent = parsed.response;
+                  } else if (parsed.data) {
+                    textContent = parsed.data;
+                  } else if (parsed.message) {
+                    textContent = parsed.message;
+                  } else if (parsed.output) {
+                    textContent = parsed.output;
+                  } else if (parsed.text) {
+                    textContent = parsed.text;
+                  }
+
+                  if (textContent) {
+                    fullResponse += textContent;
+                    setStreamingContent(fullResponse);
+                  }
+                } catch (e) {
+                  fullResponse += data;
+                  setStreamingContent(fullResponse);
+                }
+              }
+            } else if (line.trim() && !line.startsWith(':')) {
+              // Plain text line
+              fullResponse += line;
+              setStreamingContent(fullResponse);
+            }
+          }
+        } else {
+          // Fallback: use the entire response text
+          console.log('📝 Using entire response text as-is');
+          fullResponse = responseText;
+          setStreamingContent(fullResponse);
         }
 
         // Streaming complete - add final message to chat
