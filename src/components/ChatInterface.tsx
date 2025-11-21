@@ -496,9 +496,11 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         }
 
         // Streaming complete - add final message to chat
-        setIsStreaming(false);
-
         const finalResponseTime = Date.now() - startTime;
+
+        console.log('=== STREAM ENDED ===');
+        console.log('Full response length:', fullResponse.length);
+        console.log('Full response preview:', fullResponse.substring(0, 200));
 
         if (fullResponse) {
           const aiMessage: Message = {
@@ -508,7 +510,14 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             timestamp: new Date().toISOString(),
             author_ref: 'ai-assistant'
           };
+
+          console.log('Adding AI message to state...');
           setMessages(prev => [...prev, aiMessage]);
+
+          // Clear streaming state AFTER adding the message
+          setStreamingContent('');
+          setIsStreaming(false);
+          streamingMessageIdRef.current = null;
 
           // Save AI message to chat_history
           const { error: aiMessageError } = await sendMessage(
@@ -548,11 +557,37 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               response_length: fullResponse.length
             }
           });
-        }
+        } else {
+          console.warn('⚠️ Stream ended but fullResponse is empty!');
+          console.log('Streaming content at end:', streamingContent);
 
-        // Clear streaming state
-        setStreamingContent('');
-        streamingMessageIdRef.current = null;
+          // If we have streaming content but no fullResponse, use streaming content
+          if (streamingContent) {
+            console.log('Using streamingContent as fallback');
+            const aiMessage: Message = {
+              id: streamingMessageId,
+              role: 'assistant',
+              content: streamingContent,
+              timestamp: new Date().toISOString(),
+              author_ref: 'ai-assistant'
+            };
+            setMessages(prev => [...prev, aiMessage]);
+
+            // Save the streaming content
+            await sendMessage(
+              projectId,
+              currentThread.id,
+              streamingContent,
+              'assistant',
+              'ai-assistant'
+            );
+          }
+
+          // Clear streaming state
+          setStreamingContent('');
+          setIsStreaming(false);
+          streamingMessageIdRef.current = null;
+        }
 
       } catch (webhookError: any) {
         console.error('Webhook error:', webhookError);
