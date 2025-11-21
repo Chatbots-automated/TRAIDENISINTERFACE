@@ -31,6 +31,7 @@ interface Message {
   content: string;
   timestamp: string;
   author_ref?: string;
+  queryType?: string; // Store the query type tag for user messages
 }
 
 type QueryType = 'Komercinio pasiūlymo užklausa' | 'Bendra užklausa' | 'Nestandartinių gaminių užklausa' | null;
@@ -281,7 +282,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         role: 'user',
         content: messageToSend,
         timestamp: new Date().toISOString(),
-        author_ref: user.email || ''
+        author_ref: user.email || '',
+        queryType: currentQueryTag.tag // Store the tag used for this message
       };
       setMessages(prev => [...prev, userMessage]);
 
@@ -810,6 +812,11 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                       <span className="text-xs opacity-75">
                         {message.role === 'user' ? 'You' : 'AI Assistant'}
                       </span>
+                      {message.role === 'user' && message.queryType && (
+                        <span className="text-xs opacity-75 bg-white/20 px-1.5 py-0.5 rounded">
+                          {message.queryType}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     <p className="text-xs opacity-75 mt-1">
