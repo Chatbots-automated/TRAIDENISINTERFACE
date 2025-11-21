@@ -51,6 +51,40 @@ const QUERY_TAGS: QueryTagConfig[] = [
 
 const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
 
+// Fun loading messages that rotate while waiting for response
+const LOADING_MESSAGES = [
+  "Hmmm...",
+  "Thinking...",
+  "Calculating HNV...",
+  "Working on it...",
+  "Processing your request...",
+  "Consulting the knowledge base...",
+  "Analyzing data...",
+  "Almost there...",
+  "Crunching numbers...",
+  "Searching for answers...",
+  "Let me think about that...",
+  "One moment please...",
+  "Gathering information...",
+  "Running calculations...",
+  "Checking the database...",
+  "Formulating response...",
+  "Cross-referencing data...",
+  "Putting thoughts together...",
+  "Reading through documents...",
+  "Connecting the dots...",
+  "Preparing your answer...",
+  "Just a sec...",
+  "On it...",
+  "Diving deep...",
+  "Exploring possibilities...",
+  "Synthesizing information...",
+  "Building your response...",
+  "Hang tight...",
+  "Processing query...",
+  "Analyzing patterns...",
+];
+
 export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [currentThread, setCurrentThread] = useState<Thread | null>(null);
@@ -63,6 +97,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
@@ -103,6 +138,30 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Rotate loading messages while waiting for response
+  useEffect(() => {
+    if (!loading || isStreaming) {
+      setLoadingMessageIndex(0);
+      return;
+    }
+
+    // Start with a random message
+    setLoadingMessageIndex(Math.floor(Math.random() * LOADING_MESSAGES.length));
+
+    // Change message every 2-4 seconds (random interval for more natural feel)
+    const interval = setInterval(() => {
+      setLoadingMessageIndex(prev => {
+        let nextIndex;
+        do {
+          nextIndex = Math.floor(Math.random() * LOADING_MESSAGES.length);
+        } while (nextIndex === prev); // Ensure we get a different message
+        return nextIndex;
+      });
+    }, 2500 + Math.random() * 1500); // Random interval between 2.5-4 seconds
+
+    return () => clearInterval(interval);
+  }, [loading, isStreaming]);
 
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
@@ -775,17 +834,38 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               {loading && !isStreaming && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 mb-1">
                       <Bot className="w-4 h-4" />
-                      <span className="text-xs">AI Assistant</span>
+                      <span className="text-xs opacity-75">AI Assistant</span>
                     </div>
-                    <div className="flex items-center space-x-2 mt-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm">Thinking...</span>
+                    <div className="flex items-center space-x-2">
+                      <span
+                        className="text-sm text-gray-700 animate-breathe"
+                        style={{
+                          animation: 'breathe 2s ease-in-out infinite',
+                        }}
+                      >
+                        {LOADING_MESSAGES[loadingMessageIndex]}
+                      </span>
                     </div>
                   </div>
                 </div>
               )}
+
+              {/* CSS for breathing animation */}
+              <style>{`
+                @keyframes breathe {
+                  0%, 100% {
+                    opacity: 0.4;
+                  }
+                  50% {
+                    opacity: 1;
+                  }
+                }
+                .animate-breathe {
+                  animation: breathe 2s ease-in-out infinite;
+                }
+              `}</style>
 
               <div ref={messagesEndRef} />
             </div>
