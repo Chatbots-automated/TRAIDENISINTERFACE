@@ -12,7 +12,7 @@ import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
 interface ChatInterfaceProps {
-  user: AppUser;
+  user: AppUser;x
   projectId: string;
 }
 
