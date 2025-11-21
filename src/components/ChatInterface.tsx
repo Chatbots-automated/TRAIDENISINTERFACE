@@ -632,8 +632,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           </div>
         </div>
 
-        {/* Threads List */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Threads List - with max height to prevent infinite expansion */}
+        <div className="flex-1 overflow-y-auto max-h-[calc(100vh-200px)]">
           {threadsLoading ? (
             <div className="p-4 space-y-3">
               {[1, 2, 3].map(i => (
@@ -698,8 +698,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               </p>
             </div>
 
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            {/* Messages Area - with max height to prevent infinite expansion */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-280px)]">
               {messages.map((message) => (
                 <div
                   key={message.id}
