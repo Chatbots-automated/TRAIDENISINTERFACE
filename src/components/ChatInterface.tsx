@@ -680,6 +680,12 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       console.error('Error sending message:', error);
     } finally {
       setLoading(false);
+
+      // Reset to General tag after sending Commercial or Custom queries
+      // These are typically one-off specialized queries
+      if (currentQueryTag.tag !== '/General') {
+        setCurrentQueryTag(DEFAULT_QUERY_TAG);
+      }
     }
   };
 
