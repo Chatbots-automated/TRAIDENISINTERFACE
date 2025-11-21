@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, User, Activity, AlertCircle } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabaseAdmin } from '../lib/supabase';
 import type { AppUser } from '../types';
 
 interface LogsViewerProps {
@@ -41,7 +41,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
   const loadLogs = async () => {
     try {
       setLoading(true);
-      let query = supabase
+      let query = supabaseAdmin
         .from('application_logs')
         .select('*')
         .order('timestamp', { ascending: false })

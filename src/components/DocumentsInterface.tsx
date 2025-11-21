@@ -86,13 +86,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setError(null);
 
     try {
+      // Log upload start
+      await appLogger.logDocument({
+        action: 'upload_started',
+        userId: user.id,
+        userEmail: user.email,
+        filename: file.name,
+        fileSize: file.size,
+        metadata: { project_id: projectId, file_type: file.type }
+      });
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('project_id', projectId);
       formData.append('user_id', user.id);
 
       console.log('Uploading file:', file.name, 'to webhook...');
-      
+
       const response = await fetch('https://209f05431d92.ngrok-free.app/webhook/88b13b24-9857-49f4-a713-41b2964177f7', {
         method: 'POST',
         headers: {
@@ -102,11 +112,33 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       });
 
       if (!response.ok) {
+        await appLogger.logDocument({
+          action: 'upload_failed',
+          userId: user.id,
+          userEmail: user.email,
+          filename: file.name,
+          fileSize: file.size,
+          level: 'error',
+          metadata: {
+            project_id: projectId,
+            error: `${response.status} ${response.statusText}`
+          }
+        });
         throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
       console.log('Upload result:', result);
+
+      // Log upload success
+      await appLogger.logDocument({
+        action: 'upload_success',
+        userId: user.id,
+        userEmail: user.email,
+        filename: file.name,
+        fileSize: file.size,
+        metadata: { project_id: projectId, result }
+      });
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -114,6 +146,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     } catch (error: any) {
       console.error('Upload error:', error);
       setError(`Upload failed: ${error.message}`);
+
+      await appLogger.logError({
+        action: 'document_upload_error',
+        error,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: {
+          filename: file.name,
+          file_size: file.size,
+          project_id: projectId
+        }
+      });
     } finally {
       setUploadingFile(false);
       // Reset file input
@@ -146,12 +190,27 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       const { error } = await updateDocument(editingDoc.id, editingDoc.content, metadata);
       if (error) throw error;
 
+      await appLogger.logDocument({
+        action: 'update',
+        userId: user.id,
+        userEmail: user.email,
+        documentId: editingDoc.id,
+        metadata: { content_length: editingDoc.content.length }
+      });
+
       setEditingDoc(null);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
       await loadDocuments();
     } catch (error: any) {
       setError(error.message);
+      await appLogger.logError({
+        action: 'document_update_error',
+        error: error.message,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: { document_id: editingDoc.id }
+      });
     } finally {
       setSaving(false);
     }
@@ -161,11 +220,29 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     if (!confirm('Are you sure you want to delete this document?')) return;
 
     try {
+      const doc = documents.find(d => d.id === id);
       const { error } = await deleteDocument(id);
       if (error) throw error;
+
+      await appLogger.logDocument({
+        action: 'delete',
+        userId: user.id,
+        userEmail: user.email,
+        documentId: id,
+        filename: doc?.metadata?.filename,
+        metadata: { document_metadata: doc?.metadata }
+      });
+
       await loadDocuments();
     } catch (error: any) {
       setError(error.message);
+      await appLogger.logError({
+        action: 'document_delete_error',
+        error: error.message,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: { document_id: id }
+      });
     }
   };
 

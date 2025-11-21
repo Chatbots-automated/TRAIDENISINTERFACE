@@ -131,14 +131,23 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       
       const title = `New Chat ${new Date().toLocaleString()}`;
       const { data: threadId, error } = await createChatThread(projectId, title, user.email || '');
-      
+
       if (error) {
         console.error('Error creating thread:', error);
         return;
       }
 
       console.log('Created thread with ID:', threadId);
-      
+
+      // Log thread creation
+      await appLogger.logChat({
+        action: 'thread_created',
+        userId: user.id,
+        userEmail: user.email,
+        threadId: threadId || 'unknown',
+        metadata: { title, project_id: projectId }
+      });
+
       // Reload threads
       await loadThreads();
       
@@ -204,6 +213,17 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       if (userMessageError) {
         console.error('Error saving user message:', userMessageError);
       }
+
+      // Log user message sent
+      await appLogger.logChat({
+        action: 'message_sent',
+        userId: user.id,
+        userEmail: user.email,
+        threadId: currentThread.id,
+        messagePreview: pendingMessage,
+        queryType: queryType || undefined,
+        metadata: { message_length: pendingMessage.length }
+      });
 
       // Send to webhook with streaming
       try {
