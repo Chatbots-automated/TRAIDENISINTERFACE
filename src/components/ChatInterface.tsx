@@ -414,6 +414,9 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                       } else if (parsed.type === 'message' && parsed.data) {
                         textContent = parsed.data;
                         console.log('  ✓ Found n8n message with data');
+                      } else if (parsed.type === 'item' && parsed.content) {
+                        textContent = parsed.content;
+                        console.log('  ✓ Found n8n item with content');
                       } else {
                         console.log('  ⚠️ No recognized text field in JSON');
                         console.log('  💡 Full JSON:', JSON.stringify(parsed));
@@ -463,6 +466,9 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                     } else if (parsed.type === 'message' && parsed.data) {
                       textContent = parsed.data;
                       console.log('  ✓ Found n8n message with data');
+                    } else if (parsed.type === 'item' && parsed.content) {
+                      textContent = parsed.content;
+                      console.log('  ✓ Found n8n item with content');
                     } else {
                       console.log('  ⚠️ No recognized text field in JSON');
                       console.log('  💡 Full JSON:', JSON.stringify(parsed));
