@@ -265,6 +265,14 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           })
         });
 
+        // DEBUG: Log response details
+        console.log('=== WEBHOOK RESPONSE DEBUG ===');
+        console.log('Status:', webhookResponse.status);
+        console.log('Status Text:', webhookResponse.statusText);
+        console.log('Headers:', Object.fromEntries(webhookResponse.headers));
+        console.log('Body Type:', webhookResponse.body?.constructor.name);
+        console.log('Response OK:', webhookResponse.ok);
+
         const responseTimeMs = Date.now() - startTime;
 
         if (!webhookResponse.ok) {
@@ -301,52 +309,78 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         const decoder = new TextDecoder();
         let fullResponse = '';
 
+        console.log('=== STREAM READING DEBUG ===');
+        console.log('Reader available:', !!reader);
+
+        if (!reader) {
+          console.error('❌ No reader available - response body is null');
+          throw new Error('Response body is not readable');
+        }
+
         if (reader) {
           try {
+            let chunkCount = 0;
             while (true) {
               const { done, value } = await reader.read();
 
               if (done) {
-                console.log('Stream complete');
+                console.log('✅ Stream complete - Total chunks:', chunkCount);
+                console.log('Final response length:', fullResponse.length);
                 break;
               }
 
+              chunkCount++;
               const chunk = decoder.decode(value, { stream: true });
-              console.log('Received chunk:', chunk);
+              console.log(`📦 Chunk #${chunkCount} (${chunk.length} bytes):`, chunk.substring(0, 100));
 
               // Parse the chunk - handle both SSE format and plain text
               const lines = chunk.split('\n');
+              console.log(`  → Split into ${lines.length} lines`);
 
               for (const line of lines) {
                 if (line.startsWith('data: ')) {
                   // SSE format
                   const data = line.slice(6).trim();
+                  console.log('  📨 SSE data:', data.substring(0, 50));
                   if (data && data !== '[DONE]') {
                     try {
                       const parsed = JSON.parse(data);
+                      console.log('  ✓ Parsed JSON:', parsed);
                       if (parsed.response) {
                         fullResponse += parsed.response;
                         setStreamingContent(fullResponse);
+                        console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
+                      } else {
+                        console.log('  ⚠️ No "response" field in parsed JSON');
                       }
                     } catch (e) {
                       // If not JSON, treat as plain text
+                      console.log('  ℹ️ Not JSON, treating as plain text');
                       fullResponse += data;
                       setStreamingContent(fullResponse);
                     }
                   }
                 } else if (line.trim() && !line.startsWith(':')) {
                   // Plain text or newline-delimited JSON
+                  console.log('  📝 Plain/JSON line:', line.substring(0, 50));
                   try {
                     const parsed = JSON.parse(line);
+                    console.log('  ✓ Parsed JSON:', parsed);
                     if (parsed.response) {
                       fullResponse += parsed.response;
                       setStreamingContent(fullResponse);
+                      console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
+                    } else {
+                      console.log('  ⚠️ No "response" field in parsed JSON');
                     }
                   } catch (e) {
                     // Treat as plain text chunk
+                    console.log('  ℹ️ Not JSON, treating as plain text');
                     fullResponse += line;
                     setStreamingContent(fullResponse);
                   }
+                } else if (line.trim()) {
+                  console.log('  🔇 Skipped line (comment):', line.substring(0, 30));
                 }
               }
             }
