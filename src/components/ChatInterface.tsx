@@ -5,7 +5,6 @@ import {
   MessageSquare,
   Bot,
   User as UserIcon,
-  Loader2,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
