@@ -35,7 +35,7 @@ export default function Layout({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
+    <div className="h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
