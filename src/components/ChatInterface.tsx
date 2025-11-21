@@ -346,12 +346,41 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                     try {
                       const parsed = JSON.parse(data);
                       console.log('  ✓ Parsed JSON:', parsed);
+                      console.log('  📋 Available fields:', Object.keys(parsed));
+
+                      // Handle multiple possible response formats
+                      let textContent = null;
+
                       if (parsed.response) {
-                        fullResponse += parsed.response;
+                        textContent = parsed.response;
+                        console.log('  ✓ Found "response" field');
+                      } else if (parsed.data) {
+                        textContent = parsed.data;
+                        console.log('  ✓ Found "data" field');
+                      } else if (parsed.message) {
+                        textContent = parsed.message;
+                        console.log('  ✓ Found "message" field');
+                      } else if (parsed.output) {
+                        textContent = parsed.output;
+                        console.log('  ✓ Found "output" field');
+                      } else if (parsed.text) {
+                        textContent = parsed.text;
+                        console.log('  ✓ Found "text" field');
+                      } else if (parsed.type === 'chunk' && parsed.data) {
+                        textContent = parsed.data;
+                        console.log('  ✓ Found n8n chunk with data');
+                      } else if (parsed.type === 'message' && parsed.data) {
+                        textContent = parsed.data;
+                        console.log('  ✓ Found n8n message with data');
+                      } else {
+                        console.log('  ⚠️ No recognized text field in JSON');
+                        console.log('  💡 Full JSON:', JSON.stringify(parsed));
+                      }
+
+                      if (textContent) {
+                        fullResponse += textContent;
                         setStreamingContent(fullResponse);
                         console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
-                      } else {
-                        console.log('  ⚠️ No "response" field in parsed JSON');
                       }
                     } catch (e) {
                       // If not JSON, treat as plain text
@@ -366,12 +395,41 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                   try {
                     const parsed = JSON.parse(line);
                     console.log('  ✓ Parsed JSON:', parsed);
+                    console.log('  📋 Available fields:', Object.keys(parsed));
+
+                    // Handle multiple possible response formats from n8n
+                    let textContent = null;
+
                     if (parsed.response) {
-                      fullResponse += parsed.response;
+                      textContent = parsed.response;
+                      console.log('  ✓ Found "response" field');
+                    } else if (parsed.data) {
+                      textContent = parsed.data;
+                      console.log('  ✓ Found "data" field');
+                    } else if (parsed.message) {
+                      textContent = parsed.message;
+                      console.log('  ✓ Found "message" field');
+                    } else if (parsed.output) {
+                      textContent = parsed.output;
+                      console.log('  ✓ Found "output" field');
+                    } else if (parsed.text) {
+                      textContent = parsed.text;
+                      console.log('  ✓ Found "text" field');
+                    } else if (parsed.type === 'chunk' && parsed.data) {
+                      textContent = parsed.data;
+                      console.log('  ✓ Found n8n chunk with data');
+                    } else if (parsed.type === 'message' && parsed.data) {
+                      textContent = parsed.data;
+                      console.log('  ✓ Found n8n message with data');
+                    } else {
+                      console.log('  ⚠️ No recognized text field in JSON');
+                      console.log('  💡 Full JSON:', JSON.stringify(parsed));
+                    }
+
+                    if (textContent) {
+                      fullResponse += textContent;
                       setStreamingContent(fullResponse);
                       console.log('  ✓ Added to fullResponse, new length:', fullResponse.length);
-                    } else {
-                      console.log('  ⚠️ No "response" field in parsed JSON');
                     }
                   } catch (e) {
                     // Treat as plain text chunk
