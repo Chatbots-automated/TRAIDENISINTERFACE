@@ -189,8 +189,14 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Show query type tooltip for first-time users (only in naujokas mode)
+  // Show query type tooltip for users in naujokas mode
   useEffect(() => {
+    // Reset tooltip state when naujokas mode changes
+    if (!naujokasMode) {
+      setShowQueryTooltip(false);
+      return;
+    }
+
     const hasSeenTooltip = localStorage.getItem(QUERY_TOOLTIP_SHOWN_KEY);
     if (!hasSeenTooltip && currentThread && naujokasMode) {
       // Show tooltip after a short delay to let the UI settle
@@ -203,7 +209,14 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
   // Show commercial response spotlight when buttons appear (naujokas mode)
   useEffect(() => {
-    if (!naujokasMode || !currentThread) return;
+    // Hide spotlight when naujokas mode is turned off
+    if (!naujokasMode) {
+      setShowCommercialSpotlight(false);
+      setSpotlightMessageId(null);
+      return;
+    }
+
+    if (!currentThread) return;
 
     // Find any message that has the accept/reject buttons visible
     const commercialMessage = messages.find(

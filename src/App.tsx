@@ -86,7 +86,14 @@ function App() {
 
   // Toggle naujokas mode
   const toggleNaujokasMode = useCallback(() => {
-    setNaujokasMode(prev => !prev);
+    setNaujokasMode(prev => {
+      const newValue = !prev;
+      // When turning ON naujokas mode, reset the "has seen" flags so tooltips show again
+      if (newValue) {
+        localStorage.removeItem('traidenis_query_tooltip_shown');
+      }
+      return newValue;
+    });
   }, []);
 
   const checkUser = async () => {
