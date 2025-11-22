@@ -62,7 +62,9 @@ export default function CommercialOfferPanel({
           commercial_offer: {
             components: offer.components,
             tech_description: offer.techDescription,
-            pricing: offer.pricing,
+            economy_tier: offer.economyTier,
+            midi_tier: offer.midiTier,
+            maxi_tier: offer.maxiTier,
           },
         }),
       });
@@ -157,19 +159,54 @@ export default function CommercialOfferPanel({
                 />
               </div>
 
-              {/* Pricing Section */}
+              {/* Economy Tier Section */}
               <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Pricing (Kainos)
+                <label className="block text-sm font-semibold text-gray-700 flex items-center">
+                  <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded mr-2">ECONOMY</span>
+                  Ekonominis variantas
                 </label>
                 <textarea
-                  value={offer.pricing}
-                  onChange={(e) => handleFieldChange('pricing', e.target.value)}
+                  value={offer.economyTier}
+                  onChange={(e) => handleFieldChange('economyTier', e.target.value)}
                   disabled={isFilling}
-                  className={`w-full h-40 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
+                  className={`w-full h-32 p-3 border border-green-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
                     isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
                   }`}
-                  placeholder="Pricing tiers will appear here..."
+                  placeholder="Economy tier pricing will appear here..."
+                />
+              </div>
+
+              {/* Midi Tier Section */}
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700 flex items-center">
+                  <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded mr-2">MIDI</span>
+                  Vidutinis variantas
+                </label>
+                <textarea
+                  value={offer.midiTier}
+                  onChange={(e) => handleFieldChange('midiTier', e.target.value)}
+                  disabled={isFilling}
+                  className={`w-full h-32 p-3 border border-blue-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
+                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+                  }`}
+                  placeholder="Midi tier pricing will appear here..."
+                />
+              </div>
+
+              {/* Maxi Tier Section */}
+              <div className="space-y-2">
+                <label className="block text-sm font-semibold text-gray-700 flex items-center">
+                  <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded mr-2">MAXI</span>
+                  Maksimalus variantas
+                </label>
+                <textarea
+                  value={offer.maxiTier}
+                  onChange={(e) => handleFieldChange('maxiTier', e.target.value)}
+                  disabled={isFilling}
+                  className={`w-full h-32 p-3 border border-purple-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
+                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+                  }`}
+                  placeholder="Maxi tier pricing will appear here..."
                 />
               </div>
             </>

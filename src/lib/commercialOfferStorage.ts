@@ -9,7 +9,9 @@ const MAX_ENTRIES = 12;
 export interface CommercialOffer {
   components: string;
   techDescription: string;
-  pricing: string;
+  economyTier: string;
+  midiTier: string;
+  maxiTier: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -151,15 +153,17 @@ export function parseAgentResponse(response: string): Omit<CommercialOffer, 'cre
   // Default empty values
   let components = '';
   let techDescription = '';
-  let pricing = '';
+  let economyTier = '';
+  let midiTier = '';
+  let maxiTier = '';
 
   // Try to extract sections from the response
-  // Looking for patterns like "Komponentu sarasas:" or "Komponentų sąrašas:"
   const lines = response.split('\n');
   let currentSection = '';
 
   for (const line of lines) {
-    const lowerLine = line.toLowerCase().trim();
+    const trimmedLine = line.trim();
+    const lowerLine = trimmedLine.toLowerCase();
 
     // Detect section headers
     if (lowerLine.includes('komponent') && (lowerLine.includes('saras') || lowerLine.includes('sąraš'))) {
@@ -168,8 +172,15 @@ export function parseAgentResponse(response: string): Omit<CommercialOffer, 'cre
     } else if (lowerLine.includes('technolog') && (lowerLine.includes('apras') || lowerLine.includes('aprašym'))) {
       currentSection = 'techDescription';
       continue;
-    } else if (lowerLine.includes('pigiau') || lowerLine.includes('standartin') || lowerLine.includes('brangiau') || lowerLine.includes('kain')) {
-      currentSection = 'pricing';
+    } else if (trimmedLine === '-ECONOMY-' || lowerLine === '-economy-') {
+      currentSection = 'economyTier';
+      continue;
+    } else if (trimmedLine === '-MIDI-' || lowerLine === '-midi-') {
+      currentSection = 'midiTier';
+      continue;
+    } else if (trimmedLine === '-MAXI-' || lowerLine === '-maxi-') {
+      currentSection = 'maxiTier';
+      continue;
     }
 
     // Add line to appropriate section
@@ -177,20 +188,26 @@ export function parseAgentResponse(response: string): Omit<CommercialOffer, 'cre
       components += line + '\n';
     } else if (currentSection === 'techDescription') {
       techDescription += line + '\n';
-    } else if (currentSection === 'pricing') {
-      pricing += line + '\n';
+    } else if (currentSection === 'economyTier') {
+      economyTier += line + '\n';
+    } else if (currentSection === 'midiTier') {
+      midiTier += line + '\n';
+    } else if (currentSection === 'maxiTier') {
+      maxiTier += line + '\n';
     }
   }
 
   // If parsing failed, put everything in components as fallback
-  if (!components && !techDescription && !pricing) {
+  if (!components && !techDescription && !economyTier && !midiTier && !maxiTier) {
     components = response;
   }
 
   return {
     components: components.trim(),
     techDescription: techDescription.trim(),
-    pricing: pricing.trim(),
+    economyTier: economyTier.trim(),
+    midiTier: midiTier.trim(),
+    maxiTier: maxiTier.trim(),
   };
 }
 
