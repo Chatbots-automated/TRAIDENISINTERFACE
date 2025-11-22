@@ -345,9 +345,8 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
         const streamingMessageId = (Date.now() + 1).toString();
         streamingMessageIdRef.current = streamingMessageId;
 
-        // Start streaming
-        setIsStreaming(true);
-        setStreamingContent('');
+        // Note: Don't set isStreaming=true yet - wait until we have content
+        // This keeps the loading messages visible while waiting for the response
 
         const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
         const startTime = Date.now();
@@ -431,6 +430,10 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
         const responseText = await webhookResponse.text();
         console.log('✅ Received response text, length:', responseText.length);
         console.log('📄 First 200 chars:', responseText.substring(0, 200));
+
+        // Now that we have the response, switch from loading to streaming mode
+        setIsStreaming(true);
+        setStreamingContent('');
 
         // Try to parse as single JSON object
         if (contentType.includes('application/json')) {
