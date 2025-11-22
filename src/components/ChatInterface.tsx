@@ -100,6 +100,22 @@ const LOADING_MESSAGES = [
   "Analyzing patterns...",
 ];
 
+// Extract first name from email (e.g., "vitalijus.smith@example.com" -> "Vitalijus")
+const getDisplayName = (authorRef?: string): string => {
+  if (!authorRef || authorRef === 'ai-assistant' || authorRef === 'system') {
+    return 'Traidenis';
+  }
+
+  // Get the part before @ symbol
+  const emailName = authorRef.split('@')[0];
+
+  // Get first part before any dots or underscores (first name)
+  const firstName = emailName.split(/[._-]/)[0];
+
+  // Capitalize first letter
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+};
+
 export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -759,7 +775,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                         <Bot className="w-4 h-4" />
                       )}
                       <span className="text-xs opacity-75">
-                        {message.role === 'user' ? 'You' : 'Traidenis'}
+                        {message.role === 'user' ? getDisplayName(message.author_ref) : 'Traidenis'}
                       </span>
                       {message.role === 'user' && message.queryType && (
                         <span className="text-xs opacity-75 bg-white/20 px-1.5 py-0.5 rounded">
