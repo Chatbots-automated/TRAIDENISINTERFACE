@@ -38,6 +38,7 @@ interface ChatInterfaceProps {
   onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
   onFirstCommercialAccept?: () => void;
   onThreadsUpdate?: () => void;
+  naujokasMode?: boolean;
 }
 
 interface Message {
@@ -137,13 +138,15 @@ const getDisplayName = (authorName?: string, authorRef?: string): string => {
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 };
 
-export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate }: ChatInterfaceProps) {
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, naujokasMode = true }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentQueryTag, setCurrentQueryTag] = useState<QueryTagConfig>(DEFAULT_QUERY_TAG);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [showQueryTooltip, setShowQueryTooltip] = useState(false);
+  const [showCommercialSpotlight, setShowCommercialSpotlight] = useState(false);
+  const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -186,17 +189,39 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Show query type tooltip for first-time users
+  // Show query type tooltip for first-time users (only in naujokas mode)
   useEffect(() => {
     const hasSeenTooltip = localStorage.getItem(QUERY_TOOLTIP_SHOWN_KEY);
-    if (!hasSeenTooltip && currentThread) {
+    if (!hasSeenTooltip && currentThread && naujokasMode) {
       // Show tooltip after a short delay to let the UI settle
       const timer = setTimeout(() => {
         setShowQueryTooltip(true);
       }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [currentThread]);
+  }, [currentThread, naujokasMode]);
+
+  // Show commercial response spotlight when buttons appear (naujokas mode)
+  useEffect(() => {
+    if (!naujokasMode || !currentThread) return;
+
+    // Find any message that has the accept/reject buttons visible
+    const commercialMessage = messages.find(
+      (msg) =>
+        msg.role === 'assistant' &&
+        isLatestCommercialMessage(currentThread.id, msg.id) &&
+        !isMessageAccepted(currentThread.id, msg.id)
+    );
+
+    if (commercialMessage && !spotlightMessageId) {
+      // Show spotlight after a brief delay
+      const timer = setTimeout(() => {
+        setSpotlightMessageId(commercialMessage.id);
+        setShowCommercialSpotlight(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, currentThread, naujokasMode, spotlightMessageId]);
 
   // Rotate loading messages while waiting for response
   useEffect(() => {
@@ -727,6 +752,12 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     localStorage.setItem(QUERY_TOOLTIP_SHOWN_KEY, 'true');
   };
 
+  // Dismiss the commercial spotlight
+  const dismissCommercialSpotlight = () => {
+    setShowCommercialSpotlight(false);
+    setSpotlightMessageId(null);
+  };
+
   // Handle tag selection from dropdown
   const handleTagSelect = (tag: QueryTagConfig) => {
     setCurrentQueryTag(tag);
@@ -742,6 +773,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   // Handle accepting a commercial offer response
   const handleAcceptOffer = (messageId: string, content: string) => {
     if (!currentThread) return;
+
+    // Dismiss spotlight if showing
+    dismissCommercialSpotlight();
 
     // Check if this is the first commercial accept for this thread
     const isFirstAccept = !hasAcceptedMessages(currentThread.id);
@@ -776,6 +810,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
   // Handle rejecting a commercial offer response
   const handleRejectOffer = () => {
+    // Dismiss spotlight if showing
+    dismissCommercialSpotlight();
+
     // Pre-fill the input with a feedback prompt
     // The buttons will disappear when a new /Commercial response arrives
     setNewMessage('Please regenerate the commercial offer with the following changes: ');
@@ -785,7 +822,15 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white relative">
+      {/* Naujokas spotlight overlay - dims everything except spotlighted element */}
+      {showCommercialSpotlight && (
+        <div
+          className="fixed inset-0 bg-black/30 z-40 pointer-events-auto"
+          onClick={dismissCommercialSpotlight}
+        />
+      )}
+
       {/* Chat Area */}
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
@@ -884,21 +929,51 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                        currentThread &&
                        isLatestCommercialMessage(currentThread.id, message.id) &&
                        !isMessageAccepted(currentThread.id, message.id) && (
-                        <div className="flex items-center space-x-1 ml-2">
+                        <div className={`flex items-center space-x-1 ml-2 relative ${
+                          showCommercialSpotlight && spotlightMessageId === message.id
+                            ? 'z-50'
+                            : ''
+                        }`}>
                           <button
                             onClick={() => handleAcceptOffer(message.id, message.content)}
-                            className="p-1 rounded hover:bg-green-200 text-green-600 transition-colors"
+                            className={`p-1 rounded hover:bg-green-200 text-green-600 transition-colors ${
+                              showCommercialSpotlight && spotlightMessageId === message.id
+                                ? 'bg-green-100 ring-2 ring-green-400 ring-offset-1'
+                                : ''
+                            }`}
                             title="Accept this commercial offer"
                           >
                             <Check className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleRejectOffer()}
-                            className="p-1 rounded hover:bg-red-200 text-red-600 transition-colors"
+                            className={`p-1 rounded hover:bg-red-200 text-red-600 transition-colors ${
+                              showCommercialSpotlight && spotlightMessageId === message.id
+                                ? 'bg-red-100 ring-2 ring-red-400 ring-offset-1'
+                                : ''
+                            }`}
                             title="Reject and request changes"
                           >
                             <X className="w-4 h-4" />
                           </button>
+                          {/* Naujokas spotlight tooltip */}
+                          {showCommercialSpotlight && spotlightMessageId === message.id && (
+                            <div className="absolute bottom-full right-0 mb-2 z-50">
+                              <div className="bg-gray-900 text-white text-xs px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                                <div className="flex items-center space-x-2">
+                                  <span>✓ Priimti pasiūlymą | ✕ Koreguoti</span>
+                                  <button
+                                    onClick={dismissCommercialSpotlight}
+                                    className="text-gray-400 hover:text-white ml-1"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                {/* Arrow pointing down */}
+                                <div className="absolute top-full right-4 w-0 h-0 border-l-6 border-r-6 border-t-6 border-l-transparent border-r-transparent border-t-gray-900" />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                       {/* Show accepted indicator */}
@@ -1001,8 +1076,8 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     }}
                     onMouseLeave={() => setShowTagDropdown(false)}
                   >
-                    {/* First-time user tooltip */}
-                    {showQueryTooltip && (
+                    {/* First-time user tooltip (only in naujokas mode) */}
+                    {showQueryTooltip && naujokasMode && (
                       <div className="absolute bottom-full left-0 mb-2 z-50 animate-bounce-subtle">
                         <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
                           <div className="flex items-center space-x-2">

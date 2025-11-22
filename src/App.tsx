@@ -24,6 +24,7 @@ interface Thread {
 const STORAGE_KEYS = {
   VIEW_MODE: 'traidenis_view_mode',
   CURRENT_THREAD_ID: 'traidenis_current_thread_id',
+  NAUJOKAS_MODE: 'traidenis_naujokas_mode',
 };
 
 function App() {
@@ -52,6 +53,16 @@ function App() {
   const [hasOffer, setHasOffer] = useState(false);
   const [showDocGlow, setShowDocGlow] = useState(false);
 
+  // Naujokas (newbie) mode - shows helpful tooltips and guides
+  const [naujokasMode, setNaujokasMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.NAUJOKAS_MODE);
+    // Default to true for new users (no saved preference)
+    return saved === null ? true : saved === 'true';
+  });
+
+  // Track if doc icon tooltip should be shown (after first commercial accept)
+  const [showDocIconTooltip, setShowDocIconTooltip] = useState(false);
+
   useEffect(() => {
     checkUser();
   }, []);
@@ -67,6 +78,16 @@ function App() {
       localStorage.setItem(STORAGE_KEYS.CURRENT_THREAD_ID, currentThread.id);
     }
   }, [currentThread]);
+
+  // Save naujokas mode to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.NAUJOKAS_MODE, String(naujokasMode));
+  }, [naujokasMode]);
+
+  // Toggle naujokas mode
+  const toggleNaujokasMode = useCallback(() => {
+    setNaujokasMode(prev => !prev);
+  }, []);
 
   const checkUser = async () => {
     try {
@@ -225,14 +246,18 @@ function App() {
     setHasOffer(offerExists);
   };
 
-  // Handle first commercial offer accept - trigger doc icon glow
+  // Handle first commercial offer accept - trigger doc icon glow and tooltip
   const handleFirstCommercialAccept = useCallback(() => {
     setShowDocGlow(true);
+    // Show tooltip pointing to doc icon if in naujokas mode
+    if (naujokasMode) {
+      setShowDocIconTooltip(true);
+    }
     // Clear glow after 5 seconds
     setTimeout(() => {
       setShowDocGlow(false);
     }, 5000);
-  }, []);
+  }, [naujokasMode]);
 
   // Handle opening commercial offer panel
   const handleOpenCommercialPanel = () => {
@@ -287,6 +312,7 @@ function App() {
             onCommercialOfferUpdate={handleCommercialOfferUpdate}
             onFirstCommercialAccept={handleFirstCommercialAccept}
             onThreadsUpdate={loadThreads}
+            naujokasMode={naujokasMode}
           />
         );
       case 'documents':
@@ -310,6 +336,8 @@ function App() {
       onCreateThread={handleCreateThread}
       onDeleteThread={handleDeleteThread}
       onRenameThread={handleRenameThread}
+      naujokasMode={naujokasMode}
+      onToggleNaujokas={toggleNaujokasMode}
     >
       <div className="flex flex-col h-full">
         {/* Navigation Bar */}
@@ -363,16 +391,17 @@ function App() {
           </div>
 
           {/* Right: Commercial Offer Icon */}
-          <div className="flex items-center space-x-1 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-1">
-            <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-green-600">
-              <MessageSquare className="w-4 h-4" />
-            </button>
+          <div className="flex items-center relative">
             <button
-              onClick={handleOpenCommercialPanel}
-              className={`p-2 rounded-md hover:bg-white hover:shadow-sm transition-all relative ${
+              onClick={() => {
+                handleOpenCommercialPanel();
+                // Dismiss tooltip when user clicks
+                setShowDocIconTooltip(false);
+              }}
+              className={`p-2 rounded-lg hover:bg-white hover:shadow-sm transition-all relative ${
                 hasOffer
-                  ? 'text-blue-600'
-                  : 'text-gray-400'
+                  ? 'text-blue-600 bg-gradient-to-r from-green-100 to-blue-100'
+                  : 'text-gray-400 bg-gray-100'
               } ${
                 showDocGlow
                   ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1 shadow-lg shadow-purple-300/50'
@@ -388,6 +417,27 @@ function App() {
                 </span>
               )}
             </button>
+            {/* Naujokas tooltip pointing to doc icon */}
+            {showDocIconTooltip && naujokasMode && (
+              <div className="absolute top-full right-0 mt-2 z-50 animate-bounce">
+                <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                  <div className="flex items-center space-x-2">
+                    <span>Pasiūlymas išsaugotas! Spauskite čia peržiūrėti</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDocIconTooltip(false);
+                      }}
+                      className="text-gray-400 hover:text-white ml-1"
+                    >
+                      <span className="text-xs">✕</span>
+                    </button>
+                  </div>
+                  {/* Arrow pointing up */}
+                  <div className="absolute bottom-full right-4 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-gray-900" />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

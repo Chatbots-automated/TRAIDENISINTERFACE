@@ -35,6 +35,8 @@ interface LayoutProps {
   onCreateThread?: () => void;
   onDeleteThread?: (threadId: string) => void;
   onRenameThread?: (threadId: string, newTitle: string) => void;
+  naujokasMode?: boolean;
+  onToggleNaujokas?: () => void;
 }
 
 export default function Layout({
@@ -47,7 +49,9 @@ export default function Layout({
   onSelectThread,
   onCreateThread,
   onDeleteThread,
-  onRenameThread
+  onRenameThread,
+  naujokasMode = true,
+  onToggleNaujokas
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -268,6 +272,28 @@ export default function Layout({
           {/* Footer */}
           <div className="p-4 border-t">
             <div className="space-y-1">
+              {/* Naujokas Mode Toggle */}
+              <div
+                onClick={onToggleNaujokas}
+                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 text-gray-700 cursor-pointer transition-colors"
+              >
+                <div className="flex items-center space-x-3">
+                  <span className="text-base">🎓</span>
+                  <span className="text-sm">Naujokas</span>
+                </div>
+                {/* Toggle Switch */}
+                <div
+                  className={`relative w-10 h-5 rounded-full transition-colors ${
+                    naujokasMode ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
+                >
+                  <div
+                    className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                      naujokasMode ? 'translate-x-5' : 'translate-x-0.5'
+                    }`}
+                  />
+                </div>
+              </div>
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 text-gray-700"
