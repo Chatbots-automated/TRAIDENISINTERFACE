@@ -63,7 +63,7 @@ export default function Layout({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
+    <div className="h-screen overflow-hidden bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
@@ -75,10 +75,10 @@ export default function Layout({
       {/* Sidebar */}
       <div className={`
         fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
-        lg:translate-x-0 lg:static lg:inset-0
+        lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b">
             <div className="flex items-center space-x-3">
@@ -118,8 +118,8 @@ export default function Layout({
           </div>
 
           {/* Chat History */}
-          <div className="flex-1 p-4 flex flex-col min-h-0">
-            <div className="flex items-center justify-between mb-3">
+          <div className="flex-1 p-4 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h2 className="text-sm font-semibold text-green-700">Chat History</h2>
               <button
                 onClick={onCreateThread}
@@ -136,7 +136,7 @@ export default function Layout({
             </div>
 
             {/* Threads List */}
-            <div className="flex-1 overflow-y-auto space-y-1">
+            <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
               {threadsLoading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map(i => (
