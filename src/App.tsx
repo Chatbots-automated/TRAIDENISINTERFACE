@@ -20,18 +20,32 @@ interface Thread {
   created_at: string;
 }
 
+// localStorage keys for persistence
+const STORAGE_KEYS = {
+  VIEW_MODE: 'traidenis_view_mode',
+  CURRENT_THREAD_ID: 'traidenis_current_thread_id',
+};
+
 function App() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [projectId, setProjectId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>('chat');
+
+  // Initialize viewMode from localStorage
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.VIEW_MODE);
+    return (saved as ViewMode) || 'chat';
+  });
 
   // Thread management state (moved from ChatInterface)
   const [threads, setThreads] = useState<Thread[]>([]);
   const [currentThread, setCurrentThread] = useState<Thread | null>(null);
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [creatingThread, setCreatingThread] = useState(false);
+  const [restoredThreadId] = useState<string | null>(() => {
+    return localStorage.getItem(STORAGE_KEYS.CURRENT_THREAD_ID);
+  });
 
   // Commercial offer panel state
   const [commercialPanelOpen, setCommercialPanelOpen] = useState(false);
@@ -41,6 +55,18 @@ function App() {
   useEffect(() => {
     checkUser();
   }, []);
+
+  // Save viewMode to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.VIEW_MODE, viewMode);
+  }, [viewMode]);
+
+  // Save currentThread ID to localStorage when it changes
+  useEffect(() => {
+    if (currentThread) {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_THREAD_ID, currentThread.id);
+    }
+  }, [currentThread]);
 
   const checkUser = async () => {
     try {
@@ -87,16 +113,21 @@ function App() {
 
       setThreads(data || []);
 
-      // Auto-select first thread if none selected
+      // Try to restore saved thread, or auto-select first thread
       if (!currentThread && data && data.length > 0) {
-        setCurrentThread(data[0]);
+        // Check if we have a saved thread ID to restore
+        const savedThread = restoredThreadId
+          ? data.find((t: Thread) => t.id === restoredThreadId)
+          : null;
+
+        setCurrentThread(savedThread || data[0]);
       }
     } catch (error) {
       console.error('Error loading threads:', error);
     } finally {
       setThreadsLoading(false);
     }
-  }, [projectId, currentThread]);
+  }, [projectId, currentThread, restoredThreadId]);
 
   // Load threads when projectId is set
   useEffect(() => {
