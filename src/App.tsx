@@ -5,6 +5,8 @@ import ChatInterface from './components/ChatInterface';
 import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
 import AuthForm from './components/AuthForm';
+import CommercialOfferPanel from './components/CommercialOfferPanel';
+import { hasCommercialOffer } from './lib/commercialOfferStorage';
 import { MessageSquare, FileText, Users } from 'lucide-react';
 import type { AppUser } from './types';
 
@@ -16,6 +18,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
+
+  // Commercial offer panel state
+  const [commercialPanelOpen, setCommercialPanelOpen] = useState(false);
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
+  const [hasOffer, setHasOffer] = useState(false);
 
   useEffect(() => {
     checkUser();
@@ -50,6 +57,30 @@ function App() {
     checkUser();
   };
 
+  // Handle updates from ChatInterface about commercial offers
+  const handleCommercialOfferUpdate = (threadId: string, offerExists: boolean) => {
+    setCurrentThreadId(threadId);
+    setHasOffer(offerExists);
+  };
+
+  // Handle thread changes from ChatInterface
+  const handleThreadChange = (threadId: string | null) => {
+    setCurrentThreadId(threadId);
+    // Check if this thread has a commercial offer
+    if (threadId) {
+      setHasOffer(hasCommercialOffer(threadId));
+    } else {
+      setHasOffer(false);
+    }
+  };
+
+  // Handle opening commercial offer panel
+  const handleOpenCommercialPanel = () => {
+    if (currentThreadId) {
+      setCommercialPanelOpen(true);
+    }
+  };
+
   if (initialLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex items-center justify-center">
@@ -79,7 +110,14 @@ function App() {
   const renderContent = () => {
     switch (viewMode) {
       case 'chat':
-        return <ChatInterface user={user} projectId={projectId} />;
+        return (
+          <ChatInterface
+            user={user}
+            projectId={projectId}
+            onCommercialOfferUpdate={handleCommercialOfferUpdate}
+            onThreadChange={handleThreadChange}
+          />
+        );
       case 'documents':
         return <DocumentsInterface user={user} projectId={projectId} />;
       case 'users':
@@ -90,7 +128,12 @@ function App() {
   };
 
   return (
-    <Layout user={user}>
+    <>
+    <Layout
+      user={user}
+      hasCommercialOffer={hasOffer}
+      onOpenCommercialPanel={handleOpenCommercialPanel}
+    >
       {/* View Mode Tabs */}
       <div className="bg-white border-b border-gray-200">
         <div className="flex space-x-8 px-6">
@@ -145,6 +188,14 @@ function App() {
         {renderContent()}
       </div>
     </Layout>
+
+    {/* Commercial Offer Panel */}
+    <CommercialOfferPanel
+      isOpen={commercialPanelOpen}
+      onClose={() => setCommercialPanelOpen(false)}
+      threadId={currentThreadId}
+    />
+    </>
   );
 }
 

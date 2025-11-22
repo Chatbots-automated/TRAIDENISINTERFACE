@@ -16,11 +16,15 @@ import SettingsModal from './SettingsModal';
 interface LayoutProps {
   user: AppUser;
   children: React.ReactNode;
+  hasCommercialOffer?: boolean;
+  onOpenCommercialPanel?: () => void;
 }
 
 export default function Layout({
   user,
-  children
+  children,
+  hasCommercialOffer = false,
+  onOpenCommercialPanel
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -162,7 +166,15 @@ export default function Layout({
                 <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-green-600">
                   <MessageSquare className="w-4 h-4" />
                 </button>
-                <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-blue-600">
+                <button
+                  onClick={onOpenCommercialPanel}
+                  className={`p-2 rounded-md hover:bg-white hover:shadow-sm transition-all ${
+                    hasCommercialOffer
+                      ? 'text-blue-600'
+                      : 'text-gray-400'
+                  }`}
+                  title={hasCommercialOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                >
                   <FileText className="w-4 h-4" />
                 </button>
               </div>

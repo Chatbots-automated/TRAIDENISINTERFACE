@@ -6,15 +6,21 @@ import {
   Bot,
   User as UserIcon,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Check,
+  X,
+  Loader2
 } from 'lucide-react';
 import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
+import { saveCommercialOffer, parseAgentResponse, hasCommercialOffer } from '../lib/commercialOfferStorage';
 import type { AppUser } from '../types';
 
 interface ChatInterfaceProps {
   user: AppUser;
   projectId: string;
+  onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
+  onThreadChange?: (threadId: string | null) => void;
 }
 
 interface Thread {
@@ -32,6 +38,7 @@ interface Message {
   timestamp: string;
   author_ref?: string;
   queryType?: string; // Store the query type tag for user messages
+  isCommercialResponse?: boolean; // True if this is a response to a /Commercial query
 }
 
 type QueryType = 'Komercinio pasiūlymo užklausa' | 'Bendra užklausa' | 'Nestandartinių gaminių užklausa' | null;
@@ -85,7 +92,7 @@ const LOADING_MESSAGES = [
   "Analyzing patterns...",
 ];
 
-export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
+export default function ChatInterface({ user, projectId, onCommercialOfferUpdate, onThreadChange }: ChatInterfaceProps) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [currentThread, setCurrentThread] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -98,10 +105,12 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [acceptedMessageIds, setAcceptedMessageIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pendingQueryTypeRef = useRef<string | null>(null); // Track query type for pending response
 
   // Load threads on component mount
   useEffect(() => {
@@ -114,6 +123,13 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       loadMessages(currentThread.id);
     }
   }, [currentThread]);
+
+  // Notify parent when thread changes
+  useEffect(() => {
+    if (onThreadChange) {
+      onThreadChange(currentThread?.id || null);
+    }
+  }, [currentThread, onThreadChange]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -269,6 +285,10 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
 
     const messageToSend = newMessage.trim();
     const queryType = currentQueryTag.queryType;
+    const isCommercialQuery = currentQueryTag.tag === '/Commercial';
+
+    // Store the query type for the pending response
+    pendingQueryTypeRef.current = currentQueryTag.tag;
 
     setNewMessage('');
     setLoading(true);
@@ -555,11 +575,15 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             role: 'assistant',
             content: fullResponse,
             timestamp: new Date().toISOString(),
-            author_ref: 'ai-assistant'
+            author_ref: 'ai-assistant',
+            isCommercialResponse: pendingQueryTypeRef.current === '/Commercial'
           };
 
           console.log('Adding AI message to state...');
           setMessages(prev => [...prev, aiMessage]);
+
+          // Clear the pending query type
+          pendingQueryTypeRef.current = null;
 
           // Clear streaming state AFTER adding the message
           setStreamingContent('');
@@ -616,9 +640,13 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               role: 'assistant',
               content: streamingContent,
               timestamp: new Date().toISOString(),
-              author_ref: 'ai-assistant'
+              author_ref: 'ai-assistant',
+              isCommercialResponse: pendingQueryTypeRef.current === '/Commercial'
             };
             setMessages(prev => [...prev, aiMessage]);
+
+            // Clear the pending query type
+            pendingQueryTypeRef.current = null;
 
             // Save the streaming content
             await sendMessage(
@@ -696,6 +724,44 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     setCurrentQueryTag(tag);
     setShowTagDropdown(false);
     // Focus back to the input
+    inputRef.current?.focus();
+  };
+
+  // Handle accepting a commercial offer response
+  const handleAcceptOffer = (messageId: string, content: string) => {
+    if (!currentThread) return;
+
+    // Parse the response into commercial offer sections
+    const parsedOffer = parseAgentResponse(content);
+
+    // Save to localStorage
+    const deletedThreadIds = saveCommercialOffer(currentThread.id, parsedOffer);
+
+    // Log if any old offers were removed
+    if (deletedThreadIds.length > 0) {
+      console.log('Removed old commercial offers for threads:', deletedThreadIds);
+    }
+
+    // Mark this message as accepted
+    setAcceptedMessageIds(prev => new Set([...prev, messageId]));
+
+    // Notify parent component (Layout) that this thread now has an offer
+    if (onCommercialOfferUpdate) {
+      onCommercialOfferUpdate(currentThread.id, true);
+    }
+
+    console.log('Commercial offer accepted and saved for thread:', currentThread.id);
+  };
+
+  // Handle rejecting a commercial offer response
+  const handleRejectOffer = (messageId: string) => {
+    // Pre-fill the input with a feedback prompt
+    setNewMessage('Please regenerate the commercial offer with the following changes: ');
+
+    // Mark this message as handled (rejected)
+    setAcceptedMessageIds(prev => new Set([...prev, messageId]));
+
+    // Focus the input for the user to add their feedback
     inputRef.current?.focus();
   };
 
@@ -819,9 +885,41 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                       )}
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs opacity-75 mt-1">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs opacity-75">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </p>
+                      {/* Accept/Reject buttons for commercial responses */}
+                      {message.role === 'assistant' &&
+                       message.isCommercialResponse &&
+                       !acceptedMessageIds.has(message.id) && (
+                        <div className="flex items-center space-x-1 ml-2">
+                          <button
+                            onClick={() => handleAcceptOffer(message.id, message.content)}
+                            className="p-1 rounded hover:bg-green-200 text-green-600 transition-colors"
+                            title="Accept this commercial offer"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleRejectOffer(message.id)}
+                            className="p-1 rounded hover:bg-red-200 text-red-600 transition-colors"
+                            title="Reject and request changes"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                      {/* Show accepted indicator */}
+                      {message.role === 'assistant' &&
+                       message.isCommercialResponse &&
+                       acceptedMessageIds.has(message.id) && (
+                        <span className="text-xs text-green-600 ml-2 flex items-center">
+                          <Check className="w-3 h-3 mr-1" />
+                          Saved
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
