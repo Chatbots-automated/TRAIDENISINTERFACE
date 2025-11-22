@@ -60,9 +60,9 @@ interface QueryTagConfig {
 }
 
 const QUERY_TAGS: QueryTagConfig[] = [
-  { tag: '/General', label: 'General', queryType: 'Bendra užklausa' },
-  { tag: '/Commercial', label: 'Commercial', queryType: 'Komercinio pasiūlymo užklausa' },
-  { tag: '/Custom', label: 'Custom Products', queryType: 'Nestandartinių gaminių užklausa' },
+  { tag: '/General', label: 'Bendra', queryType: 'Bendra užklausa' },
+  { tag: '/Commercial', label: 'Komercinis', queryType: 'Komercinio pasiūlymo užklausa' },
+  { tag: '/Custom', label: 'Nestandartinis', queryType: 'Nestandartinių gaminių užklausa' },
 ];
 
 const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
@@ -887,26 +887,26 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               <form onSubmit={handleSendMessage} className="flex space-x-3">
                 <div className="flex-1 flex items-center border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent bg-white">
                   {/* Query Type Tag with Dropdown */}
-                  <div className="relative" ref={tagDropdownRef}>
+                  <div
+                    className="relative"
+                    ref={tagDropdownRef}
+                    onMouseEnter={() => !loading && setShowTagDropdown(true)}
+                    onMouseLeave={() => setShowTagDropdown(false)}
+                  >
                     <button
                       type="button"
-                      onClick={() => setShowTagDropdown(!showTagDropdown)}
                       disabled={loading}
                       className="flex items-center space-x-1 px-3 py-2 bg-blue-100 text-blue-700 font-medium text-sm rounded-l-lg hover:bg-blue-200 transition-colors border-r border-gray-200 disabled:opacity-50"
                     >
                       <span>{currentQueryTag.tag}</span>
-                      {showTagDropdown ? (
-                        <ChevronDown className="w-3 h-3" />
-                      ) : (
-                        <ChevronUp className="w-3 h-3" />
-                      )}
+                      <ChevronUp className="w-3 h-3" />
                     </button>
 
                     {/* Dropdown Menu (drops UP since input is at bottom) */}
                     {showTagDropdown && (
-                      <div className="absolute bottom-full left-0 mb-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                      <div className="absolute bottom-full left-0 mb-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                         <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
-                          Select Query Type
+                          Pasirinkite užklausos tipą
                         </div>
                         {QUERY_TAGS.map((tag) => (
                           <button
