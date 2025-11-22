@@ -9,9 +9,10 @@ import {
   ChevronUp,
   Check,
   X,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
-import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '../lib/supabase';
+import { createChatThread, sendMessage, getChatThreads, getChatMessages, deleteChatThread } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
 import {
   saveCommercialOffer,
@@ -786,6 +787,39 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
     inputRef.current?.focus();
   };
 
+  // Handle deleting a chat thread
+  const handleDeleteThread = async (threadId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent selecting the thread when clicking delete
+
+    if (!confirm('Are you sure you want to delete this chat?')) {
+      return;
+    }
+
+    try {
+      const { success, error } = await deleteChatThread(threadId);
+
+      if (error) {
+        console.error('Error deleting thread:', error);
+        return;
+      }
+
+      if (success) {
+        // If we deleted the current thread, clear selection
+        if (currentThread?.id === threadId) {
+          setCurrentThread(null);
+          setMessages([]);
+        }
+
+        // Reload threads
+        await loadThreads();
+
+        console.log('Thread deleted successfully:', threadId);
+      }
+    } catch (error) {
+      console.error('Error deleting thread:', error);
+    }
+  };
+
   return (
     <div className="flex h-full bg-white relative overflow-hidden">
       {/* Left Sidebar - Threads */}
@@ -831,29 +865,38 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
           ) : (
             <div className="p-2 space-y-1">
               {threads.map((thread) => (
-                <button
+                <div
                   key={thread.id}
                   onClick={() => setCurrentThread(thread)}
                   className={`
-                    w-full text-left p-3 rounded-lg transition-colors
+                    w-full text-left p-3 rounded-lg transition-colors cursor-pointer group
                     ${currentThread?.id === thread.id
                       ? 'bg-gradient-to-r from-green-50 to-blue-50 border border-green-200'
                       : 'hover:bg-gray-50'
                     }
                   `}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {thread.title}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {thread.message_count || 0} messages
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
-                    </p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">
+                        {thread.title}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {thread.message_count || 0} messages
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteThread(thread.id, e)}
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all"
+                      title="Delete chat"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}

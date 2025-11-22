@@ -502,6 +502,27 @@ export const getChatMessages = async (threadId: string) => {
   }
 };
 
+// Soft delete a chat thread (sets deleted_at timestamp)
+export const deleteChatThread = async (threadId: string) => {
+  try {
+    const { error } = await supabase
+      .from('chat_items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', threadId)
+      .eq('type', 'thread');
+
+    if (error) {
+      console.error('Error deleting chat thread:', error);
+      throw error;
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error in deleteChatThread:', error);
+    return { success: false, error };
+  }
+};
+
 // Document helpers
 export const createDocument = async (
   content: string,
