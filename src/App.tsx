@@ -36,6 +36,7 @@ function App() {
   // Commercial offer panel state
   const [commercialPanelOpen, setCommercialPanelOpen] = useState(false);
   const [hasOffer, setHasOffer] = useState(false);
+  const [showDocGlow, setShowDocGlow] = useState(false);
 
   useEffect(() => {
     checkUser();
@@ -193,6 +194,15 @@ function App() {
     setHasOffer(offerExists);
   };
 
+  // Handle first commercial offer accept - trigger doc icon glow
+  const handleFirstCommercialAccept = useCallback(() => {
+    setShowDocGlow(true);
+    // Clear glow after 5 seconds
+    setTimeout(() => {
+      setShowDocGlow(false);
+    }, 5000);
+  }, []);
+
   // Handle opening commercial offer panel
   const handleOpenCommercialPanel = () => {
     if (currentThread) {
@@ -244,6 +254,7 @@ function App() {
             projectId={projectId}
             currentThread={currentThread}
             onCommercialOfferUpdate={handleCommercialOfferUpdate}
+            onFirstCommercialAccept={handleFirstCommercialAccept}
             onThreadsUpdate={loadThreads}
           />
         );
@@ -270,6 +281,7 @@ function App() {
       onRenameThread={handleRenameThread}
       hasCommercialOffer={hasOffer}
       onOpenCommercialPanel={handleOpenCommercialPanel}
+      showDocGlow={showDocGlow}
     >
       {/* View Mode Tabs */}
       <div className="bg-white border-b border-gray-200">

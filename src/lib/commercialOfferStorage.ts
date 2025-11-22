@@ -290,6 +290,12 @@ export function getAcceptedMessageIds(threadId: string): string[] {
   return acceptedMessages[threadId] || [];
 }
 
+// Check if a thread has any accepted messages (used to detect first accept)
+export function hasAcceptedMessages(threadId: string): boolean {
+  const acceptedMessages = getAllAcceptedMessages();
+  return (acceptedMessages[threadId]?.length || 0) > 0;
+}
+
 // Clear accepted messages for a thread (called during FIFO cleanup)
 function clearAcceptedMessagesForThread(threadId: string): void {
   const acceptedMessages = getAllAcceptedMessages();

@@ -18,6 +18,7 @@ import {
   isLatestCommercialMessage,
   addAcceptedMessageId,
   isMessageAccepted,
+  hasAcceptedMessages,
   cleanupDeletedThreads
 } from '../lib/commercialOfferStorage';
 import type { AppUser } from '../types';
@@ -35,6 +36,7 @@ interface ChatInterfaceProps {
   projectId: string;
   currentThread: Thread | null;
   onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
+  onFirstCommercialAccept?: () => void;
   onThreadsUpdate?: () => void;
 }
 
@@ -98,7 +100,7 @@ const LOADING_MESSAGES = [
   "Analyzing patterns...",
 ];
 
-export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onThreadsUpdate }: ChatInterfaceProps) {
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -677,6 +679,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const handleAcceptOffer = (messageId: string, content: string) => {
     if (!currentThread) return;
 
+    // Check if this is the first commercial accept for this thread
+    const isFirstAccept = !hasAcceptedMessages(currentThread.id);
+
     // Parse the response into commercial offer sections
     const parsedOffer = parseAgentResponse(content);
 
@@ -695,6 +700,11 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     // Notify parent component (Layout) that this thread now has an offer
     if (onCommercialOfferUpdate) {
       onCommercialOfferUpdate(currentThread.id, true);
+    }
+
+    // Trigger glow effect on doc icon if this is the first accept
+    if (isFirstAccept && onFirstCommercialAccept) {
+      onFirstCommercialAccept();
     }
 
     console.log('Commercial offer accepted and saved for thread:', currentThread.id);

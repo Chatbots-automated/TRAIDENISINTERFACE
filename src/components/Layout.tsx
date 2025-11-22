@@ -38,6 +38,7 @@ interface LayoutProps {
   onRenameThread?: (threadId: string, newTitle: string) => void;
   hasCommercialOffer?: boolean;
   onOpenCommercialPanel?: () => void;
+  showDocGlow?: boolean;
 }
 
 export default function Layout({
@@ -52,7 +53,8 @@ export default function Layout({
   onDeleteThread,
   onRenameThread,
   hasCommercialOffer = false,
-  onOpenCommercialPanel
+  onOpenCommercialPanel,
+  showDocGlow = false
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -334,14 +336,24 @@ export default function Layout({
                 </button>
                 <button
                   onClick={onOpenCommercialPanel}
-                  className={`p-2 rounded-md hover:bg-white hover:shadow-sm transition-all ${
+                  className={`p-2 rounded-md hover:bg-white hover:shadow-sm transition-all relative ${
                     hasCommercialOffer
                       ? 'text-blue-600'
                       : 'text-gray-400'
+                  } ${
+                    showDocGlow
+                      ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1 shadow-lg shadow-purple-300/50'
+                      : ''
                   }`}
                   title={hasCommercialOffer ? 'View Commercial Offer' : 'No commercial offer available'}
                 >
                   <FileText className="w-4 h-4" />
+                  {showDocGlow && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
