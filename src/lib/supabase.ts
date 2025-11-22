@@ -399,6 +399,7 @@ export const sendMessage = async (
   content: string,
   role: 'user' | 'assistant' = 'user',
   authorEmail: string,
+  authorName?: string,
   existingHistory?: any[]
 ) => {
   try {
@@ -417,13 +418,14 @@ export const sendMessage = async (
 
     // Get existing chat history or initialize empty array
     const currentHistory = threadData?.chat_history || [];
-    
+
     // Create new message object
     const newMessage = {
       id: Date.now().toString(),
       role: role,
       content: content,
       author_ref: authorEmail,
+      author_name: authorName || '',
       timestamp: new Date().toISOString()
     };
 
@@ -499,6 +501,48 @@ export const getChatMessages = async (threadId: string) => {
   } catch (error) {
     console.error('Error in getChatMessages:', error);
     return { data: null, error };
+  }
+};
+
+// Soft delete a chat thread (sets deleted_at timestamp)
+export const deleteChatThread = async (threadId: string) => {
+  try {
+    const { error } = await supabase
+      .from('chat_items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', threadId)
+      .eq('type', 'thread');
+
+    if (error) {
+      console.error('Error deleting chat thread:', error);
+      throw error;
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error in deleteChatThread:', error);
+    return { success: false, error };
+  }
+};
+
+// Update chat thread title
+export const updateChatThreadTitle = async (threadId: string, title: string) => {
+  try {
+    const { error } = await supabase
+      .from('chat_items')
+      .update({ title })
+      .eq('id', threadId)
+      .eq('type', 'thread');
+
+    if (error) {
+      console.error('Error updating chat thread title:', error);
+      throw error;
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error in updateChatThreadTitle:', error);
+    return { success: false, error };
   }
 };
 

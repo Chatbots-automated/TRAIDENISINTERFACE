@@ -1,20 +1,27 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Send,
-  Plus,
-  MessageSquare,
   Bot,
   User as UserIcon,
-  Loader2
+  ChevronDown,
+  ChevronUp,
+  Check,
+  X,
+  MessageSquare
 } from 'lucide-react';
-import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '../lib/supabase';
+import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
+import {
+  saveCommercialOffer,
+  parseAgentResponse,
+  setLatestCommercialMessageId,
+  isLatestCommercialMessage,
+  addAcceptedMessageId,
+  isMessageAccepted,
+  hasAcceptedMessages,
+  cleanupDeletedThreads
+} from '../lib/commercialOfferStorage';
 import type { AppUser } from '../types';
-
-interface ChatInterfaceProps {
-  user: AppUser;
-  projectId: string;
-}
 
 interface Thread {
   id: string;
@@ -24,41 +31,137 @@ interface Thread {
   created_at: string;
 }
 
+interface ChatInterfaceProps {
+  user: AppUser;
+  projectId: string;
+  currentThread: Thread | null;
+  onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
+  onFirstCommercialAccept?: () => void;
+  onThreadsUpdate?: () => void;
+  naujokasMode?: boolean;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
   author_ref?: string;
+  author_name?: string; // User's display name
+  queryType?: string; // Store the query type tag for user messages
 }
 
 type QueryType = 'Komercinio pasiūlymo užklausa' | 'Bendra užklausa' | 'Nestandartinių gaminių užklausa' | null;
 
-export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [currentThread, setCurrentThread] = useState<Thread | null>(null);
+// Query type tag configuration
+interface QueryTagConfig {
+  tag: string;
+  label: string;
+  queryType: QueryType;
+  description: string; // Hover tooltip description
+}
+
+const QUERY_TAGS: QueryTagConfig[] = [
+  { tag: '/General', label: 'Bendra', queryType: 'Bendra užklausa', description: 'Bendri klausimai apie produkciją' },
+  { tag: '/Commercial', label: 'Komercinis', queryType: 'Komercinio pasiūlymo užklausa', description: 'Gauti komercinį pasiūlymą su kainomis' },
+  { tag: '/Custom', label: 'Nestandartinis', queryType: 'Nestandartinių gaminių užklausa', description: 'Nestandartiniai/specialūs gaminiai' },
+];
+
+const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
+
+// LocalStorage key for tracking if user has seen the query type tooltip
+const QUERY_TOOLTIP_SHOWN_KEY = 'traidenis_query_tooltip_shown';
+
+// Fun loading messages that rotate while waiting for response
+const LOADING_MESSAGES = [
+  "Hmmm...",
+  "Thinking...",
+  "Calculating HNV...",
+  "Working on it...",
+  "Processing your request...",
+  "Consulting the knowledge base...",
+  "Analyzing data...",
+  "Almost there...",
+  "Crunching numbers...",
+  "Searching for answers...",
+  "Let me think about that...",
+  "One moment please...",
+  "Gathering information...",
+  "Running calculations...",
+  "Checking the database...",
+  "Formulating response...",
+  "Cross-referencing data...",
+  "Putting thoughts together...",
+  "Reading through documents...",
+  "Connecting the dots...",
+  "Preparing your answer...",
+  "Just a sec...",
+  "On it...",
+  "Diving deep...",
+  "Exploring possibilities...",
+  "Synthesizing information...",
+  "Building your response...",
+  "Hang tight...",
+  "Processing query...",
+  "Analyzing patterns...",
+];
+
+// Get time-based greeting in Lithuanian
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Labas rytas';
+  if (hour >= 12 && hour < 18) return 'Laba diena';
+  if (hour >= 18 && hour < 22) return 'Labas vakaras';
+  return 'Labas';
+};
+
+// Get display name for a message author
+const getDisplayName = (authorName?: string, authorRef?: string): string => {
+  // Use stored display name if available
+  if (authorName) {
+    // Extract first name from full name (e.g., "Vitalijus Smith" -> "Vitalijus")
+    return authorName.split(' ')[0];
+  }
+
+  // Fallback for old messages without author_name - extract from email
+  if (!authorRef || authorRef === 'ai-assistant' || authorRef === 'system') {
+    return 'Traidenis';
+  }
+
+  // Get the part before @ symbol
+  const emailName = authorRef.split('@')[0];
+
+  // Get first part before any dots or underscores (first name)
+  const firstName = emailName.split(/[._-]/)[0];
+
+  // Capitalize first letter
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+};
+
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, naujokasMode = true }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [threadsLoading, setThreadsLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [showQueryTypeModal, setShowQueryTypeModal] = useState(false);
-  const [selectedQueryType, setSelectedQueryType] = useState<QueryType>(null);
-  const [pendingMessage, setPendingMessage] = useState('');
+  const [currentQueryTag, setCurrentQueryTag] = useState<QueryTagConfig>(DEFAULT_QUERY_TAG);
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [showQueryTooltip, setShowQueryTooltip] = useState(false);
+  const [showCommercialSpotlight, setShowCommercialSpotlight] = useState(false);
+  const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
-
-  // Load threads on component mount
-  useEffect(() => {
-    loadThreads();
-  }, [projectId]);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pendingQueryTypeRef = useRef<string | null>(null); // Track query type for pending response
 
   // Load messages when thread changes
   useEffect(() => {
     if (currentThread) {
       loadMessages(currentThread.id);
+    } else {
+      setMessages([]);
     }
   }, [currentThread]);
 
@@ -74,6 +177,89 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     }
   }, [isStreaming, streamingContent]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(event.target as Node)) {
+        setShowTagDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Show query type tooltip for users in naujokas mode
+  useEffect(() => {
+    // Reset tooltip state when naujokas mode changes
+    if (!naujokasMode) {
+      setShowQueryTooltip(false);
+      return;
+    }
+
+    const hasSeenTooltip = localStorage.getItem(QUERY_TOOLTIP_SHOWN_KEY);
+    if (!hasSeenTooltip && currentThread && naujokasMode) {
+      // Show tooltip after a short delay to let the UI settle
+      const timer = setTimeout(() => {
+        setShowQueryTooltip(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentThread, naujokasMode]);
+
+  // Show commercial response spotlight when buttons appear (naujokas mode)
+  useEffect(() => {
+    // Hide spotlight when naujokas mode is turned off
+    if (!naujokasMode) {
+      setShowCommercialSpotlight(false);
+      setSpotlightMessageId(null);
+      return;
+    }
+
+    if (!currentThread) return;
+
+    // Find any message that has the accept/reject buttons visible
+    const commercialMessage = messages.find(
+      (msg) =>
+        msg.role === 'assistant' &&
+        isLatestCommercialMessage(currentThread.id, msg.id) &&
+        !isMessageAccepted(currentThread.id, msg.id)
+    );
+
+    if (commercialMessage && !spotlightMessageId) {
+      // Show spotlight after a brief delay
+      const timer = setTimeout(() => {
+        setSpotlightMessageId(commercialMessage.id);
+        setShowCommercialSpotlight(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, currentThread, naujokasMode, spotlightMessageId]);
+
+  // Rotate loading messages while waiting for response
+  useEffect(() => {
+    if (!loading || isStreaming) {
+      setLoadingMessageIndex(0);
+      return;
+    }
+
+    // Start with a random message
+    setLoadingMessageIndex(Math.floor(Math.random() * LOADING_MESSAGES.length));
+
+    // Change message every 2-4 seconds (random interval for more natural feel)
+    const interval = setInterval(() => {
+      setLoadingMessageIndex(prev => {
+        let nextIndex;
+        do {
+          nextIndex = Math.floor(Math.random() * LOADING_MESSAGES.length);
+        } while (nextIndex === prev); // Ensure we get a different message
+        return nextIndex;
+      });
+    }, 2500 + Math.random() * 1500); // Random interval between 2.5-4 seconds
+
+    return () => clearInterval(interval);
+  }, [loading, isStreaming]);
+
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
     setTimeout(() => {
@@ -81,39 +267,12 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     }, 100);
   };
 
-  const loadThreads = async () => {
-    try {
-      setThreadsLoading(true);
-      console.log('Loading threads for project:', projectId);
-      
-      const { data, error } = await getChatThreads(projectId);
-      
-      if (error) {
-        console.error('Error loading threads:', error);
-        setThreads([]);
-        return;
-      }
-
-      console.log('Loaded threads:', data);
-      setThreads(data || []);
-      
-      // Auto-select first thread if none selected
-      if (!currentThread && data && data.length > 0) {
-        setCurrentThread(data[0]);
-      }
-    } catch (error) {
-      console.error('Error loading threads:', error);
-    } finally {
-      setThreadsLoading(false);
-    }
-  };
-
   const loadMessages = async (threadId: string) => {
     try {
       console.log('Loading messages for thread:', threadId);
-      
+
       const { data, error } = await getChatMessages(threadId);
-      
+
       if (error) {
         console.error('Error loading messages:', error);
         setMessages([]);
@@ -127,80 +286,32 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
     }
   };
 
-  const createNewThread = async () => {
-    try {
-      setCreating(true);
-      console.log('Creating new thread for project:', projectId, 'user:', user.email);
-      
-      const title = `New Chat ${new Date().toLocaleString()}`;
-      const { data: threadId, error } = await createChatThread(projectId, title, user.email || '');
-
-      if (error) {
-        console.error('Error creating thread:', error);
-        return;
-      }
-
-      console.log('Created thread with ID:', threadId);
-
-      // Log thread creation
-      await appLogger.logChat({
-        action: 'thread_created',
-        userId: user.id,
-        userEmail: user.email,
-        threadId: threadId || 'unknown',
-        metadata: { title, project_id: projectId }
-      });
-
-      // Reload threads
-      await loadThreads();
-      
-      // Find and select the new thread
-      const { data: updatedThreads } = await getChatThreads(projectId);
-      const newThread = updatedThreads?.find(t => t.id === threadId);
-      
-      if (newThread) {
-        setCurrentThread(newThread);
-        setMessages([]);
-      } else {
-        // Fallback: select the first thread
-        if (updatedThreads && updatedThreads.length > 0) {
-          setCurrentThread(updatedThreads[0]);
-        }
-      }
-    } catch (error) {
-      console.error('Error creating thread:', error);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !currentThread || loading) return;
 
-    // Show query type selection modal
-    setPendingMessage(newMessage.trim());
+    const messageToSend = newMessage.trim();
+    const queryType = currentQueryTag.queryType;
+    const isCommercialQuery = currentQueryTag.tag === '/Commercial';
+
+    // Store the query type for the pending response
+    pendingQueryTypeRef.current = currentQueryTag.tag;
+
     setNewMessage('');
-    setShowQueryTypeModal(true);
-  };
-
-  const handleQueryTypeSelected = async (queryType: QueryType) => {
-    if (!queryType || !pendingMessage || !currentThread) return;
-
-    setSelectedQueryType(queryType);
-    setShowQueryTypeModal(false);
     setLoading(true);
 
     try {
-      console.log('Sending message:', pendingMessage, 'to thread:', currentThread.id, 'with query type:', queryType);
+      console.log('Sending message:', messageToSend, 'to thread:', currentThread.id, 'with query type:', queryType);
 
       // Add user message to UI immediately
       const userMessage: Message = {
         id: Date.now().toString(),
         role: 'user',
-        content: pendingMessage,
+        content: messageToSend,
         timestamp: new Date().toISOString(),
-        author_ref: user.email || ''
+        author_ref: user.email || '',
+        author_name: user.display_name || '',
+        queryType: currentQueryTag.tag // Store the tag used for this message
       };
       setMessages(prev => [...prev, userMessage]);
 
@@ -208,13 +319,27 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       const { error: userMessageError } = await sendMessage(
         projectId,
         currentThread.id,
-        pendingMessage,
+        messageToSend,
         'user',
-        user.email || ''
+        user.email || '',
+        user.display_name || ''
       );
 
       if (userMessageError) {
         console.error('Error saving user message:', userMessageError);
+      }
+
+      // Auto-rename thread on first message (keep the date from original title)
+      if (currentThread.message_count === 0) {
+        const dateMatch = currentThread.title.match(/\d{1,2}\/\d{1,2}\/\d{4}.*$/);
+        const datePart = dateMatch ? ` - ${dateMatch[0]}` : ` - ${new Date().toLocaleDateString()}`;
+        const messagePart = messageToSend.length > 40
+          ? messageToSend.substring(0, 40).trim() + '...'
+          : messageToSend;
+        const newTitle = messagePart + datePart;
+
+        await updateChatThreadTitle(currentThread.id, newTitle);
+        console.log('Auto-renamed thread to:', newTitle);
       }
 
       // Log user message sent
@@ -223,9 +348,9 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         userId: user.id,
         userEmail: user.email,
         threadId: currentThread.id,
-        messagePreview: pendingMessage,
+        messagePreview: messageToSend,
         queryType: queryType || undefined,
-        metadata: { message_length: pendingMessage.length }
+        metadata: { message_length: messageToSend.length }
       });
 
       // Send to webhook with streaming
@@ -236,9 +361,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         const streamingMessageId = (Date.now() + 1).toString();
         streamingMessageIdRef.current = streamingMessageId;
 
-        // Start streaming
-        setIsStreaming(true);
-        setStreamingContent('');
+        // Note: Don't set isStreaming=true yet - wait until we have content
+        // This keeps the loading messages visible while waiting for the response
 
         const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
         const startTime = Date.now();
@@ -248,7 +372,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           userId: user.id,
           userEmail: user.email,
           threadId: currentThread.id,
-          messagePreview: pendingMessage,
+          messagePreview: messageToSend,
           queryType: queryType || undefined,
           metadata: { webhook_url: webhookUrl }
         });
@@ -259,7 +383,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            question: pendingMessage,
+            question: messageToSend,
             query_type: queryType,
             chat_id: currentThread.id,
             parent_id: currentThread.id,
@@ -322,6 +446,10 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         const responseText = await webhookResponse.text();
         console.log('✅ Received response text, length:', responseText.length);
         console.log('📄 First 200 chars:', responseText.substring(0, 200));
+
+        // Now that we have the response, switch from loading to streaming mode
+        setIsStreaming(true);
+        setStreamingContent('');
 
         // Try to parse as single JSON object
         if (contentType.includes('application/json')) {
@@ -467,6 +595,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
         console.log('Full response preview:', fullResponse.substring(0, 200));
 
         if (fullResponse) {
+          const isCommercialQuery = pendingQueryTypeRef.current === '/Commercial';
+
           const aiMessage: Message = {
             id: streamingMessageId,
             role: 'assistant',
@@ -475,8 +605,16 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             author_ref: 'ai-assistant'
           };
 
+          // If this is a /Commercial response, track it as the latest
+          if (isCommercialQuery && currentThread) {
+            setLatestCommercialMessageId(currentThread.id, streamingMessageId);
+          }
+
           console.log('Adding AI message to state...');
           setMessages(prev => [...prev, aiMessage]);
+
+          // Clear the pending query type
+          pendingQueryTypeRef.current = null;
 
           // Clear streaming state AFTER adding the message
           setStreamingContent('');
@@ -489,7 +627,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
             currentThread.id,
             fullResponse,
             'assistant',
-            'ai-assistant'
+            'ai-assistant',
+            'Traidenis'
           );
 
           if (aiMessageError) {
@@ -528,6 +667,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           // If we have streaming content but no fullResponse, use streaming content
           if (streamingContent) {
             console.log('Using streamingContent as fallback');
+            const isCommercialQuery = pendingQueryTypeRef.current === '/Commercial';
+
             const aiMessage: Message = {
               id: streamingMessageId,
               role: 'assistant',
@@ -535,7 +676,16 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               timestamp: new Date().toISOString(),
               author_ref: 'ai-assistant'
             };
+
+            // If this is a /Commercial response, track it as the latest
+            if (isCommercialQuery && currentThread) {
+              setLatestCommercialMessageId(currentThread.id, streamingMessageId);
+            }
+
             setMessages(prev => [...prev, aiMessage]);
+
+            // Clear the pending query type
+            pendingQueryTypeRef.current = null;
 
             // Save the streaming content
             await sendMessage(
@@ -543,7 +693,8 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               currentThread.id,
               streamingContent,
               'assistant',
-              'ai-assistant'
+              'ai-assistant',
+              'Traidenis'
             );
           }
 
@@ -564,7 +715,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           userId: user.id,
           userEmail: user.email,
           threadId: currentThread.id,
-          messagePreview: pendingMessage,
+          messagePreview: messageToSend,
           queryType: queryType || undefined,
           level: 'error',
           metadata: { error: webhookError.message }
@@ -578,7 +729,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
           metadata: {
             thread_id: currentThread.id,
             query_type: queryType,
-            message: pendingMessage
+            message: messageToSend
           }
         });
 
@@ -594,112 +745,164 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
       }
 
       // Reload threads to update message count
-      await loadThreads();
+      onThreadsUpdate?.();
     } catch (error) {
       console.error('Error sending message:', error);
     } finally {
       setLoading(false);
-      setPendingMessage('');
-      setSelectedQueryType(null);
+
+      // Reset to General tag after sending Commercial or Custom queries
+      // These are typically one-off specialized queries
+      if (currentQueryTag.tag !== '/General') {
+        setCurrentQueryTag(DEFAULT_QUERY_TAG);
+      }
     }
   };
 
-  const queryTypes: QueryType[] = [
-    'Komercinio pasiūlymo užklausa',
-    'Bendra užklausa',
-    'Nestandartinių gaminių užklausa'
-  ];
+  // Dismiss the first-time user tooltip
+  const dismissQueryTooltip = () => {
+    setShowQueryTooltip(false);
+    localStorage.setItem(QUERY_TOOLTIP_SHOWN_KEY, 'true');
+  };
+
+  // Dismiss the commercial spotlight
+  const dismissCommercialSpotlight = () => {
+    setShowCommercialSpotlight(false);
+    setSpotlightMessageId(null);
+  };
+
+  // Handle tag selection from dropdown
+  const handleTagSelect = (tag: QueryTagConfig) => {
+    setCurrentQueryTag(tag);
+    setShowTagDropdown(false);
+    // Dismiss tooltip when user interacts with the selector
+    if (showQueryTooltip) {
+      dismissQueryTooltip();
+    }
+    // Focus back to the input
+    inputRef.current?.focus();
+  };
+
+  // Handle accepting a commercial offer response
+  const handleAcceptOffer = (messageId: string, content: string) => {
+    if (!currentThread) return;
+
+    // Dismiss spotlight if showing
+    dismissCommercialSpotlight();
+
+    // Check if this is the first commercial accept for this thread
+    const isFirstAccept = !hasAcceptedMessages(currentThread.id);
+
+    // Parse the response into commercial offer sections
+    const parsedOffer = parseAgentResponse(content);
+
+    // Save to localStorage
+    const deletedThreadIds = saveCommercialOffer(currentThread.id, parsedOffer);
+
+    // Clean up tracking data for deleted threads (FIFO cleanup)
+    if (deletedThreadIds.length > 0) {
+      console.log('Removed old commercial offers for threads:', deletedThreadIds);
+      cleanupDeletedThreads(deletedThreadIds);
+    }
+
+    // Mark this message as accepted in localStorage (persists across refresh)
+    addAcceptedMessageId(currentThread.id, messageId);
+
+    // Notify parent component (Layout) that this thread now has an offer
+    if (onCommercialOfferUpdate) {
+      onCommercialOfferUpdate(currentThread.id, true);
+    }
+
+    // Trigger glow effect on doc icon if this is the first accept
+    if (isFirstAccept && onFirstCommercialAccept) {
+      onFirstCommercialAccept();
+    }
+
+    console.log('Commercial offer accepted and saved for thread:', currentThread.id);
+  };
+
+  // Handle rejecting a commercial offer response
+  const handleRejectOffer = () => {
+    // Dismiss spotlight if showing
+    dismissCommercialSpotlight();
+
+    // Pre-fill the input with a feedback prompt
+    // The buttons will disappear when a new /Commercial response arrives
+    setNewMessage('Please regenerate the commercial offer with the following changes: ');
+
+    // Focus the input for the user to add their feedback
+    inputRef.current?.focus();
+  };
 
   return (
-    <div className="flex h-full bg-white relative overflow-hidden">
-      {/* Left Sidebar - Threads */}
-      <div className="w-80 border-r border-gray-200 flex flex-col min-h-0">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Chats</h2>
-            <button
-              onClick={createNewThread}
-              disabled={creating}
-              className="p-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50"
-            >
-              {creating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4" />
-              )}
-            </button>
-          </div>
-        </div>
+    <div className="flex flex-col h-full bg-white relative">
+      {/* Naujokas spotlight overlay - dims everything except spotlighted element */}
+      {showCommercialSpotlight && (
+        <div
+          className="fixed inset-0 bg-black/30 z-40 pointer-events-auto"
+          onClick={dismissCommercialSpotlight}
+        />
+      )}
 
-        {/* Threads List - with max height to prevent infinite expansion */}
-        <div className="flex-1 overflow-y-auto max-h-[calc(100vh-200px)]">
-          {threadsLoading ? (
-            <div className="p-4 space-y-3">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-16 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg animate-pulse" />
-              ))}
-            </div>
-          ) : threads.length === 0 ? (
-            <div className="p-4 text-center">
-              <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500 mb-2">No chats yet</p>
-              <button
-                onClick={createNewThread}
-                disabled={creating}
-                className="text-sm text-green-600 hover:text-green-700 disabled:opacity-50"
-              >
-                {creating ? 'Creating...' : 'Start your first chat'}
-              </button>
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {threads.map((thread) => (
-                <button
-                  key={thread.id}
-                  onClick={() => setCurrentThread(thread)}
-                  className={`
-                    w-full text-left p-3 rounded-lg transition-colors
-                    ${currentThread?.id === thread.id
-                      ? 'bg-gradient-to-r from-green-50 to-blue-50 border border-green-200'
-                      : 'hover:bg-gray-50'
-                    }
-                  `}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {thread.title}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {thread.message_count || 0} messages
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Right Side - Chat Area */}
-      <div className="flex-1 flex flex-col min-h-0">
+      {/* Chat Area */}
+      <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
           <>
-            {/* Chat Header */}
-            <div className="p-4 border-b border-gray-200 flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {currentThread.title}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {currentThread.message_count || 0} messages
-              </p>
-            </div>
+            {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+              {/* Welcome screen when chat is empty */}
+              {messages.length === 0 && !loading && (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  {/* Greeting */}
+                  <div className="mb-8">
+                    <div className="text-4xl mb-4">🌿</div>
+                    <h2 className="text-3xl font-light text-gray-800 mb-2">
+                      {getGreeting()}, {user.display_name?.split(' ')[0] || 'Vartotojau'}
+                    </h2>
+                    <p className="text-gray-500 text-lg">Kuo galiu padėti?</p>
+                  </div>
 
-            {/* Messages Area - with max height to prevent infinite expansion */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-280px)]">
+                  {/* Quick action suggestions */}
+                  <div className="flex flex-wrap justify-center gap-3 max-w-xl">
+                    <button
+                      onClick={() => {
+                        setNewMessage('Reikia sukurti komercinį pasiūlymą...');
+                        handleTagSelect(QUERY_TAGS[1]); // Commercial
+                        inputRef.current?.focus();
+                      }}
+                      className="px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm hover:bg-blue-100 transition-colors border border-blue-200"
+                    >
+                      📄 Komercinis pasiūlymas
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewMessage('Turiu klausimą apie ');
+                        handleTagSelect(QUERY_TAGS[0]); // General
+                        inputRef.current?.focus();
+                      }}
+                      className="px-4 py-2 bg-green-50 text-green-700 rounded-full text-sm hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      💬 Bendras klausimas
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewMessage('Reikia nestandartinio sprendimo...');
+                        handleTagSelect(QUERY_TAGS[2]); // Custom
+                        inputRef.current?.focus();
+                      }}
+                      className="px-4 py-2 bg-purple-50 text-purple-700 rounded-full text-sm hover:bg-purple-100 transition-colors border border-purple-200"
+                    >
+                      🔧 Nestandartinis gaminys
+                    </button>
+                  </div>
+
+                  {/* Hint about query types */}
+                  <p className="text-xs text-gray-400 mt-6 max-w-md">
+                    Pasirinkite užklausos tipą kairėje pusėje arba tiesiog pradėkite rašyti
+                  </p>
+                </div>
+              )}
+
               {messages.map((message) => (
                 <div
                   key={message.id}
@@ -721,13 +924,81 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                         <Bot className="w-4 h-4" />
                       )}
                       <span className="text-xs opacity-75">
-                        {message.role === 'user' ? 'You' : 'AI Assistant'}
+                        {message.role === 'user' ? getDisplayName(message.author_name, message.author_ref) : 'Traidenis'}
                       </span>
+                      {message.role === 'user' && message.queryType && (
+                        <span className="text-xs opacity-75 bg-white/20 px-1.5 py-0.5 rounded">
+                          {message.queryType}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    <p className="text-xs opacity-75 mt-1">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs opacity-75">
+                        {new Date(message.timestamp).toLocaleTimeString()}
+                      </p>
+                      {/* Accept/Reject buttons for commercial responses */}
+                      {message.role === 'assistant' &&
+                       currentThread &&
+                       isLatestCommercialMessage(currentThread.id, message.id) &&
+                       !isMessageAccepted(currentThread.id, message.id) && (
+                        <div className={`flex items-center space-x-1 ml-2 relative ${
+                          showCommercialSpotlight && spotlightMessageId === message.id
+                            ? 'z-50'
+                            : ''
+                        }`}>
+                          <button
+                            onClick={() => handleAcceptOffer(message.id, message.content)}
+                            className={`p-1 rounded hover:bg-green-200 text-green-600 transition-colors ${
+                              showCommercialSpotlight && spotlightMessageId === message.id
+                                ? 'bg-green-100 ring-2 ring-green-400 ring-offset-1'
+                                : ''
+                            }`}
+                            title="Accept this commercial offer"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleRejectOffer()}
+                            className={`p-1 rounded hover:bg-red-200 text-red-600 transition-colors ${
+                              showCommercialSpotlight && spotlightMessageId === message.id
+                                ? 'bg-red-100 ring-2 ring-red-400 ring-offset-1'
+                                : ''
+                            }`}
+                            title="Reject and request changes"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                          {/* Naujokas spotlight tooltip */}
+                          {showCommercialSpotlight && spotlightMessageId === message.id && (
+                            <div className="absolute bottom-full right-0 mb-2 z-50">
+                              <div className="bg-gray-900 text-white text-xs px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                                <div className="flex items-center space-x-2">
+                                  <span>✓ Priimti pasiūlymą | ✕ Koreguoti</span>
+                                  <button
+                                    onClick={dismissCommercialSpotlight}
+                                    className="text-gray-400 hover:text-white ml-1"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                                {/* Arrow pointing down */}
+                                <div className="absolute top-full right-4 w-0 h-0 border-l-6 border-r-6 border-t-6 border-l-transparent border-r-transparent border-t-gray-900" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {/* Show accepted indicator */}
+                      {message.role === 'assistant' &&
+                       currentThread &&
+                       isMessageAccepted(currentThread.id, message.id) && (
+                        <span className="text-xs text-green-600 ml-2 flex items-center">
+                          <Check className="w-3 h-3 mr-1" />
+                          Saved
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -737,7 +1008,7 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
                   <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
                     <div className="flex items-center space-x-2 mb-1">
                       <Bot className="w-4 h-4" />
-                      <span className="text-xs opacity-75">AI Assistant</span>
+                      <span className="text-xs opacity-75">Traidenis</span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{streamingContent}</p>
                     <div className="flex items-center space-x-1 mt-1">
@@ -752,32 +1023,141 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               {loading && !isStreaming && (
                 <div className="flex justify-start">
                   <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 mb-1">
                       <Bot className="w-4 h-4" />
-                      <span className="text-xs">AI Assistant</span>
+                      <span className="text-xs opacity-75">Traidenis</span>
                     </div>
-                    <div className="flex items-center space-x-2 mt-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm">Thinking...</span>
+                    <div className="flex items-center space-x-2">
+                      <span
+                        className="text-sm text-gray-700 animate-breathe"
+                        style={{
+                          animation: 'breathe 2s ease-in-out infinite',
+                        }}
+                      >
+                        {LOADING_MESSAGES[loadingMessageIndex]}
+                      </span>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* CSS for breathing animation and tooltip bounce */}
+              <style>{`
+                @keyframes breathe {
+                  0%, 100% {
+                    opacity: 0.4;
+                  }
+                  50% {
+                    opacity: 1;
+                  }
+                }
+                .animate-breathe {
+                  animation: breathe 2s ease-in-out infinite;
+                }
+                @keyframes bounce-subtle {
+                  0%, 100% {
+                    transform: translateY(0);
+                  }
+                  50% {
+                    transform: translateY(-4px);
+                  }
+                }
+                .animate-bounce-subtle {
+                  animation: bounce-subtle 2s ease-in-out infinite;
+                }
+              `}</style>
+
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input */}
+            {/* Message Input with Query Type Tag */}
             <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0">
               <form onSubmit={handleSendMessage} className="flex space-x-3">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type your message..."
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  disabled={loading}
-                />
+                <div className="flex-1 flex items-center border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent bg-white">
+                  {/* Query Type Tag with Dropdown */}
+                  <div
+                    className="relative"
+                    ref={tagDropdownRef}
+                    onMouseEnter={() => {
+                      if (!loading) {
+                        setShowTagDropdown(true);
+                        // Also dismiss tooltip when user discovers the dropdown
+                        if (showQueryTooltip) {
+                          dismissQueryTooltip();
+                        }
+                      }
+                    }}
+                    onMouseLeave={() => setShowTagDropdown(false)}
+                  >
+                    {/* First-time user tooltip (only in naujokas mode) */}
+                    {showQueryTooltip && naujokasMode && (
+                      <div className="absolute bottom-full left-0 mb-2 z-50 animate-bounce-subtle">
+                        <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <span>Pasirinkite užklausos tipą prieš rašant</span>
+                            <button
+                              onClick={dismissQueryTooltip}
+                              className="text-gray-400 hover:text-white ml-1"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          {/* Arrow pointing down */}
+                          <div className="absolute top-full left-4 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-gray-900" />
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      disabled={loading}
+                      className="flex items-center space-x-1 px-3 py-2 bg-green-100 text-green-700 font-medium text-sm rounded-l-lg hover:bg-green-200 transition-colors border-r border-gray-200 disabled:opacity-50"
+                    >
+                      <span>{currentQueryTag.tag}</span>
+                      <ChevronUp className="w-3 h-3" />
+                    </button>
+
+                    {/* Dropdown Menu (drops UP since input is at bottom) */}
+                    {showTagDropdown && (
+                      <div className="absolute bottom-full left-0 z-50 pb-2">
+                        {/* pb-2 creates invisible bridge to prevent hover gap issues */}
+                        <div className="w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+                          <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
+                            Pasirinkite užklausos tipą
+                          </div>
+                          {QUERY_TAGS.map((tag) => (
+                            <button
+                              key={tag.tag}
+                              type="button"
+                              onClick={() => handleTagSelect(tag)}
+                              className={`w-full text-left px-3 py-2 hover:bg-green-50 transition-colors ${
+                                currentQueryTag.tag === tag.tag ? 'bg-green-50' : ''
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`font-medium text-sm ${currentQueryTag.tag === tag.tag ? 'text-green-700' : 'text-gray-700'}`}>
+                                  {tag.tag}
+                                </span>
+                                <span className="text-xs text-gray-500">{tag.label}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">{tag.description}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Text Input */}
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Type your message..."
+                    className="flex-1 px-3 py-2 border-0 focus:ring-0 focus:outline-none rounded-r-lg"
+                    disabled={loading}
+                  />
+                </div>
                 <button
                   type="submit"
                   disabled={loading || !newMessage.trim()}
@@ -795,55 +1175,13 @@ export default function ChatInterface({ user, projectId }: ChatInterfaceProps) {
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 No chat selected
               </h3>
-              <p className="text-gray-500 mb-4">
-                Choose a chat from the sidebar or create a new one
+              <p className="text-gray-500">
+                Select a chat from the sidebar or create a new one
               </p>
-              <button
-                onClick={createNewThread}
-                disabled={creating}
-                className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50"
-              >
-                {creating ? 'Creating...' : 'Start New Chat'}
-              </button>
             </div>
           </div>
         )}
       </div>
-
-      {/* Query Type Selection Modal */}
-      {showQueryTypeModal && (
-        <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Pasirinkite užklausos tipą
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Prieš siųsdami žinutę, pasirinkite užklausos kategorią:
-            </p>
-            <div className="space-y-3">
-              {queryTypes.map((type) => (
-                <button
-                  key={type}
-                  onClick={() => handleQueryTypeSelected(type)}
-                  className="w-full p-4 text-left border-2 border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all"
-                >
-                  <span className="font-medium text-gray-900">{type}</span>
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                setShowQueryTypeModal(false);
-                setNewMessage(pendingMessage);
-                setPendingMessage('');
-              }}
-              className="mt-4 w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Atšaukti
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
