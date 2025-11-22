@@ -1030,28 +1030,31 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
                     {/* Dropdown Menu (drops UP since input is at bottom) */}
                     {showTagDropdown && (
-                      <div className="absolute bottom-full left-0 mb-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
-                        <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
-                          Pasirinkite užklausos tipą
+                      <div className="absolute bottom-full left-0 z-50 pb-2">
+                        {/* pb-2 creates invisible bridge to prevent hover gap issues */}
+                        <div className="w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1">
+                          <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
+                            Pasirinkite užklausos tipą
+                          </div>
+                          {QUERY_TAGS.map((tag) => (
+                            <button
+                              key={tag.tag}
+                              type="button"
+                              onClick={() => handleTagSelect(tag)}
+                              className={`w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors ${
+                                currentQueryTag.tag === tag.tag ? 'bg-blue-50' : ''
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className={`font-medium text-sm ${currentQueryTag.tag === tag.tag ? 'text-blue-700' : 'text-gray-700'}`}>
+                                  {tag.tag}
+                                </span>
+                                <span className="text-xs text-gray-500">{tag.label}</span>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-0.5">{tag.description}</p>
+                            </button>
+                          ))}
                         </div>
-                        {QUERY_TAGS.map((tag) => (
-                          <button
-                            key={tag.tag}
-                            type="button"
-                            onClick={() => handleTagSelect(tag)}
-                            className={`w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors ${
-                              currentQueryTag.tag === tag.tag ? 'bg-blue-50' : ''
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className={`font-medium text-sm ${currentQueryTag.tag === tag.tag ? 'text-blue-700' : 'text-gray-700'}`}>
-                                {tag.tag}
-                              </span>
-                              <span className="text-xs text-gray-500">{tag.label}</span>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-0.5">{tag.description}</p>
-                          </button>
-                        ))}
                       </div>
                     )}
                   </div>
