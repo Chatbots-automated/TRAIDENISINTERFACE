@@ -13,7 +13,15 @@ import {
 } from 'lucide-react';
 import { createChatThread, sendMessage, getChatThreads, getChatMessages } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
-import { saveCommercialOffer, parseAgentResponse, hasCommercialOffer } from '../lib/commercialOfferStorage';
+import {
+  saveCommercialOffer,
+  parseAgentResponse,
+  setLatestCommercialMessageId,
+  isLatestCommercialMessage,
+  addAcceptedMessageId,
+  isMessageAccepted,
+  cleanupDeletedThreads
+} from '../lib/commercialOfferStorage';
 import type { AppUser } from '../types';
 
 interface ChatInterfaceProps {
@@ -38,7 +46,6 @@ interface Message {
   timestamp: string;
   author_ref?: string;
   queryType?: string; // Store the query type tag for user messages
-  isCommercialResponse?: boolean; // True if this is a response to a /Commercial query
 }
 
 type QueryType = 'Komercinio pasiūlymo užklausa' | 'Bendra užklausa' | 'Nestandartinių gaminių užklausa' | null;
@@ -105,7 +112,6 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  const [acceptedMessageIds, setAcceptedMessageIds] = useState<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
@@ -570,14 +576,20 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
         console.log('Full response preview:', fullResponse.substring(0, 200));
 
         if (fullResponse) {
+          const isCommercialQuery = pendingQueryTypeRef.current === '/Commercial';
+
           const aiMessage: Message = {
             id: streamingMessageId,
             role: 'assistant',
             content: fullResponse,
             timestamp: new Date().toISOString(),
-            author_ref: 'ai-assistant',
-            isCommercialResponse: pendingQueryTypeRef.current === '/Commercial'
+            author_ref: 'ai-assistant'
           };
+
+          // If this is a /Commercial response, track it as the latest
+          if (isCommercialQuery && currentThread) {
+            setLatestCommercialMessageId(currentThread.id, streamingMessageId);
+          }
 
           console.log('Adding AI message to state...');
           setMessages(prev => [...prev, aiMessage]);
@@ -635,14 +647,21 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
           // If we have streaming content but no fullResponse, use streaming content
           if (streamingContent) {
             console.log('Using streamingContent as fallback');
+            const isCommercialQuery = pendingQueryTypeRef.current === '/Commercial';
+
             const aiMessage: Message = {
               id: streamingMessageId,
               role: 'assistant',
               content: streamingContent,
               timestamp: new Date().toISOString(),
-              author_ref: 'ai-assistant',
-              isCommercialResponse: pendingQueryTypeRef.current === '/Commercial'
+              author_ref: 'ai-assistant'
             };
+
+            // If this is a /Commercial response, track it as the latest
+            if (isCommercialQuery && currentThread) {
+              setLatestCommercialMessageId(currentThread.id, streamingMessageId);
+            }
+
             setMessages(prev => [...prev, aiMessage]);
 
             // Clear the pending query type
@@ -737,13 +756,14 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
     // Save to localStorage
     const deletedThreadIds = saveCommercialOffer(currentThread.id, parsedOffer);
 
-    // Log if any old offers were removed
+    // Clean up tracking data for deleted threads (FIFO cleanup)
     if (deletedThreadIds.length > 0) {
       console.log('Removed old commercial offers for threads:', deletedThreadIds);
+      cleanupDeletedThreads(deletedThreadIds);
     }
 
-    // Mark this message as accepted
-    setAcceptedMessageIds(prev => new Set([...prev, messageId]));
+    // Mark this message as accepted in localStorage (persists across refresh)
+    addAcceptedMessageId(currentThread.id, messageId);
 
     // Notify parent component (Layout) that this thread now has an offer
     if (onCommercialOfferUpdate) {
@@ -754,12 +774,10 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
   };
 
   // Handle rejecting a commercial offer response
-  const handleRejectOffer = (messageId: string) => {
+  const handleRejectOffer = () => {
     // Pre-fill the input with a feedback prompt
+    // The buttons will disappear when a new /Commercial response arrives
     setNewMessage('Please regenerate the commercial offer with the following changes: ');
-
-    // Mark this message as handled (rejected)
-    setAcceptedMessageIds(prev => new Set([...prev, messageId]));
 
     // Focus the input for the user to add their feedback
     inputRef.current?.focus();
@@ -891,8 +909,9 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
                       </p>
                       {/* Accept/Reject buttons for commercial responses */}
                       {message.role === 'assistant' &&
-                       message.isCommercialResponse &&
-                       !acceptedMessageIds.has(message.id) && (
+                       currentThread &&
+                       isLatestCommercialMessage(currentThread.id, message.id) &&
+                       !isMessageAccepted(currentThread.id, message.id) && (
                         <div className="flex items-center space-x-1 ml-2">
                           <button
                             onClick={() => handleAcceptOffer(message.id, message.content)}
@@ -902,7 +921,7 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
                             <Check className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleRejectOffer(message.id)}
+                            onClick={() => handleRejectOffer()}
                             className="p-1 rounded hover:bg-red-200 text-red-600 transition-colors"
                             title="Reject and request changes"
                           >
@@ -912,8 +931,8 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
                       )}
                       {/* Show accepted indicator */}
                       {message.role === 'assistant' &&
-                       message.isCommercialResponse &&
-                       acceptedMessageIds.has(message.id) && (
+                       currentThread &&
+                       isMessageAccepted(currentThread.id, message.id) && (
                         <span className="text-xs text-green-600 ml-2 flex items-center">
                           <Check className="w-3 h-3 mr-1" />
                           Saved

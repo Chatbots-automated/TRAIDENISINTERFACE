@@ -2,6 +2,8 @@
 // Max 12 entries, FIFO cleanup when limit exceeded
 
 const STORAGE_KEY = 'commercial_offers';
+const LATEST_MESSAGE_KEY = 'commercial_latest_messages';
+const ACCEPTED_MESSAGE_KEY = 'commercial_accepted_messages';
 const MAX_ENTRIES = 12;
 
 export interface CommercialOffer {
@@ -14,6 +16,16 @@ export interface CommercialOffer {
 
 interface CommercialOffersStore {
   [threadId: string]: CommercialOffer;
+}
+
+// Store for latest commercial message ID per thread
+interface LatestMessagesStore {
+  [threadId: string]: string;
+}
+
+// Store for accepted message IDs per thread
+interface AcceptedMessagesStore {
+  [threadId: string]: string[];
 }
 
 // Get all commercial offers from localStorage
@@ -180,4 +192,124 @@ export function parseAgentResponse(response: string): Omit<CommercialOffer, 'cre
     techDescription: techDescription.trim(),
     pricing: pricing.trim(),
   };
+}
+
+// ============================================
+// Latest Commercial Message Tracking
+// ============================================
+
+// Get all latest message IDs
+function getAllLatestMessages(): LatestMessagesStore {
+  try {
+    const stored = localStorage.getItem(LATEST_MESSAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch (error) {
+    console.error('Error reading latest messages from localStorage:', error);
+    return {};
+  }
+}
+
+// Set the latest commercial message ID for a thread
+export function setLatestCommercialMessageId(threadId: string, messageId: string): void {
+  const latestMessages = getAllLatestMessages();
+  latestMessages[threadId] = messageId;
+
+  try {
+    localStorage.setItem(LATEST_MESSAGE_KEY, JSON.stringify(latestMessages));
+  } catch (error) {
+    console.error('Error saving latest message ID:', error);
+  }
+}
+
+// Get the latest commercial message ID for a thread
+export function getLatestCommercialMessageId(threadId: string): string | null {
+  const latestMessages = getAllLatestMessages();
+  return latestMessages[threadId] || null;
+}
+
+// Check if a message is the latest commercial message for its thread
+export function isLatestCommercialMessage(threadId: string, messageId: string): boolean {
+  return getLatestCommercialMessageId(threadId) === messageId;
+}
+
+// Clear latest message ID for a thread (called during FIFO cleanup)
+function clearLatestCommercialMessageId(threadId: string): void {
+  const latestMessages = getAllLatestMessages();
+  delete latestMessages[threadId];
+
+  try {
+    localStorage.setItem(LATEST_MESSAGE_KEY, JSON.stringify(latestMessages));
+  } catch (error) {
+    console.error('Error clearing latest message ID:', error);
+  }
+}
+
+// ============================================
+// Accepted Messages Tracking
+// ============================================
+
+// Get all accepted messages
+function getAllAcceptedMessages(): AcceptedMessagesStore {
+  try {
+    const stored = localStorage.getItem(ACCEPTED_MESSAGE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch (error) {
+    console.error('Error reading accepted messages from localStorage:', error);
+    return {};
+  }
+}
+
+// Add a message to the accepted list for a thread
+export function addAcceptedMessageId(threadId: string, messageId: string): void {
+  const acceptedMessages = getAllAcceptedMessages();
+
+  if (!acceptedMessages[threadId]) {
+    acceptedMessages[threadId] = [];
+  }
+
+  if (!acceptedMessages[threadId].includes(messageId)) {
+    acceptedMessages[threadId].push(messageId);
+  }
+
+  try {
+    localStorage.setItem(ACCEPTED_MESSAGE_KEY, JSON.stringify(acceptedMessages));
+  } catch (error) {
+    console.error('Error saving accepted message ID:', error);
+  }
+}
+
+// Check if a message has been accepted
+export function isMessageAccepted(threadId: string, messageId: string): boolean {
+  const acceptedMessages = getAllAcceptedMessages();
+  return acceptedMessages[threadId]?.includes(messageId) || false;
+}
+
+// Get all accepted message IDs for a thread
+export function getAcceptedMessageIds(threadId: string): string[] {
+  const acceptedMessages = getAllAcceptedMessages();
+  return acceptedMessages[threadId] || [];
+}
+
+// Clear accepted messages for a thread (called during FIFO cleanup)
+function clearAcceptedMessagesForThread(threadId: string): void {
+  const acceptedMessages = getAllAcceptedMessages();
+  delete acceptedMessages[threadId];
+
+  try {
+    localStorage.setItem(ACCEPTED_MESSAGE_KEY, JSON.stringify(acceptedMessages));
+  } catch (error) {
+    console.error('Error clearing accepted messages:', error);
+  }
+}
+
+// ============================================
+// Cleanup function for FIFO removal
+// ============================================
+
+// Clean up all related data for deleted threads
+export function cleanupDeletedThreads(deletedThreadIds: string[]): void {
+  for (const threadId of deletedThreadIds) {
+    clearLatestCommercialMessageId(threadId);
+    clearAcceptedMessagesForThread(threadId);
+  }
 }
