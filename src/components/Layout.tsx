@@ -4,8 +4,6 @@ import {
   Menu,
   X,
   Settings,
-  MessageSquare,
-  FileText,
   Database,
   LogOut,
   Plus,
@@ -36,9 +34,6 @@ interface LayoutProps {
   onCreateThread?: () => void;
   onDeleteThread?: (threadId: string) => void;
   onRenameThread?: (threadId: string, newTitle: string) => void;
-  hasCommercialOffer?: boolean;
-  onOpenCommercialPanel?: () => void;
-  showDocGlow?: boolean;
 }
 
 export default function Layout({
@@ -51,10 +46,7 @@ export default function Layout({
   onSelectThread,
   onCreateThread,
   onDeleteThread,
-  onRenameThread,
-  hasCommercialOffer = false,
-  onOpenCommercialPanel,
-  showDocGlow = false
+  onRenameThread
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -303,61 +295,14 @@ export default function Layout({
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <div className="bg-white/80 backdrop-blur-sm shadow-sm border-b border-green-100 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-md hover:bg-gray-100"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-              
-              <div>
-                <img 
-                  src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj" 
-                  alt="Traidenis Logo" 
-                  className="w-6 h-6 object-contain lg:hidden"
-                />
-                  <h1 className="text-lg font-semibold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
-                    Traidenis Knowledge Base
-                </h1>
-                  <p className="text-sm text-green-600">
-                  Chat with AI and manage documents
-                </p>
-              </div>
-              </div>
-
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-1">
-                <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-green-600">
-                  <MessageSquare className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={onOpenCommercialPanel}
-                  className={`p-2 rounded-md hover:bg-white hover:shadow-sm transition-all relative ${
-                    hasCommercialOffer
-                      ? 'text-blue-600'
-                      : 'text-gray-400'
-                  } ${
-                    showDocGlow
-                      ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1 shadow-lg shadow-purple-300/50'
-                      : ''
-                  }`}
-                  title={hasCommercialOffer ? 'View Commercial Offer' : 'No commercial offer available'}
-                >
-                  <FileText className="w-4 h-4" />
-                  {showDocGlow && (
-                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Mobile menu button - only visible on mobile */}
+        <div className="lg:hidden bg-white/80 backdrop-blur-sm border-b border-green-100 px-4 py-2">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-md hover:bg-gray-100"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Page content */}

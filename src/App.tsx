@@ -279,56 +279,84 @@ function App() {
       onCreateThread={handleCreateThread}
       onDeleteThread={handleDeleteThread}
       onRenameThread={handleRenameThread}
-      hasCommercialOffer={hasOffer}
-      onOpenCommercialPanel={handleOpenCommercialPanel}
-      showDocGlow={showDocGlow}
     >
-      {/* View Mode Tabs */}
+      {/* Navigation Bar */}
       <div className="bg-white border-b border-gray-200">
-        <div className="flex space-x-8 px-6">
-          <button
-            onClick={() => setViewMode('chat')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              viewMode === 'chat'
-                ? 'border-green-500 text-green-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-green-300'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              <MessageSquare className="w-4 h-4" />
-              <span>Chat</span>
-            </div>
-          </button>
-          
-          <button
-            onClick={() => setViewMode('documents')}
-            className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-              viewMode === 'documents'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-blue-300'
-            }`}
-          >
-            <div className="flex items-center space-x-2">
-              <FileText className="w-4 h-4" />
-              <span>Documents</span>
-            </div>
-          </button>
-          
-          {user.is_admin && (
+        <div className="flex items-center justify-between px-6">
+          {/* Left: Navigation Tabs */}
+          <div className="flex space-x-8">
             <button
-              onClick={() => setViewMode('users')}
+              onClick={() => setViewMode('chat')}
               className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                viewMode === 'users'
-                  ? 'border-purple-500 text-purple-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-purple-300'
+                viewMode === 'chat'
+                  ? 'border-green-500 text-green-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-green-300'
               }`}
             >
               <div className="flex items-center space-x-2">
-                <Users className="w-4 h-4" />
-                <span>Users</span>
+                <MessageSquare className="w-4 h-4" />
+                <span>Chat</span>
               </div>
             </button>
-          )}
+
+            <button
+              onClick={() => setViewMode('documents')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                viewMode === 'documents'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-blue-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <FileText className="w-4 h-4" />
+                <span>Documents</span>
+              </div>
+            </button>
+
+            {user.is_admin && (
+              <button
+                onClick={() => setViewMode('users')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  viewMode === 'users'
+                    ? 'border-purple-500 text-purple-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-purple-300'
+                }`}
+              >
+                <div className="flex items-center space-x-2">
+                  <Users className="w-4 h-4" />
+                  <span>Users</span>
+                </div>
+              </button>
+            )}
+          </div>
+
+          {/* Right: Commercial Offer Icon */}
+          <div className="flex items-center space-x-1 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-1">
+            <button className="p-2 rounded-md hover:bg-white hover:shadow-sm transition-all text-green-600">
+              <MessageSquare className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleOpenCommercialPanel}
+              className={`p-2 rounded-md hover:bg-white hover:shadow-sm transition-all relative ${
+                hasOffer
+                  ? 'text-blue-600'
+                  : 'text-gray-400'
+              } ${
+                showDocGlow
+                  ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1 shadow-lg shadow-purple-300/50'
+                  : ''
+              }`}
+              title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+            >
+              <FileText className="w-4 h-4" />
+              {showDocGlow && (
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
