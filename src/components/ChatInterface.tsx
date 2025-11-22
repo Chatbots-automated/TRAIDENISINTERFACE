@@ -754,16 +754,6 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
           <>
-            {/* Chat Header */}
-            <div className="p-4 border-b border-gray-200 flex-shrink-0">
-              <h3 className="text-lg font-semibold text-gray-900">
-                {currentThread.title}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {currentThread.message_count || 0} messages
-              </p>
-            </div>
-
             {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {messages.map((message) => (
