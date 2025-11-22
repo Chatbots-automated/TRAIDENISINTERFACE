@@ -101,6 +101,15 @@ const LOADING_MESSAGES = [
   "Analyzing patterns...",
 ];
 
+// Get time-based greeting in Lithuanian
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Labas rytas';
+  if (hour >= 12 && hour < 18) return 'Laba diena';
+  if (hour >= 18 && hour < 22) return 'Labas vakaras';
+  return 'Labas';
+};
+
 // Get display name for a message author
 const getDisplayName = (authorName?: string, authorRef?: string): string => {
   // Use stored display name if available
@@ -756,6 +765,59 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           <>
             {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+              {/* Welcome screen when chat is empty */}
+              {messages.length === 0 && !loading && (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  {/* Greeting */}
+                  <div className="mb-8">
+                    <div className="text-4xl mb-4">🌿</div>
+                    <h2 className="text-3xl font-light text-gray-800 mb-2">
+                      {getGreeting()}, {user.display_name?.split(' ')[0] || 'Vartotojau'}
+                    </h2>
+                    <p className="text-gray-500 text-lg">Kuo galiu padėti?</p>
+                  </div>
+
+                  {/* Quick action suggestions */}
+                  <div className="flex flex-wrap justify-center gap-3 max-w-xl">
+                    <button
+                      onClick={() => {
+                        setNewMessage('Reikia sukurti komercinį pasiūlymą...');
+                        handleTagSelect(QUERY_TAGS[1]); // Commercial
+                        inputRef.current?.focus();
+                      }}
+                      className="px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm hover:bg-blue-100 transition-colors border border-blue-200"
+                    >
+                      📄 Komercinis pasiūlymas
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewMessage('Turiu klausimą apie ');
+                        handleTagSelect(QUERY_TAGS[0]); // General
+                        inputRef.current?.focus();
+                      }}
+                      className="px-4 py-2 bg-green-50 text-green-700 rounded-full text-sm hover:bg-green-100 transition-colors border border-green-200"
+                    >
+                      💬 Bendras klausimas
+                    </button>
+                    <button
+                      onClick={() => {
+                        setNewMessage('Reikia nestandartinio sprendimo...');
+                        handleTagSelect(QUERY_TAGS[2]); // Custom
+                        inputRef.current?.focus();
+                      }}
+                      className="px-4 py-2 bg-purple-50 text-purple-700 rounded-full text-sm hover:bg-purple-100 transition-colors border border-purple-200"
+                    >
+                      🔧 Nestandartinis gaminys
+                    </button>
+                  </div>
+
+                  {/* Hint about query types */}
+                  <p className="text-xs text-gray-400 mt-6 max-w-md">
+                    Pasirinkite užklausos tipą kairėje pusėje arba tiesiog pradėkite rašyti
+                  </p>
+                </div>
+              )}
+
               {messages.map((message) => (
                 <div
                   key={message.id}
