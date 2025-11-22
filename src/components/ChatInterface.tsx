@@ -57,15 +57,19 @@ interface QueryTagConfig {
   tag: string;
   label: string;
   queryType: QueryType;
+  description: string; // Hover tooltip description
 }
 
 const QUERY_TAGS: QueryTagConfig[] = [
-  { tag: '/General', label: 'Bendra', queryType: 'Bendra užklausa' },
-  { tag: '/Commercial', label: 'Komercinis', queryType: 'Komercinio pasiūlymo užklausa' },
-  { tag: '/Custom', label: 'Nestandartinis', queryType: 'Nestandartinių gaminių užklausa' },
+  { tag: '/General', label: 'Bendra', queryType: 'Bendra užklausa', description: 'Bendri klausimai apie produkciją' },
+  { tag: '/Commercial', label: 'Komercinis', queryType: 'Komercinio pasiūlymo užklausa', description: 'Gauti komercinį pasiūlymą su kainomis' },
+  { tag: '/Custom', label: 'Nestandartinis', queryType: 'Nestandartinių gaminių užklausa', description: 'Nestandartiniai/specialūs gaminiai' },
 ];
 
 const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
+
+// LocalStorage key for tracking if user has seen the query type tooltip
+const QUERY_TOOLTIP_SHOWN_KEY = 'traidenis_query_tooltip_shown';
 
 // Fun loading messages that rotate while waiting for response
 const LOADING_MESSAGES = [
@@ -139,6 +143,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [loading, setLoading] = useState(false);
   const [currentQueryTag, setCurrentQueryTag] = useState<QueryTagConfig>(DEFAULT_QUERY_TAG);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [showQueryTooltip, setShowQueryTooltip] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -180,6 +185,18 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Show query type tooltip for first-time users
+  useEffect(() => {
+    const hasSeenTooltip = localStorage.getItem(QUERY_TOOLTIP_SHOWN_KEY);
+    if (!hasSeenTooltip && currentThread) {
+      // Show tooltip after a short delay to let the UI settle
+      const timer = setTimeout(() => {
+        setShowQueryTooltip(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentThread]);
 
   // Rotate loading messages while waiting for response
   useEffect(() => {
@@ -704,10 +721,20 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     }
   };
 
+  // Dismiss the first-time user tooltip
+  const dismissQueryTooltip = () => {
+    setShowQueryTooltip(false);
+    localStorage.setItem(QUERY_TOOLTIP_SHOWN_KEY, 'true');
+  };
+
   // Handle tag selection from dropdown
   const handleTagSelect = (tag: QueryTagConfig) => {
     setCurrentQueryTag(tag);
     setShowTagDropdown(false);
+    // Dismiss tooltip when user interacts with the selector
+    if (showQueryTooltip) {
+      dismissQueryTooltip();
+    }
     // Focus back to the input
     inputRef.current?.focus();
   };
@@ -926,7 +953,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 </div>
               )}
 
-              {/* CSS for breathing animation */}
+              {/* CSS for breathing animation and tooltip bounce */}
               <style>{`
                 @keyframes breathe {
                   0%, 100% {
@@ -938,6 +965,17 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 }
                 .animate-breathe {
                   animation: breathe 2s ease-in-out infinite;
+                }
+                @keyframes bounce-subtle {
+                  0%, 100% {
+                    transform: translateY(0);
+                  }
+                  50% {
+                    transform: translateY(-4px);
+                  }
+                }
+                .animate-bounce-subtle {
+                  animation: bounce-subtle 2s ease-in-out infinite;
                 }
               `}</style>
 
@@ -952,9 +990,35 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   <div
                     className="relative"
                     ref={tagDropdownRef}
-                    onMouseEnter={() => !loading && setShowTagDropdown(true)}
+                    onMouseEnter={() => {
+                      if (!loading) {
+                        setShowTagDropdown(true);
+                        // Also dismiss tooltip when user discovers the dropdown
+                        if (showQueryTooltip) {
+                          dismissQueryTooltip();
+                        }
+                      }
+                    }}
                     onMouseLeave={() => setShowTagDropdown(false)}
                   >
+                    {/* First-time user tooltip */}
+                    {showQueryTooltip && (
+                      <div className="absolute bottom-full left-0 mb-2 z-50 animate-bounce-subtle">
+                        <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+                          <div className="flex items-center space-x-2">
+                            <span>Pasirinkite užklausos tipą prieš rašant</span>
+                            <button
+                              onClick={dismissQueryTooltip}
+                              className="text-gray-400 hover:text-white ml-1"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          {/* Arrow pointing down */}
+                          <div className="absolute top-full left-4 w-0 h-0 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-gray-900" />
+                        </div>
+                      </div>
+                    )}
                     <button
                       type="button"
                       disabled={loading}
@@ -966,7 +1030,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
                     {/* Dropdown Menu (drops UP since input is at bottom) */}
                     {showTagDropdown && (
-                      <div className="absolute bottom-full left-0 mb-1 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                      <div className="absolute bottom-full left-0 mb-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                         <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
                           Pasirinkite užklausos tipą
                         </div>
@@ -975,12 +1039,17 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                             key={tag.tag}
                             type="button"
                             onClick={() => handleTagSelect(tag)}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 transition-colors flex items-center justify-between ${
-                              currentQueryTag.tag === tag.tag ? 'bg-blue-50 text-blue-700' : 'text-gray-700'
+                            className={`w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors ${
+                              currentQueryTag.tag === tag.tag ? 'bg-blue-50' : ''
                             }`}
                           >
-                            <span className="font-medium">{tag.tag}</span>
-                            <span className="text-xs text-gray-500">{tag.label}</span>
+                            <div className="flex items-center justify-between">
+                              <span className={`font-medium text-sm ${currentQueryTag.tag === tag.tag ? 'text-blue-700' : 'text-gray-700'}`}>
+                                {tag.tag}
+                              </span>
+                              <span className="text-xs text-gray-500">{tag.label}</span>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-0.5">{tag.description}</p>
                           </button>
                         ))}
                       </div>
