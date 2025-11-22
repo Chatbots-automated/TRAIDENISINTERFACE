@@ -749,9 +749,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   };
 
   return (
-    <div className="flex h-full bg-white">
+    <div className="flex flex-col h-full bg-white">
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
           <>
             {/* Chat Header */}
@@ -764,8 +764,8 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               </p>
             </div>
 
-            {/* Messages Area - with max height to prevent infinite expansion */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 max-h-[calc(100vh-280px)]">
+            {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {messages.map((message) => (
                 <div
                   key={message.id}
