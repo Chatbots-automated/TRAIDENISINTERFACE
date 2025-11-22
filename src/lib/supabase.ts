@@ -399,6 +399,7 @@ export const sendMessage = async (
   content: string,
   role: 'user' | 'assistant' = 'user',
   authorEmail: string,
+  authorName?: string,
   existingHistory?: any[]
 ) => {
   try {
@@ -417,13 +418,14 @@ export const sendMessage = async (
 
     // Get existing chat history or initialize empty array
     const currentHistory = threadData?.chat_history || [];
-    
+
     // Create new message object
     const newMessage = {
       id: Date.now().toString(),
       role: role,
       content: content,
       author_ref: authorEmail,
+      author_name: authorName || '',
       timestamp: new Date().toISOString()
     };
 

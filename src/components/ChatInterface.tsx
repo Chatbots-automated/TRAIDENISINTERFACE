@@ -46,6 +46,7 @@ interface Message {
   content: string;
   timestamp: string;
   author_ref?: string;
+  author_name?: string; // User's display name
   queryType?: string; // Store the query type tag for user messages
 }
 
@@ -100,8 +101,15 @@ const LOADING_MESSAGES = [
   "Analyzing patterns...",
 ];
 
-// Extract first name from email (e.g., "vitalijus.smith@example.com" -> "Vitalijus")
-const getDisplayName = (authorRef?: string): string => {
+// Get display name for a message author
+const getDisplayName = (authorName?: string, authorRef?: string): string => {
+  // Use stored display name if available
+  if (authorName) {
+    // Extract first name from full name (e.g., "Vitalijus Smith" -> "Vitalijus")
+    return authorName.split(' ')[0];
+  }
+
+  // Fallback for old messages without author_name - extract from email
   if (!authorRef || authorRef === 'ai-assistant' || authorRef === 'system') {
     return 'Traidenis';
   }
@@ -238,6 +246,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         content: messageToSend,
         timestamp: new Date().toISOString(),
         author_ref: user.email || '',
+        author_name: user.display_name || '',
         queryType: currentQueryTag.tag // Store the tag used for this message
       };
       setMessages(prev => [...prev, userMessage]);
@@ -248,7 +257,8 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         currentThread.id,
         messageToSend,
         'user',
-        user.email || ''
+        user.email || '',
+        user.display_name || ''
       );
 
       if (userMessageError) {
@@ -553,7 +563,8 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             currentThread.id,
             fullResponse,
             'assistant',
-            'ai-assistant'
+            'ai-assistant',
+            'Traidenis'
           );
 
           if (aiMessageError) {
@@ -618,7 +629,8 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               currentThread.id,
               streamingContent,
               'assistant',
-              'ai-assistant'
+              'ai-assistant',
+              'Traidenis'
             );
           }
 
@@ -775,7 +787,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                         <Bot className="w-4 h-4" />
                       )}
                       <span className="text-xs opacity-75">
-                        {message.role === 'user' ? getDisplayName(message.author_ref) : 'Traidenis'}
+                        {message.role === 'user' ? getDisplayName(message.author_name, message.author_ref) : 'Traidenis'}
                       </span>
                       {message.role === 'user' && message.queryType && (
                         <span className="text-xs opacity-75 bg-white/20 px-1.5 py-0.5 rounded">
