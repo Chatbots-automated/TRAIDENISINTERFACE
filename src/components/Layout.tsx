@@ -4,6 +4,7 @@ import {
   Menu,
   X,
   Settings,
+  MessageSquare,
   Database,
   LogOut,
   Plus,
