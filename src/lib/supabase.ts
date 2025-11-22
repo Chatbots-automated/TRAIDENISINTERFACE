@@ -523,6 +523,27 @@ export const deleteChatThread = async (threadId: string) => {
   }
 };
 
+// Update chat thread title
+export const updateChatThreadTitle = async (threadId: string, title: string) => {
+  try {
+    const { error } = await supabase
+      .from('chat_items')
+      .update({ title })
+      .eq('id', threadId)
+      .eq('type', 'thread');
+
+    if (error) {
+      console.error('Error updating chat thread title:', error);
+      throw error;
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error in updateChatThreadTitle:', error);
+    return { success: false, error };
+  }
+};
+
 // Document helpers
 export const createDocument = async (
   content: string,

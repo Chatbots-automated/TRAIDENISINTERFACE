@@ -10,7 +10,9 @@ import {
   LogOut,
   Plus,
   Trash2,
-  Loader2
+  Loader2,
+  Pencil,
+  Check
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -33,6 +35,7 @@ interface LayoutProps {
   onSelectThread?: (thread: Thread) => void;
   onCreateThread?: () => void;
   onDeleteThread?: (threadId: string) => void;
+  onRenameThread?: (threadId: string, newTitle: string) => void;
   hasCommercialOffer?: boolean;
   onOpenCommercialPanel?: () => void;
 }
@@ -47,11 +50,35 @@ export default function Layout({
   onSelectThread,
   onCreateThread,
   onDeleteThread,
+  onRenameThread,
   hasCommercialOffer = false,
   onOpenCommercialPanel
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+
+  const handleStartEdit = (thread: Thread, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingThreadId(thread.id);
+    setEditingTitle(thread.title);
+  };
+
+  const handleSaveEdit = (threadId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (editingTitle.trim() && onRenameThread) {
+      onRenameThread(threadId, editingTitle.trim());
+    }
+    setEditingThreadId(null);
+    setEditingTitle('');
+  };
+
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingThreadId(null);
+    setEditingTitle('');
+  };
 
   const handleSignOut = async () => {
     try {
@@ -159,7 +186,7 @@ export default function Layout({
                 threads.map((thread) => (
                   <div
                     key={thread.id}
-                    onClick={() => onSelectThread?.(thread)}
+                    onClick={() => editingThreadId !== thread.id && onSelectThread?.(thread)}
                     className={`
                       p-2 rounded-lg transition-colors cursor-pointer group text-left w-full
                       ${currentThread?.id === thread.id
@@ -168,29 +195,75 @@ export default function Layout({
                       }
                     `}
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-900 truncate">
-                          {thread.title}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {thread.message_count || 0} msgs · {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
-                        </p>
-                      </div>
-                      {/* Delete button - admin only */}
-                      {user.is_admin && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteThread?.(thread.id);
+                    {editingThreadId === thread.id ? (
+                      /* Edit mode */
+                      <div className="flex items-center space-x-1">
+                        <input
+                          type="text"
+                          value={editingTitle}
+                          onChange={(e) => setEditingTitle(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleSaveEdit(thread.id, e as unknown as React.MouseEvent);
+                            } else if (e.key === 'Escape') {
+                              handleCancelEdit(e as unknown as React.MouseEvent);
+                            }
                           }}
-                          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all"
-                          title="Delete chat"
+                          className="flex-1 text-xs px-1.5 py-0.5 border border-green-300 rounded focus:outline-none focus:ring-1 focus:ring-green-500"
+                          autoFocus
+                        />
+                        <button
+                          onClick={(e) => handleSaveEdit(thread.id, e)}
+                          className="p-1 rounded hover:bg-green-100 text-green-600 transition-all"
+                          title="Save"
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Check className="w-3 h-3" />
                         </button>
-                      )}
-                    </div>
+                        <button
+                          onClick={handleCancelEdit}
+                          className="p-1 rounded hover:bg-gray-100 text-gray-400 transition-all"
+                          title="Cancel"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      /* View mode */
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-900 truncate">
+                            {thread.title}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {thread.message_count || 0} msgs · {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        {/* Action buttons */}
+                        <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                          <button
+                            onClick={(e) => handleStartEdit(thread, e)}
+                            className="p-1 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-all"
+                            title="Rename chat"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          {/* Delete button - admin only */}
+                          {user.is_admin && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteThread?.(thread.id);
+                              }}
+                              className="p-1 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all"
+                              title="Delete chat"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
               )}

@@ -9,7 +9,7 @@ import {
   X,
   MessageSquare
 } from 'lucide-react';
-import { sendMessage, getChatMessages } from '../lib/supabase';
+import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
 import {
   saveCommercialOffer,
@@ -235,6 +235,19 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
       if (userMessageError) {
         console.error('Error saving user message:', userMessageError);
+      }
+
+      // Auto-rename thread on first message (keep the date from original title)
+      if (currentThread.message_count === 0) {
+        const dateMatch = currentThread.title.match(/\d{1,2}\/\d{1,2}\/\d{4}.*$/);
+        const datePart = dateMatch ? ` - ${dateMatch[0]}` : ` - ${new Date().toLocaleDateString()}`;
+        const messagePart = messageToSend.length > 40
+          ? messageToSend.substring(0, 40).trim() + '...'
+          : messageToSend;
+        const newTitle = messagePart + datePart;
+
+        await updateChatThreadTitle(currentThread.id, newTitle);
+        console.log('Auto-renamed thread to:', newTitle);
       }
 
       // Log user message sent

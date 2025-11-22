@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getCurrentUser, getOrCreateDefaultProject, getChatThreads, createChatThread, deleteChatThread } from './lib/supabase';
+import { getCurrentUser, getOrCreateDefaultProject, getChatThreads, createChatThread, deleteChatThread, updateChatThreadTitle } from './lib/supabase';
 import Layout from './components/Layout';
 import ChatInterface from './components/ChatInterface';
 import DocumentsInterface from './components/DocumentsInterface';
@@ -169,6 +169,25 @@ function App() {
     setHasOffer(hasCommercialOffer(thread.id));
   };
 
+  // Handle renaming a thread
+  const handleRenameThread = async (threadId: string, newTitle: string) => {
+    try {
+      const { success, error } = await updateChatThreadTitle(threadId, newTitle);
+
+      if (error) {
+        console.error('Error renaming thread:', error);
+        return;
+      }
+
+      if (success) {
+        // Reload threads to show updated title
+        await loadThreads();
+      }
+    } catch (error) {
+      console.error('Error renaming thread:', error);
+    }
+  };
+
   // Handle updates from ChatInterface about commercial offers
   const handleCommercialOfferUpdate = (threadId: string, offerExists: boolean) => {
     setHasOffer(offerExists);
@@ -248,6 +267,7 @@ function App() {
       onSelectThread={handleSelectThread}
       onCreateThread={handleCreateThread}
       onDeleteThread={handleDeleteThread}
+      onRenameThread={handleRenameThread}
       hasCommercialOffer={hasOffer}
       onOpenCommercialPanel={handleOpenCommercialPanel}
     >
