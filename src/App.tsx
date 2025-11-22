@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { getCurrentUser, getOrCreateDefaultProject } from './lib/supabase';
+import React, { useState, useEffect, useCallback } from 'react';
+import { getCurrentUser, getOrCreateDefaultProject, getChatThreads, createChatThread, deleteChatThread } from './lib/supabase';
 import Layout from './components/Layout';
 import ChatInterface from './components/ChatInterface';
 import DocumentsInterface from './components/DocumentsInterface';
@@ -12,6 +12,14 @@ import type { AppUser } from './types';
 
 type ViewMode = 'chat' | 'documents' | 'users';
 
+interface Thread {
+  id: string;
+  title: string;
+  message_count: number;
+  last_message_at: string;
+  created_at: string;
+}
+
 function App() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [projectId, setProjectId] = useState<string>('');
@@ -19,9 +27,14 @@ function App() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('chat');
 
+  // Thread management state (moved from ChatInterface)
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [currentThread, setCurrentThread] = useState<Thread | null>(null);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [creatingThread, setCreatingThread] = useState(false);
+
   // Commercial offer panel state
   const [commercialPanelOpen, setCommercialPanelOpen] = useState(false);
-  const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [hasOffer, setHasOffer] = useState(false);
 
   useEffect(() => {
@@ -57,29 +70,125 @@ function App() {
     checkUser();
   };
 
-  // Handle updates from ChatInterface about commercial offers
-  const handleCommercialOfferUpdate = (threadId: string, offerExists: boolean) => {
-    setCurrentThreadId(threadId);
-    setHasOffer(offerExists);
+  // Load threads when projectId changes
+  const loadThreads = useCallback(async () => {
+    if (!projectId) return;
+
+    try {
+      setThreadsLoading(true);
+      const { data, error } = await getChatThreads(projectId);
+
+      if (error) {
+        console.error('Error loading threads:', error);
+        setThreads([]);
+        return;
+      }
+
+      setThreads(data || []);
+
+      // Auto-select first thread if none selected
+      if (!currentThread && data && data.length > 0) {
+        setCurrentThread(data[0]);
+      }
+    } catch (error) {
+      console.error('Error loading threads:', error);
+    } finally {
+      setThreadsLoading(false);
+    }
+  }, [projectId, currentThread]);
+
+  // Load threads when projectId is set
+  useEffect(() => {
+    if (projectId) {
+      loadThreads();
+    }
+  }, [projectId]);
+
+  // Handle creating a new thread
+  const handleCreateThread = async () => {
+    if (!projectId || !user) return;
+
+    try {
+      setCreatingThread(true);
+      const title = `New Chat ${new Date().toLocaleString()}`;
+      const { data: threadId, error } = await createChatThread(projectId, title, user.email || '');
+
+      if (error) {
+        console.error('Error creating thread:', error);
+        return;
+      }
+
+      // Reload threads and select the new one
+      await loadThreads();
+
+      const { data: updatedThreads } = await getChatThreads(projectId);
+      const newThread = updatedThreads?.find(t => t.id === threadId);
+
+      if (newThread) {
+        setCurrentThread(newThread);
+      }
+    } catch (error) {
+      console.error('Error creating thread:', error);
+    } finally {
+      setCreatingThread(false);
+    }
   };
 
-  // Handle thread changes from ChatInterface
-  const handleThreadChange = (threadId: string | null) => {
-    setCurrentThreadId(threadId);
-    // Check if this thread has a commercial offer
-    if (threadId) {
-      setHasOffer(hasCommercialOffer(threadId));
-    } else {
-      setHasOffer(false);
+  // Handle deleting a thread (admin only)
+  const handleDeleteThread = async (threadId: string) => {
+    if (!confirm('Are you sure you want to delete this chat?')) {
+      return;
     }
+
+    try {
+      const { success, error } = await deleteChatThread(threadId);
+
+      if (error) {
+        console.error('Error deleting thread:', error);
+        return;
+      }
+
+      if (success) {
+        // If we deleted the current thread, clear selection
+        if (currentThread?.id === threadId) {
+          setCurrentThread(null);
+        }
+
+        // Reload threads
+        await loadThreads();
+      }
+    } catch (error) {
+      console.error('Error deleting thread:', error);
+    }
+  };
+
+  // Handle thread selection
+  const handleSelectThread = (thread: Thread) => {
+    setCurrentThread(thread);
+    // Check if this thread has a commercial offer
+    setHasOffer(hasCommercialOffer(thread.id));
+  };
+
+  // Handle updates from ChatInterface about commercial offers
+  const handleCommercialOfferUpdate = (threadId: string, offerExists: boolean) => {
+    setHasOffer(offerExists);
   };
 
   // Handle opening commercial offer panel
   const handleOpenCommercialPanel = () => {
-    if (currentThreadId) {
+    if (currentThread) {
       setCommercialPanelOpen(true);
     }
   };
+
+  // Update hasOffer when thread changes
+  useEffect(() => {
+    if (currentThread) {
+      setHasOffer(hasCommercialOffer(currentThread.id));
+    } else {
+      setHasOffer(false);
+    }
+  }, [currentThread]);
 
   if (initialLoading) {
     return (
@@ -114,8 +223,9 @@ function App() {
           <ChatInterface
             user={user}
             projectId={projectId}
+            currentThread={currentThread}
             onCommercialOfferUpdate={handleCommercialOfferUpdate}
-            onThreadChange={handleThreadChange}
+            onThreadsUpdate={loadThreads}
           />
         );
       case 'documents':
@@ -131,6 +241,13 @@ function App() {
     <>
     <Layout
       user={user}
+      threads={threads}
+      currentThread={currentThread}
+      threadsLoading={threadsLoading}
+      creatingThread={creatingThread}
+      onSelectThread={handleSelectThread}
+      onCreateThread={handleCreateThread}
+      onDeleteThread={handleDeleteThread}
       hasCommercialOffer={hasOffer}
       onOpenCommercialPanel={handleOpenCommercialPanel}
     >
@@ -193,7 +310,7 @@ function App() {
     <CommercialOfferPanel
       isOpen={commercialPanelOpen}
       onClose={() => setCommercialPanelOpen(false)}
-      threadId={currentThreadId}
+      threadId={currentThread?.id || null}
     />
     </>
   );

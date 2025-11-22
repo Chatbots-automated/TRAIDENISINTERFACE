@@ -1,18 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Send,
-  Plus,
-  MessageSquare,
   Bot,
   User as UserIcon,
   ChevronDown,
   ChevronUp,
   Check,
   X,
-  Loader2,
-  Trash2
+  MessageSquare
 } from 'lucide-react';
-import { createChatThread, sendMessage, getChatThreads, getChatMessages, deleteChatThread } from '../lib/supabase';
+import { sendMessage, getChatMessages } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
 import {
   saveCommercialOffer,
@@ -25,19 +22,20 @@ import {
 } from '../lib/commercialOfferStorage';
 import type { AppUser } from '../types';
 
-interface ChatInterfaceProps {
-  user: AppUser;
-  projectId: string;
-  onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
-  onThreadChange?: (threadId: string | null) => void;
-}
-
 interface Thread {
   id: string;
   title: string;
   message_count: number;
   last_message_at: string;
   created_at: string;
+}
+
+interface ChatInterfaceProps {
+  user: AppUser;
+  projectId: string;
+  currentThread: Thread | null;
+  onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
+  onThreadsUpdate?: () => void;
 }
 
 interface Message {
@@ -100,14 +98,10 @@ const LOADING_MESSAGES = [
   "Analyzing patterns...",
 ];
 
-export default function ChatInterface({ user, projectId, onCommercialOfferUpdate, onThreadChange }: ChatInterfaceProps) {
-  const [threads, setThreads] = useState<Thread[]>([]);
-  const [currentThread, setCurrentThread] = useState<Thread | null>(null);
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onThreadsUpdate }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const [threadsLoading, setThreadsLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
   const [currentQueryTag, setCurrentQueryTag] = useState<QueryTagConfig>(DEFAULT_QUERY_TAG);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
@@ -119,24 +113,14 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingQueryTypeRef = useRef<string | null>(null); // Track query type for pending response
 
-  // Load threads on component mount
-  useEffect(() => {
-    loadThreads();
-  }, [projectId]);
-
   // Load messages when thread changes
   useEffect(() => {
     if (currentThread) {
       loadMessages(currentThread.id);
+    } else {
+      setMessages([]);
     }
   }, [currentThread]);
-
-  // Notify parent when thread changes
-  useEffect(() => {
-    if (onThreadChange) {
-      onThreadChange(currentThread?.id || null);
-    }
-  }, [currentThread, onThreadChange]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -193,39 +177,12 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
     }, 100);
   };
 
-  const loadThreads = async () => {
-    try {
-      setThreadsLoading(true);
-      console.log('Loading threads for project:', projectId);
-      
-      const { data, error } = await getChatThreads(projectId);
-      
-      if (error) {
-        console.error('Error loading threads:', error);
-        setThreads([]);
-        return;
-      }
-
-      console.log('Loaded threads:', data);
-      setThreads(data || []);
-      
-      // Auto-select first thread if none selected
-      if (!currentThread && data && data.length > 0) {
-        setCurrentThread(data[0]);
-      }
-    } catch (error) {
-      console.error('Error loading threads:', error);
-    } finally {
-      setThreadsLoading(false);
-    }
-  };
-
   const loadMessages = async (threadId: string) => {
     try {
       console.log('Loading messages for thread:', threadId);
-      
+
       const { data, error } = await getChatMessages(threadId);
-      
+
       if (error) {
         console.error('Error loading messages:', error);
         setMessages([]);
@@ -236,53 +193,6 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
       setMessages(data || []);
     } catch (error) {
       console.error('Error loading messages:', error);
-    }
-  };
-
-  const createNewThread = async () => {
-    try {
-      setCreating(true);
-      console.log('Creating new thread for project:', projectId, 'user:', user.email);
-      
-      const title = `New Chat ${new Date().toLocaleString()}`;
-      const { data: threadId, error } = await createChatThread(projectId, title, user.email || '');
-
-      if (error) {
-        console.error('Error creating thread:', error);
-        return;
-      }
-
-      console.log('Created thread with ID:', threadId);
-
-      // Log thread creation
-      await appLogger.logChat({
-        action: 'thread_created',
-        userId: user.id,
-        userEmail: user.email,
-        threadId: threadId || 'unknown',
-        metadata: { title, project_id: projectId }
-      });
-
-      // Reload threads
-      await loadThreads();
-      
-      // Find and select the new thread
-      const { data: updatedThreads } = await getChatThreads(projectId);
-      const newThread = updatedThreads?.find(t => t.id === threadId);
-      
-      if (newThread) {
-        setCurrentThread(newThread);
-        setMessages([]);
-      } else {
-        // Fallback: select the first thread
-        if (updatedThreads && updatedThreads.length > 0) {
-          setCurrentThread(updatedThreads[0]);
-        }
-      }
-    } catch (error) {
-      console.error('Error creating thread:', error);
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -728,7 +638,7 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
       }
 
       // Reload threads to update message count
-      await loadThreads();
+      onThreadsUpdate?.();
     } catch (error) {
       console.error('Error sending message:', error);
     } finally {
@@ -787,123 +697,9 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
     inputRef.current?.focus();
   };
 
-  // Handle deleting a chat thread
-  const handleDeleteThread = async (threadId: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent selecting the thread when clicking delete
-
-    if (!confirm('Are you sure you want to delete this chat?')) {
-      return;
-    }
-
-    try {
-      const { success, error } = await deleteChatThread(threadId);
-
-      if (error) {
-        console.error('Error deleting thread:', error);
-        return;
-      }
-
-      if (success) {
-        // If we deleted the current thread, clear selection
-        if (currentThread?.id === threadId) {
-          setCurrentThread(null);
-          setMessages([]);
-        }
-
-        // Reload threads
-        await loadThreads();
-
-        console.log('Thread deleted successfully:', threadId);
-      }
-    } catch (error) {
-      console.error('Error deleting thread:', error);
-    }
-  };
-
   return (
-    <div className="flex h-full bg-white relative overflow-hidden">
-      {/* Left Sidebar - Threads */}
-      <div className="w-80 border-r border-gray-200 flex flex-col min-h-0">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Chats</h2>
-            <button
-              onClick={createNewThread}
-              disabled={creating}
-              className="p-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50"
-            >
-              {creating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Plus className="w-4 h-4" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Threads List - with max height to prevent infinite expansion */}
-        <div className="flex-1 overflow-y-auto max-h-[calc(100vh-200px)]">
-          {threadsLoading ? (
-            <div className="p-4 space-y-3">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-16 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg animate-pulse" />
-              ))}
-            </div>
-          ) : threads.length === 0 ? (
-            <div className="p-4 text-center">
-              <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm text-gray-500 mb-2">No chats yet</p>
-              <button
-                onClick={createNewThread}
-                disabled={creating}
-                className="text-sm text-green-600 hover:text-green-700 disabled:opacity-50"
-              >
-                {creating ? 'Creating...' : 'Start your first chat'}
-              </button>
-            </div>
-          ) : (
-            <div className="p-2 space-y-1">
-              {threads.map((thread) => (
-                <div
-                  key={thread.id}
-                  onClick={() => setCurrentThread(thread)}
-                  className={`
-                    w-full text-left p-3 rounded-lg transition-colors cursor-pointer group
-                    ${currentThread?.id === thread.id
-                      ? 'bg-gradient-to-r from-green-50 to-blue-50 border border-green-200'
-                      : 'hover:bg-gray-50'
-                    }
-                  `}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {thread.title}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {thread.message_count || 0} messages
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => handleDeleteThread(thread.id, e)}
-                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all"
-                      title="Delete chat"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Right Side - Chat Area */}
+    <div className="flex h-full bg-white">
+      {/* Chat Area */}
       <div className="flex-1 flex flex-col min-h-0">
         {currentThread ? (
           <>
@@ -1116,21 +912,13 @@ export default function ChatInterface({ user, projectId, onCommercialOfferUpdate
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 No chat selected
               </h3>
-              <p className="text-gray-500 mb-4">
-                Choose a chat from the sidebar or create a new one
+              <p className="text-gray-500">
+                Select a chat from the sidebar or create a new one
               </p>
-              <button
-                onClick={createNewThread}
-                disabled={creating}
-                className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50"
-              >
-                {creating ? 'Creating...' : 'Start New Chat'}
-              </button>
             </div>
           </div>
         )}
       </div>
-
     </div>
   );
 }

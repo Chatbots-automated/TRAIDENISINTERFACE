@@ -1,21 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import { getChatThreads, signOut } from '../lib/supabase';
+import React, { useState } from 'react';
+import { signOut } from '../lib/supabase';
 import {
   Menu,
   X,
   Settings,
   MessageSquare,
   FileText,
-  Users,
   Database,
-  LogOut
+  LogOut,
+  Plus,
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
 
+interface Thread {
+  id: string;
+  title: string;
+  message_count: number;
+  last_message_at: string;
+  created_at: string;
+}
+
 interface LayoutProps {
   user: AppUser;
   children: React.ReactNode;
+  threads?: Thread[];
+  currentThread?: Thread | null;
+  threadsLoading?: boolean;
+  creatingThread?: boolean;
+  onSelectThread?: (thread: Thread) => void;
+  onCreateThread?: () => void;
+  onDeleteThread?: (threadId: string) => void;
   hasCommercialOffer?: boolean;
   onOpenCommercialPanel?: () => void;
 }
@@ -23,6 +40,13 @@ interface LayoutProps {
 export default function Layout({
   user,
   children,
+  threads = [],
+  currentThread = null,
+  threadsLoading = false,
+  creatingThread = false,
+  onSelectThread,
+  onCreateThread,
+  onDeleteThread,
   hasCommercialOffer = false,
   onOpenCommercialPanel
 }: LayoutProps) {
@@ -93,14 +117,83 @@ export default function Layout({
             </div>
           </div>
 
-          {/* Navigation */}
-          <div className="flex-1 p-4">
-            <h2 className="text-sm font-semibold text-green-700 mb-3">Navigation</h2>
-            <div className="space-y-1">
-              <div className="flex items-center space-x-3 p-3 rounded-lg bg-gradient-to-r from-green-50 to-blue-50 text-green-700 border border-green-200">
-                <Database className="w-4 h-4" />
-                <span className="text-sm font-medium">Knowledge Base</span>
-              </div>
+          {/* Chat History */}
+          <div className="flex-1 p-4 flex flex-col min-h-0">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-green-700">Chat History</h2>
+              <button
+                onClick={onCreateThread}
+                disabled={creatingThread}
+                className="p-1.5 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50"
+                title="New chat"
+              >
+                {creatingThread ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Plus className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+
+            {/* Threads List */}
+            <div className="flex-1 overflow-y-auto space-y-1">
+              {threadsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="h-12 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg animate-pulse" />
+                  ))}
+                </div>
+              ) : threads.length === 0 ? (
+                <div className="text-center py-4">
+                  <MessageSquare className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-xs text-gray-500">No chats yet</p>
+                  <button
+                    onClick={onCreateThread}
+                    disabled={creatingThread}
+                    className="text-xs text-green-600 hover:text-green-700 mt-1"
+                  >
+                    Start a chat
+                  </button>
+                </div>
+              ) : (
+                threads.map((thread) => (
+                  <div
+                    key={thread.id}
+                    onClick={() => onSelectThread?.(thread)}
+                    className={`
+                      p-2 rounded-lg transition-colors cursor-pointer group text-left w-full
+                      ${currentThread?.id === thread.id
+                        ? 'bg-gradient-to-r from-green-50 to-blue-50 border border-green-200'
+                        : 'hover:bg-gray-50'
+                      }
+                    `}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-900 truncate">
+                          {thread.title}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {thread.message_count || 0} msgs · {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      {/* Delete button - admin only */}
+                      {user.is_admin && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteThread?.(thread.id);
+                          }}
+                          className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-gray-400 hover:text-red-600 transition-all"
+                          title="Delete chat"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
