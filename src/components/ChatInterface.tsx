@@ -759,7 +759,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                         <Bot className="w-4 h-4" />
                       )}
                       <span className="text-xs opacity-75">
-                        {message.role === 'user' ? 'You' : 'AI Assistant'}
+                        {message.role === 'user' ? 'You' : 'Traidenis'}
                       </span>
                       {message.role === 'user' && message.queryType && (
                         <span className="text-xs opacity-75 bg-white/20 px-1.5 py-0.5 rounded">
@@ -813,7 +813,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
                     <div className="flex items-center space-x-2 mb-1">
                       <Bot className="w-4 h-4" />
-                      <span className="text-xs opacity-75">AI Assistant</span>
+                      <span className="text-xs opacity-75">Traidenis</span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{streamingContent}</p>
                     <div className="flex items-center space-x-1 mt-1">
@@ -830,7 +830,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   <div className="bg-gray-100 text-gray-900 max-w-xs lg:max-w-md px-4 py-2 rounded-lg">
                     <div className="flex items-center space-x-2 mb-1">
                       <Bot className="w-4 h-4" />
-                      <span className="text-xs opacity-75">AI Assistant</span>
+                      <span className="text-xs opacity-75">Traidenis</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <span
