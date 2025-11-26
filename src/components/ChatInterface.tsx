@@ -377,10 +377,21 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           metadata: { webhook_url: webhookUrl }
         });
 
-        const webhookResponse = await fetch(webhookUrl, {
+        // CORS workaround: Use Supabase Edge Function as proxy
+        // Deploy the n8n-proxy function first, then use this URL:
+        const useProxy = true; // Set to false once n8n CORS is fixed
+
+        const actualWebhookUrl = useProxy
+          ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/n8n-proxy`
+          : webhookUrl;
+
+        console.log('Using webhook URL:', actualWebhookUrl);
+
+        const webhookResponse = await fetch(actualWebhookUrl, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
           },
           body: JSON.stringify({
             question: messageToSend,
