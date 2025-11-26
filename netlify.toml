@@ -3,9 +3,21 @@
   command = "npm run build"
 
 [build.environment]
+  # Frontend environment variables (exposed to client)
   VITE_SUPABASE_URL = "https://tahsnionivotlbbbyuya.supabase.co"
   VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhaHNuaW9uaXZvdGxiYmJ5dXlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1NTAxMjUsImV4cCI6MjA3MjEyNjEyNX0.p6uFOXgCzeTEpMLsmjl3fl0h7V3rzuzNzT9eozDY8uE"
-  VITE_SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhaHNuaW9uaXZvdGxiYmJ5dXlhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjU1MDEyNSwiZXhwIjoyMDcyMTI2MTI1fQ.iqSAEvyJF0jk5fFwHyN6zuadZZS-heoWlIV8hKu7jv4"
+
+  # ⚠️ SERVICE ROLE KEY REMOVED - This was a security risk!
+  # Service role keys should NEVER be exposed in frontend builds
+  # If you need it for Netlify Functions, add it in:
+  # Netlify Dashboard → Site Settings → Environment Variables
+  # Variable name: VITE_SUPABASE_SERVICE_ROLE_KEY (but DON'T use VITE_ prefix for backend-only vars)
+
+# Backend environment variables for Netlify Functions
+# These should be configured in Netlify Dashboard, NOT here:
+# - CHAT_WEBHOOK_URL
+# - UPLOAD_WEBHOOK_URL
+# - SEARCH_WEBHOOK_URL
 
 [[redirects]]
   from = "/*"

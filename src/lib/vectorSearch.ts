@@ -16,7 +16,8 @@ export async function searchDocumentsClient(
     min_similarity?: number;
   }
 ): Promise<SearchResult[]> {
-  const webhookUrl = 'https://209f05431d92.ngrok-free.app/webhook-test/8a667605-f58f-42e0-a8f1-5ce633954009';
+  // Use Netlify Function proxy to avoid CORS issues
+  const webhookUrl = '/.netlify/functions/search-webhook';
   const startTime = Date.now();
 
   try {
@@ -37,8 +38,7 @@ export async function searchDocumentsClient(
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify(requestBody)
     });

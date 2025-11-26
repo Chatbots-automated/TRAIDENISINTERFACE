@@ -49,7 +49,8 @@ export default function CommercialOfferPanel({
     setIsFilling(true);
 
     try {
-      const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
+      // Use Netlify Function proxy to avoid CORS issues
+      const webhookUrl = '/.netlify/functions/chat-webhook';
 
       const response = await fetch(webhookUrl, {
         method: 'POST',

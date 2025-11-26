@@ -364,7 +364,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         // Note: Don't set isStreaming=true yet - wait until we have content
         // This keeps the loading messages visible while waiting for the response
 
-        const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
+        // Use Netlify Function proxy to avoid CORS issues
+        // Falls back to direct URL if proxy is not available (local dev)
+        const webhookUrl = '/.netlify/functions/chat-webhook';
         const startTime = Date.now();
 
         await appLogger.logChat({
