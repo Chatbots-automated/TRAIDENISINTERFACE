@@ -379,7 +379,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
         // CORS workaround: Use Supabase Edge Function as proxy
         // Deploy the n8n-proxy function first, then use this URL:
-        const useProxy = true; // Set to false once n8n CORS is fixed
+        const useProxy = false; // Set to false once n8n CORS is fixed
 
         const actualWebhookUrl = useProxy
           ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/n8n-proxy`
