@@ -7,7 +7,9 @@ import {
   ChevronUp,
   Check,
   X,
-  MessageSquare
+  MessageSquare,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
@@ -147,6 +149,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [showQueryTooltip, setShowQueryTooltip] = useState(false);
   const [showCommercialSpotlight, setShowCommercialSpotlight] = useState(false);
   const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
+  const [isVoiceflowMode, setIsVoiceflowMode] = useState(false);
+  const voiceflowContainerRef = useRef<HTMLDivElement>(null);
+  const voiceflowScriptLoadedRef = useRef(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -265,6 +270,92 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }, 100);
+  };
+
+  // Initialize Voiceflow widget when switching to Voiceflow mode
+  useEffect(() => {
+    if (!isVoiceflowMode) {
+      return;
+    }
+
+    const loadVoiceflowScript = () => {
+      // Check if script already loaded
+      if (voiceflowScriptLoadedRef.current || document.getElementById('voiceflow-script')) {
+        initializeVoiceflow();
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.id = 'voiceflow-script';
+      script.type = 'text/javascript';
+      script.innerHTML = `
+        (function(d, t) {
+          var v = d.createElement(t), s = d.getElementsByTagName(t)[0];
+          v.onload = function() {
+            window.voiceflow.chat.load({
+              verify: { projectID: '692f59baeb204d830537c543' },
+              url: 'https://general-runtime.voiceflow.com',
+              versionID: 'production',
+              render: {
+                mode: 'embedded',
+                target: document.getElementById('voiceflow-container')
+              },
+              autostart: true,
+              voiceURL: 'https://runtime-api.voiceflow.com'
+            });
+            console.log('Voiceflow widget initialized');
+          };
+          v.src = "https://cdn.voiceflow.com/widget/bundle.mjs";
+          v.type = "text/javascript";
+          s.parentNode.insertBefore(v, s);
+        })(document, 'script');
+      `;
+      document.body.appendChild(script);
+      voiceflowScriptLoadedRef.current = true;
+    };
+
+    const initializeVoiceflow = () => {
+      if (window.voiceflow && window.voiceflow.chat) {
+        try {
+          window.voiceflow.chat.load({
+            verify: { projectID: '692f59baeb204d830537c543' },
+            url: 'https://general-runtime.voiceflow.com',
+            versionID: 'production',
+            render: {
+              mode: 'embedded',
+              target: document.getElementById('voiceflow-container')
+            },
+            autostart: true,
+            voiceURL: 'https://runtime-api.voiceflow.com'
+          });
+          console.log('Voiceflow widget re-initialized');
+        } catch (error) {
+          console.error('Error initializing Voiceflow:', error);
+        }
+      }
+    };
+
+    // Small delay to ensure container is mounted
+    const timer = setTimeout(() => {
+      loadVoiceflowScript();
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      // Cleanup: destroy Voiceflow instance when switching back
+      if (window.voiceflow && window.voiceflow.chat && window.voiceflow.chat.destroy) {
+        try {
+          window.voiceflow.chat.destroy();
+          console.log('Voiceflow widget destroyed');
+        } catch (error) {
+          console.error('Error destroying Voiceflow:', error);
+        }
+      }
+    };
+  }, [isVoiceflowMode]);
+
+  const toggleChatMode = () => {
+    setIsVoiceflowMode(prev => !prev);
   };
 
   const loadMessages = async (threadId: string) => {
@@ -855,12 +946,42 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         />
       )}
 
+      {/* Toggle Button - Fixed at top right */}
+      {currentThread && (
+        <div className="absolute top-4 right-4 z-30">
+          <button
+            onClick={toggleChatMode}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 ${
+              isVoiceflowMode
+                ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white'
+                : 'bg-gradient-to-r from-green-500 to-blue-500 text-white'
+            }`}
+            title={isVoiceflowMode ? 'Switch to Standard Chat' : 'Switch to Voiceflow Chat'}
+          >
+            {isVoiceflowMode ? (
+              <>
+                <ToggleRight className="w-5 h-5" />
+                <span className="font-medium text-sm">Standard Chat</span>
+              </>
+            ) : (
+              <>
+                <ToggleLeft className="w-5 h-5" />
+                <span className="font-medium text-sm">Voiceflow Chat</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Chat Area */}
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
           <>
-            {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            {/* Standard Chat Interface */}
+            {!isVoiceflowMode && (
+              <>
+                {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {/* Welcome screen when chat is empty */}
               {messages.length === 0 && !loading && (
                 <div className="flex flex-col items-center justify-center h-full text-center">
@@ -1178,6 +1299,20 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 </button>
               </form>
             </div>
+              </>
+            )}
+
+            {/* Voiceflow Embedded Chat */}
+            {isVoiceflowMode && (
+              <div className="flex-1 flex flex-col min-h-0 h-full relative">
+                <div
+                  id="voiceflow-container"
+                  ref={voiceflowContainerRef}
+                  className="flex-1 w-full h-full overflow-hidden"
+                  style={{ minHeight: '400px' }}
+                />
+              </div>
+            )}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
