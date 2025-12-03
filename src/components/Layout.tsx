@@ -203,14 +203,11 @@ export default function Layout({
 
               {/* Controls section */}
               <div className="px-3 py-2 border-t border-gray-100 space-y-0.5">
-                {/* Nauja Toggle */}
+                {/* Nauja Toggle - Locked to new version */}
                 <button
-                  onClick={onToggleNewVersion}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                    isNewVersion
-                      ? 'bg-purple-50 text-purple-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
+                  disabled
+                  className="w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium bg-purple-50 text-purple-700 opacity-60 cursor-not-allowed"
+                  title="New version is active"
                 >
                   <span className="text-base">✨</span>
                   <span>Nauja</span>
