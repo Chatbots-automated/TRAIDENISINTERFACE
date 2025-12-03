@@ -20,6 +20,23 @@ interface VoiceflowConfig {
     description?: string;
     image?: string;
     stylesheet?: string;
+    header?: {
+      visible?: boolean;
+      avatar?: { visible?: boolean };
+      title?: { visible?: boolean };
+    };
+    input?: {
+      enabled?: boolean;
+      placeholder?: string;
+    };
+  };
+  theme?: {
+    colors?: {
+      background?: string;
+      primary?: string;
+      secondary?: string;
+      text?: string;
+    };
   };
 }
 

@@ -271,112 +271,6 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     console.log('🔵 New Version (Voiceflow) mode activated');
 
-    // More aggressive function to hide Voiceflow header using multiple methods
-    const hideVoiceflowHeader = () => {
-      const container = document.getElementById('voiceflow-container');
-      if (!container) return;
-
-      console.log('🎯 Attempting to hide Voiceflow header...');
-
-      // Method 1: Hide via CSS classes and attributes
-      const hideElements = (selector: string) => {
-        const elements = container.querySelectorAll(selector);
-        elements.forEach((el) => {
-          (el as HTMLElement).style.display = 'none';
-          (el as HTMLElement).style.visibility = 'hidden';
-          (el as HTMLElement).style.height = '0';
-          (el as HTMLElement).style.maxHeight = '0';
-          (el as HTMLElement).style.overflow = 'hidden';
-        });
-        if (elements.length > 0) {
-          console.log(`✓ Hidden ${elements.length} elements matching: ${selector}`);
-        }
-      };
-
-      // Try multiple selectors
-      const selectors = [
-        '[class*="vfrc-header"]',
-        '[class*="vfrc-assistant"]',
-        '[class*="Assistant"]',
-        '[class*="Header"]',
-        '[class*="header"]',
-        '[class*="Avatar"]',
-        '[class*="Branding"]',
-        '[data-testid*="header"]',
-        'header',
-        '.vfrc-header',
-        '.vfrc-assistant-info',
-        // Try to hide first direct child of container
-        '#voiceflow-container > div > div:first-child:not([class*="message"])',
-        '#voiceflow-container > div > div:first-child:not([class*="chat"])',
-      ];
-
-      selectors.forEach(hideElements);
-
-      // Method 2: Hide first child if it looks like a header
-      const firstChild = container.querySelector('div > div:first-child');
-      if (firstChild) {
-        const height = (firstChild as HTMLElement).offsetHeight;
-        const hasAvatar = firstChild.querySelector('[class*="avatar"]');
-        const hasTitle = firstChild.querySelector('[class*="title"]');
-
-        // If it's relatively small and has avatar/title, it's probably a header
-        if (height < 200 && (hasAvatar || hasTitle)) {
-          (firstChild as HTMLElement).style.display = 'none';
-          console.log('✓ Hidden suspected header (first child with avatar/title)');
-        }
-      }
-
-      // Method 3: Inject aggressive CSS
-      if (!document.getElementById('voiceflow-hide-header')) {
-        const style = document.createElement('style');
-        style.id = 'voiceflow-hide-header';
-        style.textContent = `
-          /* Aggressive header hiding */
-          #voiceflow-container > div > div:first-child {
-            display: none !important;
-            height: 0 !important;
-            max-height: 0 !important;
-            min-height: 0 !important;
-            overflow: hidden !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-          }
-
-          #voiceflow-container [class*="vfrc-header"],
-          #voiceflow-container [class*="vfrc-assistant"],
-          #voiceflow-container [class*="Assistant"],
-          #voiceflow-container [class*="Header"],
-          #voiceflow-container [class*="Avatar"],
-          #voiceflow-container [class*="Branding"] {
-            display: none !important;
-            height: 0 !important;
-            opacity: 0 !important;
-            visibility: hidden !important;
-          }
-
-          /* Ensure chat fills the space */
-          #voiceflow-container,
-          #voiceflow-container > div,
-          #voiceflow-container [class*="chat"],
-          #voiceflow-container [class*="messages"],
-          #voiceflow-container [class*="Chat"],
-          #voiceflow-container [class*="Messages"] {
-            height: 100% !important;
-          }
-
-          /* Remove top padding/margin from message container */
-          #voiceflow-container [class*="message"],
-          #voiceflow-container [class*="Message"] {
-            padding-top: 0 !important;
-            margin-top: 0 !important;
-          }
-        `;
-        document.head.appendChild(style);
-        console.log('✓ Injected aggressive CSS');
-      }
-    };
-
     const initializeVoiceflow = (attempts = 0) => {
       const container = document.getElementById('voiceflow-container');
 
@@ -434,16 +328,13 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     mode: 'embedded',
                     target: container
                   },
-                  autostart: true
+                  autostart: true,
+                  assistant: {
+                    header: { visible: false }
+                  }
                 });
                 voiceflowInitializedRef.current = true;
-                console.log('✅ Voiceflow widget initialized on first load');
-
-                // Try to hide header multiple times as widget loads
-                setTimeout(() => hideVoiceflowHeader(), 100);
-                setTimeout(() => hideVoiceflowHeader(), 500);
-                setTimeout(() => hideVoiceflowHeader(), 1000);
-                setTimeout(() => hideVoiceflowHeader(), 2000);
+                console.log('✅ Voiceflow widget initialized with hidden header');
               } catch (error) {
                 console.error('❌ Failed to initialize Voiceflow:', error);
               }
@@ -474,16 +365,13 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               mode: 'embedded',
               target: container
             },
-            autostart: true
+            autostart: true,
+            assistant: {
+              header: { visible: false }
+            }
           });
           voiceflowInitializedRef.current = true;
-          console.log('✅ Voiceflow widget initialized successfully');
-
-          // Try to hide header multiple times as widget loads
-          setTimeout(() => hideVoiceflowHeader(), 100);
-          setTimeout(() => hideVoiceflowHeader(), 500);
-          setTimeout(() => hideVoiceflowHeader(), 1000);
-          setTimeout(() => hideVoiceflowHeader(), 2000);
+          console.log('✅ Voiceflow widget initialized with hidden header');
         } catch (error) {
           console.error('❌ Failed to initialize Voiceflow:', error);
         }
@@ -1113,12 +1001,11 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   id="voiceflow-container"
                   style={{
                     minHeight: '600px',
-                    height: 'calc(100% + 200px)',
+                    height: '100%',
                     width: '100%',
                     display: 'block',
                     position: 'relative',
-                    overflow: 'hidden',
-                    marginTop: '-200px'
+                    overflow: 'visible'
                   }}
                 />
               </div>
