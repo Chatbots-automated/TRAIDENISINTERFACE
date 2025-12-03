@@ -158,16 +158,16 @@ export default function Layout({
             </div>
           </div>
 
-          {/* Navigation buttons when in New Version mode */}
+          {/* Navigation buttons when in New Version mode - Claude-inspired design */}
           {isNewVersion && (
-            <div className="border-b border-gray-200">
-              <div className="p-2 space-y-1">
+            <div className="border-b border-gray-100">
+              <div className="px-3 py-2 space-y-0.5">
                 <button
                   onClick={() => onViewModeChange?.('chat')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                     viewMode === 'chat'
-                      ? 'bg-gradient-to-r from-green-50 to-blue-50 text-green-700 border border-green-200'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -176,10 +176,10 @@ export default function Layout({
 
                 <button
                   onClick={() => onViewModeChange?.('documents')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                     viewMode === 'documents'
-                      ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 border border-blue-200'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <Database className="w-4 h-4" />
@@ -189,10 +189,10 @@ export default function Layout({
                 {user.is_admin && (
                   <button
                     onClick={() => onViewModeChange?.('users')}
-                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                       viewMode === 'users'
-                        ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border border-purple-200'
-                        : 'text-gray-700 hover:bg-gray-50'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                     }`}
                   >
                     <Database className="w-4 h-4" />
@@ -202,14 +202,14 @@ export default function Layout({
               </div>
 
               {/* Controls section */}
-              <div className="p-2 border-t border-gray-100 space-y-1">
+              <div className="px-3 py-2 border-t border-gray-100 space-y-0.5">
                 {/* Nauja Toggle */}
                 <button
                   onClick={onToggleNewVersion}
-                  className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
                     isNewVersion
-                      ? 'bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700'
-                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                      ? 'bg-purple-50 text-purple-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
                   <span className="text-base">✨</span>
@@ -219,10 +219,10 @@ export default function Layout({
                 {/* Docs Icon */}
                 <button
                   onClick={onOpenCommercialPanel}
-                  className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all relative ${
                     hasOffer
-                      ? 'bg-gradient-to-r from-green-100 to-blue-100 text-blue-700'
-                      : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                      ? 'text-blue-600 hover:bg-blue-50'
+                      : 'text-gray-400 hover:bg-gray-50'
                   } ${
                     showDocGlow
                       ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1'
@@ -243,7 +243,8 @@ export default function Layout({
             </div>
           )}
 
-          {/* Chat History */}
+          {/* Chat History - Hidden when in New Version mode */}
+          {!isNewVersion && (
           <div className="flex-1 p-4 flex flex-col min-h-0 overflow-hidden">
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h2 className="text-sm font-semibold text-green-700">Chat History</h2>
@@ -368,6 +369,7 @@ export default function Layout({
               )}
             </div>
           </div>
+          )}
 
           {/* Footer */}
           <div className="p-4 border-t">
