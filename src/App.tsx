@@ -364,9 +364,17 @@ function App() {
       onRenameThread={handleRenameThread}
       naujokasMode={naujokasMode}
       onToggleNaujokas={toggleNaujokasMode}
+      isNewVersion={isNewVersion}
+      viewMode={viewMode}
+      onViewModeChange={setViewMode}
+      onToggleNewVersion={toggleNewVersion}
+      hasOffer={hasOffer}
+      showDocGlow={showDocGlow}
+      onOpenCommercialPanel={handleOpenCommercialPanel}
     >
       <div className="flex flex-col h-full">
-        {/* Navigation Bar */}
+        {/* Navigation Bar - Hidden when in New Version mode */}
+        {!isNewVersion && (
         <div className="bg-white border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center justify-between px-6">
           {/* Left: Navigation Tabs */}
@@ -492,6 +500,7 @@ function App() {
           </div>
         </div>
       </div>
+        )}
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden min-h-0">

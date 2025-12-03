@@ -37,6 +37,14 @@ interface LayoutProps {
   onRenameThread?: (threadId: string, newTitle: string) => void;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
+  // New version mode props
+  isNewVersion?: boolean;
+  viewMode?: 'chat' | 'documents' | 'users';
+  onViewModeChange?: (mode: 'chat' | 'documents' | 'users') => void;
+  onToggleNewVersion?: () => void;
+  hasOffer?: boolean;
+  showDocGlow?: boolean;
+  onOpenCommercialPanel?: () => void;
 }
 
 export default function Layout({
@@ -51,7 +59,14 @@ export default function Layout({
   onDeleteThread,
   onRenameThread,
   naujokasMode = true,
-  onToggleNaujokas
+  onToggleNaujokas,
+  isNewVersion = false,
+  viewMode = 'chat',
+  onViewModeChange,
+  onToggleNewVersion,
+  hasOffer = false,
+  showDocGlow = false,
+  onOpenCommercialPanel
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -143,7 +158,90 @@ export default function Layout({
             </div>
           </div>
 
-          {/* Chat History */}
+          {/* Navigation buttons when in New Version mode - Claude-inspired design */}
+          {isNewVersion && (
+            <div className="border-b border-gray-100">
+              <div className="px-3 py-2 space-y-0.5">
+                <button
+                  onClick={() => onViewModeChange?.('chat')}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'chat'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Chat</span>
+                </button>
+
+                <button
+                  onClick={() => onViewModeChange?.('documents')}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'documents'
+                      ? 'bg-gray-100 text-gray-900'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <Database className="w-4 h-4" />
+                  <span>Documents</span>
+                </button>
+
+                {user.is_admin && (
+                  <button
+                    onClick={() => onViewModeChange?.('users')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                      viewMode === 'users'
+                        ? 'bg-gray-100 text-gray-900'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }`}
+                  >
+                    <Database className="w-4 h-4" />
+                    <span>Users</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Controls section */}
+              <div className="px-3 py-2 border-t border-gray-100 space-y-0.5">
+                {/* Nauja Toggle - Locked to new version */}
+                <button
+                  disabled
+                  className="w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium bg-purple-50 text-purple-700 opacity-60 cursor-not-allowed"
+                  title="New version is active"
+                >
+                  <span className="text-base">✨</span>
+                  <span>Nauja</span>
+                </button>
+
+                {/* Docs Icon */}
+                <button
+                  onClick={onOpenCommercialPanel}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all relative ${
+                    hasOffer
+                      ? 'text-blue-600 hover:bg-blue-50'
+                      : 'text-gray-400 hover:bg-gray-50'
+                  } ${
+                    showDocGlow
+                      ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1'
+                      : ''
+                  }`}
+                  title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                >
+                  <Database className="w-4 h-4" />
+                  <span>Offers</span>
+                  {showDocGlow && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Chat History - Hidden when in New Version mode */}
+          {!isNewVersion && (
           <div className="flex-1 p-4 flex flex-col min-h-0 overflow-hidden">
             <div className="flex items-center justify-between mb-3 flex-shrink-0">
               <h2 className="text-sm font-semibold text-green-700">Chat History</h2>
@@ -268,6 +366,7 @@ export default function Layout({
               )}
             </div>
           </div>
+          )}
 
           {/* Footer */}
           <div className="p-4 border-t">

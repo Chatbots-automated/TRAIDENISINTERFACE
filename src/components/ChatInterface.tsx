@@ -271,50 +271,51 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     console.log('🔵 New Version (Voiceflow) mode activated');
 
-    // Inject custom CSS to hide/customize Voiceflow header
-    const injectVoiceflowStyles = () => {
-      // Check if styles already injected
-      if (document.getElementById('voiceflow-custom-styles')) {
+    // Base64 encoded CSS to hide header - injected directly into Voiceflow
+    // CSS: .vfrc-header{display:none!important}.vfrc-assistant-info{display:none!important}.vfrc-avatar{display:none!important}.vfrc-chat{padding-top:0!important}
+    const headerHidingCSS = 'data:text/css;base64,LnZmcmMtaGVhZGVye2Rpc3BsYXk6bm9uZSFpbXBvcnRhbnR9LnZmcmMtYXNzaXN0YW50LWluZm97ZGlzcGxheTpub25lIWltcG9ydGFudH0udmZyYy1hdmF0YXJ7ZGlzcGxheTpub25lIWltcG9ydGFudH0udmZyYy1jaGF0e3BhZGRpbmctdG9wOjAhaW1wb3J0YW50fQ==';
+
+    // Inject CSS to hide Voiceflow header using their official class names
+    const injectHeaderHidingCSS = () => {
+      if (document.getElementById('voiceflow-header-hide')) {
         return;
       }
 
-      const styleElement = document.createElement('style');
-      styleElement.id = 'voiceflow-custom-styles';
-      styleElement.textContent = `
-        /* Hide Voiceflow header for seamless integration */
-        #voiceflow-container [class*="Header"],
-        #voiceflow-container [class*="header"],
-        #voiceflow-container [class*="Assistant"],
-        #voiceflow-container [data-testid*="header"],
-        #voiceflow-container [class*="Avatar"],
-        #voiceflow-container [class*="Title"],
-        #voiceflow-container iframe[title*="header"] {
+      const style = document.createElement('style');
+      style.id = 'voiceflow-header-hide';
+      style.textContent = `
+        /* Hide Voiceflow header using official class names */
+        .vfrc-header {
+          display: none !important;
+          height: 0 !important;
+          min-height: 0 !important;
+          opacity: 0 !important;
+          visibility: hidden !important;
+        }
+
+        .vfrc-assistant-info {
           display: none !important;
         }
 
-        /* Adjust container to fill space */
-        #voiceflow-container > div:first-child {
-          height: 100% !important;
-        }
-
-        /* Hide the top branding section */
-        #voiceflow-container > div > div:first-child {
+        .vfrc-avatar {
           display: none !important;
         }
 
-        /* Make chat messages start from the top */
-        #voiceflow-container [class*="MessageList"],
-        #voiceflow-container [class*="messages"] {
+        /* Ensure chat messages start from top */
+        .vfrc-chat {
           padding-top: 0 !important;
-          margin-top: 0 !important;
+        }
+
+        .vfrc-chat--dialog {
+          padding-top: 0 !important;
         }
       `;
-      document.head.appendChild(styleElement);
-      console.log('✨ Voiceflow custom styles injected');
+      document.head.appendChild(style);
+      console.log('✅ Voiceflow header CSS injected');
     };
 
-    // Inject styles immediately
-    injectVoiceflowStyles();
+    // Inject CSS immediately
+    injectHeaderHidingCSS();
 
     const initializeVoiceflow = (attempts = 0) => {
       const container = document.getElementById('voiceflow-container');
@@ -373,13 +374,18 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     mode: 'embedded',
                     target: container
                   },
-                  autostart: true
+                  autostart: true,
+                  css: headerHidingCSS,
+                  assistant: {
+                    header: { visible: false }
+                  }
                 });
                 voiceflowInitializedRef.current = true;
-                console.log('✅ Voiceflow widget initialized on first load');
+                console.log('✅ Voiceflow widget initialized with hidden header');
 
-                // Apply styles again after widget loads
-                setTimeout(() => injectVoiceflowStyles(), 500);
+                // Re-inject CSS after widget loads to ensure it takes effect
+                setTimeout(() => injectHeaderHidingCSS(), 500);
+                setTimeout(() => injectHeaderHidingCSS(), 1500);
               } catch (error) {
                 console.error('❌ Failed to initialize Voiceflow:', error);
               }
@@ -410,13 +416,18 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               mode: 'embedded',
               target: container
             },
-            autostart: true
+            autostart: true,
+            css: headerHidingCSS,
+            assistant: {
+              header: { visible: false }
+            }
           });
           voiceflowInitializedRef.current = true;
-          console.log('✅ Voiceflow widget initialized successfully');
+          console.log('✅ Voiceflow widget initialized with hidden header');
 
-          // Apply styles again after widget loads
-          setTimeout(() => injectVoiceflowStyles(), 500);
+          // Re-inject CSS after widget loads to ensure it takes effect
+          setTimeout(() => injectHeaderHidingCSS(), 500);
+          setTimeout(() => injectHeaderHidingCSS(), 1500);
         } catch (error) {
           console.error('❌ Failed to initialize Voiceflow:', error);
         }

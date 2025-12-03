@@ -15,11 +15,29 @@ interface VoiceflowConfig {
     target: HTMLElement;
   };
   autostart?: boolean;
+  css?: string; // Custom CSS injection (can use base64 data URL)
   assistant?: {
     title?: string;
     description?: string;
     image?: string;
     stylesheet?: string;
+    header?: {
+      visible?: boolean;
+      avatar?: { visible?: boolean };
+      title?: { visible?: boolean };
+    };
+    input?: {
+      enabled?: boolean;
+      placeholder?: string;
+    };
+  };
+  theme?: {
+    colors?: {
+      background?: string;
+      primary?: string;
+      secondary?: string;
+      text?: string;
+    };
   };
 }
 
