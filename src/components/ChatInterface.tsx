@@ -7,9 +7,7 @@ import {
   ChevronUp,
   Check,
   X,
-  MessageSquare,
-  ToggleLeft,
-  ToggleRight
+  MessageSquare
 } from 'lucide-react';
 import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
@@ -41,6 +39,7 @@ interface ChatInterfaceProps {
   onFirstCommercialAccept?: () => void;
   onThreadsUpdate?: () => void;
   naujokasMode?: boolean;
+  isNewVersion?: boolean;
 }
 
 interface Message {
@@ -140,7 +139,7 @@ const getDisplayName = (authorName?: string, authorRef?: string): string => {
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 };
 
-export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, naujokasMode = true }: ChatInterfaceProps) {
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, naujokasMode = true, isNewVersion = false }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -152,7 +151,6 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  const [isNewVersion, setIsNewVersion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
@@ -273,6 +271,51 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     console.log('🔵 New Version (Voiceflow) mode activated');
 
+    // Inject custom CSS to hide/customize Voiceflow header
+    const injectVoiceflowStyles = () => {
+      // Check if styles already injected
+      if (document.getElementById('voiceflow-custom-styles')) {
+        return;
+      }
+
+      const styleElement = document.createElement('style');
+      styleElement.id = 'voiceflow-custom-styles';
+      styleElement.textContent = `
+        /* Hide Voiceflow header for seamless integration */
+        #voiceflow-container [class*="Header"],
+        #voiceflow-container [class*="header"],
+        #voiceflow-container [class*="Assistant"],
+        #voiceflow-container [data-testid*="header"],
+        #voiceflow-container [class*="Avatar"],
+        #voiceflow-container [class*="Title"],
+        #voiceflow-container iframe[title*="header"] {
+          display: none !important;
+        }
+
+        /* Adjust container to fill space */
+        #voiceflow-container > div:first-child {
+          height: 100% !important;
+        }
+
+        /* Hide the top branding section */
+        #voiceflow-container > div > div:first-child {
+          display: none !important;
+        }
+
+        /* Make chat messages start from the top */
+        #voiceflow-container [class*="MessageList"],
+        #voiceflow-container [class*="messages"] {
+          padding-top: 0 !important;
+          margin-top: 0 !important;
+        }
+      `;
+      document.head.appendChild(styleElement);
+      console.log('✨ Voiceflow custom styles injected');
+    };
+
+    // Inject styles immediately
+    injectVoiceflowStyles();
+
     const initializeVoiceflow = (attempts = 0) => {
       const container = document.getElementById('voiceflow-container');
 
@@ -334,6 +377,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 });
                 voiceflowInitializedRef.current = true;
                 console.log('✅ Voiceflow widget initialized on first load');
+
+                // Apply styles again after widget loads
+                setTimeout(() => injectVoiceflowStyles(), 500);
               } catch (error) {
                 console.error('❌ Failed to initialize Voiceflow:', error);
               }
@@ -368,6 +414,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           });
           voiceflowInitializedRef.current = true;
           console.log('✅ Voiceflow widget initialized successfully');
+
+          // Apply styles again after widget loads
+          setTimeout(() => injectVoiceflowStyles(), 500);
         } catch (error) {
           console.error('❌ Failed to initialize Voiceflow:', error);
         }
@@ -912,12 +961,6 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     setSpotlightMessageId(null);
   };
 
-  // Toggle between standard and new version (Voiceflow)
-  const toggleChatVersion = () => {
-    setIsNewVersion(prev => !prev);
-    console.log('🔄 Chat version toggled to:', !isNewVersion ? 'New Version' : 'Standard');
-  };
-
   // Handle tag selection from dropdown
   const handleTagSelect = (tag: QueryTagConfig) => {
     setCurrentQueryTag(tag);
@@ -995,31 +1038,6 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
           <>
-            {/* Version Toggle Button */}
-            <div className="flex justify-end p-3 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50">
-              <button
-                onClick={toggleChatVersion}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 transform hover:scale-105 shadow-md ${
-                  isNewVersion
-                    ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:from-purple-600 hover:to-indigo-700'
-                    : 'bg-gradient-to-r from-green-500 to-blue-500 text-white hover:from-green-600 hover:to-blue-600'
-                }`}
-                title={isNewVersion ? 'Switch to Standard Chat' : 'Switch to New Version (Voiceflow)'}
-              >
-                {isNewVersion ? (
-                  <>
-                    <ToggleRight className="w-5 h-5" />
-                    <span>Standard Chat</span>
-                  </>
-                ) : (
-                  <>
-                    <ToggleLeft className="w-5 h-5" />
-                    <span>New Version</span>
-                  </>
-                )}
-              </button>
-            </div>
-
             {/* Conditional rendering based on version */}
             {isNewVersion ? (
               // New Version: Voiceflow Embedded Chat
