@@ -309,6 +309,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             verify: { projectID: '692f59baeb204d830537c543' },
             url: 'https://general-runtime.voiceflow.com',
             versionID: 'production',
+            voice: {
+              url: 'https://runtime-api.voiceflow.com'
+            },
             render: {
               mode: 'embedded',
               target: container
@@ -323,7 +326,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         // Load script for the first time
         console.log('📦 Loading Voiceflow script for the first time');
         const script = document.createElement('script');
-        script.src = 'https://cdn.voiceflow.com/widget/bundle.mjs';
+        script.src = 'https://cdn.voiceflow.com/widget-next/bundle.mjs';
         script.type = 'text/javascript';
         script.onload = () => {
           console.log('📥 Voiceflow script loaded');
@@ -337,6 +340,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     verify: { projectID: '692f59baeb204d830537c543' },
                     url: 'https://general-runtime.voiceflow.com',
                     versionID: 'production',
+                    voice: {
+                      url: 'https://runtime-api.voiceflow.com'
+                    },
                     render: {
                       mode: 'embedded',
                       target: targetContainer

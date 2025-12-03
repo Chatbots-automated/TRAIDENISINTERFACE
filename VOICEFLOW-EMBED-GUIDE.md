@@ -16,6 +16,9 @@ window.voiceflow.chat.load({
   },
   url: 'https://general-runtime.voiceflow.com',
   versionID: 'production',
+  voice: {
+    url: 'https://runtime-api.voiceflow.com'  // Voice/runtime API URL
+  },
   render: {
     mode: 'embedded',           // Embedded mode as per docs
     target: containerElement     // Direct DOM element reference
@@ -28,6 +31,7 @@ window.voiceflow.chat.load({
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
+| `voice.url` | `'https://runtime-api.voiceflow.com'` | Voice runtime API endpoint |
 | `render.mode` | `'embedded'` | Embeds widget in specified container (vs 'overlay') |
 | `render.target` | DOM Element | Container where widget will be mounted |
 | `autostart` | `true` | Automatically starts session on load (default) |
@@ -40,9 +44,9 @@ window.voiceflow.chat.load({
 ### 1. Script Loading
 
 ```javascript
-// Load Voiceflow widget bundle
+// Load Voiceflow widget bundle (widget-next)
 const script = document.createElement('script');
-script.src = 'https://cdn.voiceflow.com/widget/bundle.mjs';
+script.src = 'https://cdn.voiceflow.com/widget-next/bundle.mjs';
 script.type = 'text/javascript';
 script.onload = () => {
   // Initialize after script loads
@@ -85,6 +89,9 @@ const initializeWithRetry = (attempts = 0) => {
       verify: { projectID: '692f59baeb204d830537c543' },
       url: 'https://general-runtime.voiceflow.com',
       versionID: 'production',
+      voice: {
+        url: 'https://runtime-api.voiceflow.com'
+      },
       render: {
         mode: 'embedded',
         target: container
