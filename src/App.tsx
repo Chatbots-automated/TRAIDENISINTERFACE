@@ -7,7 +7,7 @@ import AdminUsersInterface from './components/AdminUsersInterface';
 import AuthForm from './components/AuthForm';
 import CommercialOfferPanel from './components/CommercialOfferPanel';
 import { hasCommercialOffer } from './lib/commercialOfferStorage';
-import { MessageSquare, FileText, Users } from 'lucide-react';
+import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight } from 'lucide-react';
 import type { AppUser } from './types';
 
 type ViewMode = 'chat' | 'documents' | 'users';
@@ -25,6 +25,7 @@ const STORAGE_KEYS = {
   VIEW_MODE: 'traidenis_view_mode',
   CURRENT_THREAD_ID: 'traidenis_current_thread_id',
   NAUJOKAS_MODE: 'traidenis_naujokas_mode',
+  NEW_VERSION_MODE: 'traidenis_new_version_mode',
 };
 
 function App() {
@@ -60,6 +61,13 @@ function App() {
     return saved === null ? true : saved === 'true';
   });
 
+  // New Version mode - shows Voiceflow chat by default
+  const [isNewVersion, setIsNewVersion] = useState<boolean>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.NEW_VERSION_MODE);
+    // Default to true (Voiceflow) for new users
+    return saved === null ? true : saved === 'true';
+  });
+
   // Track if doc icon tooltip should be shown (after first commercial accept)
   const [showDocIconTooltip, setShowDocIconTooltip] = useState(false);
 
@@ -84,6 +92,11 @@ function App() {
     localStorage.setItem(STORAGE_KEYS.NAUJOKAS_MODE, String(naujokasMode));
   }, [naujokasMode]);
 
+  // Save new version mode to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.NEW_VERSION_MODE, String(isNewVersion));
+  }, [isNewVersion]);
+
   // Toggle naujokas mode
   const toggleNaujokasMode = useCallback(() => {
     setNaujokasMode(prev => {
@@ -94,6 +107,11 @@ function App() {
       }
       return newValue;
     });
+  }, []);
+
+  // Toggle new version mode
+  const toggleNewVersion = useCallback(() => {
+    setIsNewVersion(prev => !prev);
   }, []);
 
   const checkUser = async () => {
@@ -320,6 +338,7 @@ function App() {
             onFirstCommercialAccept={handleFirstCommercialAccept}
             onThreadsUpdate={loadThreads}
             naujokasMode={naujokasMode}
+            isNewVersion={isNewVersion}
           />
         );
       case 'documents':
@@ -397,8 +416,33 @@ function App() {
             )}
           </div>
 
-          {/* Right: Commercial Offer Icon */}
-          <div className="flex items-center relative">
+          {/* Right: New Version Toggle & Commercial Offer Icon */}
+          <div className="flex items-center space-x-3 relative">
+            {/* New Version Toggle */}
+            {viewMode === 'chat' && (
+              <button
+                onClick={toggleNewVersion}
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-300 transform hover:scale-105 ${
+                  isNewVersion
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:from-purple-600 hover:to-indigo-700'
+                    : 'bg-gradient-to-r from-green-500 to-blue-500 text-white hover:from-green-600 hover:to-blue-600'
+                }`}
+                title={isNewVersion ? 'Naujas variantas (Voiceflow)' : 'Standartinis pokalbis'}
+              >
+                {isNewVersion ? (
+                  <>
+                    <ToggleRight className="w-4 h-4" />
+                    <span>Nauja</span>
+                  </>
+                ) : (
+                  <>
+                    <ToggleLeft className="w-4 h-4" />
+                    <span>Nauja</span>
+                  </>
+                )}
+              </button>
+            )}
+
             <button
               onClick={() => {
                 handleOpenCommercialPanel();
