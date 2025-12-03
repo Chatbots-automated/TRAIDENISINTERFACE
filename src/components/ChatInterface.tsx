@@ -271,6 +271,48 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     console.log('🔵 New Version (Voiceflow) mode activated');
 
+    // Inject CSS to hide Voiceflow header using their official class names
+    const injectHeaderHidingCSS = () => {
+      if (document.getElementById('voiceflow-header-hide')) {
+        return;
+      }
+
+      const style = document.createElement('style');
+      style.id = 'voiceflow-header-hide';
+      style.textContent = `
+        /* Hide Voiceflow header using official class names */
+        .vfrc-header {
+          display: none !important;
+          height: 0 !important;
+          min-height: 0 !important;
+          opacity: 0 !important;
+          visibility: hidden !important;
+        }
+
+        .vfrc-assistant-info {
+          display: none !important;
+        }
+
+        .vfrc-avatar {
+          display: none !important;
+        }
+
+        /* Ensure chat messages start from top */
+        .vfrc-chat {
+          padding-top: 0 !important;
+        }
+
+        .vfrc-chat--dialog {
+          padding-top: 0 !important;
+        }
+      `;
+      document.head.appendChild(style);
+      console.log('✅ Voiceflow header CSS injected');
+    };
+
+    // Inject CSS immediately
+    injectHeaderHidingCSS();
+
     const initializeVoiceflow = (attempts = 0) => {
       const container = document.getElementById('voiceflow-container');
 
@@ -335,6 +377,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 });
                 voiceflowInitializedRef.current = true;
                 console.log('✅ Voiceflow widget initialized with hidden header');
+
+                // Re-inject CSS after widget loads to ensure it takes effect
+                setTimeout(() => injectHeaderHidingCSS(), 500);
+                setTimeout(() => injectHeaderHidingCSS(), 1500);
               } catch (error) {
                 console.error('❌ Failed to initialize Voiceflow:', error);
               }
@@ -372,6 +418,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           });
           voiceflowInitializedRef.current = true;
           console.log('✅ Voiceflow widget initialized with hidden header');
+
+          // Re-inject CSS after widget loads to ensure it takes effect
+          setTimeout(() => injectHeaderHidingCSS(), 500);
+          setTimeout(() => injectHeaderHidingCSS(), 1500);
         } catch (error) {
           console.error('❌ Failed to initialize Voiceflow:', error);
         }
