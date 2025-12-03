@@ -271,6 +271,51 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     console.log('🔵 New Version (Voiceflow) mode activated');
 
+    // Inject custom CSS to hide/customize Voiceflow header
+    const injectVoiceflowStyles = () => {
+      // Check if styles already injected
+      if (document.getElementById('voiceflow-custom-styles')) {
+        return;
+      }
+
+      const styleElement = document.createElement('style');
+      styleElement.id = 'voiceflow-custom-styles';
+      styleElement.textContent = `
+        /* Hide Voiceflow header for seamless integration */
+        #voiceflow-container [class*="Header"],
+        #voiceflow-container [class*="header"],
+        #voiceflow-container [class*="Assistant"],
+        #voiceflow-container [data-testid*="header"],
+        #voiceflow-container [class*="Avatar"],
+        #voiceflow-container [class*="Title"],
+        #voiceflow-container iframe[title*="header"] {
+          display: none !important;
+        }
+
+        /* Adjust container to fill space */
+        #voiceflow-container > div:first-child {
+          height: 100% !important;
+        }
+
+        /* Hide the top branding section */
+        #voiceflow-container > div > div:first-child {
+          display: none !important;
+        }
+
+        /* Make chat messages start from the top */
+        #voiceflow-container [class*="MessageList"],
+        #voiceflow-container [class*="messages"] {
+          padding-top: 0 !important;
+          margin-top: 0 !important;
+        }
+      `;
+      document.head.appendChild(styleElement);
+      console.log('✨ Voiceflow custom styles injected');
+    };
+
+    // Inject styles immediately
+    injectVoiceflowStyles();
+
     const initializeVoiceflow = (attempts = 0) => {
       const container = document.getElementById('voiceflow-container');
 
@@ -332,6 +377,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 });
                 voiceflowInitializedRef.current = true;
                 console.log('✅ Voiceflow widget initialized on first load');
+
+                // Apply styles again after widget loads
+                setTimeout(() => injectVoiceflowStyles(), 500);
               } catch (error) {
                 console.error('❌ Failed to initialize Voiceflow:', error);
               }
@@ -366,6 +414,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           });
           voiceflowInitializedRef.current = true;
           console.log('✅ Voiceflow widget initialized successfully');
+
+          // Apply styles again after widget loads
+          setTimeout(() => injectVoiceflowStyles(), 500);
         } catch (error) {
           console.error('❌ Failed to initialize Voiceflow:', error);
         }
