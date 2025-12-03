@@ -278,109 +278,79 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
       return;
     }
 
-    console.log('🔵 Voiceflow mode activated');
-
-    const initializeWithRetry = (attempts = 0) => {
-      const container = document.getElementById('voiceflow-container');
-
-      console.log(`🔍 Attempt ${attempts + 1}: Container check`, {
-        exists: !!container,
-        dimensions: container?.getBoundingClientRect(),
-        display: container ? window.getComputedStyle(container).display : 'N/A'
-      });
-
-      if (!container) {
-        if (attempts < 20) {
-          setTimeout(() => initializeWithRetry(attempts + 1), 150);
-        } else {
-          console.error('❌ Voiceflow container never mounted after 3 seconds');
-        }
+    const loadVoiceflowScript = () => {
+      // Check if script already loaded
+      if (voiceflowScriptLoadedRef.current || document.getElementById('voiceflow-script')) {
+        initializeVoiceflow();
         return;
       }
 
-      // Container exists, now load or initialize Voiceflow
-      const existingScript = document.querySelector('script[src*="voiceflow"]');
+      const script = document.createElement('script');
+      script.id = 'voiceflow-script';
+      script.type = 'text/javascript';
+      script.innerHTML = `
+        (function(d, t) {
+          var v = d.createElement(t), s = d.getElementsByTagName(t)[0];
+          v.onload = function() {
+            window.voiceflow.chat.load({
+              verify: { projectID: '692f59baeb204d830537c543' },
+              url: 'https://general-runtime.voiceflow.com',
+              versionID: 'production',
+              render: {
+                mode: 'embedded',
+                target: document.getElementById('voiceflow-container')
+              },
+              autostart: true,
+              voiceURL: 'https://runtime-api.voiceflow.com'
+            });
+            console.log('Voiceflow widget initialized');
+          };
+          v.src = "https://cdn.voiceflow.com/widget/bundle.mjs";
+          v.type = "text/javascript";
+          s.parentNode.insertBefore(v, s);
+        })(document, 'script');
+      `;
+      document.body.appendChild(script);
+      voiceflowScriptLoadedRef.current = true;
+    };
 
-      if (window.voiceflow?.chat) {
-        // Voiceflow already loaded, just initialize
-        console.log('♻️ Re-initializing existing Voiceflow instance');
+    const initializeVoiceflow = () => {
+      if (window.voiceflow && window.voiceflow.chat) {
         try {
           window.voiceflow.chat.load({
             verify: { projectID: '692f59baeb204d830537c543' },
             url: 'https://general-runtime.voiceflow.com',
             versionID: 'production',
-            voice: {
-              url: 'https://runtime-api.voiceflow.com'
-            },
             render: {
               mode: 'embedded',
-              target: container
+              target: document.getElementById('voiceflow-container')
             },
-            autostart: true
+            autostart: true,
+            voiceURL: 'https://runtime-api.voiceflow.com'
           });
-          console.log('✅ Voiceflow widget initialized successfully');
+          console.log('Voiceflow widget re-initialized');
         } catch (error) {
-          console.error('❌ Error initializing Voiceflow:', error);
+          console.error('Error initializing Voiceflow:', error);
         }
-      } else if (!existingScript && !voiceflowScriptLoadedRef.current) {
-        // Load script for the first time
-        console.log('📦 Loading Voiceflow script for the first time');
-        const script = document.createElement('script');
-        script.src = 'https://cdn.voiceflow.com/widget-next/bundle.mjs';
-        script.type = 'text/javascript';
-        script.onload = () => {
-          console.log('📥 Voiceflow script loaded');
-          // Wait a bit for voiceflow object to be available
-          setTimeout(() => {
-            if (window.voiceflow?.chat) {
-              try {
-                const targetContainer = document.getElementById('voiceflow-container');
-                if (targetContainer) {
-                  window.voiceflow.chat.load({
-                    verify: { projectID: '692f59baeb204d830537c543' },
-                    url: 'https://general-runtime.voiceflow.com',
-                    versionID: 'production',
-                    voice: {
-                      url: 'https://runtime-api.voiceflow.com'
-                    },
-                    render: {
-                      mode: 'embedded',
-                      target: targetContainer
-                    },
-                    autostart: true
-                  });
-                  console.log('✅ Voiceflow widget initialized on first load');
-                } else {
-                  console.error('❌ Container lost reference during script load');
-                }
-              } catch (error) {
-                console.error('❌ Error initializing Voiceflow after script load:', error);
-              }
-            } else {
-              console.error('❌ Voiceflow object not available after script load');
-            }
-          }, 300);
-        };
-        script.onerror = (error) => {
-          console.error('❌ Failed to load Voiceflow script:', error);
-        };
-        document.head.appendChild(script);
-        voiceflowScriptLoadedRef.current = true;
-      } else {
-        console.log('⏳ Waiting for Voiceflow script to fully load...');
-        // Script loading but not ready yet
-        setTimeout(() => initializeWithRetry(attempts + 1), 300);
       }
     };
 
-    // Start initialization with a small delay
+    // Small delay to ensure container is mounted
     const timer = setTimeout(() => {
-      initializeWithRetry();
+      loadVoiceflowScript();
     }, 100);
 
     return () => {
       clearTimeout(timer);
-      console.log('🔴 Voiceflow mode deactivated');
+      // Cleanup: destroy Voiceflow instance when switching back
+      if (window.voiceflow && window.voiceflow.chat && window.voiceflow.chat.destroy) {
+        try {
+          window.voiceflow.chat.destroy();
+          console.log('Voiceflow widget destroyed');
+        } catch (error) {
+          console.error('Error destroying Voiceflow:', error);
+        }
+      }
     };
   }, [isVoiceflowMode]);
 
@@ -1334,19 +1304,12 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
             {/* Voiceflow Embedded Chat */}
             {isVoiceflowMode && (
-              <div className="flex-1 flex flex-col min-h-0 h-full relative bg-gray-50">
+              <div className="flex-1 flex flex-col min-h-0 h-full relative">
                 <div
                   id="voiceflow-container"
                   ref={voiceflowContainerRef}
-                  className="w-full h-full"
-                  style={{
-                    minHeight: '600px',
-                    height: '100%',
-                    width: '100%',
-                    display: 'block',
-                    position: 'relative',
-                    overflow: 'visible'
-                  }}
+                  className="flex-1 w-full h-full overflow-hidden"
+                  style={{ minHeight: '400px' }}
                 />
               </div>
             )}
