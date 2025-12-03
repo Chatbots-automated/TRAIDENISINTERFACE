@@ -1113,11 +1113,12 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   id="voiceflow-container"
                   style={{
                     minHeight: '600px',
-                    height: '100%',
+                    height: 'calc(100% + 200px)',
                     width: '100%',
                     display: 'block',
                     position: 'relative',
-                    overflow: 'visible'
+                    overflow: 'hidden',
+                    marginTop: '-200px'
                   }}
                 />
               </div>
