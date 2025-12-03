@@ -7,7 +7,9 @@ import {
   ChevronUp,
   Check,
   X,
-  MessageSquare
+  MessageSquare,
+  ToggleLeft,
+  ToggleRight
 } from 'lucide-react';
 import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
@@ -150,11 +152,14 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [isNewVersion, setIsNewVersion] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const tagDropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingQueryTypeRef = useRef<string | null>(null); // Track query type for pending response
+  const voiceflowScriptLoadedRef = useRef(false);
+  const voiceflowInitializedRef = useRef(false);
 
   // Load messages when thread changes
   useEffect(() => {
@@ -259,6 +264,131 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     return () => clearInterval(interval);
   }, [loading, isStreaming]);
+
+  // Initialize Voiceflow when New Version mode is activated
+  useEffect(() => {
+    if (!isNewVersion || !currentThread) {
+      return;
+    }
+
+    console.log('🔵 New Version (Voiceflow) mode activated');
+
+    const initializeVoiceflow = (attempts = 0) => {
+      const container = document.getElementById('voiceflow-container');
+
+      console.log(`🔍 Attempt ${attempts + 1}: Container check`, {
+        exists: !!container,
+        visible: container ? window.getComputedStyle(container).display !== 'none' : false,
+        dimensions: container?.getBoundingClientRect()
+      });
+
+      if (!container) {
+        if (attempts < 20) {
+          setTimeout(() => initializeVoiceflow(attempts + 1), 150);
+        } else {
+          console.error('❌ Voiceflow container not found after 20 attempts');
+        }
+        return;
+      }
+
+      // If Voiceflow is already initialized, re-initialize it
+      if (voiceflowInitializedRef.current && window.voiceflow?.chat) {
+        console.log('♻️ Re-initializing existing Voiceflow instance');
+        try {
+          if (window.voiceflow.chat.destroy) {
+            window.voiceflow.chat.destroy();
+          }
+        } catch (e) {
+          console.warn('Failed to destroy previous instance:', e);
+        }
+        voiceflowInitializedRef.current = false;
+      }
+
+      // Load script if not already loaded
+      if (!voiceflowScriptLoadedRef.current) {
+        console.log('📦 Loading Voiceflow script for the first time');
+        const script = document.createElement('script');
+        script.src = 'https://cdn.voiceflow.com/widget-next/bundle.mjs';
+        script.type = 'text/javascript';
+
+        script.onload = () => {
+          console.log('📥 Voiceflow script loaded');
+          voiceflowScriptLoadedRef.current = true;
+
+          // Wait a bit for script to fully initialize
+          setTimeout(() => {
+            if (window.voiceflow?.chat) {
+              try {
+                window.voiceflow.chat.load({
+                  verify: { projectID: '692f59baeb204d830537c543' },
+                  url: 'https://general-runtime.voiceflow.com',
+                  versionID: 'production',
+                  voice: {
+                    url: 'https://runtime-api.voiceflow.com'
+                  },
+                  render: {
+                    mode: 'embedded',
+                    target: container
+                  },
+                  autostart: true
+                });
+                voiceflowInitializedRef.current = true;
+                console.log('✅ Voiceflow widget initialized on first load');
+              } catch (error) {
+                console.error('❌ Failed to initialize Voiceflow:', error);
+              }
+            } else {
+              console.error('❌ window.voiceflow.chat not available after script load');
+            }
+          }, 300);
+        };
+
+        script.onerror = () => {
+          console.error('❌ Failed to load Voiceflow script');
+          voiceflowScriptLoadedRef.current = false;
+        };
+
+        document.head.appendChild(script);
+      } else if (window.voiceflow?.chat) {
+        // Script already loaded, just initialize
+        console.log('🔄 Voiceflow script already loaded, initializing...');
+        try {
+          window.voiceflow.chat.load({
+            verify: { projectID: '692f59baeb204d830537c543' },
+            url: 'https://general-runtime.voiceflow.com',
+            versionID: 'production',
+            voice: {
+              url: 'https://runtime-api.voiceflow.com'
+            },
+            render: {
+              mode: 'embedded',
+              target: container
+            },
+            autostart: true
+          });
+          voiceflowInitializedRef.current = true;
+          console.log('✅ Voiceflow widget initialized successfully');
+        } catch (error) {
+          console.error('❌ Failed to initialize Voiceflow:', error);
+        }
+      }
+    };
+
+    initializeVoiceflow();
+
+    // Cleanup function
+    return () => {
+      if (!isNewVersion && window.voiceflow?.chat?.destroy) {
+        try {
+          window.voiceflow.chat.destroy();
+          voiceflowInitializedRef.current = false;
+          console.log('🧹 Voiceflow instance destroyed');
+        } catch (e) {
+          console.warn('Failed to destroy Voiceflow instance:', e);
+        }
+      }
+    };
+  }, [isNewVersion, currentThread]);
 
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
@@ -782,6 +912,12 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     setSpotlightMessageId(null);
   };
 
+  // Toggle between standard and new version (Voiceflow)
+  const toggleChatVersion = () => {
+    setIsNewVersion(prev => !prev);
+    console.log('🔄 Chat version toggled to:', !isNewVersion ? 'New Version' : 'Standard');
+  };
+
   // Handle tag selection from dropdown
   const handleTagSelect = (tag: QueryTagConfig) => {
     setCurrentQueryTag(tag);
@@ -859,8 +995,52 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {currentThread ? (
           <>
-            {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+            {/* Version Toggle Button */}
+            <div className="flex justify-end p-3 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50">
+              <button
+                onClick={toggleChatVersion}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 transform hover:scale-105 shadow-md ${
+                  isNewVersion
+                    ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:from-purple-600 hover:to-indigo-700'
+                    : 'bg-gradient-to-r from-green-500 to-blue-500 text-white hover:from-green-600 hover:to-blue-600'
+                }`}
+                title={isNewVersion ? 'Switch to Standard Chat' : 'Switch to New Version (Voiceflow)'}
+              >
+                {isNewVersion ? (
+                  <>
+                    <ToggleRight className="w-5 h-5" />
+                    <span>Standard Chat</span>
+                  </>
+                ) : (
+                  <>
+                    <ToggleLeft className="w-5 h-5" />
+                    <span>New Version</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Conditional rendering based on version */}
+            {isNewVersion ? (
+              // New Version: Voiceflow Embedded Chat
+              <div className="flex-1 overflow-hidden bg-gradient-to-br from-purple-50 to-indigo-50">
+                <div
+                  id="voiceflow-container"
+                  style={{
+                    minHeight: '600px',
+                    height: '100%',
+                    width: '100%',
+                    display: 'block',
+                    position: 'relative',
+                    overflow: 'visible'
+                  }}
+                />
+              </div>
+            ) : (
+              // Standard Chat Interface
+              <>
+                {/* Messages Area - flexbox handles the height, scrollable when content overflows */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {/* Welcome screen when chat is empty */}
               {messages.length === 0 && !loading && (
                 <div className="flex flex-col items-center justify-center h-full text-center">
@@ -1178,6 +1358,8 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 </button>
               </form>
             </div>
+              </>
+            )}
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center">
