@@ -37,6 +37,14 @@ interface LayoutProps {
   onRenameThread?: (threadId: string, newTitle: string) => void;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
+  // New version mode props
+  isNewVersion?: boolean;
+  viewMode?: 'chat' | 'documents' | 'users';
+  onViewModeChange?: (mode: 'chat' | 'documents' | 'users') => void;
+  onToggleNewVersion?: () => void;
+  hasOffer?: boolean;
+  showDocGlow?: boolean;
+  onOpenCommercialPanel?: () => void;
 }
 
 export default function Layout({
@@ -51,7 +59,14 @@ export default function Layout({
   onDeleteThread,
   onRenameThread,
   naujokasMode = true,
-  onToggleNaujokas
+  onToggleNaujokas,
+  isNewVersion = false,
+  viewMode = 'chat',
+  onViewModeChange,
+  onToggleNewVersion,
+  hasOffer = false,
+  showDocGlow = false,
+  onOpenCommercialPanel
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -142,6 +157,91 @@ export default function Layout({
               </div>
             </div>
           </div>
+
+          {/* Navigation buttons when in New Version mode */}
+          {isNewVersion && (
+            <div className="border-b border-gray-200">
+              <div className="p-2 space-y-1">
+                <button
+                  onClick={() => onViewModeChange?.('chat')}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    viewMode === 'chat'
+                      ? 'bg-gradient-to-r from-green-50 to-blue-50 text-green-700 border border-green-200'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Chat</span>
+                </button>
+
+                <button
+                  onClick={() => onViewModeChange?.('documents')}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    viewMode === 'documents'
+                      ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 border border-blue-200'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <Database className="w-4 h-4" />
+                  <span>Documents</span>
+                </button>
+
+                {user.is_admin && (
+                  <button
+                    onClick={() => onViewModeChange?.('users')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      viewMode === 'users'
+                        ? 'bg-gradient-to-r from-purple-50 to-pink-50 text-purple-700 border border-purple-200'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Database className="w-4 h-4" />
+                    <span>Users</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Controls section */}
+              <div className="p-2 border-t border-gray-100 space-y-1">
+                {/* Nauja Toggle */}
+                <button
+                  onClick={onToggleNewVersion}
+                  className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    isNewVersion
+                      ? 'bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700'
+                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="text-base">✨</span>
+                  <span>Nauja</span>
+                </button>
+
+                {/* Docs Icon */}
+                <button
+                  onClick={onOpenCommercialPanel}
+                  className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${
+                    hasOffer
+                      ? 'bg-gradient-to-r from-green-100 to-blue-100 text-blue-700'
+                      : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                  } ${
+                    showDocGlow
+                      ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1'
+                      : ''
+                  }`}
+                  title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                >
+                  <Database className="w-4 h-4" />
+                  <span>Offers</span>
+                  {showDocGlow && (
+                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Chat History */}
           <div className="flex-1 p-4 flex flex-col min-h-0 overflow-hidden">
