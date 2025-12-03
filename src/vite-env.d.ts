@@ -15,6 +15,7 @@ interface VoiceflowConfig {
     target: HTMLElement;
   };
   autostart?: boolean;
+  css?: string; // Custom CSS injection (can use base64 data URL)
   assistant?: {
     title?: string;
     description?: string;

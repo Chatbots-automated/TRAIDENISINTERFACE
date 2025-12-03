@@ -271,6 +271,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     console.log('🔵 New Version (Voiceflow) mode activated');
 
+    // Base64 encoded CSS to hide header - injected directly into Voiceflow
+    // CSS: .vfrc-header{display:none!important}.vfrc-assistant-info{display:none!important}.vfrc-avatar{display:none!important}.vfrc-chat{padding-top:0!important}
+    const headerHidingCSS = 'data:text/css;base64,LnZmcmMtaGVhZGVye2Rpc3BsYXk6bm9uZSFpbXBvcnRhbnR9LnZmcmMtYXNzaXN0YW50LWluZm97ZGlzcGxheTpub25lIWltcG9ydGFudH0udmZyYy1hdmF0YXJ7ZGlzcGxheTpub25lIWltcG9ydGFudH0udmZyYy1jaGF0e3BhZGRpbmctdG9wOjAhaW1wb3J0YW50fQ==';
+
     // Inject CSS to hide Voiceflow header using their official class names
     const injectHeaderHidingCSS = () => {
       if (document.getElementById('voiceflow-header-hide')) {
@@ -371,6 +375,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     target: container
                   },
                   autostart: true,
+                  css: headerHidingCSS,
                   assistant: {
                     header: { visible: false }
                   }
@@ -412,6 +417,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               target: container
             },
             autostart: true,
+            css: headerHidingCSS,
             assistant: {
               header: { visible: false }
             }
