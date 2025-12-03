@@ -1,5 +1,24 @@
 # 🔧 Voiceflow Embed - Debug Guide
 
+## Implementation Following Official Documentation
+
+This implementation follows the official Voiceflow embedding guide:
+**https://docs.voiceflow.com/docs/embed-customize-styling**
+
+### Official Configuration Used:
+```javascript
+window.voiceflow.chat.load({
+  verify: { projectID: '692f59baeb204d830537c543' },
+  url: 'https://general-runtime.voiceflow.com',
+  versionID: 'production',
+  render: {
+    mode: 'embedded',      // Per official docs
+    target: container      // Direct element reference
+  },
+  autostart: true          // Starts session automatically
+});
+```
+
 ## Fixed Issues
 
 The following fixes have been applied to resolve the Voiceflow embed display issue:

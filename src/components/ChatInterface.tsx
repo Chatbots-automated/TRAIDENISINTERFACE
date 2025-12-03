@@ -313,8 +313,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               mode: 'embedded',
               target: container
             },
-            autostart: true,
-            voiceURL: 'https://runtime-api.voiceflow.com'
+            autostart: true
           });
           console.log('✅ Voiceflow widget initialized successfully');
         } catch (error) {
@@ -332,18 +331,22 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           setTimeout(() => {
             if (window.voiceflow?.chat) {
               try {
-                window.voiceflow.chat.load({
-                  verify: { projectID: '692f59baeb204d830537c543' },
-                  url: 'https://general-runtime.voiceflow.com',
-                  versionID: 'production',
-                  render: {
-                    mode: 'embedded',
-                    target: document.getElementById('voiceflow-container')
-                  },
-                  autostart: true,
-                  voiceURL: 'https://runtime-api.voiceflow.com'
-                });
-                console.log('✅ Voiceflow widget initialized on first load');
+                const targetContainer = document.getElementById('voiceflow-container');
+                if (targetContainer) {
+                  window.voiceflow.chat.load({
+                    verify: { projectID: '692f59baeb204d830537c543' },
+                    url: 'https://general-runtime.voiceflow.com',
+                    versionID: 'production',
+                    render: {
+                      mode: 'embedded',
+                      target: targetContainer
+                    },
+                    autostart: true
+                  });
+                  console.log('✅ Voiceflow widget initialized on first load');
+                } else {
+                  console.error('❌ Container lost reference during script load');
+                }
               } catch (error) {
                 console.error('❌ Error initializing Voiceflow after script load:', error);
               }
