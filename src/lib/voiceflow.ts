@@ -7,7 +7,8 @@ const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v2';
 
 // Types for Voiceflow API responses
 export interface VoiceflowTranscript {
-  _id: string;
+  _id: string; // v2 uses _id
+  id?: string; // v1 uses id
   projectID: string;
   sessionID: string;
   browser?: string;
@@ -82,33 +83,58 @@ export interface ParsedTranscript {
   device?: string;
   os?: string;
   unread?: boolean;
+  credits?: number;
 }
 
-// Fetch all transcripts for the project
+// Fetch all transcripts for the project with pagination support
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     console.error('Voiceflow API key or Project ID not configured');
     throw new Error('Voiceflow API not configured');
   }
 
-  const response = await fetch(
-    `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}`,
-    {
-      method: 'GET',
-      headers: {
-        'Authorization': VOICEFLOW_API_KEY,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
+  // Debug logging
+  console.log('[Voiceflow] Fetching transcripts...');
+  console.log('[Voiceflow] API Key (first 20 chars):', VOICEFLOW_API_KEY?.substring(0, 20) + '...');
+  console.log('[Voiceflow] Project ID:', VOICEFLOW_PROJECT_ID);
+
+  // Fetch with pagination - start with a large limit to get all transcripts
+  // Voiceflow API may support limit/offset parameters
+  const limit = 1000; // Request up to 1000 transcripts
+  const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${limit}`;
+
+  console.log('[Voiceflow] API URL:', apiUrl);
+
+  // Use GET method for v2 transcripts API
+  const response = await fetch(apiUrl, {
+    method: 'GET',
+    headers: {
+      'Authorization': VOICEFLOW_API_KEY,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  console.log('[Voiceflow] Response status:', response.status);
+  console.log('[Voiceflow] Response headers:', Object.fromEntries(response.headers.entries()));
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Failed to fetch transcripts:', response.status, errorText);
+    console.error('[Voiceflow] Failed to fetch transcripts:', response.status, errorText);
     throw new Error(`Failed to fetch transcripts: ${response.status}`);
   }
 
   const data = await response.json();
+  console.log('[Voiceflow] Received data (first item):', Array.isArray(data) ? data[0] : 'Not an array');
+  console.log('[Voiceflow] Number of transcripts:', Array.isArray(data) ? data.length : 'Not an array');
+
+  // Normalize v1 API response (id) to match v2 format (_id) for compatibility
+  if (Array.isArray(data)) {
+    return data.map(transcript => ({
+      ...transcript,
+      _id: transcript.id || transcript._id, // Ensure _id exists
+    }));
+  }
+
   return data;
 }
 
@@ -119,6 +145,8 @@ export async function fetchTranscriptWithLogs(
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     throw new Error('Voiceflow API not configured');
   }
+
+  console.log('[Voiceflow] Fetching transcript with logs:', transcriptID);
 
   const response = await fetch(
     `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
@@ -131,14 +159,30 @@ export async function fetchTranscriptWithLogs(
     }
   );
 
+  console.log('[Voiceflow] Transcript response status:', response.status);
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Failed to fetch transcript:', response.status, errorText);
+    console.error('[Voiceflow] Failed to fetch transcript:', response.status, errorText);
     throw new Error(`Failed to fetch transcript: ${response.status}`);
   }
 
   const data = await response.json();
-  return data;
+  console.log('[Voiceflow] Transcript data for', transcriptID, ':', data);
+
+  // v2 API returns turns directly as an array, not wrapped in an object
+  const turns = Array.isArray(data) ? data : (data.turns || []);
+  console.log('[Voiceflow] Number of turns:', turns.length);
+
+  // Return in expected format with turns property
+  return {
+    _id: transcriptID,
+    projectID: VOICEFLOW_PROJECT_ID,
+    sessionID: transcriptID, // v2 doesn't return metadata, use ID as sessionID
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    turns: turns
+  } as VoiceflowTranscriptWithLogs;
 }
 
 // Extract text content from Voiceflow slate format
@@ -182,6 +226,7 @@ export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[]
   const messages: ParsedMessage[] = [];
 
   for (const turn of turns) {
+    // User messages: type === 'request'
     if (turn.type === 'request') {
       const payload = turn.payload as VoiceflowTurnRequest;
       let content = '';
@@ -200,7 +245,26 @@ export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[]
           timestamp: turn.startTime,
         });
       }
-    } else if (turn.type === 'response') {
+    }
+    // Assistant messages: type === 'text' (v2 API format)
+    else if (turn.type === 'text') {
+      const payload = turn.payload as any;
+
+      // v2 API has nested payload structure: payload.payload.message
+      const innerPayload = payload.payload || payload;
+      const content = innerPayload.message || extractTextFromSlate(innerPayload.slate) || '';
+
+      if (content) {
+        messages.push({
+          id: turn.turnID + '-text',
+          role: 'assistant',
+          content,
+          timestamp: turn.startTime,
+        });
+      }
+    }
+    // Legacy format: type === 'response' (keeping for backwards compatibility)
+    else if (turn.type === 'response') {
       const payload = turn.payload as VoiceflowTurnResponse;
 
       // Handle different response types
@@ -221,6 +285,26 @@ export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[]
   return messages;
 }
 
+// Calculate total credit consumption from debug turns
+function calculateCredits(turns: any[]): number {
+  if (!turns || turns.length === 0) return 0;
+
+  let totalCredits = 0;
+
+  for (const turn of turns) {
+    // Look for debug turns with credit consumption data
+    if (turn.type === 'debug' && turn.payload?.payload?.metadata?.VoiceflowCreditConsumption) {
+      const creditData = turn.payload.payload.metadata.VoiceflowCreditConsumption;
+      if (creditData.total && typeof creditData.total === 'number') {
+        totalCredits += creditData.total;
+      }
+    }
+  }
+
+  // Round to 3 decimal places
+  return Math.round(totalCredits * 1000) / 1000;
+}
+
 // Parse a full transcript into a displayable format
 export function parseTranscript(
   transcript: VoiceflowTranscriptWithLogs
@@ -228,6 +312,9 @@ export function parseTranscript(
   const messages = transcript.turns
     ? parseTranscriptMessages(transcript.turns)
     : [];
+
+  // Calculate actual credit consumption from debug turns
+  const credits = transcript.turns ? calculateCredits(transcript.turns) : 0;
 
   // Get first user message as preview
   const firstUserMessage = messages.find(m => m.role === 'user' && m.content !== '[Conversation started]');
@@ -247,6 +334,7 @@ export function parseTranscript(
     device: transcript.device,
     os: transcript.os,
     unread: transcript.unread,
+    credits,
   };
 }
 
