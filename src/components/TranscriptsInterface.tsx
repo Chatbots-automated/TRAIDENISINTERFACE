@@ -306,65 +306,83 @@ function TranscriptModal({
             <div className="space-y-6">
               {/* Metadata Section */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
                   Metadata
                 </h3>
-                <div className="space-y-3 text-sm">
+                <div className="space-y-3">
                   <div>
-                    <div className="text-gray-500 text-xs">Date</div>
-                    <div className="text-gray-900 font-medium">
+                    <div className="text-gray-400 text-xs mb-0.5">Date</div>
+                    <div className="text-gray-900 text-sm">
                       {formatFullDate(transcript.createdAt)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-gray-500 text-xs">User ID</div>
+                    <div className="text-gray-400 text-xs mb-0.5">User ID</div>
                     <div className="text-gray-900 font-mono text-xs break-all">
                       {transcript.sessionID}
                     </div>
                   </div>
                   <div>
-                    <div className="text-gray-500 text-xs">Platform</div>
-                    <div className="text-gray-900">Chat widget</div>
+                    <div className="text-gray-400 text-xs mb-0.5">Platform</div>
+                    <div className="text-gray-900 text-sm">Chat widget</div>
                   </div>
                   <div>
-                    <div className="text-gray-500 text-xs">Duration</div>
-                    <div className="text-gray-900">{calculateDuration(transcript)}</div>
+                    <div className="text-gray-400 text-xs mb-0.5">Duration</div>
+                    <div className="text-gray-900 text-sm">{calculateDuration(transcript)}</div>
                   </div>
                   <div>
-                    <div className="text-gray-500 text-xs">Messages</div>
-                    <div className="text-gray-900">{transcript.messageCount}</div>
+                    <div className="text-gray-400 text-xs mb-0.5">Messages</div>
+                    <div className="text-gray-900 text-sm">{transcript.messageCount}</div>
                   </div>
                 </div>
               </div>
 
+              {/* Separator */}
+              <div className="border-t border-gray-200"></div>
+
               {/* Device Info (if available) */}
               {(transcript.browser || transcript.device || transcript.os) && (
-                <div>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                    Device Info
-                  </h3>
-                  <div className="space-y-2 text-sm">
-                    {transcript.browser && (
-                      <div>
-                        <div className="text-gray-500 text-xs">Browser</div>
-                        <div className="text-gray-900">{transcript.browser}</div>
-                      </div>
-                    )}
-                    {transcript.device && (
-                      <div>
-                        <div className="text-gray-500 text-xs">Device</div>
-                        <div className="text-gray-900">{transcript.device}</div>
-                      </div>
-                    )}
-                    {transcript.os && (
-                      <div>
-                        <div className="text-gray-500 text-xs">OS</div>
-                        <div className="text-gray-900">{transcript.os}</div>
-                      </div>
-                    )}
+                <>
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                      Device Info
+                    </h3>
+                    <div className="space-y-3">
+                      {transcript.browser && (
+                        <div>
+                          <div className="text-gray-400 text-xs mb-0.5">Browser</div>
+                          <div className="text-gray-900 text-sm">{transcript.browser}</div>
+                        </div>
+                      )}
+                      {transcript.device && (
+                        <div>
+                          <div className="text-gray-400 text-xs mb-0.5">Device</div>
+                          <div className="text-gray-900 text-sm">{transcript.device}</div>
+                        </div>
+                      )}
+                      {transcript.os && (
+                        <div>
+                          <div className="text-gray-400 text-xs mb-0.5">OS</div>
+                          <div className="text-gray-900 text-sm">{transcript.os}</div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+
+                  {/* Separator */}
+                  <div className="border-t border-gray-200"></div>
+                </>
               )}
+
+              {/* Evaluations Section (placeholder) */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                  Evaluations
+                </h3>
+                <div className="text-gray-400 text-xs">
+                  No evaluations available
+                </div>
+              </div>
             </div>
           </div>
 
@@ -382,7 +400,7 @@ function TranscriptModal({
                   <p className="text-sm text-gray-500">No messages available</p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-1">
                   {transcript.messages.map((message) => (
                     <CompactMessageBubble key={message.id} message={message} />
                   ))}
@@ -402,28 +420,28 @@ function CompactMessageBubble({ message }: { message: ParsedMessage }) {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className="max-w-[75%]">
-        {/* Author label - small and subtle */}
-        <div className={`px-3 mb-1 ${isUser ? 'text-right' : 'text-left'}`}>
-          <span className="text-xs text-gray-500">
-            {isUser ? 'User' : 'Traidenis'}
-          </span>
-        </div>
+      <div className="max-w-[70%]">
+        {/* Author label - only show for agent, removed for user */}
+        {!isUser && (
+          <div className="px-3 mb-0.5">
+            <span className="text-xs text-gray-400">Traidenis</span>
+          </div>
+        )}
 
-        {/* Message bubble - dense and clean */}
+        {/* Message bubble - dense and clean, subtle background for agent */}
         <div
           className={`px-3 py-2 text-sm leading-relaxed ${
             isUser
               ? 'bg-indigo-600 text-white rounded-lg'
-              : 'bg-gray-100 text-gray-900 rounded-lg'
+              : 'bg-gray-50 text-gray-900 rounded-lg'
           }`}
         >
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
 
-        {/* Timestamp - tiny and subtle */}
+        {/* Timestamp - smaller and lighter */}
         <div className={`px-3 mt-0.5 ${isUser ? 'text-right' : 'text-left'}`}>
-          <span className="text-xs text-gray-400">
+          <span className="text-[11px] text-gray-400">
             {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
               hour: '2-digit',
               minute: '2-digit',
