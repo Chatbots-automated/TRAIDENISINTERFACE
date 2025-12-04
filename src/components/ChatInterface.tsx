@@ -1064,11 +1064,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               <div className="flex-1 overflow-hidden bg-gradient-to-br from-purple-50 to-indigo-50">
                 {!chatStarted ? (
                   // Show "Start Chat" button before initializing Voiceflow
-                  <div className="flex flex-col items-center justify-center h-full">
+                  <div className="flex flex-col items-center justify-center h-full animate-fade-in">
                     <button
                       onClick={() => setChatStarted(true)}
-                      className="px-8 py-4 text-white rounded-lg font-medium hover:opacity-90 transition-all shadow-lg hover:shadow-xl"
-                      style={{ backgroundColor: '#397DFF' }}
+                      className="vf-btn vf-btn-primary px-10 py-4 text-base font-medium shadow-vf-lg hover:shadow-vf hover:scale-105 active:scale-95 rounded-vf-lg"
                     >
                       Pradėti pokalbį
                     </button>
@@ -1077,6 +1076,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   // Show Voiceflow container after "Start Chat" is clicked
                   <div
                     id="voiceflow-container"
+                    className="animate-slide-in-bottom"
                     style={{
                       minHeight: '600px',
                       height: '100%',
