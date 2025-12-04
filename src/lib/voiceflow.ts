@@ -165,9 +165,20 @@ export async function fetchTranscriptWithLogs(
 
   const data = await response.json();
   console.log('[Voiceflow] Transcript data for', transcriptID, ':', data);
-  console.log('[Voiceflow] Number of turns:', data.turns?.length || 0);
 
-  return data;
+  // v2 API returns turns directly as an array, not wrapped in an object
+  const turns = Array.isArray(data) ? data : (data.turns || []);
+  console.log('[Voiceflow] Number of turns:', turns.length);
+
+  // Return in expected format with turns property
+  return {
+    _id: transcriptID,
+    projectID: VOICEFLOW_PROJECT_ID,
+    sessionID: transcriptID, // v2 doesn't return metadata, use ID as sessionID
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    turns: turns
+  } as VoiceflowTranscriptWithLogs;
 }
 
 // Extract text content from Voiceflow slate format
