@@ -349,35 +349,35 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const displayDocuments = getDisplayDocuments();
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-vf-background">
       {/* Header */}
-      <div className="p-6 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-4">
+      <div className="p-6 border-b border-vf-border bg-white">
+        <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Documents</h2>
-            <p className="text-sm text-gray-600">Create, edit, and organize your documents</p>
+            <h2 className="text-2xl font-semibold text-gray-900">Documents</h2>
+            <p className="text-sm text-vf-secondary mt-1">Create, edit, and organize your documents</p>
           </div>
           <div className="flex items-center space-x-3">
             <button
               onClick={triggerFileUpload}
               disabled={uploadingFile}
-              className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="vf-btn vf-btn-primary px-6 py-2.5 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {uploadingFile ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                  <span>Uploading...</span>
+                  <span className="font-medium">Uploading...</span>
                 </>
               ) : (
                 <>
                   <Upload className="w-4 h-4" />
-                  <span>Upload Document</span>
+                  <span className="font-medium">Upload Document</span>
                 </>
               )}
             </button>
             <button
               onClick={() => setShowCreateForm(true)}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
+              className="px-6 py-2.5 border border-vf-border text-vf-secondary rounded-vf hover:bg-gray-50 transition-all flex items-center space-x-2 font-medium shadow-vf-sm"
             >
               <Plus className="w-4 h-4" />
               <span>Create Manually</span>
@@ -395,23 +395,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         </div>
 
         {/* Search and Filter */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-vf-secondary w-4 h-4" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Search documents by content, metadata, or use AI vector search..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="vf-input w-full pl-11 pr-4 py-3 text-sm"
             />
           </div>
-          
+
           {/* Vector Search Button */}
           <button
             onClick={handleVectorSearch}
             disabled={!searchQuery.trim() || isVectorSearching}
-            className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+            className="px-5 py-3 bg-purple-600 text-white rounded-vf hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 font-medium shadow-vf-sm"
           >
             {isVectorSearching ? (
               <>
@@ -425,9 +425,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </>
             )}
           </button>
-          
-          <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-            <Filter className="w-5 h-5 text-gray-500" />
+
+          <button className="p-3 border border-vf-border rounded-vf hover:bg-gray-50 transition-all shadow-vf-sm">
+            <Filter className="w-5 h-5 text-vf-secondary" />
           </button>
         </div>
       </div>
@@ -504,10 +504,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         </div>
       )}
       {/* Documents List */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 vf-scrollbar">
         {/* Search Mode Indicator */}
         {vectorSearchMode && (
-          <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg">
+          <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-vf shadow-vf-sm">
             <div className="flex items-center space-x-2">
               <Zap className="w-4 h-4 text-purple-600" />
               <span className="text-sm font-medium text-purple-800">
@@ -519,12 +519,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   setVectorSearchResults([]);
                   setSearchQuery('');
                 }}
-                className="ml-auto text-purple-600 hover:text-purple-800"
+                className="ml-auto text-purple-600 hover:text-purple-800 p-1 rounded hover:bg-purple-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-xs text-purple-600 mt-1">
+            <p className="text-xs text-purple-600 mt-2">
               Found {vectorSearchResults.length} semantically similar documents
             </p>
           </div>
@@ -533,19 +533,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-20 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg animate-pulse" />
+              <div key={i} className="h-24 bg-gray-100 rounded-vf animate-pulse" />
             ))}
           </div>
         ) : displayDocuments.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-16">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              {searchQuery 
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              {searchQuery
                 ? (vectorSearchMode ? 'No similar documents found' : 'No documents found')
                 : 'No documents yet'
               }
             </h3>
-            <p className="text-gray-500 mb-6">
+            <p className="text-vf-secondary mb-8 text-sm">
               {searchQuery
                 ? (vectorSearchMode ? 'Try adjusting your search terms or use regular search' : 'Try adjusting your search terms or use AI search')
                 : 'Create your first document to get started'
@@ -554,7 +554,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {!searchQuery && (
               <button
                 onClick={() => setShowCreateForm(true)}
-                className="px-6 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all"
+                className="vf-btn vf-btn-primary px-8 py-3"
               >
                 Create Document
               </button>
@@ -565,7 +565,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {displayDocuments.map((document) => (
               <div
                 key={document.id}
-                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                className="vf-card p-5 hover:shadow-vf transition-all cursor-pointer"
               >
                 {editingDoc?.id === document.id ? (
                   <div className="space-y-4">
@@ -615,20 +615,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 ) : (
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4 flex-1">
-                      <div className="w-12 h-12 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg flex items-center justify-center">
+                      <div className="w-14 h-14 bg-green-50 rounded-vf flex items-center justify-center flex-shrink-0 border border-green-100">
                         <FileText className="w-6 h-6 text-green-600" />
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                        <h3 className="text-base font-semibold text-gray-900 mb-1.5">
                           Document #{document.id}
                           {vectorSearchMode && document.similarity && (
-                            <span className="ml-2 px-2 py-1 text-xs bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700 rounded-full">
+                            <span className="ml-2 px-2.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">
                               {Math.round(document.similarity * 100)}% match
                             </span>
                           )}
                         </h3>
-                        <div className="text-sm text-gray-600 mb-2">
+                        <div className="text-sm text-vf-secondary mb-3 leading-relaxed">
                           <p className="line-clamp-3">{document.content}</p>
                         </div>
                         
