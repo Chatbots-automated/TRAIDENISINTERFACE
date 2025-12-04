@@ -148,6 +148,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [showQueryTooltip, setShowQueryTooltip] = useState(false);
   const [showCommercialSpotlight, setShowCommercialSpotlight] = useState(false);
   const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
+  const [chatStarted, setChatStarted] = useState(false); // Track if user has started the chat
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -263,9 +264,17 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     return () => clearInterval(interval);
   }, [loading, isStreaming]);
 
+  // Reset chat started state when thread changes
+  useEffect(() => {
+    if (isNewVersion && currentThread) {
+      setChatStarted(false);
+    }
+  }, [currentThread?.id, isNewVersion]);
+
   // Initialize Voiceflow when New Version mode is activated
   useEffect(() => {
-    if (!isNewVersion || !currentThread) {
+    // Only initialize Voiceflow if chat has been started
+    if (!isNewVersion || !currentThread || !chatStarted) {
       return;
     }
 
@@ -448,7 +457,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         }
       }
     };
-  }, [isNewVersion, currentThread]);
+  }, [isNewVersion, currentThread, chatStarted]);
 
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
@@ -1053,17 +1062,39 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             {isNewVersion ? (
               // New Version: Voiceflow Embedded Chat
               <div className="flex-1 overflow-hidden bg-gradient-to-br from-purple-50 to-indigo-50">
-                <div
-                  id="voiceflow-container"
-                  style={{
-                    minHeight: '600px',
-                    height: '100%',
-                    width: '100%',
-                    display: 'block',
-                    position: 'relative',
-                    overflow: 'visible'
-                  }}
-                />
+                {!chatStarted ? (
+                  // Show "Start Chat" button before initializing Voiceflow
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <div className="text-center space-y-6 max-w-md px-4">
+                      <div className="text-6xl mb-4">💬</div>
+                      <h2 className="text-3xl font-light text-gray-800">
+                        Pradėti pokalbį
+                      </h2>
+                      <p className="text-gray-600">
+                        Paspauskite mygtuką žemiau, kad pradėtumėte pokalbį su Traidenis asistentu
+                      </p>
+                      <button
+                        onClick={() => setChatStarted(true)}
+                        className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                      >
+                        Pradėti pokalbį
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // Show Voiceflow container after "Start Chat" is clicked
+                  <div
+                    id="voiceflow-container"
+                    style={{
+                      minHeight: '600px',
+                      height: '100%',
+                      width: '100%',
+                      display: 'block',
+                      position: 'relative',
+                      overflow: 'visible'
+                    }}
+                  />
+                )}
               </div>
             ) : (
               // Standard Chat Interface
