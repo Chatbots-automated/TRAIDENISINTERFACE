@@ -3,7 +3,7 @@
 
 const VOICEFLOW_API_KEY = import.meta.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = import.meta.env.VITE_VOICEFLOW_PROJECT_ID;
-const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v1';
+const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v2';
 
 // Types for Voiceflow API responses
 export interface VoiceflowTranscript {
@@ -96,22 +96,17 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   console.log('[Voiceflow] Fetching transcripts...');
   console.log('[Voiceflow] API Key (first 20 chars):', VOICEFLOW_API_KEY?.substring(0, 20) + '...');
   console.log('[Voiceflow] Project ID:', VOICEFLOW_PROJECT_ID);
-  console.log('[Voiceflow] API URL:', `${VOICEFLOW_API_BASE}/transcript/project/${VOICEFLOW_PROJECT_ID}`);
+  console.log('[Voiceflow] API URL:', `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}`);
 
-  // Use POST method with optional filters and pagination
+  // Use GET method for v2 transcripts API
   const response = await fetch(
-    `${VOICEFLOW_API_BASE}/transcript/project/${VOICEFLOW_PROJECT_ID}?take=100&order=DESC`,
+    `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}`,
     {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Authorization': VOICEFLOW_API_KEY,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        // Optional filters can be added here
-        // startDate: '2024-01-01T00:00:00Z',
-        // endDate: '2024-12-31T23:59:59Z'
-      }),
     }
   );
 
@@ -150,11 +145,12 @@ export async function fetchTranscriptWithLogs(
   console.log('[Voiceflow] Fetching transcript with logs:', transcriptID);
 
   const response = await fetch(
-    `${VOICEFLOW_API_BASE}/transcript/${transcriptID}?filterConversation=false`,
+    `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
     {
       method: 'GET',
       headers: {
         'Authorization': VOICEFLOW_API_KEY,
+        'Content-Type': 'application/json',
       },
     }
   );
@@ -169,20 +165,9 @@ export async function fetchTranscriptWithLogs(
 
   const data = await response.json();
   console.log('[Voiceflow] Transcript data for', transcriptID, ':', data);
+  console.log('[Voiceflow] Number of turns:', data.turns?.length || 0);
 
-  // The v1 API returns { transcript: {...}, logs: [...] }
-  // We need to merge them for compatibility with existing code
-  const transcript = data.transcript || data;
-  const logs = data.logs || data.turns || [];
-
-  console.log('[Voiceflow] Number of logs/turns:', logs.length);
-
-  // Return in the expected format with turns, normalizing id to _id
-  return {
-    ...transcript,
-    _id: transcript.id || transcript._id || transcriptID,
-    turns: logs
-  };
+  return data;
 }
 
 // Extract text content from Voiceflow slate format
