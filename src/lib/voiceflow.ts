@@ -246,8 +246,9 @@ export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[]
     else if (turn.type === 'text') {
       const payload = turn.payload as any;
 
-      // Extract message from v2 API format
-      const content = payload.message || extractTextFromSlate(payload.slate) || '';
+      // v2 API has nested payload structure: payload.payload.message
+      const innerPayload = payload.payload || payload;
+      const content = innerPayload.message || extractTextFromSlate(innerPayload.slate) || '';
 
       if (content) {
         messages.push({
