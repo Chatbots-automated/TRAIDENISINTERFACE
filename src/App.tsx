@@ -4,13 +4,14 @@ import Layout from './components/Layout';
 import ChatInterface from './components/ChatInterface';
 import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
+import TranscriptsInterface from './components/TranscriptsInterface';
 import AuthForm from './components/AuthForm';
 import CommercialOfferPanel from './components/CommercialOfferPanel';
 import { hasCommercialOffer } from './lib/commercialOfferStorage';
-import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight } from 'lucide-react';
+import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History } from 'lucide-react';
 import type { AppUser } from './types';
 
-type ViewMode = 'chat' | 'documents' | 'users';
+type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts';
 
 interface Thread {
   id: string;
@@ -345,6 +346,8 @@ function App() {
         return <DocumentsInterface user={user} projectId={projectId} />;
       case 'users':
         return <AdminUsersInterface user={user} />;
+      case 'transcripts':
+        return <TranscriptsInterface user={user} />;
       default:
         return null;
     }
@@ -404,6 +407,20 @@ function App() {
               <div className="flex items-center space-x-2">
                 <FileText className="w-4 h-4" />
                 <span>Documents</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setViewMode('transcripts')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                viewMode === 'transcripts'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-indigo-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <History className="w-4 h-4" />
+                <span>Transcripts</span>
               </div>
             </button>
 
