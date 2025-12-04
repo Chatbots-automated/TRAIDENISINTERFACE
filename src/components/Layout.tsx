@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { signOut } from '../lib/supabase';
 import {
   Menu,
@@ -11,7 +11,9 @@ import {
   Trash2,
   Loader2,
   Pencil,
-  Check
+  Check,
+  ChevronUp,
+  Users
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -70,8 +72,24 @@ export default function Layout({
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const settingsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside to close settings dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsDropdownRef.current && !settingsDropdownRef.current.contains(event.target as Node)) {
+        setSettingsDropdownOpen(false);
+      }
+    };
+
+    if (settingsDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [settingsDropdownOpen]);
 
   const handleStartEdit = (thread: Thread, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -104,10 +122,10 @@ export default function Layout({
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
+    <div className="h-screen overflow-hidden bg-vf-background flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
@@ -115,128 +133,58 @@ export default function Layout({
 
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-50 w-64 vf-sidebar transform transition-transform duration-300 ease-in-out
         lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center justify-between p-4 border-b border-vf-border">
             <div className="flex items-center space-x-3">
-              <img 
-                src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj" 
-                alt="Traidenis Logo" 
-                className="w-8 h-8 object-contain"
+              <img
+                src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
+                alt="Traidenis Logo"
+                className="w-8 h-8 object-contain rounded-lg"
               />
               <div>
-                <h1 className="text-lg font-bold text-gray-900">Traidenis</h1>
-                <p className="text-xs text-green-600 font-medium">Knowledge Base</p>
+                <h1 className="text-base font-semibold text-gray-900">Traidenis</h1>
+                <p className="text-xs text-vf-secondary">Knowledge Base</p>
               </div>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-1 rounded-md hover:bg-gray-100"
+              className="lg:hidden p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 text-vf-secondary" />
             </button>
           </div>
 
-          {/* User info */}
-          <div className="p-4 border-b bg-gradient-to-r from-green-50 to-blue-50">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm font-medium">
-                  {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {user.display_name || user.email}
-                </p>
-                <p className="text-xs text-gray-500 truncate">{user.email}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation buttons when in New Version mode - Claude-inspired design */}
+          {/* Primary Navigation - Only Chat and Documents */}
           {isNewVersion && (
-            <div className="border-b border-gray-100">
-              <div className="px-3 py-2 space-y-0.5">
-                <button
-                  onClick={() => onViewModeChange?.('chat')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                    viewMode === 'chat'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  <span>Chat</span>
-                </button>
+            <div className="border-b border-vf-border px-3 py-3 space-y-1">
+              <button
+                onClick={() => onViewModeChange?.('chat')}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                  viewMode === 'chat'
+                    ? 'bg-vf-primary text-white shadow-vf-sm'
+                    : 'text-vf-secondary hover:bg-gray-50'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Chat</span>
+              </button>
 
-                <button
-                  onClick={() => onViewModeChange?.('documents')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                    viewMode === 'documents'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <Database className="w-4 h-4" />
-                  <span>Documents</span>
-                </button>
-
-                {user.is_admin && (
-                  <button
-                    onClick={() => onViewModeChange?.('users')}
-                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                      viewMode === 'users'
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                    }`}
-                  >
-                    <Database className="w-4 h-4" />
-                    <span>Users</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Controls section */}
-              <div className="px-3 py-2 border-t border-gray-100 space-y-0.5">
-                {/* Nauja Toggle - Locked to new version */}
-                <button
-                  disabled
-                  className="w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium bg-purple-50 text-purple-700 opacity-60 cursor-not-allowed"
-                  title="New version is active"
-                >
-                  <span className="text-base">✨</span>
-                  <span>Nauja</span>
-                </button>
-
-                {/* Docs Icon */}
-                <button
-                  onClick={onOpenCommercialPanel}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all relative ${
-                    hasOffer
-                      ? 'text-blue-600 hover:bg-blue-50'
-                      : 'text-gray-400 hover:bg-gray-50'
-                  } ${
-                    showDocGlow
-                      ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1'
-                      : ''
-                  }`}
-                  title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
-                >
-                  <Database className="w-4 h-4" />
-                  <span>Offers</span>
-                  {showDocGlow && (
-                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
-                    </span>
-                  )}
-                </button>
-              </div>
+              <button
+                onClick={() => onViewModeChange?.('documents')}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                  viewMode === 'documents'
+                    ? 'bg-vf-primary text-white shadow-vf-sm'
+                    : 'text-vf-secondary hover:bg-gray-50'
+                }`}
+              >
+                <Database className="w-4 h-4" />
+                <span>Documents</span>
+              </button>
             </div>
           )}
 
@@ -368,45 +316,159 @@ export default function Layout({
           </div>
           )}
 
-          {/* Footer */}
-          <div className="p-4 border-t">
-            <div className="space-y-1">
-              {/* Naujokas Mode Toggle */}
-              <div
-                onClick={onToggleNaujokas}
-                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 text-gray-700 cursor-pointer transition-colors"
+          {/* Spacer to push footer to bottom */}
+          <div className="flex-1" />
+
+          {/* Footer - Absolute Bottom */}
+          <div className="border-t border-vf-border mt-auto">
+            {/* Settings Dropdown Button */}
+            <div className="relative" ref={settingsDropdownRef}>
+              {/* Dropup Menu */}
+              {settingsDropdownOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 animate-slide-in-bottom">
+                  <div className="mx-3 bg-white rounded-vf border border-vf-border shadow-vf-lg py-1">
+                    {/* Users - Admin Only */}
+                    {user.is_admin && (
+                      <button
+                        onClick={() => {
+                          onViewModeChange?.('users');
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium transition-all ${
+                          viewMode === 'users'
+                            ? 'bg-vf-primary text-white'
+                            : 'text-vf-secondary hover:bg-gray-50'
+                        }`}
+                      >
+                        <Users className="w-4 h-4" />
+                        <span>Users</span>
+                      </button>
+                    )}
+
+                    {/* Offers */}
+                    {isNewVersion && (
+                      <button
+                        onClick={() => {
+                          onOpenCommercialPanel?.();
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium transition-all relative ${
+                          hasOffer
+                            ? 'text-vf-primary hover:bg-blue-50'
+                            : 'text-gray-400 hover:bg-gray-50'
+                        }`}
+                        title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Database className="w-4 h-4" />
+                          <span>Offers</span>
+                        </div>
+                        {showDocGlow && (
+                          <span className="flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-vf-primary opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-vf-primary"></span>
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Divider */}
+                    <div className="my-1 border-t border-vf-border" />
+
+                    {/* Naujokas Mode Toggle */}
+                    <div
+                      onClick={() => {
+                        onToggleNaujokas?.();
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center space-x-3">
+                        <span className="text-base">🎓</span>
+                        <span className="text-sm font-medium text-vf-secondary">Naujokas</span>
+                      </div>
+                      <div
+                        className={`relative w-9 h-5 rounded-full transition-colors ${
+                          naujokasMode ? 'bg-vf-primary' : 'bg-gray-300'
+                        }`}
+                      >
+                        <div
+                          className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                            naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Nauja Toggle - Locked */}
+                    {isNewVersion && (
+                      <button
+                        disabled
+                        className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium bg-purple-50 text-purple-600 opacity-50 cursor-not-allowed"
+                        title="New version is active"
+                      >
+                        <span className="text-base">✨</span>
+                        <span>Nauja</span>
+                      </button>
+                    )}
+
+                    {/* Divider */}
+                    <div className="my-1 border-t border-vf-border" />
+
+                    {/* Settings Modal */}
+                    <button
+                      onClick={() => {
+                        setSettingsOpen(true);
+                        setSettingsDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                    >
+                      <Settings className="w-4 h-4" />
+                      <span>Settings</span>
+                    </button>
+
+                    {/* Sign Out */}
+                    <button
+                      onClick={() => {
+                        handleSignOut();
+                        setSettingsDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Settings Button */}
+              <button
+                onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-vf-secondary border-b border-vf-border transition-colors"
               >
                 <div className="flex items-center space-x-3">
-                  <span className="text-base">🎓</span>
-                  <span className="text-sm">Naujokas</span>
+                  <Settings className="w-4 h-4" />
+                  <span className="text-sm font-medium">Settings</span>
                 </div>
-                {/* Toggle Switch */}
-                <div
-                  className={`relative w-10 h-5 rounded-full transition-colors ${
-                    naujokasMode ? 'bg-green-500' : 'bg-gray-300'
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                      naujokasMode ? 'translate-x-5' : 'translate-x-0.5'
-                    }`}
-                  />
+                <ChevronUp className={`w-4 h-4 transition-transform ${settingsDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {/* User Info - Absolute Bottom */}
+            <div className="px-4 py-3 bg-gray-50">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-sm font-medium">
+                    {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user.display_name || user.email}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setSettingsOpen(true)}
-                className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 text-gray-700"
-              >
-                <Settings className="w-4 h-4" />
-                <span className="text-sm">Settings</span>
-              </button>
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center space-x-3 p-2 rounded-lg hover:bg-red-50 text-red-600 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="text-sm">Sign Out</span>
-              </button>
             </div>
           </div>
         </div>
