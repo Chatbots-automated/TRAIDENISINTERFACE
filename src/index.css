@@ -4,9 +4,91 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Fallback for Ucity Pro - using Urbanist as similar alternative */
+/* Voiceflow-inspired CSS styling */
 @layer base {
   * {
     font-family: 'Urbanist', 'Ucity Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  body {
+    background: #f9fafb;
+    color: #374151;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+}
+
+@layer components {
+  /* Voiceflow-style buttons */
+  .vf-btn {
+    @apply rounded-lg transition-all duration-200 font-medium;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  .vf-btn:hover {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .vf-btn-primary {
+    @apply bg-[#397DFF] text-white;
+  }
+
+  .vf-btn-primary:hover {
+    @apply bg-[#2968e6];
+  }
+
+  /* Voiceflow-style input fields */
+  .vf-input {
+    @apply rounded-lg border border-gray-200 px-4 py-3 transition-all duration-200;
+    background: white;
+  }
+
+  .vf-input:focus {
+    @apply outline-none border-[#397DFF] ring-2 ring-[#397DFF] ring-opacity-20;
+  }
+
+  /* Voiceflow-style cards */
+  .vf-card {
+    @apply bg-white rounded-xl border border-gray-100;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Voiceflow-style sidebar */
+  .vf-sidebar {
+    @apply bg-white border-r border-gray-100;
+    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.02);
+  }
+
+  /* Voiceflow-style chat container */
+  .vf-chat-container {
+    @apply bg-white rounded-xl;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Voiceflow-style message bubbles */
+  .vf-message-user {
+    @apply bg-[#397DFF] text-white rounded-2xl px-4 py-2;
+  }
+
+  .vf-message-assistant {
+    @apply bg-gray-100 text-gray-900 rounded-2xl px-4 py-2;
+  }
+
+  /* Smooth scrollbars */
+  .vf-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .vf-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .vf-scrollbar::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+  }
+
+  .vf-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
   }
 }

@@ -104,10 +104,10 @@ export default function Layout({
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex">
+    <div className="h-screen overflow-hidden bg-vf-background flex">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
@@ -115,34 +115,34 @@ export default function Layout({
 
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-50 w-64 vf-sidebar transform transition-transform duration-300 ease-in-out
         lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center justify-between p-4 border-b border-vf-border">
             <div className="flex items-center space-x-3">
-              <img 
-                src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj" 
-                alt="Traidenis Logo" 
-                className="w-8 h-8 object-contain"
+              <img
+                src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
+                alt="Traidenis Logo"
+                className="w-8 h-8 object-contain rounded-lg"
               />
               <div>
-                <h1 className="text-lg font-bold text-gray-900">Traidenis</h1>
-                <p className="text-xs text-green-600 font-medium">Knowledge Base</p>
+                <h1 className="text-base font-semibold text-gray-900">Traidenis</h1>
+                <p className="text-xs text-vf-secondary">Knowledge Base</p>
               </div>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-1 rounded-md hover:bg-gray-100"
+              className="lg:hidden p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 text-vf-secondary" />
             </button>
           </div>
 
           {/* User info */}
-          <div className="px-4 py-2 border-b bg-gradient-to-r from-green-50 to-blue-50">
+          <div className="px-4 py-3 border-b border-vf-border bg-gray-50">
             <div className="flex items-center space-x-3">
               <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
                 <span className="text-white text-sm font-medium">
@@ -158,16 +158,16 @@ export default function Layout({
             </div>
           </div>
 
-          {/* Navigation buttons when in New Version mode - Claude-inspired design */}
+          {/* Navigation buttons when in New Version mode - Voiceflow-inspired design */}
           {isNewVersion && (
-            <div className="border-b border-gray-100">
-              <div className="px-3 py-2 space-y-0.5">
+            <div className="border-b border-vf-border">
+              <div className="px-3 py-3 space-y-1">
                 <button
                   onClick={() => onViewModeChange?.('chat')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
                     viewMode === 'chat'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? 'bg-vf-primary text-white shadow-vf-sm'
+                      : 'text-vf-secondary hover:bg-gray-50'
                   }`}
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -176,10 +176,10 @@ export default function Layout({
 
                 <button
                   onClick={() => onViewModeChange?.('documents')}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
                     viewMode === 'documents'
-                      ? 'bg-gray-100 text-gray-900'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? 'bg-vf-primary text-white shadow-vf-sm'
+                      : 'text-vf-secondary hover:bg-gray-50'
                   }`}
                 >
                   <Database className="w-4 h-4" />
@@ -189,10 +189,10 @@ export default function Layout({
                 {user.is_admin && (
                   <button
                     onClick={() => onViewModeChange?.('users')}
-                    className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
                       viewMode === 'users'
-                        ? 'bg-gray-100 text-gray-900'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        ? 'bg-vf-primary text-white shadow-vf-sm'
+                        : 'text-vf-secondary hover:bg-gray-50'
                     }`}
                   >
                     <Database className="w-4 h-4" />
@@ -202,11 +202,11 @@ export default function Layout({
               </div>
 
               {/* Controls section */}
-              <div className="px-3 py-2 border-t border-gray-100 space-y-0.5">
+              <div className="px-3 py-3 border-t border-vf-border space-y-1">
                 {/* Nauja Toggle - Locked to new version */}
                 <button
                   disabled
-                  className="w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium bg-purple-50 text-purple-700 opacity-60 cursor-not-allowed"
+                  className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium bg-purple-50 text-purple-600 opacity-50 cursor-not-allowed"
                   title="New version is active"
                 >
                   <span className="text-base">✨</span>
@@ -216,13 +216,13 @@ export default function Layout({
                 {/* Docs Icon */}
                 <button
                   onClick={onOpenCommercialPanel}
-                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-all relative ${
+                  className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all relative ${
                     hasOffer
-                      ? 'text-blue-600 hover:bg-blue-50'
+                      ? 'text-vf-primary hover:bg-blue-50'
                       : 'text-gray-400 hover:bg-gray-50'
                   } ${
                     showDocGlow
-                      ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1'
+                      ? 'animate-pulse ring-2 ring-vf-primary ring-opacity-30'
                       : ''
                   }`}
                   title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
@@ -231,8 +231,8 @@ export default function Layout({
                   <span>Offers</span>
                   {showDocGlow && (
                     <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-vf-primary opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-vf-primary"></span>
                     </span>
                   )}
                 </button>
