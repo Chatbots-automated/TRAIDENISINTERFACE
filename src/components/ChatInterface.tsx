@@ -21,7 +21,11 @@ import {
   hasAcceptedMessages,
   cleanupDeletedThreads
 } from '../lib/commercialOfferStorage';
+import { generateVoiceflowUserId } from '../lib/voiceflow';
 import type { AppUser } from '../types';
+
+// Voiceflow configuration from environment
+const VOICEFLOW_PROJECT_ID = import.meta.env.VITE_VOICEFLOW_PROJECT_ID || '692f59baeb204d830537c543';
 
 interface Thread {
   id: string;
@@ -372,10 +376,16 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           setTimeout(() => {
             if (window.voiceflow?.chat) {
               try {
+                const voiceflowUserId = generateVoiceflowUserId(user.id);
                 window.voiceflow.chat.load({
-                  verify: { projectID: '692f59baeb204d830537c543' },
+                  verify: { projectID: VOICEFLOW_PROJECT_ID },
                   url: 'https://general-runtime.voiceflow.com',
                   versionID: 'production',
+                  userID: voiceflowUserId,
+                  user: {
+                    name: user.display_name || user.email,
+                    image: undefined
+                  },
                   voice: {
                     url: 'https://runtime-api.voiceflow.com'
                   },
@@ -390,7 +400,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   }
                 });
                 voiceflowInitializedRef.current = true;
-                console.log('✅ Voiceflow widget initialized with hidden header');
+                console.log('✅ Voiceflow widget initialized with userID:', voiceflowUserId);
 
                 // Re-inject CSS after widget loads to ensure it takes effect
                 setTimeout(() => injectHeaderHidingCSS(), 500);
@@ -414,10 +424,16 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         // Script already loaded, just initialize
         console.log('🔄 Voiceflow script already loaded, initializing...');
         try {
+          const voiceflowUserId = generateVoiceflowUserId(user.id);
           window.voiceflow.chat.load({
-            verify: { projectID: '692f59baeb204d830537c543' },
+            verify: { projectID: VOICEFLOW_PROJECT_ID },
             url: 'https://general-runtime.voiceflow.com',
             versionID: 'production',
+            userID: voiceflowUserId,
+            user: {
+              name: user.display_name || user.email,
+              image: undefined
+            },
             voice: {
               url: 'https://runtime-api.voiceflow.com'
             },
@@ -432,7 +448,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             }
           });
           voiceflowInitializedRef.current = true;
-          console.log('✅ Voiceflow widget initialized with hidden header');
+          console.log('✅ Voiceflow widget initialized with userID:', voiceflowUserId);
 
           // Re-inject CSS after widget loads to ensure it takes effect
           setTimeout(() => injectHeaderHidingCSS(), 500);

@@ -13,7 +13,8 @@ import {
   Pencil,
   Check,
   ChevronUp,
-  Users
+  Users,
+  History
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -41,8 +42,8 @@ interface LayoutProps {
   onToggleNaujokas?: () => void;
   // New version mode props
   isNewVersion?: boolean;
-  viewMode?: 'chat' | 'documents' | 'users';
-  onViewModeChange?: (mode: 'chat' | 'documents' | 'users') => void;
+  viewMode?: 'chat' | 'documents' | 'users' | 'transcripts';
+  onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts') => void;
   onToggleNewVersion?: () => void;
   hasOffer?: boolean;
   showDocGlow?: boolean;
@@ -184,6 +185,18 @@ export default function Layout({
               >
                 <Database className="w-4 h-4" />
                 <span>Documents</span>
+              </button>
+
+              <button
+                onClick={() => onViewModeChange?.('transcripts')}
+                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                  viewMode === 'transcripts'
+                    ? 'bg-vf-primary text-white shadow-vf-sm'
+                    : 'text-vf-secondary hover:bg-gray-50'
+                }`}
+              >
+                <History className="w-4 h-4" />
+                <span>Transcripts</span>
               </button>
             </div>
           )}
