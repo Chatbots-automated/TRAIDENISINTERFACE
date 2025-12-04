@@ -1,3 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Fallback for Ucity Pro - using Urbanist as similar alternative */
+@layer base {
+  * {
+    font-family: 'Urbanist', 'Ucity Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+}
