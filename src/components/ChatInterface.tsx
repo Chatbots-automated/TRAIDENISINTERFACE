@@ -1065,21 +1065,13 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 {!chatStarted ? (
                   // Show "Start Chat" button before initializing Voiceflow
                   <div className="flex flex-col items-center justify-center h-full">
-                    <div className="text-center space-y-6 max-w-md px-4">
-                      <div className="text-6xl mb-4">💬</div>
-                      <h2 className="text-3xl font-light text-gray-800">
-                        Pradėti pokalbį
-                      </h2>
-                      <p className="text-gray-600">
-                        Paspauskite mygtuką žemiau, kad pradėtumėte pokalbį su Traidenis asistentu
-                      </p>
-                      <button
-                        onClick={() => setChatStarted(true)}
-                        className="px-8 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg font-medium hover:from-purple-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
-                      >
-                        Pradėti pokalbį
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => setChatStarted(true)}
+                      className="px-8 py-4 text-white rounded-lg font-medium hover:opacity-90 transition-all shadow-lg hover:shadow-xl"
+                      style={{ backgroundColor: '#397DFF' }}
+                    >
+                      Pradėti pokalbį
+                    </button>
                   </div>
                 ) : (
                   // Show Voiceflow container after "Start Chat" is clicked
