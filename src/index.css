@@ -153,4 +153,173 @@
     outline: 2px solid #397DFF;
     outline-offset: 2px;
   }
+
+  /* Geometric Login Background - CSS3 */
+  .auth-background {
+    position: relative;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f9fafb 0%, #eff6ff 50%, #faf5ff 100%);
+    overflow: hidden;
+  }
+
+  /* Dot Grid Pattern */
+  .auth-background::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(156, 163, 175, 0.3) 1px, transparent 0);
+    background-size: 24px 24px;
+    opacity: 0.6;
+    animation: dotGridPulse 8s ease-in-out infinite;
+  }
+
+  /* Line Grid Pattern Overlay */
+  .auth-background::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image:
+      linear-gradient(rgba(229, 231, 235, 0.3) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(229, 231, 235, 0.3) 1px, transparent 1px);
+    background-size: 48px 48px;
+    opacity: 0.4;
+  }
+
+  @keyframes dotGridPulse {
+    0%, 100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 0.3;
+    }
+  }
+
+  /* Floating Gradient Orbs */
+  .gradient-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.3;
+    animation: float 20s ease-in-out infinite;
+  }
+
+  .gradient-orb-1 {
+    width: 400px;
+    height: 400px;
+    background: linear-gradient(135deg, #93c5fd 0%, #a5b4fc 100%);
+    top: -100px;
+    left: -100px;
+    animation-delay: 0s;
+  }
+
+  .gradient-orb-2 {
+    width: 500px;
+    height: 500px;
+    background: linear-gradient(135deg, #e9d5ff 0%, #ddd6fe 100%);
+    bottom: -150px;
+    right: -150px;
+    animation-delay: -7s;
+  }
+
+  .gradient-orb-3 {
+    width: 600px;
+    height: 600px;
+    background: linear-gradient(135deg, #bbf7d0 0%, #bfdbfe 100%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation-delay: -14s;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translate(0, 0) scale(1);
+    }
+    33% {
+      transform: translate(30px, -30px) scale(1.05);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.95);
+    }
+  }
+
+  /* Geometric Shapes */
+  .geometric-shape {
+    position: absolute;
+    opacity: 0.05;
+    animation: rotate 30s linear infinite;
+  }
+
+  .shape-square {
+    width: 100px;
+    height: 100px;
+    border: 2px solid #6366f1;
+    top: 15%;
+    right: 15%;
+    animation-delay: 0s;
+  }
+
+  .shape-circle {
+    width: 150px;
+    height: 150px;
+    border: 2px solid #8b5cf6;
+    border-radius: 50%;
+    bottom: 20%;
+    left: 10%;
+    animation-delay: -10s;
+  }
+
+  .shape-triangle {
+    width: 0;
+    height: 0;
+    border-left: 60px solid transparent;
+    border-right: 60px solid transparent;
+    border-bottom: 100px solid #10b981;
+    top: 60%;
+    right: 25%;
+    animation-delay: -20s;
+  }
+
+  @keyframes rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Auth Card Entrance Animation */
+  .auth-card-enter {
+    animation: authCardSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes authCardSlideUp {
+    from {
+      opacity: 0;
+      transform: translateY(40px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* Glassmorphism effect for auth card */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.1),
+      0 2px 8px rgba(0, 0, 0, 0.05);
+  }
 }

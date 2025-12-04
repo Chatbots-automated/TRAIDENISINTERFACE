@@ -37,26 +37,20 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center">
-      {/* Geometric Background Pattern */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20">
-        {/* Dot Grid Pattern */}
-        <div
-          className="absolute inset-0 opacity-40"
-          style={{
-            backgroundImage: `radial-gradient(circle, #e5e7eb 1px, transparent 1px)`,
-            backgroundSize: '24px 24px'
-          }}
-        />
-        {/* Subtle Gradient Overlays */}
-        <div className="absolute top-0 left-0 w-96 h-96 bg-blue-200/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-purple-200/20 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-200/10 rounded-full blur-3xl" />
-      </div>
+    <div className="auth-background flex items-center justify-center">
+      {/* Floating Gradient Orbs */}
+      <div className="gradient-orb gradient-orb-1" />
+      <div className="gradient-orb gradient-orb-2" />
+      <div className="gradient-orb gradient-orb-3" />
+
+      {/* Geometric Shapes */}
+      <div className="geometric-shape shape-square" />
+      <div className="geometric-shape shape-circle" />
+      <div className="geometric-shape shape-triangle" />
 
       {/* Login Card */}
       <div className="relative z-10 w-full max-w-md mx-4">
-        <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-10 backdrop-blur-sm">
+        <div className="glass-card auth-card-enter rounded-2xl p-10">
           {/* Logo */}
           <div className="flex justify-center mb-8">
             <img
