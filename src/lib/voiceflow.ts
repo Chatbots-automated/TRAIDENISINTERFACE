@@ -91,6 +91,12 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
     throw new Error('Voiceflow API not configured');
   }
 
+  // Debug logging
+  console.log('[Voiceflow] Fetching transcripts...');
+  console.log('[Voiceflow] API Key (first 20 chars):', VOICEFLOW_API_KEY?.substring(0, 20) + '...');
+  console.log('[Voiceflow] Project ID:', VOICEFLOW_PROJECT_ID);
+  console.log('[Voiceflow] API URL:', `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}`);
+
   const response = await fetch(
     `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}`,
     {
@@ -102,13 +108,19 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
     }
   );
 
+  console.log('[Voiceflow] Response status:', response.status);
+  console.log('[Voiceflow] Response headers:', Object.fromEntries(response.headers.entries()));
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Failed to fetch transcripts:', response.status, errorText);
+    console.error('[Voiceflow] Failed to fetch transcripts:', response.status, errorText);
     throw new Error(`Failed to fetch transcripts: ${response.status}`);
   }
 
   const data = await response.json();
+  console.log('[Voiceflow] Received data:', data);
+  console.log('[Voiceflow] Number of transcripts:', Array.isArray(data) ? data.length : 'Not an array');
+
   return data;
 }
 
@@ -119,6 +131,8 @@ export async function fetchTranscriptWithLogs(
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     throw new Error('Voiceflow API not configured');
   }
+
+  console.log('[Voiceflow] Fetching transcript with logs:', transcriptID);
 
   const response = await fetch(
     `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
@@ -131,13 +145,18 @@ export async function fetchTranscriptWithLogs(
     }
   );
 
+  console.log('[Voiceflow] Transcript response status:', response.status);
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Failed to fetch transcript:', response.status, errorText);
+    console.error('[Voiceflow] Failed to fetch transcript:', response.status, errorText);
     throw new Error(`Failed to fetch transcript: ${response.status}`);
   }
 
   const data = await response.json();
+  console.log('[Voiceflow] Transcript data for', transcriptID, ':', data);
+  console.log('[Voiceflow] Number of turns:', data.turns?.length || 0);
+
   return data;
 }
 
