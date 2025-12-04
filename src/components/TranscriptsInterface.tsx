@@ -283,7 +283,7 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                       Production
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-700">
-                      {transcript.messageCount}
+                      {transcript.credits !== undefined ? transcript.credits.toFixed(3) : '-'}
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-700">
                       {calculateDuration(transcript)}
