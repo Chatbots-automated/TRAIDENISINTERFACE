@@ -222,6 +222,7 @@ export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[]
   const messages: ParsedMessage[] = [];
 
   for (const turn of turns) {
+    // User messages: type === 'request'
     if (turn.type === 'request') {
       const payload = turn.payload as VoiceflowTurnRequest;
       let content = '';
@@ -240,7 +241,25 @@ export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[]
           timestamp: turn.startTime,
         });
       }
-    } else if (turn.type === 'response') {
+    }
+    // Assistant messages: type === 'text' (v2 API format)
+    else if (turn.type === 'text') {
+      const payload = turn.payload as any;
+
+      // Extract message from v2 API format
+      const content = payload.message || extractTextFromSlate(payload.slate) || '';
+
+      if (content) {
+        messages.push({
+          id: turn.turnID + '-text',
+          role: 'assistant',
+          content,
+          timestamp: turn.startTime,
+        });
+      }
+    }
+    // Legacy format: type === 'response' (keeping for backwards compatibility)
+    else if (turn.type === 'response') {
       const payload = turn.payload as VoiceflowTurnResponse;
 
       // Handle different response types
