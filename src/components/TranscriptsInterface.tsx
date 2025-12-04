@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import {
   MessageSquare,
   RefreshCw,
-  ChevronDown,
-  ChevronRight,
   User as UserIcon,
   Clock,
   AlertCircle,
-  Filter
+  Filter,
+  X,
+  Download,
+  ChevronRight
 } from 'lucide-react';
 import {
   fetchParsedTranscripts,
@@ -25,7 +26,7 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
   const [transcripts, setTranscripts] = useState<ParsedTranscript[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedTranscript, setExpandedTranscript] = useState<string | null>(null);
+  const [selectedTranscript, setSelectedTranscript] = useState<ParsedTranscript | null>(null);
   const [showOnlyMine, setShowOnlyMine] = useState(!user.is_admin);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -61,18 +62,6 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     }
   };
 
-  const toggleExpand = (transcriptId: string) => {
-    setExpandedTranscript(prev => prev === transcriptId ? null : transcriptId);
-  };
-
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('lt-LT', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const today = new Date();
@@ -83,7 +72,10 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     const isYesterday = date.toDateString() === yesterday.toDateString();
 
     if (isToday) {
-      return formatTime(dateString);
+      return date.toLocaleTimeString('lt-LT', {
+        hour: '2-digit',
+        minute: '2-digit'
+      });
     } else if (isYesterday) {
       return 'Yesterday';
     } else {
@@ -95,6 +87,31 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     }
   };
 
+  const formatFullDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('lt-LT', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const calculateDuration = (transcript: ParsedTranscript) => {
+    if (transcript.messages.length === 0) return '0s';
+
+    const start = new Date(transcript.messages[0].timestamp);
+    const end = new Date(transcript.messages[transcript.messages.length - 1].timestamp);
+    const diffMs = end.getTime() - start.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffSecs = Math.floor((diffMs % 60000) / 1000);
+
+    if (diffMins > 0) {
+      return `${diffMins}m ${diffSecs}s`;
+    }
+    return `${diffSecs}s`;
+  };
+
   // Filter transcripts based on user preference
   const displayTranscripts = showOnlyMine && !user.is_admin
     ? filterTranscriptsByUser(transcripts, user.id)
@@ -103,190 +120,317 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     : transcripts;
 
   return (
-    <div className="h-full flex flex-col bg-white">
-      {/* Simple Header */}
-      <div className="px-8 py-6 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Transcripts</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              View Voiceflow chat conversation history
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {user.is_admin && (
+    <>
+      {/* Main List View */}
+      <div className="h-full flex flex-col bg-white">
+        {/* Header */}
+        <div className="px-8 py-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900">Transcripts</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                View Voiceflow chat conversation history
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              {user.is_admin && (
+                <button
+                  onClick={() => setShowOnlyMine(!showOnlyMine)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    showOnlyMine
+                      ? 'bg-indigo-50 text-indigo-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <Filter className="w-4 h-4" />
+                  {showOnlyMine ? 'All Transcripts' : 'My Transcripts'}
+                </button>
+              )}
               <button
-                onClick={() => setShowOnlyMine(!showOnlyMine)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  showOnlyMine
-                    ? 'bg-indigo-50 text-indigo-700'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={handleRefresh}
+                disabled={refreshing || loading}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Filter className="w-4 h-4" />
-                {showOnlyMine ? 'All Transcripts' : 'My Transcripts'}
+                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
               </button>
-            )}
+            </div>
+          </div>
+
+          <div className="mt-4 text-sm text-gray-500">
+            {displayTranscripts.length} conversation{displayTranscripts.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {/* Error Message */}
+        {error && (
+          <div className="mx-8 mt-4 flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <span className="text-sm">{error}</span>
+          </div>
+        )}
+
+        {/* Transcripts List */}
+        <div className="flex-1 overflow-y-auto px-8 py-4">
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-20 bg-gray-100 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : displayTranscripts.length === 0 ? (
+            <div className="text-center py-16">
+              <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-base font-medium text-gray-900 mb-2">
+                No transcripts found
+              </h3>
+              <p className="text-sm text-gray-500">
+                {showOnlyMine
+                  ? 'Start a conversation to see your transcripts here'
+                  : 'No conversations have been recorded yet'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {displayTranscripts.map((transcript) => (
+                <button
+                  key={transcript.id}
+                  onClick={() => setSelectedTranscript(transcript)}
+                  className="w-full border border-gray-200 rounded-lg overflow-hidden hover:border-gray-300 hover:shadow-sm transition-all"
+                >
+                  <div className="px-5 py-4 flex items-center gap-4 text-left">
+                    {/* Avatar */}
+                    <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      {transcript.userImage ? (
+                        <img
+                          src={transcript.userImage}
+                          alt={transcript.userName || 'User'}
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <UserIcon className="w-5 h-5 text-white" />
+                      )}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-sm font-semibold text-gray-900">
+                          {transcript.userName || 'Anonymous User'}
+                        </h3>
+                      </div>
+                      <p className="text-sm text-gray-600 truncate">
+                        {transcript.preview}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatDate(transcript.createdAt)}
+                        </span>
+                        <span>{transcript.messageCount} messages</span>
+                      </div>
+                    </div>
+
+                    {/* Arrow Icon */}
+                    <div className="flex-shrink-0">
+                      <ChevronRight className="w-5 h-5 text-gray-400" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Two-Panel Modal View */}
+      {selectedTranscript && (
+        <TranscriptModal
+          transcript={selectedTranscript}
+          onClose={() => setSelectedTranscript(null)}
+          formatFullDate={formatFullDate}
+          calculateDuration={calculateDuration}
+        />
+      )}
+    </>
+  );
+}
+
+// Two-Panel Modal Component (Voiceflow Style)
+function TranscriptModal({
+  transcript,
+  onClose,
+  formatFullDate,
+  calculateDuration
+}: {
+  transcript: ParsedTranscript;
+  onClose: () => void;
+  formatFullDate: (date: string) => string;
+  calculateDuration: (transcript: ParsedTranscript) => string;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-7xl h-[90vh] flex flex-col">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {transcript.userName || 'Anonymous User'}
+            </h2>
+            <p className="text-sm text-gray-500">{transcript.preview}</p>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleRefresh}
-              disabled={refreshing || loading}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={() => {
+                // Export functionality could be added here
+                alert('Export functionality coming soon!');
+              }}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Export transcript"
             >
-              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
+              <Download className="w-5 h-5 text-gray-600" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <X className="w-5 h-5 text-gray-600" />
             </button>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="mt-4 text-sm text-gray-500">
-          {displayTranscripts.length} conversation{displayTranscripts.length !== 1 ? 's' : ''}
-        </div>
-      </div>
-
-      {/* Error Message */}
-      {error && (
-        <div className="mx-8 mt-4 flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
-
-      {/* Transcripts List */}
-      <div className="flex-1 overflow-y-auto px-8 py-4">
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-20 bg-gray-100 rounded-lg animate-pulse" />
-            ))}
-          </div>
-        ) : displayTranscripts.length === 0 ? (
-          <div className="text-center py-16">
-            <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-base font-medium text-gray-900 mb-2">
-              No transcripts found
-            </h3>
-            <p className="text-sm text-gray-500">
-              {showOnlyMine
-                ? 'Start a conversation to see your transcripts here'
-                : 'No conversations have been recorded yet'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {displayTranscripts.map((transcript) => (
-              <div
-                key={transcript.id}
-                className={`border border-gray-200 rounded-lg overflow-hidden transition-all ${
-                  expandedTranscript === transcript.id ? 'shadow-sm' : 'hover:border-gray-300'
-                }`}
-              >
-                {/* Transcript Header */}
-                <button
-                  onClick={() => toggleExpand(transcript.id)}
-                  className="w-full px-5 py-4 flex items-center gap-4 text-left hover:bg-gray-50 transition-colors"
-                >
-                  {/* Avatar */}
-                  <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0">
-                    {transcript.userImage ? (
-                      <img
-                        src={transcript.userImage}
-                        alt={transcript.userName || 'User'}
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <UserIcon className="w-5 h-5 text-white" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="text-sm font-semibold text-gray-900">
-                        {transcript.userName || 'Anonymous User'}
-                      </h3>
-                    </div>
-                    <p className="text-sm text-gray-600 truncate">
-                      {transcript.preview}
-                    </p>
-                    <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {formatDate(transcript.createdAt)}
-                      </span>
-                      <span>{transcript.messageCount} messages</span>
+        {/* Two-Panel Layout */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left Panel - Metadata */}
+          <div className="w-80 border-r border-gray-200 overflow-y-auto p-6 bg-gray-50">
+            <div className="space-y-6">
+              {/* Metadata Section */}
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  Metadata
+                </h3>
+                <div className="space-y-3 text-sm">
+                  <div>
+                    <div className="text-gray-500 text-xs">Date</div>
+                    <div className="text-gray-900 font-medium">
+                      {formatFullDate(transcript.createdAt)}
                     </div>
                   </div>
-
-                  {/* Expand Icon */}
-                  <div className="flex-shrink-0">
-                    {expandedTranscript === transcript.id ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    )}
+                  <div>
+                    <div className="text-gray-500 text-xs">User ID</div>
+                    <div className="text-gray-900 font-mono text-xs break-all">
+                      {transcript.sessionID}
+                    </div>
                   </div>
-                </button>
+                  <div>
+                    <div className="text-gray-500 text-xs">Platform</div>
+                    <div className="text-gray-900">Chat widget</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 text-xs">Duration</div>
+                    <div className="text-gray-900">{calculateDuration(transcript)}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-500 text-xs">Messages</div>
+                    <div className="text-gray-900">{transcript.messageCount}</div>
+                  </div>
+                </div>
+              </div>
 
-                {/* Expanded Messages */}
-                {expandedTranscript === transcript.id && (
-                  <div className="border-t border-gray-200 bg-gray-50 px-5 py-4">
-                    {transcript.messages.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-8">
-                        No messages available
-                      </p>
-                    ) : (
-                      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
-                        {transcript.messages.map((message) => (
-                          <MessageBubble key={message.id} message={message} />
-                        ))}
+              {/* Device Info (if available) */}
+              {(transcript.browser || transcript.device || transcript.os) && (
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                    Device Info
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    {transcript.browser && (
+                      <div>
+                        <div className="text-gray-500 text-xs">Browser</div>
+                        <div className="text-gray-900">{transcript.browser}</div>
+                      </div>
+                    )}
+                    {transcript.device && (
+                      <div>
+                        <div className="text-gray-500 text-xs">Device</div>
+                        <div className="text-gray-900">{transcript.device}</div>
+                      </div>
+                    )}
+                    {transcript.os && (
+                      <div>
+                        <div className="text-gray-500 text-xs">OS</div>
+                        <div className="text-gray-900">{transcript.os}</div>
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            ))}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+
+          {/* Right Panel - Transcript */}
+          <div className="flex-1 flex flex-col bg-white">
+            {/* Transcript Header */}
+            <div className="px-6 py-3 border-b border-gray-200 bg-gray-50">
+              <h3 className="text-sm font-medium text-gray-700">Transcript</h3>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              {transcript.messages.length === 0 ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-gray-500">No messages available</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {transcript.messages.map((message) => (
+                    <CompactMessageBubble key={message.id} message={message} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// Clean Message Bubble Component (Voiceflow style)
-function MessageBubble({ message }: { message: ParsedMessage }) {
+// Compact Message Bubble (High Visual Density)
+function CompactMessageBubble({ message }: { message: ParsedMessage }) {
   const isUser = message.role === 'user';
 
   return (
-    <div className="flex flex-col gap-1">
-      {/* Author label */}
-      <div className={`flex items-center gap-2 px-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
-        <span className="text-xs text-gray-500">
-          {isUser ? 'User' : 'Traidenis'}
-        </span>
-      </div>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+      <div className="max-w-[75%]">
+        {/* Author label - small and subtle */}
+        <div className={`px-3 mb-1 ${isUser ? 'text-right' : 'text-left'}`}>
+          <span className="text-xs text-gray-500">
+            {isUser ? 'User' : 'Traidenis'}
+          </span>
+        </div>
 
-      {/* Message bubble */}
-      <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+        {/* Message bubble - dense and clean */}
         <div
-          className={`px-4 py-2.5 rounded-lg max-w-[70%] ${
+          className={`px-3 py-2 text-sm leading-relaxed ${
             isUser
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white border border-gray-200 text-gray-900'
+              ? 'bg-indigo-600 text-white rounded-lg'
+              : 'bg-gray-100 text-gray-900 rounded-lg'
           }`}
         >
-          <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
-      </div>
 
-      {/* Timestamp */}
-      <div className={`px-1 ${isUser ? 'text-right' : 'text-left'}`}>
-        <span className="text-xs text-gray-400">
-          {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
-            hour: '2-digit',
-            minute: '2-digit'
-          })}
-        </span>
+        {/* Timestamp - tiny and subtle */}
+        <div className={`px-3 mt-0.5 ${isUser ? 'text-right' : 'text-left'}`}>
+          <span className="text-xs text-gray-400">
+            {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            })}
+          </span>
+        </div>
       </div>
     </div>
   );
