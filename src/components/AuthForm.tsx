@@ -38,15 +38,15 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
 
   return (
     <div className="auth-background flex items-center justify-center">
-      {/* Floating Gradient Orbs */}
+      {/* Static Gradient Orbs */}
       <div className="gradient-orb gradient-orb-1" />
       <div className="gradient-orb gradient-orb-2" />
       <div className="gradient-orb gradient-orb-3" />
 
-      {/* Geometric Shapes */}
+      {/* Static Square Shapes */}
       <div className="geometric-shape shape-square" />
-      <div className="geometric-shape shape-circle" />
-      <div className="geometric-shape shape-triangle" />
+      <div className="geometric-shape shape-square-2" />
+      <div className="geometric-shape shape-square-3" />
 
       {/* Login Card */}
       <div className="relative z-10 w-full max-w-md mx-4">
