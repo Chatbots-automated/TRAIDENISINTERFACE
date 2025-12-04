@@ -29,6 +29,7 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
   const [selectedTranscript, setSelectedTranscript] = useState<ParsedTranscript | null>(null);
   const [showOnlyMine, setShowOnlyMine] = useState(!user.is_admin);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadTranscripts();
@@ -112,6 +113,35 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     return `${diffSecs}s`;
   };
 
+  const formatTableDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('lt-LT', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Checkbox handlers
+  const toggleSelectAll = () => {
+    if (selectedIds.size === displayTranscripts.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(displayTranscripts.map(t => t.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
   // Filter transcripts based on user preference
   const displayTranscripts = showOnlyMine && !user.is_admin
     ? filterTranscriptsByUser(transcripts, user.id)
@@ -170,12 +200,12 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
           </div>
         )}
 
-        {/* Transcripts List */}
-        <div className="flex-1 overflow-y-auto px-8 py-4">
+        {/* Transcripts Data Table */}
+        <div className="flex-1 overflow-auto">
           {loading ? (
-            <div className="space-y-3">
+            <div className="px-8 py-4 space-y-3">
               {[1, 2, 3].map(i => (
-                <div key={i} className="h-20 bg-gray-100 rounded-lg animate-pulse" />
+                <div key={i} className="h-12 bg-gray-100 rounded animate-pulse" />
               ))}
             </div>
           ) : displayTranscripts.length === 0 ? (
@@ -191,54 +221,80 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {displayTranscripts.map((transcript) => (
-                <button
-                  key={transcript.id}
-                  onClick={() => setSelectedTranscript(transcript)}
-                  className="w-full border border-gray-200 rounded-lg overflow-hidden hover:border-gray-300 hover:shadow-sm transition-all"
-                >
-                  <div className="px-5 py-4 flex items-center gap-4 text-left">
-                    {/* Avatar */}
-                    <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center flex-shrink-0">
-                      {transcript.userImage ? (
-                        <img
-                          src={transcript.userImage}
-                          alt={transcript.userName || 'User'}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                      ) : (
-                        <UserIcon className="w-5 h-5 text-white" />
-                      )}
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-gray-900">
-                          {transcript.userName || 'Anonymous User'}
-                        </h3>
-                      </div>
-                      <p className="text-sm text-gray-600 truncate">
-                        {transcript.preview}
-                      </p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {formatDate(transcript.createdAt)}
-                        </span>
-                        <span>{transcript.messageCount} messages</span>
-                      </div>
-                    </div>
-
-                    {/* Arrow Icon */}
-                    <div className="flex-shrink-0">
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-6 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.size === displayTranscripts.length && displayTranscripts.length > 0}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                    />
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Date & Time
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Platform
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    User ID
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Environment
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Credits
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Messages
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {displayTranscripts.map((transcript) => (
+                  <tr
+                    key={transcript.id}
+                    onClick={() => setSelectedTranscript(transcript)}
+                    className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  >
+                    <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(transcript.id)}
+                        onChange={() => toggleSelect(transcript.id)}
+                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-900 whitespace-nowrap">
+                      {formatTableDate(transcript.createdAt)}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-700">
+                      Chat widget
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-600 font-mono text-xs max-w-xs truncate">
+                      {transcript.sessionID}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-700">
+                      Production
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-700">
+                      {transcript.messageCount}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-700">
+                      {calculateDuration(transcript)}
+                    </td>
+                    <td className="px-6 py-3 text-sm text-gray-700">
+                      {transcript.messageCount}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       </div>
