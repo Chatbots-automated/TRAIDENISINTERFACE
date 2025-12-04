@@ -113,7 +113,12 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     return `${diffSecs}s`;
   };
 
-  const formatTableDate = (dateString: string) => {
+  const formatTableDate = (transcript: ParsedTranscript) => {
+    // Use first message timestamp if available, otherwise fall back to createdAt
+    const dateString = transcript.messages.length > 0
+      ? transcript.messages[0].timestamp
+      : transcript.createdAt;
+
     return new Date(dateString).toLocaleDateString('lt-LT', {
       year: 'numeric',
       month: 'short',
@@ -236,19 +241,7 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                     Date & Time
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Platform
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     User ID
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Environment
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Credits
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Duration
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Messages
@@ -271,22 +264,10 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                       />
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-900 whitespace-nowrap">
-                      {formatTableDate(transcript.createdAt)}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-700">
-                      Chat widget
+                      {formatTableDate(transcript)}
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-600 font-mono text-xs max-w-xs truncate">
                       {transcript.sessionID}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-700">
-                      Production
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-700">
-                      {transcript.credits !== undefined ? transcript.credits.toFixed(3) : '-'}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-gray-700">
-                      {calculateDuration(transcript)}
                     </td>
                     <td className="px-6 py-3 text-sm text-gray-700">
                       {transcript.messageCount}
