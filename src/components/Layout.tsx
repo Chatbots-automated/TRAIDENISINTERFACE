@@ -141,23 +141,6 @@ export default function Layout({
             </button>
           </div>
 
-          {/* User info */}
-          <div className="px-4 py-3 border-b border-vf-border bg-gray-50">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
-                <span className="text-white text-sm font-medium">
-                  {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {user.display_name || user.email}
-                </p>
-                <p className="text-xs text-gray-500 truncate">{user.email}</p>
-              </div>
-            </div>
-          </div>
-
           {/* Navigation buttons when in New Version mode - Voiceflow-inspired design */}
           {isNewVersion && (
             <div className="border-b border-vf-border">
@@ -369,8 +352,25 @@ export default function Layout({
           )}
 
           {/* Footer */}
-          <div className="p-4 border-t">
-            <div className="space-y-1">
+          <div className="border-t">
+            {/* User info */}
+            <div className="px-4 py-3 border-b border-vf-border bg-gray-50">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-medium">
+                    {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user.display_name || user.email}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 space-y-1">
               {/* Naujokas Mode Toggle */}
               <div
                 onClick={onToggleNaujokas}
