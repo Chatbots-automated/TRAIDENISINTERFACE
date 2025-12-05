@@ -561,11 +561,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             )}
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="space-y-2.5">
             {displayDocuments.map((document) => (
               <div
                 key={document.id}
-                className="vf-card p-5 hover:shadow-vf transition-all cursor-pointer"
+                className="bg-white rounded-lg cursor-pointer transition-all"
+                style={{
+                  padding: '18px 20px',
+                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#f7f7f7';
+                  e.currentTarget.style.boxShadow = '0 3px 6px 0 rgba(0, 0, 0, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'white';
+                  e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)';
+                }}
               >
                 {editingDoc?.id === document.id ? (
                   <div className="space-y-4">
@@ -580,7 +592,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Metadata (JSON)</label>
                       <textarea
-                        value={typeof editingDoc.metadata === 'object' 
+                        value={typeof editingDoc.metadata === 'object'
                           ? JSON.stringify(editingDoc.metadata, null, 2)
                           : editingDoc.metadata || '{}'
                         }
@@ -614,119 +626,167 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   </div>
                 ) : (
                   <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-4 flex-1">
-                      <div className="w-14 h-14 bg-green-50 rounded-vf flex items-center justify-center flex-shrink-0 border border-green-100">
-                        <FileText className="w-6 h-6 text-green-600" />
+                    <div className="flex items-start flex-1" style={{ gap: '18px' }}>
+                      <div className="flex-shrink-0" style={{ paddingTop: '2px' }}>
+                        <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center border border-green-100">
+                          <FileText className="w-6 h-6 text-green-600" />
+                        </div>
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-base font-semibold text-gray-900 mb-1.5">
-                          Document #{document.id}
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-base font-bold text-gray-900" style={{ fontSize: '16px' }}>
+                            Document #{document.id}
+                          </h3>
                           {vectorSearchMode && document.similarity && (
-                            <span className="ml-2 px-2.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">
+                            <span className="px-2.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">
                               {Math.round(document.similarity * 100)}% match
                             </span>
                           )}
-                        </h3>
-                        <div className="text-sm text-vf-secondary mb-3 leading-relaxed">
-                          <p className="line-clamp-3">{document.content}</p>
                         </div>
-                        
-                        {/* Metadata Section */}
-                        <div className="mt-3">
+
+                        {/* Single-line preview with ellipsis */}
+                        <p
+                          className="text-sm mb-2"
+                          style={{
+                            color: '#777',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '100%'
+                          }}
+                        >
+                          {document.content}
+                        </p>
+
+                        {/* Metadata pill */}
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="inline-flex items-center rounded font-medium"
+                            style={{
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              color: '#4a5568',
+                              backgroundColor: '#e2e8f0'
+                            }}
+                          >
+                            {Object.keys(formatMetadataForDisplay(document.metadata)).length} fields
+                          </span>
                           <button
-                            onClick={() => toggleMetadataExpansion(document.id)}
-                            className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleMetadataExpansion(document.id);
+                            }}
+                            className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
                           >
                             {expandedMetadata.has(document.id) ? (
-                              <ChevronDown className="w-4 h-4" />
+                              <>
+                                <ChevronDown className="w-3 h-3" />
+                                <span>Hide details</span>
+                              </>
                             ) : (
-                              <ChevronRight className="w-4 h-4" />
+                              <>
+                                <ChevronRight className="w-3 h-3" />
+                                <span>View details</span>
+                              </>
                             )}
-                            <span>
-                              Metadata ({Object.keys(formatMetadataForDisplay(document.metadata)).length} fields)
-                            </span>
                           </button>
-                          
-                          {expandedMetadata.has(document.id) && (
-                            <div className="mt-2 p-3 bg-gray-50 rounded-lg border space-y-3">
-                              {/* Edit Button */}
-                              <div className="flex justify-end">
-                                <button
-                                  onClick={() => setEditingDoc(document)}
-                                  className="px-3 py-1 text-xs bg-gradient-to-r from-green-500 to-blue-500 text-white rounded hover:from-green-600 hover:to-blue-600 transition-all flex items-center space-x-1"
-                                >
-                                  <Edit3 className="w-3 h-3" />
-                                  <span>Edit Metadata</span>
-                                </button>
-                              </div>
-                              
-                              {/* Metadata Display */}
-                              {Object.keys(formatMetadataForDisplay(document.metadata)).length === 0 ? (
-                                <p className="text-sm text-gray-500 italic">No metadata</p>
-                              ) : (
-                                <div className="space-y-2">
-                                  {Object.entries(formatMetadataForDisplay(document.metadata)).map(([key, value]) => (
-                                    <div key={key} className="border-b border-gray-200 pb-2 last:border-b-0">
-                                      <div className="flex items-start justify-between">
-                                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                                          {key.replace(/_/g, ' ')}
-                                        </span>
-                                      </div>
-                                      <div className="mt-1">
-                                        <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans">
-                                          {renderMetadataValue(value)}
-                                        </pre>
-                                      </div>
+                        </div>
+
+                        {/* Expanded Metadata Section */}
+                        {expandedMetadata.has(document.id) && (
+                          <div className="mt-3 p-3 bg-gray-50 rounded-lg border space-y-3">
+                            {/* Edit Button */}
+                            <div className="flex justify-end">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingDoc(document);
+                                }}
+                                className="px-3 py-1 text-xs bg-gradient-to-r from-green-500 to-blue-500 text-white rounded hover:from-green-600 hover:to-blue-600 transition-all flex items-center space-x-1"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Edit Metadata</span>
+                              </button>
+                            </div>
+
+                            {/* Metadata Display */}
+                            {Object.keys(formatMetadataForDisplay(document.metadata)).length === 0 ? (
+                              <p className="text-sm text-gray-500 italic">No metadata</p>
+                            ) : (
+                              <div className="space-y-2">
+                                {Object.entries(formatMetadataForDisplay(document.metadata)).map(([key, value]) => (
+                                  <div key={key} className="border-b border-gray-200 pb-2 last:border-b-0">
+                                    <div className="flex items-start justify-between">
+                                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                                        {key.replace(/_/g, ' ')}
+                                      </span>
                                     </div>
-                                  ))}
+                                    <div className="mt-1">
+                                      <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans">
+                                        {renderMetadataValue(value)}
+                                      </pre>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Raw JSON View Button */}
+                            <div className="mt-3 pt-2 border-t border-gray-200">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setViewingMetadata(viewingMetadata === document.id ? null : document.id);
+                                }}
+                                className="flex items-center space-x-1 text-xs text-green-600 hover:text-green-700 transition-colors"
+                              >
+                                <Code className="w-3 h-3" />
+                                <span>{viewingMetadata === document.id ? 'Hide' : 'Show'} Raw JSON</span>
+                              </button>
+
+                              {viewingMetadata === document.id && (
+                                <div className="mt-2 p-2 bg-gray-900 rounded text-xs">
+                                  <pre className="text-green-400 overflow-x-auto">
+                                    {typeof document.metadata === 'object'
+                                      ? JSON.stringify(document.metadata, null, 2)
+                                      : document.metadata
+                                    }
+                                  </pre>
                                 </div>
                               )}
-                              
-                              {/* Raw JSON View Button */}
-                              <div className="mt-3 pt-2 border-t border-gray-200">
-                                <button
-                                  onClick={() => setViewingMetadata(viewingMetadata === document.id ? null : document.id)}
-                                  className="flex items-center space-x-1 text-xs text-green-600 hover:text-green-700 transition-colors"
-                                >
-                                  <Code className="w-3 h-3" />
-                                  <span>{viewingMetadata === document.id ? 'Hide' : 'Show'} Raw JSON</span>
-                                </button>
-                                
-                                {viewingMetadata === document.id && (
-                                  <div className="mt-2 p-2 bg-gray-900 rounded text-xs">
-                                    <pre className="text-green-400 overflow-x-auto">
-                                      {typeof document.metadata === 'object' 
-                                        ? JSON.stringify(document.metadata, null, 2)
-                                        : document.metadata
-                                      }
-                                    </pre>
-                                  </div>
-                                )}
-                              </div>
                             </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <button 
-                        onClick={() => toggleMetadataExpansion(document.id)}
+                    <div className="flex items-center space-x-1 ml-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleMetadataExpansion(document.id);
+                        }}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         title="View metadata"
                       >
                         <Eye className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => setEditingDoc(document)}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingDoc(document);
+                        }}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         title="Edit document"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleDeleteDocument(document.id)}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteDocument(document.id);
+                        }}
                         className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete document"
                       >
