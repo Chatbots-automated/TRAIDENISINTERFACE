@@ -16,9 +16,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
-  const [newDocContent, setNewDocContent] = useState('');
-  const [newDocMetadata, setNewDocMetadata] = useState('{}');
-  const [showCreateForm, setShowCreateForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -32,7 +29,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [uploadMetadata, setUploadMetadata] = useState('{}');
   const [showMetadataModal, setShowMetadataModal] = useState(false);
   const [chunkingStrategy, setChunkingStrategy] = useState('');
-  const [showMetadataInput, setShowMetadataInput] = useState(false);
   const [showStrategyDropdown, setShowStrategyDropdown] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -54,36 +50,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   };
 
-  const handleCreateDocument = async () => {
-    if (!newDocContent.trim()) return;
-
-    setSaving(true);
-    setError(null);
-
-    try {
-      let metadata = {};
-      try {
-        metadata = JSON.parse(newDocMetadata);
-      } catch (e) {
-        throw new Error('Invalid JSON in metadata field');
-      }
-
-      const { error } = await createDocument(newDocContent, metadata);
-      if (error) throw error;
-
-      setNewDocContent('');
-      setNewDocMetadata('{}');
-      setShowCreateForm(false);
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-      await loadDocuments();
-    } catch (error: any) {
-      setError(error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -91,7 +57,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setSelectedFile(file);
     setUploadMetadata('{}');
     setChunkingStrategy('');
-    setShowMetadataInput(false);
     setShowStrategyDropdown(false);
   };
 
@@ -111,7 +76,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setSelectedFile(file);
     setUploadMetadata('{}');
     setChunkingStrategy('');
-    setShowMetadataInput(false);
     setShowStrategyDropdown(false);
   };
 
@@ -123,7 +87,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setSelectedFile(null);
     setUploadMetadata('{}');
     setChunkingStrategy('');
-    setShowMetadataInput(false);
     setShowStrategyDropdown(false);
     setShowMetadataModal(true);
   };
@@ -517,14 +480,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </>
               )}
             </button>
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="px-6 py-2.5 border border-vf-border text-vf-secondary rounded-vf hover:bg-gray-50 transition-all flex items-center space-x-2 font-medium shadow-vf-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Manually</span>
-            </button>
-            
+
             {/* Hidden file input */}
             <input
               id="file-upload-input"
@@ -576,62 +532,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         </div>
       </div>
 
-      {/* Create Document Form */}
-      {showCreateForm && (
-        <div className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border-b border-green-200">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Create New Document</h3>
-              <button
-                onClick={() => setShowCreateForm(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Content</label>
-              <textarea
-                value={newDocContent}
-                onChange={(e) => setNewDocContent(e.target.value)}
-                placeholder="Enter document content..."
-                className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Metadata (JSON)</label>
-              <textarea
-                value={newDocMetadata}
-                onChange={(e) => setNewDocMetadata(e.target.value)}
-                placeholder='{"key": "value"}'
-                className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
-              />
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={handleCreateDocument}
-                disabled={saving || !newDocContent.trim()}
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-              >
-                {saving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                    <span>Creating...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>Create Document</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Messages */}
       {error && (
@@ -652,7 +552,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       {showMetadataModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div
-            className="bg-white rounded-lg shadow-xl max-w-xl w-full"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full"
             role="dialog"
             aria-labelledby="import-modal-title"
             aria-modal="true"
@@ -660,7 +560,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h2 id="import-modal-title" className="text-lg font-semibold text-gray-900">
+                <h2 id="import-modal-title" className="text-base font-semibold text-gray-900">
                   Import file
                 </h2>
                 <button
@@ -669,7 +569,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     setShowMetadataModal(false);
                     setSelectedFile(null);
                     setChunkingStrategy('');
-                    setShowMetadataInput(false);
                     setShowStrategyDropdown(false);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
@@ -733,10 +632,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </p>
               </div>
 
-              {/* LLM Chunking Strategy */}
+              {/* Dokumento Tipas */}
               <div>
                 <label htmlFor="chunking-strategy-select" className="block text-sm font-medium text-gray-700 mb-2">
-                  LLM chunking strategy
+                  Dokumento Tipas
                 </label>
                 <div className="relative">
                   <button
@@ -836,40 +735,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </div>
               </div>
 
-              {/* Metadata Section */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label id="metadata-label" className="block text-sm font-medium text-gray-700">
-                    Metadata
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setShowMetadataInput(!showMetadataInput)}
-                    className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50 transition-colors"
-                    aria-label={showMetadataInput ? "Remove metadata field" : "Add metadata field"}
-                    aria-expanded={showMetadataInput}
-                  >
-                    <Plus className={`w-4 h-4 text-gray-600 transition-transform ${showMetadataInput ? 'rotate-45' : ''}`} />
-                  </button>
-                </div>
-
-                {showMetadataInput && (
-                  <div className="space-y-3">
-                    <textarea
-                      id="metadata-input"
-                      value={uploadMetadata}
-                      onChange={(e) => setUploadMetadata(e.target.value)}
-                      placeholder='{"category": "product_info", "tags": ["important"]}'
-                      className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-xs"
-                      aria-labelledby="metadata-label"
-                      aria-describedby="metadata-hint"
-                    />
-                    <p id="metadata-hint" className="text-xs text-gray-500">
-                      Add custom key-value pairs as JSON. System metadata will be added automatically.
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Modal Footer */}
@@ -881,7 +746,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   setSelectedFile(null);
                   setUploadMetadata('{}');
                   setChunkingStrategy('');
-                  setShowMetadataInput(false);
                   setShowStrategyDropdown(false);
                   if (fileInputRef.current) fileInputRef.current.value = '';
                 }}
@@ -959,10 +823,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </p>
             {!searchQuery && (
               <button
-                onClick={() => setShowCreateForm(true)}
+                onClick={openUploadModal}
                 className="vf-btn vf-btn-primary px-8 py-3"
               >
-                Create Document
+                Upload Document
               </button>
             )}
           </div>
