@@ -538,7 +538,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         </div>
       )}
       {/* Documents List */}
-      <div className="flex-1 overflow-y-auto p-6 vf-scrollbar">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 vf-scrollbar">
         {/* Search Mode Indicator */}
         {vectorSearchMode && (
           <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-vf shadow-vf-sm">
@@ -602,7 +602,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 className="bg-white rounded-lg cursor-pointer transition-all"
                 style={{
                   padding: '18px 20px',
-                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)'
+                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
+                  overflow: 'hidden'
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.backgroundColor = '#f7f7f7';
