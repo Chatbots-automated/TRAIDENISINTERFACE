@@ -552,13 +552,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       {showMetadataModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div
-            className="bg-white rounded-lg shadow-xl max-w-md w-full min-h-[550px] flex flex-col"
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full min-h-[550px] flex flex-col"
             role="dialog"
             aria-labelledby="import-modal-title"
             aria-modal="true"
           >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
               <div className="flex items-center justify-between">
                 <h2 id="import-modal-title" className="text-base font-semibold text-gray-900">
                   Import file
