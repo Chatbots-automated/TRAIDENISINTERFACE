@@ -466,17 +466,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <button
               onClick={openUploadModal}
               disabled={uploadingFile}
-              className="vf-btn vf-btn-primary px-6 py-2.5 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {uploadingFile ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                  <span className="font-medium">Uploading...</span>
+                  <span>Uploading...</span>
                 </>
               ) : (
                 <>
                   <Upload className="w-4 h-4" />
-                  <span className="font-medium">Upload Document</span>
+                  <span>Upload Document</span>
                 </>
               )}
             </button>
@@ -511,7 +511,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           <button
             onClick={handleVectorSearch}
             disabled={!searchQuery.trim() || isVectorSearching}
-            className="px-5 py-3 bg-purple-600 text-white rounded-vf hover:bg-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 font-medium shadow-vf-sm"
+            className="px-6 py-3 bg-purple-500 text-white rounded-xl font-medium hover:bg-purple-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
           >
             {isVectorSearching ? (
               <>
@@ -526,8 +526,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             )}
           </button>
 
-          <button className="p-3 border border-vf-border rounded-vf hover:bg-gray-50 transition-all shadow-vf-sm">
-            <Filter className="w-5 h-5 text-vf-secondary" />
+          <button className="px-4 py-3 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
+            <Filter className="w-5 h-5 text-gray-600" />
           </button>
         </div>
       </div>
@@ -552,7 +552,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       {showMetadataModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div
-            className="bg-white rounded-lg shadow-xl max-w-md w-full"
+            className="bg-white rounded-lg shadow-xl max-w-md w-full min-h-[550px] flex flex-col"
             role="dialog"
             aria-labelledby="import-modal-title"
             aria-modal="true"
@@ -588,7 +588,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   File(s)
                 </label>
                 {selectedFile ? (
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-white">
                     <p className="text-sm text-gray-600 mb-3">
                       <span className="font-mono text-gray-900">{selectedFile.name}</span>
                     </p>
@@ -600,7 +600,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   <div
                     onDrop={handleFileDrop}
                     onDragOver={handleDragOver}
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-white transition-colors cursor-pointer"
                     onClick={triggerFileUpload}
                     role="button"
                     tabIndex={0}
@@ -617,7 +617,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </p>
                     <button
                       type="button"
-                      className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation();
                         triggerFileUpload();
@@ -749,7 +749,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   setShowStrategyDropdown(false);
                   if (fileInputRef.current) fileInputRef.current.value = '';
                 }}
-                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors rounded-lg"
+                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
               >
                 Cancel
               </button>
@@ -757,7 +757,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 type="button"
                 onClick={performUpload}
                 disabled={uploadingFile || !selectedFile}
-                className="px-5 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {uploadingFile ? (
                   <>
@@ -824,7 +824,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {!searchQuery && (
               <button
                 onClick={openUploadModal}
-                className="vf-btn vf-btn-primary px-8 py-3"
+                className="px-8 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors"
               >
                 Upload Document
               </button>
@@ -878,7 +878,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       <button
                         onClick={handleUpdateDocument}
                         disabled={saving}
-                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50 flex items-center space-x-2"
+                        className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 flex items-center space-x-2"
                       >
                         {saving ? (
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
@@ -889,7 +889,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       </button>
                       <button
                         onClick={() => setEditingDoc(null)}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                        className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
                       >
                         Cancel
                       </button>
@@ -974,7 +974,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                                   e.stopPropagation();
                                   setEditingDoc(document);
                                 }}
-                                className="px-3 py-1 text-xs bg-gradient-to-r from-green-500 to-blue-500 text-white rounded hover:from-green-600 hover:to-blue-600 transition-all flex items-center space-x-1"
+                                className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors flex items-center space-x-1 text-sm"
                               >
                                 <Edit3 className="w-3 h-3" />
                                 <span>Edit Metadata</span>
@@ -1010,7 +1010,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                                   e.stopPropagation();
                                   setViewingMetadata(viewingMetadata === document.id ? null : document.id);
                                 }}
-                                className="flex items-center space-x-1 text-xs text-green-600 hover:text-green-700 transition-colors"
+                                className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
                               >
                                 <Code className="w-3 h-3" />
                                 <span>{viewingMetadata === document.id ? 'Hide' : 'Show'} Raw JSON</span>
@@ -1038,7 +1038,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           e.stopPropagation();
                           toggleMetadataExpansion(document.id);
                         }}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="p-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
                         title="View metadata"
                       >
                         <Eye className="w-4 h-4" />
@@ -1048,7 +1048,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           e.stopPropagation();
                           setEditingDoc(document);
                         }}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="p-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
                         title="Edit document"
                       >
                         <Edit3 className="w-4 h-4" />
@@ -1058,7 +1058,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           e.stopPropagation();
                           handleDeleteDocument(document.id);
                         }}
-                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
                         title="Delete document"
                       >
                         <Trash2 className="w-4 h-4" />
