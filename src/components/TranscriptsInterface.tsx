@@ -226,10 +226,13 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
               </p>
             </div>
           ) : (
-            <table className="w-full border-collapse">
+            <table className="w-full" style={{ borderCollapse: 'collapse' }}>
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-6 py-3 text-left">
+                <tr style={{ backgroundColor: '#fafafa' }}>
+                  <th
+                    className="px-4 py-3 text-left"
+                    style={{ borderBottom: '1px solid #e0e0e0' }}
+                  >
                     <input
                       type="checkbox"
                       checked={selectedIds.size === displayTranscripts.length && displayTranscripts.length > 0}
@@ -237,25 +240,51 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                       className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                     />
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors"
+                    style={{
+                      color: '#777',
+                      fontSize: '13px',
+                      borderBottom: '1px solid #e0e0e0'
+                    }}
+                  >
                     Date & Time
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors"
+                    style={{
+                      color: '#777',
+                      fontSize: '13px',
+                      borderBottom: '1px solid #e0e0e0'
+                    }}
+                  >
                     User ID
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                  <th
+                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:text-gray-900 transition-colors"
+                    style={{
+                      color: '#777',
+                      fontSize: '13px',
+                      borderBottom: '1px solid #e0e0e0'
+                    }}
+                  >
                     Messages
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {displayTranscripts.map((transcript) => (
+              <tbody className="bg-white">
+                {displayTranscripts.map((transcript, index) => (
                   <tr
                     key={transcript.id}
                     onClick={() => setSelectedTranscript(transcript)}
-                    className="hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="cursor-pointer transition-colors"
+                    style={{
+                      borderBottom: index === displayTranscripts.length - 1 ? 'none' : '1px solid #eee'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f9f9f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                   >
-                    <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedIds.has(transcript.id)}
@@ -263,13 +292,13 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                         className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
                       />
                     </td>
-                    <td className="px-6 py-3 text-sm text-gray-900 whitespace-nowrap">
+                    <td className="px-4 py-2.5 text-sm text-gray-900 whitespace-nowrap">
                       {formatTableDate(transcript)}
                     </td>
-                    <td className="px-6 py-3 text-sm text-gray-600 font-mono text-xs max-w-xs truncate">
+                    <td className="px-4 py-2.5 text-sm text-gray-600 font-mono text-xs max-w-xs truncate">
                       {transcript.sessionID}
                     </td>
-                    <td className="px-6 py-3 text-sm text-gray-700">
+                    <td className="px-4 py-2.5 text-sm text-gray-700">
                       {transcript.messageCount}
                     </td>
                   </tr>
