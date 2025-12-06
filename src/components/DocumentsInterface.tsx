@@ -93,6 +93,38 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setChunkingStrategy('');
     setShowMetadataInput(false);
     setShowStrategyDropdown(false);
+  };
+
+  const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (!file) return;
+
+    // Check file type
+    const acceptedTypes = ['.pdf', '.doc', '.docx', '.txt', '.md'];
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!acceptedTypes.includes(fileExtension)) {
+      setError('Unsupported file type. Please upload PDF, DOC, DOCX, TXT, or MD files.');
+      return;
+    }
+
+    setSelectedFile(file);
+    setUploadMetadata('{}');
+    setChunkingStrategy('');
+    setShowMetadataInput(false);
+    setShowStrategyDropdown(false);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+  };
+
+  const openUploadModal = () => {
+    setSelectedFile(null);
+    setUploadMetadata('{}');
+    setChunkingStrategy('');
+    setShowMetadataInput(false);
+    setShowStrategyDropdown(false);
     setShowMetadataModal(true);
   };
 
@@ -469,7 +501,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
           <div className="flex items-center space-x-3">
             <button
-              onClick={triggerFileUpload}
+              onClick={openUploadModal}
               disabled={uploadingFile}
               className="vf-btn vf-btn-primary px-6 py-2.5 flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -615,7 +647,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       )}
 
       {/* Import File Modal (Voiceflow Style) */}
-      {showMetadataModal && selectedFile && (
+      {showMetadataModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
             {/* Modal Header */}
@@ -645,14 +677,37 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   File(s)
                 </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
-                  <p className="text-sm text-gray-600 mb-3">
-                    <span className="font-mono text-gray-900">{selectedFile.name}</span>
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {(selectedFile.size / 1024).toFixed(2)} KB
-                  </p>
-                </div>
+                {selectedFile ? (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
+                    <p className="text-sm text-gray-600 mb-3">
+                      <span className="font-mono text-gray-900">{selectedFile.name}</span>
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {(selectedFile.size / 1024).toFixed(2)} KB
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    onDrop={handleFileDrop}
+                    onDragOver={handleDragOver}
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
+                    onClick={triggerFileUpload}
+                  >
+                    <p className="text-sm text-gray-600 mb-3">
+                      Drop file(s) here or
+                    </p>
+                    <button
+                      type="button"
+                      className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerFileUpload();
+                      }}
+                    >
+                      Browse
+                    </button>
+                  </div>
+                )}
                 <p className="text-xs text-gray-500 mt-2">
                   Supported file types: pdf, txt, docx - 10mb max.
                 </p>
@@ -803,7 +858,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </button>
               <button
                 onClick={performUpload}
-                disabled={uploadingFile}
+                disabled={uploadingFile || !selectedFile}
                 className="px-5 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {uploadingFile ? (
