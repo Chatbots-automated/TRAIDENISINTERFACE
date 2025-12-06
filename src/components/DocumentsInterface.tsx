@@ -527,11 +527,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             
             {/* Hidden file input */}
             <input
+              id="file-upload-input"
               ref={fileInputRef}
               type="file"
               onChange={handleFileSelection}
               className="hidden"
               accept=".pdf,.doc,.docx,.txt,.md"
+              aria-describedby="file-type-info"
             />
           </div>
         </div>
@@ -649,12 +651,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       {/* Import File Modal (Voiceflow Style) */}
       {showMetadataModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full"
+            role="dialog"
+            aria-labelledby="import-modal-title"
+            aria-modal="true"
+          >
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Import file</h3>
+                <h2 id="import-modal-title" className="text-lg font-semibold text-gray-900">
+                  Import file
+                </h2>
                 <button
+                  type="button"
                   onClick={() => {
                     setShowMetadataModal(false);
                     setSelectedFile(null);
@@ -664,6 +674,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Close modal"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -674,7 +685,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <div className="px-6 py-5 space-y-5">
               {/* File(s) Section */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="file-upload-input" className="block text-sm font-medium text-gray-700 mb-2">
                   File(s)
                 </label>
                 {selectedFile ? (
@@ -692,6 +703,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     onDragOver={handleDragOver}
                     className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
                     onClick={triggerFileUpload}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        triggerFileUpload();
+                      }
+                    }}
+                    aria-describedby="file-type-info"
                   >
                     <p className="text-sm text-gray-600 mb-3">
                       Drop file(s) here or
@@ -708,21 +728,24 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </button>
                   </div>
                 )}
-                <p className="text-xs text-gray-500 mt-2">
+                <p id="file-type-info" className="text-xs text-gray-500 mt-2">
                   Supported file types: pdf, txt, docx - 10mb max.
                 </p>
               </div>
 
               {/* LLM Chunking Strategy */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="chunking-strategy-select" className="block text-sm font-medium text-gray-700 mb-2">
                   LLM chunking strategy
                 </label>
                 <div className="relative">
                   <button
+                    id="chunking-strategy-select"
                     type="button"
                     onClick={() => setShowStrategyDropdown(!showStrategyDropdown)}
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors"
+                    aria-haspopup="listbox"
+                    aria-expanded={showStrategyDropdown}
                   >
                     <span className={chunkingStrategy ? 'text-gray-900' : 'text-gray-500'}>
                       {chunkingStrategy === 'standartinis' && 'Standartinis Komercinis'}
@@ -734,7 +757,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   </button>
 
                   {showStrategyDropdown && (
-                    <div className="absolute z-10 w-full mt-2 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto">
+                    <div
+                      className="absolute z-10 w-full mt-2 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto"
+                      role="listbox"
+                    >
                       <div className="p-2 space-y-1">
                         {/* Standartinis Komercinis */}
                         <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
@@ -813,12 +839,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               {/* Metadata Section */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">
+                  <label id="metadata-label" className="block text-sm font-medium text-gray-700">
                     Metadata
                   </label>
                   <button
+                    type="button"
                     onClick={() => setShowMetadataInput(!showMetadataInput)}
                     className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                    aria-label={showMetadataInput ? "Remove metadata field" : "Add metadata field"}
+                    aria-expanded={showMetadataInput}
                   >
                     <Plus className={`w-4 h-4 text-gray-600 transition-transform ${showMetadataInput ? 'rotate-45' : ''}`} />
                   </button>
@@ -827,12 +856,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 {showMetadataInput && (
                   <div className="space-y-3">
                     <textarea
+                      id="metadata-input"
                       value={uploadMetadata}
                       onChange={(e) => setUploadMetadata(e.target.value)}
                       placeholder='{"category": "product_info", "tags": ["important"]}'
                       className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-xs"
+                      aria-labelledby="metadata-label"
+                      aria-describedby="metadata-hint"
                     />
-                    <p className="text-xs text-gray-500">
+                    <p id="metadata-hint" className="text-xs text-gray-500">
                       Add custom key-value pairs as JSON. System metadata will be added automatically.
                     </p>
                   </div>
@@ -843,6 +875,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
               <button
+                type="button"
                 onClick={() => {
                   setShowMetadataModal(false);
                   setSelectedFile(null);
@@ -857,6 +890,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={performUpload}
                 disabled={uploadingFile || !selectedFile}
                 className="px-5 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
