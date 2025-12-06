@@ -31,6 +31,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadMetadata, setUploadMetadata] = useState('{}');
   const [showMetadataModal, setShowMetadataModal] = useState(false);
+  const [chunkingStrategy, setChunkingStrategy] = useState('');
+  const [showMetadataInput, setShowMetadataInput] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -86,7 +88,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     if (!file) return;
 
     setSelectedFile(file);
-    setUploadMetadata('{}'); // Reset metadata
+    setUploadMetadata('{}');
+    setChunkingStrategy('');
+    setShowMetadataInput(false);
     setShowMetadataModal(true);
   };
 
@@ -119,11 +123,22 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         console.warn('Invalid user metadata, using empty object');
       }
 
+      // Add metadata filter based on chunking strategy
+      let metadataFilter = {};
+      if (chunkingStrategy === 'standartinis') {
+        metadataFilter = { UserDocs: 'Standartinis' };
+      } else if (chunkingStrategy === 'nestandartinis') {
+        metadataFilter = { UserDocs: 'Nestandartinis' };
+      } else if (chunkingStrategy === 'bendra') {
+        metadataFilter = { UserDocs: 'General' };
+      }
+
       const systemMetadata = {
         uploaded_by: user.email,
         user_id: user.id,
         project_id: projectId,
-        upload_date: new Date().toISOString()
+        upload_date: new Date().toISOString(),
+        ...metadataFilter
       };
 
       const finalMetadata = { ...systemMetadata, ...userMetadata };
@@ -133,7 +148,26 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       const apiKey = import.meta.env.VITE_VOICEFLOW_API_KEY;
 
-      const response = await fetch('https://api.voiceflow.com/v1/knowledge-base/docs/upload', {
+      // Build URL with query parameters based on chunking strategy
+      const baseUrl = 'https://api.voiceflow.com/v1/knowledge-base/docs/upload';
+      const queryParams = new URLSearchParams();
+
+      if (chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis') {
+        // Smart Chunking - enable smart chunking features
+        queryParams.append('llmBasedChunks', 'true');
+        queryParams.append('llmPrependContext', 'true');
+        queryParams.append('markdownConversion', 'true');
+      } else if (chunkingStrategy === 'bendra') {
+        // FAQ optimization - use smaller chunks for FAQ-style Q&A
+        queryParams.append('maxChunkSize', '500');
+        queryParams.append('llmGeneratedQ', 'true');
+      }
+
+      const uploadUrl = queryParams.toString()
+        ? `${baseUrl}?${queryParams.toString()}`
+        : baseUrl;
+
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: {
           'Authorization': apiKey
@@ -578,23 +612,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         </div>
       )}
 
-      {/* Metadata Input Modal */}
+      {/* Import File Modal (Voiceflow Style) */}
       {showMetadataModal && selectedFile && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Upload Document</h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    File: <span className="font-mono text-gray-700">{selectedFile.name}</span>
-                  </p>
-                </div>
+                <h3 className="text-lg font-semibold text-gray-900">Import file</h3>
                 <button
                   onClick={() => {
                     setShowMetadataModal(false);
                     setSelectedFile(null);
+                    setChunkingStrategy('');
+                    setShowMetadataInput(false);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -605,44 +636,69 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
 
             {/* Modal Body */}
-            <div className="px-6 py-4 space-y-4">
+            <div className="px-6 py-5 space-y-5">
+              {/* File(s) Section */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Custom Metadata (Optional)
+                  File(s)
                 </label>
-                <p className="text-xs text-gray-500 mb-2">
-                  Add custom key-value pairs as JSON. System metadata (uploaded_by, user_id, etc.) will be added automatically.
-                </p>
-                <textarea
-                  value={uploadMetadata}
-                  onChange={(e) => setUploadMetadata(e.target.value)}
-                  placeholder='{"category": "product_info", "tags": ["important"], "version": "1.0"}'
-                  className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Format: JSON object with custom fields
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50">
+                  <p className="text-sm text-gray-600 mb-3">
+                    <span className="font-mono text-gray-900">{selectedFile.name}</span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {(selectedFile.size / 1024).toFixed(2)} KB
+                  </p>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Supported file types: pdf, txt, docx - 10mb max.
                 </p>
               </div>
 
-              {/* Preview of final metadata */}
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <p className="text-xs font-medium text-gray-600 mb-2">Preview (System + Custom):</p>
-                <pre className="text-xs text-gray-700 overflow-x-auto">
-                  {(() => {
-                    try {
-                      const userMeta = JSON.parse(uploadMetadata);
-                      const systemMeta = {
-                        uploaded_by: user.email,
-                        user_id: user.id,
-                        project_id: projectId,
-                        upload_date: new Date().toISOString()
-                      };
-                      return JSON.stringify({ ...systemMeta, ...userMeta }, null, 2);
-                    } catch {
-                      return 'Invalid JSON format';
-                    }
-                  })()}
-                </pre>
+              {/* LLM Chunking Strategy */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  LLM chunking strategy
+                </label>
+                <select
+                  value={chunkingStrategy}
+                  onChange={(e) => setChunkingStrategy(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-sm"
+                >
+                  <option value="">Select strategy (optional)</option>
+                  <option value="standartinis">Standartinis Komercinis</option>
+                  <option value="nestandartinis">Nestandartinis Komercinis</option>
+                  <option value="bendra">Bendra</option>
+                </select>
+              </div>
+
+              {/* Metadata Section */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Metadata
+                  </label>
+                  <button
+                    onClick={() => setShowMetadataInput(!showMetadataInput)}
+                    className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                  >
+                    <Plus className={`w-4 h-4 text-gray-600 transition-transform ${showMetadataInput ? 'rotate-45' : ''}`} />
+                  </button>
+                </div>
+
+                {showMetadataInput && (
+                  <div className="space-y-3">
+                    <textarea
+                      value={uploadMetadata}
+                      onChange={(e) => setUploadMetadata(e.target.value)}
+                      placeholder='{"category": "product_info", "tags": ["important"]}'
+                      className="w-full h-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-xs"
+                    />
+                    <p className="text-xs text-gray-500">
+                      Add custom key-value pairs as JSON. System metadata will be added automatically.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -653,16 +709,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   setShowMetadataModal(false);
                   setSelectedFile(null);
                   setUploadMetadata('{}');
+                  setChunkingStrategy('');
+                  setShowMetadataInput(false);
                   if (fileInputRef.current) fileInputRef.current.value = '';
                 }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors rounded-lg"
               >
                 Cancel
               </button>
               <button
                 onClick={performUpload}
                 disabled={uploadingFile}
-                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-5 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 {uploadingFile ? (
                   <>
@@ -670,10 +728,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     <span>Uploading...</span>
                   </>
                 ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    <span>Upload to Knowledge Base</span>
-                  </>
+                  <span>Import</span>
                 )}
               </button>
             </div>
