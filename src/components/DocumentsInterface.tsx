@@ -285,6 +285,40 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     return String(value);
   };
 
+  const getDocumentTitle = (document: any): string => {
+    const metadata = formatMetadataForDisplay(document.metadata);
+    const metadataEntries = Object.entries(metadata);
+
+    // Priority 1: Check for common title fields
+    const titleFields = ['title', 'name', 'filename', 'file_name', 'document_name'];
+    for (const field of titleFields) {
+      if (metadata[field]) {
+        return String(metadata[field]);
+      }
+    }
+
+    // Priority 2: Use the first metadata field if it exists and has a meaningful value
+    if (metadataEntries.length > 0) {
+      const [key, value] = metadataEntries[0];
+      const formattedKey = key.replace(/_/g, ' ').toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+
+      // Format the value nicely
+      let formattedValue = String(value);
+      // If value is too long, truncate it
+      if (formattedValue.length > 60) {
+        formattedValue = formattedValue.substring(0, 60) + '...';
+      }
+
+      return `${formattedKey}: ${formattedValue}`;
+    }
+
+    // Priority 3: Fall back to Document #ID
+    return `Document #${document.id}`;
+  };
+
   const getDisplayDocuments = () => {
     // If we're in vector search mode and have results, show those
     if (vectorSearchMode && vectorSearchResults.length > 0) {
@@ -636,7 +670,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="text-base font-bold text-gray-900" style={{ fontSize: '16px' }}>
-                            Document #{document.id}
+                            {getDocumentTitle(document)}
                           </h3>
                           {vectorSearchMode && document.similarity && (
                             <span className="px-2.5 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full font-medium">
