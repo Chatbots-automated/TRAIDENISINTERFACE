@@ -33,6 +33,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [showMetadataModal, setShowMetadataModal] = useState(false);
   const [chunkingStrategy, setChunkingStrategy] = useState('');
   const [showMetadataInput, setShowMetadataInput] = useState(false);
+  const [showStrategyDropdown, setShowStrategyDropdown] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -91,6 +92,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setUploadMetadata('{}');
     setChunkingStrategy('');
     setShowMetadataInput(false);
+    setShowStrategyDropdown(false);
     setShowMetadataModal(true);
   };
 
@@ -626,6 +628,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     setSelectedFile(null);
                     setChunkingStrategy('');
                     setShowMetadataInput(false);
+                    setShowStrategyDropdown(false);
                     if (fileInputRef.current) fileInputRef.current.value = '';
                   }}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -660,16 +663,96 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   LLM chunking strategy
                 </label>
-                <select
-                  value={chunkingStrategy}
-                  onChange={(e) => setChunkingStrategy(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-sm"
-                >
-                  <option value="">Select strategy (optional)</option>
-                  <option value="standartinis">Standartinis Komercinis</option>
-                  <option value="nestandartinis">Nestandartinis Komercinis</option>
-                  <option value="bendra">Bendra</option>
-                </select>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowStrategyDropdown(!showStrategyDropdown)}
+                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors"
+                  >
+                    <span className={chunkingStrategy ? 'text-gray-900' : 'text-gray-500'}>
+                      {chunkingStrategy === 'standartinis' && 'Standartinis Komercinis'}
+                      {chunkingStrategy === 'nestandartinis' && 'Nestandartinis Komercinis'}
+                      {chunkingStrategy === 'bendra' && 'Bendra'}
+                      {!chunkingStrategy && 'Select strategy (optional)'}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showStrategyDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {showStrategyDropdown && (
+                    <div className="absolute z-10 w-full mt-2 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto">
+                      <div className="p-2 space-y-1">
+                        {/* Standartinis Komercinis */}
+                        <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                          <input
+                            type="radio"
+                            name="chunking-strategy"
+                            value="standartinis"
+                            checked={chunkingStrategy === 'standartinis'}
+                            onChange={(e) => {
+                              setChunkingStrategy(e.target.value);
+                              setShowStrategyDropdown(false);
+                            }}
+                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="text-sm font-semibold text-gray-900">
+                              Standartinis Komercinis
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              Skirta standartiniams komerciniams dokumentams su aiškia struktūra. Naudoja pažangų AI skaidymą pagal tematiką.
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Nestandartinis Komercinis */}
+                        <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                          <input
+                            type="radio"
+                            name="chunking-strategy"
+                            value="nestandartinis"
+                            checked={chunkingStrategy === 'nestandartinis'}
+                            onChange={(e) => {
+                              setChunkingStrategy(e.target.value);
+                              setShowStrategyDropdown(false);
+                            }}
+                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="text-sm font-semibold text-gray-900">
+                              Nestandartinis Komercinis
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              Skirtų sudėtingiems dokumentams su įvairiomis temomis. Optimizuotas AI skaidymas su konteksto priedu.
+                            </div>
+                          </div>
+                        </label>
+
+                        {/* Bendra */}
+                        <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                          <input
+                            type="radio"
+                            name="chunking-strategy"
+                            value="bendra"
+                            checked={chunkingStrategy === 'bendra'}
+                            onChange={(e) => {
+                              setChunkingStrategy(e.target.value);
+                              setShowStrategyDropdown(false);
+                            }}
+                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="text-sm font-semibold text-gray-900">
+                              Bendra (DUK optimizacija)
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              Sukuria pavyzdinius klausimus kiekvienai sekcijai. Geriausias pasirinkimas DUK kūrimui.
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Metadata Section */}
@@ -711,6 +794,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   setUploadMetadata('{}');
                   setChunkingStrategy('');
                   setShowMetadataInput(false);
+                  setShowStrategyDropdown(false);
                   if (fileInputRef.current) fileInputRef.current.value = '';
                 }}
                 className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors rounded-lg"
