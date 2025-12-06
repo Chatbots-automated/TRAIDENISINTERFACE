@@ -28,6 +28,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [isVectorSearching, setIsVectorSearching] = useState(false);
   const [vectorSearchMode, setVectorSearchMode] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadMetadata, setUploadMetadata] = useState('{}');
+  const [showMetadataModal, setShowMetadataModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -78,12 +81,21 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setSelectedFile(file);
+    setUploadMetadata('{}'); // Reset metadata
+    setShowMetadataModal(true);
+  };
+
+  const performUpload = async () => {
+    if (!selectedFile) return;
+
     setUploadingFile(true);
     setError(null);
+    setShowMetadataModal(false);
 
     try {
       // Log upload start
@@ -91,24 +103,33 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         action: 'upload_started',
         userId: user.id,
         userEmail: user.email,
-        filename: file.name,
-        fileSize: file.size,
-        metadata: { project_id: projectId, file_type: file.type }
+        filename: selectedFile.name,
+        fileSize: selectedFile.size,
+        metadata: { project_id: projectId, file_type: selectedFile.type }
       });
 
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', selectedFile);
 
-      // Add metadata for the upload (replaces deprecated tags)
-      const metadata = {
+      // Merge system metadata with user-provided metadata
+      let userMetadata = {};
+      try {
+        userMetadata = JSON.parse(uploadMetadata);
+      } catch (e) {
+        console.warn('Invalid user metadata, using empty object');
+      }
+
+      const systemMetadata = {
         uploaded_by: user.email,
         user_id: user.id,
         project_id: projectId,
         upload_date: new Date().toISOString()
       };
-      formData.append('data', JSON.stringify(metadata));
 
-      console.log('Uploading file:', file.name, 'to Voiceflow Knowledge Base...');
+      const finalMetadata = { ...systemMetadata, ...userMetadata };
+      formData.append('metadata', JSON.stringify(finalMetadata));
+
+      console.log('Uploading file:', selectedFile.name, 'to Voiceflow Knowledge Base...');
 
       const apiKey = import.meta.env.VITE_VOICEFLOW_API_KEY;
 
@@ -128,8 +149,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           action: 'upload_failed',
           userId: user.id,
           userEmail: user.email,
-          filename: file.name,
-          fileSize: file.size,
+          filename: selectedFile.name,
+          fileSize: selectedFile.size,
           level: 'error',
           metadata: {
             project_id: projectId,
@@ -148,8 +169,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         action: 'upload_success',
         userId: user.id,
         userEmail: user.email,
-        filename: file.name,
-        fileSize: file.size,
+        filename: selectedFile.name,
+        fileSize: selectedFile.size,
         metadata: {
           project_id: projectId,
           voiceflow_result: result,
@@ -159,6 +180,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
+      setSelectedFile(null);
+      setUploadMetadata('{}');
       await loadDocuments();
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -170,8 +193,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         userId: user.id,
         userEmail: user.email,
         metadata: {
-          filename: file.name,
-          file_size: file.size,
+          filename: selectedFile.name,
+          file_size: selectedFile.size,
           project_id: projectId
         }
       });
@@ -438,7 +461,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <input
               ref={fileInputRef}
               type="file"
-              onChange={handleFileUpload}
+              onChange={handleFileSelection}
               className="hidden"
               accept=".pdf,.doc,.docx,.txt,.md"
             />
@@ -554,6 +577,110 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           <span className="text-sm">Operation completed successfully!</span>
         </div>
       )}
+
+      {/* Metadata Input Modal */}
+      {showMetadataModal && selectedFile && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Upload Document</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    File: <span className="font-mono text-gray-700">{selectedFile.name}</span>
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowMetadataModal(false);
+                    setSelectedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Custom Metadata (Optional)
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  Add custom key-value pairs as JSON. System metadata (uploaded_by, user_id, etc.) will be added automatically.
+                </p>
+                <textarea
+                  value={uploadMetadata}
+                  onChange={(e) => setUploadMetadata(e.target.value)}
+                  placeholder='{"category": "product_info", "tags": ["important"], "version": "1.0"}'
+                  className="w-full h-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Format: JSON object with custom fields
+                </p>
+              </div>
+
+              {/* Preview of final metadata */}
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-xs font-medium text-gray-600 mb-2">Preview (System + Custom):</p>
+                <pre className="text-xs text-gray-700 overflow-x-auto">
+                  {(() => {
+                    try {
+                      const userMeta = JSON.parse(uploadMetadata);
+                      const systemMeta = {
+                        uploaded_by: user.email,
+                        user_id: user.id,
+                        project_id: projectId,
+                        upload_date: new Date().toISOString()
+                      };
+                      return JSON.stringify({ ...systemMeta, ...userMeta }, null, 2);
+                    } catch {
+                      return 'Invalid JSON format';
+                    }
+                  })()}
+                </pre>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowMetadataModal(false);
+                  setSelectedFile(null);
+                  setUploadMetadata('{}');
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={performUpload}
+                disabled={uploadingFile}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              >
+                {uploadingFile ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    <span>Upload to Knowledge Base</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Documents List */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 vf-scrollbar">
         {/* Search Mode Indicator */}
