@@ -98,20 +98,32 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('project_id', projectId);
-      formData.append('user_id', user.id);
 
-      console.log('Uploading file:', file.name, 'to webhook...');
+      // Add metadata for the upload (replaces deprecated tags)
+      const metadata = {
+        uploaded_by: user.email,
+        user_id: user.id,
+        project_id: projectId,
+        upload_date: new Date().toISOString()
+      };
+      formData.append('data', JSON.stringify(metadata));
 
-      const response = await fetch('https://209f05431d92.ngrok-free.app/webhook/88b13b24-9857-49f4-a713-41b2964177f7', {
+      console.log('Uploading file:', file.name, 'to Voiceflow Knowledge Base...');
+
+      const apiKey = import.meta.env.VITE_VOICEFLOW_API_KEY;
+
+      const response = await fetch('https://api.voiceflow.com/v1/knowledge-base/docs/upload', {
         method: 'POST',
         headers: {
-          'ngrok-skip-browser-warning': 'true'
+          'Authorization': apiKey
         },
         body: formData
       });
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = errorData.message || `${response.status} ${response.statusText}`;
+
         await appLogger.logDocument({
           action: 'upload_failed',
           userId: user.id,
@@ -121,14 +133,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           level: 'error',
           metadata: {
             project_id: projectId,
-            error: `${response.status} ${response.statusText}`
+            error: errorMessage,
+            response_data: errorData
           }
         });
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+        throw new Error(`Upload to Voiceflow failed: ${errorMessage}`);
       }
 
       const result = await response.json();
-      console.log('Upload result:', result);
+      console.log('Voiceflow upload successful:', result);
 
       // Log upload success
       await appLogger.logDocument({
@@ -137,7 +150,11 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         userEmail: user.email,
         filename: file.name,
         fileSize: file.size,
-        metadata: { project_id: projectId, result }
+        metadata: {
+          project_id: projectId,
+          voiceflow_result: result,
+          document_id: result.data?.documentID || result.documentID
+        }
       });
 
       setSuccess(true);
