@@ -373,10 +373,17 @@ export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
     }
   }
 
-  // Sort by most recent first
-  return parsedTranscripts.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
+  // Sort by most recent first (using first message timestamp)
+  return parsedTranscripts.sort((a, b) => {
+    // Use first message timestamp if available, otherwise fall back to updatedAt
+    const aTime = a.messages.length > 0
+      ? new Date(a.messages[0].timestamp).getTime()
+      : new Date(a.updatedAt).getTime();
+    const bTime = b.messages.length > 0
+      ? new Date(b.messages[0].timestamp).getTime()
+      : new Date(b.updatedAt).getTime();
+    return bTime - aTime; // Sort descending (newest first)
+  });
 }
 
 // Generate a consistent userID from app user data
