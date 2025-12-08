@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check } from 'lucide-react';
+import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe } from 'lucide-react';
 import { fetchVoiceflowDocuments, deleteVoiceflowDocument, getDocumentTitle, getDaysAgo, VoiceflowDocument } from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
@@ -650,8 +650,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   <div className="flex items-start flex-1" style={{ gap: '18px' }}>
                     {/* Icon and Status Badge */}
                     <div className="flex flex-col items-center gap-2" style={{ paddingTop: '2px' }}>
-                      <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center border border-green-100">
-                        <FileText className="w-6 h-6 text-green-600" />
+                      <div
+                        className="w-12 h-12 rounded-lg flex items-center justify-center border"
+                        style={{
+                          backgroundColor: document.data?.type === 'url' ? '#eff6ff' : '#dcfce7',
+                          borderColor: document.data?.type === 'url' ? '#bfdbfe' : '#bbf7d0'
+                        }}
+                      >
+                        {document.data?.type === 'url' ? (
+                          <Globe className="w-6 h-6 text-blue-600" />
+                        ) : (
+                          <FileText className="w-6 h-6 text-green-600" />
+                        )}
                       </div>
                       {/* Status Badge */}
                       {document.status?.type && (
