@@ -264,22 +264,14 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   };
 
-  const toggleMetadataExpansion = (docId: string) => {
-    const newExpanded = new Set(expandedMetadata);
+  const toggleTitleExpansion = (docId: string) => {
+    const newExpanded = new Set(expandedTitles);
     if (newExpanded.has(docId)) {
       newExpanded.delete(docId);
     } else {
       newExpanded.add(docId);
     }
-    setExpandedMetadata(newExpanded);
-  };
-
-  const renderMetadataValue = (value: any): string => {
-    if (typeof value === 'string') {
-      // Handle newlines in strings
-      return value.replace(/\\n/g, '\n');
-    }
-    return String(value);
+    setExpandedTitles(newExpanded);
   };
 
   const getDisplayDocuments = () => {
@@ -288,8 +280,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       const query = searchQuery.toLowerCase();
       return documents.filter(doc => {
         const title = getDocumentTitle(doc).toLowerCase();
-        const metadata = JSON.stringify(formatDocumentMetadata(doc)).toLowerCase();
-        return title.includes(query) || metadata.includes(query);
+        const type = doc.data?.type?.toLowerCase() || '';
+        const tags = doc.tags?.join(' ').toLowerCase() || '';
+        const status = doc.status?.type?.toLowerCase() || '';
+        return title.includes(query) || type.includes(query) || tags.includes(query) || status.includes(query);
       });
     }
     // No search, show all documents
@@ -652,143 +646,107 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)';
                 }}
               >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start flex-1" style={{ gap: '18px' }}>
-                      <div className="flex-shrink-0" style={{ paddingTop: '2px' }}>
-                        <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center border border-green-100">
-                          <FileText className="w-6 h-6 text-green-600" />
-                        </div>
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start flex-1" style={{ gap: '18px' }}>
+                    {/* Icon and Status Badge */}
+                    <div className="flex flex-col items-center gap-2" style={{ paddingTop: '2px' }}>
+                      <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center border border-green-100">
+                        <FileText className="w-6 h-6 text-green-600" />
                       </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-base font-bold text-gray-900" style={{ fontSize: '16px' }}>
-                            {getDocumentTitle(document)}
-                          </h3>
-                        </div>
-
-                        {/* Document ID or URL preview */}
-                        <p
-                          className="text-sm mb-2"
+                      {/* Status Badge */}
+                      {document.status?.type && (
+                        <span
+                          className="text-[10px] font-semibold px-2 py-0.5 rounded uppercase"
                           style={{
-                            color: '#777',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            maxWidth: '100%'
+                            backgroundColor:
+                              document.status.type === 'SUCCESS' ? '#dcfce7' :
+                              document.status.type === 'PENDING' ? '#fef3c7' :
+                              document.status.type === 'ERROR' ? '#fee2e2' : '#f3f4f6',
+                            color:
+                              document.status.type === 'SUCCESS' ? '#166534' :
+                              document.status.type === 'PENDING' ? '#92400e' :
+                              document.status.type === 'ERROR' ? '#991b1b' : '#374151'
                           }}
                         >
-                          {document.data?.url || `ID: ${document.documentID.substring(0, 20)}...`}
-                        </p>
+                          {document.status.type}
+                        </span>
+                      )}
+                    </div>
 
-                        {/* Metadata pill */}
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="inline-flex items-center rounded font-medium"
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              color: '#4a5568',
-                              backgroundColor: '#e2e8f0'
-                            }}
-                          >
-                            {Object.keys(formatDocumentMetadata(document)).length} fields
+                    <div className="flex-1 min-w-0">
+                      {/* Clickable Title */}
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleTitleExpansion(document.documentID);
+                          }}
+                          className="text-base font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                          style={{
+                            fontSize: '16px',
+                            ...(expandedTitles.has(document.documentID) ? {} : {
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              maxWidth: '500px'
+                            })
+                          }}
+                        >
+                          {getDocumentTitle(document)}
+                        </h3>
+                      </div>
+
+                      {/* Data Type and Tags */}
+                      <div className="flex items-center gap-2 mb-2">
+                        {document.data?.type && (
+                          <span className="text-xs text-gray-600 font-medium">
+                            {document.data.type.toUpperCase()}
                           </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleMetadataExpansion(document.documentID);
-                            }}
-                            className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
-                          >
-                            {expandedMetadata.has(document.documentID) ? (
-                              <>
-                                <ChevronDown className="w-3 h-3" />
-                                <span>Hide details</span>
-                              </>
-                            ) : (
-                              <>
-                                <ChevronRight className="w-3 h-3" />
-                                <span>View details</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        {/* Expanded Metadata Section */}
-                        {expandedMetadata.has(document.documentID) && (
-                          <div className="mt-3 p-3 bg-gray-50 rounded-lg border space-y-3">
-                            {/* Metadata Display */}
-                            {Object.keys(formatDocumentMetadata(document)).length === 0 ? (
-                              <p className="text-sm text-gray-500 italic">No metadata</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {Object.entries(formatDocumentMetadata(document)).map(([key, value]) => (
-                                  <div key={key} className="border-b border-gray-200 pb-2 last:border-b-0">
-                                    <div className="flex items-start justify-between">
-                                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                                        {key.replace(/_/g, ' ')}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1">
-                                      <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans">
-                                        {renderMetadataValue(value)}
-                                      </pre>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Raw JSON View Button */}
-                            <div className="mt-3 pt-2 border-t border-gray-200">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setViewingMetadata(viewingMetadata === document.documentID ? null : document.documentID);
-                                }}
-                                className="flex items-center space-x-1 px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-                              >
-                                <Code className="w-3 h-3" />
-                                <span>{viewingMetadata === document.documentID ? 'Hide' : 'Show'} Raw JSON</span>
-                              </button>
-
-                              {viewingMetadata === document.documentID && (
-                                <div className="mt-2 p-2 bg-gray-900 rounded text-xs">
-                                  <pre className="text-green-400 overflow-x-auto">
-                                    {JSON.stringify(formatDocumentMetadata(document), null, 2)}
-                                  </pre>
-                                </div>
-                              )}
+                        )}
+                        {document.tags && document.tags.length > 0 && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {document.tags.map((tag, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center rounded font-medium"
+                                  style={{
+                                    padding: '2px 8px',
+                                    fontSize: '11px',
+                                    color: '#4a5568',
+                                    backgroundColor: '#e2e8f0'
+                                  }}
+                                >
+                                  {tag}
+                                </span>
+                              ))}
                             </div>
-                          </div>
+                          </>
                         )}
                       </div>
-                    </div>
 
-                    <div className="flex items-center space-x-1 ml-4">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleMetadataExpansion(document.documentID);
-                        }}
-                        className="p-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
-                        title="View metadata"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteDocument(document.documentID);
-                        }}
-                        className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                        title="Delete document"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {/* Date - Days Ago */}
+                      <div className="text-xs text-gray-500">
+                        {document.createdAt && getDaysAgo(document.createdAt)}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Delete Button Only */}
+                  <div className="flex items-center ml-4">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteDocument(document.documentID);
+                      }}
+                      className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                      title="Delete document"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
