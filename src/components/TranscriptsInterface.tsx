@@ -226,14 +226,14 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
               </p>
             </div>
           ) : (
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               {displayTranscripts.map((transcript) => (
                 <div
                   key={transcript.id}
                   onClick={() => setSelectedTranscript(transcript)}
                   className="bg-white rounded-lg cursor-pointer transition-all"
                   style={{
-                    padding: '18px 20px',
+                    padding: '14px 16px',
                     boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
                     overflow: 'hidden'
                   }}
@@ -247,20 +247,20 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                   }}
                 >
                   <div className="flex items-start justify-between">
-                    <div className="flex items-start flex-1" style={{ gap: '18px' }}>
-                      <div className="flex-shrink-0" style={{ paddingTop: '2px' }}>
-                        <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
-                          <MessageSquare className="w-6 h-6 text-indigo-600" />
+                    <div className="flex items-start flex-1" style={{ gap: '14px' }}>
+                      <div className="flex-shrink-0" style={{ paddingTop: '1px' }}>
+                        <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
+                          <MessageSquare className="w-5 h-5 text-indigo-600" />
                         </div>
                       </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-base font-bold text-gray-900" style={{ fontSize: '16px' }}>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <h3 className="text-sm font-bold text-gray-900">
                             {transcript.userName || 'Anonymous User'}
                           </h3>
                           {transcript.unread && (
-                            <span className="px-2.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
+                            <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
                               New
                             </span>
                           )}
@@ -268,7 +268,7 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
 
                         {/* Preview message with ellipsis */}
                         <p
-                          className="text-sm mb-2"
+                          className="text-xs mb-1.5"
                           style={{
                             color: '#777',
                             whiteSpace: 'nowrap',
@@ -322,32 +322,8 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-1 ml-4">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleSelect(transcript.id);
-                        }}
-                        className="p-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
-                        title="Select transcript"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(transcript.id)}
-                          onChange={() => {}}
-                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 pointer-events-none"
-                        />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedTranscript(transcript);
-                        }}
-                        className="p-2.5 text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
-                        title="View transcript"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </button>
+                    <div className="flex items-center ml-4">
+                      <ChevronRight className="w-5 h-5 text-gray-400" />
                     </div>
                   </div>
                 </div>
@@ -435,7 +411,7 @@ function TranscriptModal({
                   </div>
                   <div>
                     <div className="text-gray-400 text-xs mb-1.5">User ID</div>
-                    <div className="text-gray-900 font-mono text-xs break-all bg-white px-2 py-1.5 rounded border border-gray-200">
+                    <div className="text-gray-900 font-mono text-xs break-all">
                       {transcript.sessionID}
                     </div>
                   </div>
