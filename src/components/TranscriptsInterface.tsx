@@ -359,7 +359,7 @@ function TranscriptModal({
   calculateDuration: (transcript: ParsedTranscript) => string;
 }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-20">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-12">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col min-w-0">
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex-shrink-0">
