@@ -408,7 +408,10 @@ function TranscriptModal({
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500">Date & Time</span>
                 <span className="text-xs text-gray-900 font-medium text-right">
-                  {formatFullDate(transcript.createdAt)}
+                  {transcript.messages.length > 0
+                    ? formatFullDate(transcript.messages[0].timestamp)
+                    : formatFullDate(transcript.createdAt)
+                  }
                 </span>
               </div>
 
