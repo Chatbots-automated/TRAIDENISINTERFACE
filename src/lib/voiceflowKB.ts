@@ -23,7 +23,10 @@ export interface VoiceflowDocument {
   createdAt?: string;
   updatedAt?: string;
   tags?: string[];
-  status?: string;
+  status?: {
+    type?: string;
+    data?: any;
+  };
 }
 
 // Fetch all documents from Voiceflow Knowledge Base
@@ -100,6 +103,22 @@ export function getDocumentTitle(doc: VoiceflowDocument): string {
   return `Document ${doc.documentID.substring(0, 8)}`;
 }
 
+// Calculate how many days ago a date was
+export function getDaysAgo(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - date.getTime());
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return '1 day ago';
+  if (diffDays < 30) return `${diffDays} days ago`;
+  if (diffDays < 60) return '1 month ago';
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+  if (diffDays < 730) return '1 year ago';
+  return `${Math.floor(diffDays / 365)} years ago`;
+}
+
 // Format metadata for display
 export function formatDocumentMetadata(doc: VoiceflowDocument): Record<string, any> {
   const metadata: Record<string, any> = {};
@@ -114,7 +133,7 @@ export function formatDocumentMetadata(doc: VoiceflowDocument): Record<string, a
   // Add document metadata
   if (doc.data?.type) metadata['File Type'] = doc.data.type;
   if (doc.data?.url) metadata['URL'] = doc.data.url;
-  if (doc.status) metadata['Status'] = doc.status;
+  if (doc.status) metadata['Status'] = doc.status.type || JSON.stringify(doc.status);
   if (doc.createdAt) metadata['Created At'] = new Date(doc.createdAt).toLocaleString('lt-LT');
   if (doc.updatedAt) metadata['Updated At'] = new Date(doc.updatedAt).toLocaleString('lt-LT');
   if (doc.tags && doc.tags.length > 0) metadata['Tags'] = doc.tags.join(', ');

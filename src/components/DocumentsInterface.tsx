@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X, Search, Filter, Trash2, Eye, AlertCircle, Check, ChevronDown, ChevronRight, Code } from 'lucide-react';
-import { fetchVoiceflowDocuments, deleteVoiceflowDocument, getDocumentTitle, formatDocumentMetadata, VoiceflowDocument } from '../lib/voiceflowKB';
+import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check } from 'lucide-react';
+import { fetchVoiceflowDocuments, deleteVoiceflowDocument, getDocumentTitle, getDaysAgo, VoiceflowDocument } from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
@@ -15,8 +15,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [expandedMetadata, setExpandedMetadata] = useState<Set<string>>(new Set());
-  const [viewingMetadata, setViewingMetadata] = useState<string | null>(null);
+  const [expandedTitles, setExpandedTitles] = useState<Set<string>>(new Set());
   const [uploadingFile, setUploadingFile] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadMetadata, setUploadMetadata] = useState('{}');
