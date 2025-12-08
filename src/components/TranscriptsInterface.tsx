@@ -294,30 +294,6 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                             <Clock className="w-3 h-3 mr-1" />
                             {formatTableDate(transcript)}
                           </span>
-                          <span
-                            className="inline-flex items-center rounded font-medium"
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              color: '#4a5568',
-                              backgroundColor: '#e2e8f0'
-                            }}
-                          >
-                            {transcript.messageCount} messages
-                          </span>
-                          {transcript.credits !== undefined && transcript.credits > 0 && (
-                            <span
-                              className="inline-flex items-center rounded font-medium"
-                              style={{
-                                padding: '2px 8px',
-                                fontSize: '11px',
-                                color: '#4a5568',
-                                backgroundColor: '#fef3c7'
-                              }}
-                            >
-                              {transcript.credits} credits
-                            </span>
-                          )}
                         </div>
                       </div>
                     </div>
