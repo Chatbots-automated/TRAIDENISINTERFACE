@@ -653,14 +653,14 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       <div
                         className="w-10 h-10 rounded-lg flex items-center justify-center border"
                         style={{
-                          backgroundColor: document.data?.type === 'url' ? '#eff6ff' : '#dcfce7',
-                          borderColor: document.data?.type === 'url' ? '#bfdbfe' : '#bbf7d0'
+                          backgroundColor: '#eff6ff',
+                          borderColor: '#bfdbfe'
                         }}
                       >
                         {document.data?.type === 'url' ? (
                           <Globe className="w-5 h-5 text-blue-600" />
                         ) : (
-                          <FileText className="w-5 h-5 text-green-600" />
+                          <FileText className="w-5 h-5 text-blue-600" />
                         )}
                       </div>
                       {/* Status Badge */}
