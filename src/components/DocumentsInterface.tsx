@@ -633,7 +633,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 key={document.documentID}
                 className="bg-white rounded-lg cursor-pointer transition-all"
                 style={{
-                  padding: '18px 20px',
+                  padding: '14px 16px',
                   boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
                   overflow: 'hidden'
                 }}
@@ -646,21 +646,21 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)';
                 }}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start flex-1" style={{ gap: '18px' }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center flex-1" style={{ gap: '14px' }}>
                     {/* Icon and Status Badge */}
-                    <div className="flex flex-col items-center gap-2" style={{ paddingTop: '2px' }}>
+                    <div className="flex flex-col items-center gap-1.5">
                       <div
-                        className="w-12 h-12 rounded-lg flex items-center justify-center border"
+                        className="w-10 h-10 rounded-lg flex items-center justify-center border"
                         style={{
                           backgroundColor: document.data?.type === 'url' ? '#eff6ff' : '#dcfce7',
                           borderColor: document.data?.type === 'url' ? '#bfdbfe' : '#bbf7d0'
                         }}
                       >
                         {document.data?.type === 'url' ? (
-                          <Globe className="w-6 h-6 text-blue-600" />
+                          <Globe className="w-5 h-5 text-blue-600" />
                         ) : (
-                          <FileText className="w-6 h-6 text-green-600" />
+                          <FileText className="w-5 h-5 text-green-600" />
                         )}
                       </div>
                       {/* Status Badge */}
@@ -685,15 +685,14 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
                     <div className="flex-1 min-w-0">
                       {/* Clickable Title */}
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-0.5">
                         <h3
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleTitleExpansion(document.documentID);
                           }}
-                          className="text-base font-bold text-gray-900 cursor-pointer hover:text-blue-600 transition-colors"
+                          className="text-sm font-bold text-gray-900 cursor-pointer transition-transform"
                           style={{
-                            fontSize: '16px',
                             ...(expandedTitles.has(document.documentID) ? {} : {
                               whiteSpace: 'nowrap',
                               overflow: 'hidden',
@@ -701,13 +700,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                               maxWidth: '500px'
                             })
                           }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = 'scale(1.02)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
                         >
                           {getDocumentTitle(document)}
                         </h3>
                       </div>
 
                       {/* Data Type and Tags */}
-                      <div className="flex items-center gap-2 mb-2">
+                      <div className="flex items-center gap-2 mb-1.5">
                         {document.data?.type && (
                           <span className="text-xs text-gray-600 font-medium">
                             {document.data.type.toUpperCase()}
