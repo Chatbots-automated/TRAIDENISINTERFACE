@@ -360,34 +360,41 @@ function TranscriptModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-12">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col min-w-0">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col min-w-0 overflow-hidden">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex-shrink-0">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <h2 className="text-base font-semibold text-gray-900 truncate">
-                {transcript.userName || 'Anonymous User'}
-              </h2>
-              <p className="text-sm text-gray-500 mt-0.5 truncate">{transcript.preview}</p>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => {
-                  // Export functionality could be added here
-                  alert('Export functionality coming soon!');
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors p-2"
-                title="Export transcript"
-              >
-                <Download className="w-5 h-5" />
-              </button>
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-                aria-label="Close modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div className="flex-shrink-0 flex">
+          {/* Left side header */}
+          <div className="w-80 min-w-[280px] max-w-[320px] px-6 py-4 bg-gray-50">
+            <h3 className="text-sm font-semibold text-gray-700">Details</h3>
+          </div>
+
+          {/* Right side header */}
+          <div className="flex-1 px-6 py-4 border-b border-l border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-semibold text-gray-900 truncate">
+                  {transcript.userName || 'Anonymous User'}
+                </h2>
+                <p className="text-sm text-gray-500 mt-0.5 truncate">{transcript.preview}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => {
+                    alert('Export functionality coming soon!');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-2"
+                  title="Export transcript"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  aria-label="Close modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -396,89 +403,68 @@ function TranscriptModal({
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Left Panel - Metadata */}
           <div className="w-80 min-w-[280px] max-w-[320px] border-r border-gray-200 overflow-y-auto bg-gray-50 flex-shrink-0" style={{ padding: '24px' }}>
-            <div className="space-y-6">
-              {/* Metadata Section */}
-              <div>
-                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                  Conversation Details
-                </h3>
-                <div className="space-y-4">
-                  <div>
-                    <div className="text-gray-400 text-xs mb-1.5">Date & Time</div>
-                    <div className="text-gray-900 text-sm font-medium break-words">
-                      {formatFullDate(transcript.createdAt)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-xs mb-1.5">User ID</div>
-                    <div className="text-gray-900 font-mono text-xs break-all overflow-wrap-anywhere">
-                      {transcript.sessionID}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-xs mb-1.5">Platform</div>
-                    <div className="text-gray-900 text-sm">Chat widget</div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-xs mb-1.5">Duration</div>
-                    <div className="text-gray-900 text-sm font-medium">{calculateDuration(transcript)}</div>
-                  </div>
-                  <div>
-                    <div className="text-gray-400 text-xs mb-1.5">Messages</div>
-                    <div className="text-gray-900 text-sm font-medium">{transcript.messageCount}</div>
-                  </div>
-                  {transcript.credits !== undefined && transcript.credits > 0 && (
-                    <div>
-                      <div className="text-gray-400 text-xs mb-1.5">Credits Used</div>
-                      <div className="text-gray-900 text-sm font-medium">{transcript.credits}</div>
-                    </div>
-                  )}
-                </div>
+            <div className="space-y-3">
+              {/* Date & Time */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Date & Time</span>
+                <span className="text-xs text-gray-900 font-medium text-right">
+                  {formatFullDate(transcript.createdAt)}
+                </span>
               </div>
 
-              {/* Device Info (if available) */}
-              {(transcript.browser || transcript.device || transcript.os) && (
-                <>
-                  {/* Separator */}
-                  <div className="border-t border-gray-200"></div>
+              {/* User ID with copy feature */}
+              <UserIDField sessionID={transcript.sessionID} />
 
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                      Device Information
-                    </h3>
-                    <div className="space-y-4">
-                      {transcript.browser && (
-                        <div>
-                          <div className="text-gray-400 text-xs mb-1.5">Browser</div>
-                          <div className="text-gray-900 text-sm break-words">{transcript.browser}</div>
-                        </div>
-                      )}
-                      {transcript.device && (
-                        <div>
-                          <div className="text-gray-400 text-xs mb-1.5">Device</div>
-                          <div className="text-gray-900 text-sm break-words">{transcript.device}</div>
-                        </div>
-                      )}
-                      {transcript.os && (
-                        <div>
-                          <div className="text-gray-400 text-xs mb-1.5">Operating System</div>
-                          <div className="text-gray-900 text-sm break-words">{transcript.os}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
+              {/* Platform */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Platform</span>
+                <span className="text-xs text-gray-900 text-right">Chat widget</span>
+              </div>
+
+              {/* Duration */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Duration</span>
+                <span className="text-xs text-gray-900 font-medium text-right">{calculateDuration(transcript)}</span>
+              </div>
+
+              {/* Messages */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Messages</span>
+                <span className="text-xs text-gray-900 font-medium text-right">{transcript.messageCount}</span>
+              </div>
+
+              {/* Credits Used */}
+              {transcript.credits !== undefined && transcript.credits > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Credits Used</span>
+                  <span className="text-xs text-gray-900 font-medium text-right">{transcript.credits}</span>
+                </div>
+              )}
+
+              {/* Device Info */}
+              {transcript.browser && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Browser</span>
+                  <span className="text-xs text-gray-900 text-right">{transcript.browser}</span>
+                </div>
+              )}
+              {transcript.device && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Device</span>
+                  <span className="text-xs text-gray-900 text-right">{transcript.device}</span>
+                </div>
+              )}
+              {transcript.os && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">OS</span>
+                  <span className="text-xs text-gray-900 text-right">{transcript.os}</span>
+                </div>
               )}
             </div>
           </div>
 
           {/* Right Panel - Transcript */}
           <div className="flex-1 flex flex-col bg-white min-w-0 overflow-hidden">
-            {/* Transcript Header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
-              <h3 className="text-sm font-semibold text-gray-700">Conversation Transcript</h3>
-            </div>
-
             {/* Messages */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: '24px' }}>
               {transcript.messages.length === 0 ? (
@@ -498,6 +484,49 @@ function TranscriptModal({
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// UserID Field with copy functionality
+function UserIDField({ sessionID }: { sessionID: string }) {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionID);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Truncate if longer than 20 characters
+  const displayID = sessionID.length > 20 ? sessionID.substring(0, 17) + '...' : sessionID;
+
+  return (
+    <div className="flex items-center justify-between group relative">
+      <span className="text-xs text-gray-500">User ID</span>
+      <div className="relative">
+        <button
+          onClick={handleCopy}
+          onMouseEnter={() => setShowTooltip(true)}
+          onMouseLeave={() => setShowTooltip(false)}
+          className="text-xs text-gray-900 font-mono text-right cursor-pointer transition-all duration-200 hover:scale-105"
+          title={sessionID}
+        >
+          {displayID}
+        </button>
+
+        {/* Tooltip */}
+        {showTooltip && (
+          <div className="absolute right-0 top-full mt-1 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap z-10 pointer-events-none">
+            {copied ? 'Copied!' : 'Click to copy'}
+          </div>
+        )}
       </div>
     </div>
   );
