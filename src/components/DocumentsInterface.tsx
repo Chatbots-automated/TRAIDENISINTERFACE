@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe } from 'lucide-react';
+import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown } from 'lucide-react';
 import { fetchVoiceflowDocuments, deleteVoiceflowDocument, getDocumentTitle, getDaysAgo, VoiceflowDocument } from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
