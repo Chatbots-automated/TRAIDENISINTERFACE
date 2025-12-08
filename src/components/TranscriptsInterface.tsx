@@ -360,17 +360,17 @@ function TranscriptModal({
 }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-20">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col min-w-0">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-gray-900">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl flex-shrink-0">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-semibold text-gray-900 truncate">
                 {transcript.userName || 'Anonymous User'}
               </h2>
-              <p className="text-sm text-gray-500 mt-0.5">{transcript.preview}</p>
+              <p className="text-sm text-gray-500 mt-0.5 truncate">{transcript.preview}</p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <button
                 onClick={() => {
                   // Export functionality could be added here
@@ -393,9 +393,9 @@ function TranscriptModal({
         </div>
 
         {/* Two-Panel Layout */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Left Panel - Metadata */}
-          <div className="w-80 border-r border-gray-200 overflow-y-auto bg-gray-50" style={{ padding: '24px' }}>
+          <div className="w-80 min-w-[280px] max-w-[320px] border-r border-gray-200 overflow-y-auto bg-gray-50 flex-shrink-0" style={{ padding: '24px' }}>
             <div className="space-y-6">
               {/* Metadata Section */}
               <div>
@@ -405,13 +405,13 @@ function TranscriptModal({
                 <div className="space-y-4">
                   <div>
                     <div className="text-gray-400 text-xs mb-1.5">Date & Time</div>
-                    <div className="text-gray-900 text-sm font-medium">
+                    <div className="text-gray-900 text-sm font-medium break-words">
                       {formatFullDate(transcript.createdAt)}
                     </div>
                   </div>
                   <div>
                     <div className="text-gray-400 text-xs mb-1.5">User ID</div>
-                    <div className="text-gray-900 font-mono text-xs break-all">
+                    <div className="text-gray-900 font-mono text-xs break-all overflow-wrap-anywhere">
                       {transcript.sessionID}
                     </div>
                   </div>
@@ -450,19 +450,19 @@ function TranscriptModal({
                       {transcript.browser && (
                         <div>
                           <div className="text-gray-400 text-xs mb-1.5">Browser</div>
-                          <div className="text-gray-900 text-sm">{transcript.browser}</div>
+                          <div className="text-gray-900 text-sm break-words">{transcript.browser}</div>
                         </div>
                       )}
                       {transcript.device && (
                         <div>
                           <div className="text-gray-400 text-xs mb-1.5">Device</div>
-                          <div className="text-gray-900 text-sm">{transcript.device}</div>
+                          <div className="text-gray-900 text-sm break-words">{transcript.device}</div>
                         </div>
                       )}
                       {transcript.os && (
                         <div>
                           <div className="text-gray-400 text-xs mb-1.5">Operating System</div>
-                          <div className="text-gray-900 text-sm">{transcript.os}</div>
+                          <div className="text-gray-900 text-sm break-words">{transcript.os}</div>
                         </div>
                       )}
                     </div>
@@ -473,14 +473,14 @@ function TranscriptModal({
           </div>
 
           {/* Right Panel - Transcript */}
-          <div className="flex-1 flex flex-col bg-white">
+          <div className="flex-1 flex flex-col bg-white min-w-0 overflow-hidden">
             {/* Transcript Header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-white">
+            <div className="px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
               <h3 className="text-sm font-semibold text-gray-700">Conversation Transcript</h3>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto" style={{ padding: '24px' }}>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: '24px' }}>
               {transcript.messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
@@ -489,7 +489,7 @@ function TranscriptModal({
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 max-w-full">
                   {transcript.messages.map((message) => (
                     <CompactMessageBubble key={message.id} message={message} />
                   ))}
@@ -508,8 +508,8 @@ function CompactMessageBubble({ message }: { message: ParsedMessage }) {
   const isUser = message.role === 'user';
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className="max-w-[75%]">
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
+      <div className="max-w-[85%] min-w-[100px] flex flex-col">
         {/* Author label - only show for agent */}
         {!isUser && (
           <div className="mb-1.5 px-1">
@@ -519,13 +519,20 @@ function CompactMessageBubble({ message }: { message: ParsedMessage }) {
 
         {/* Message bubble */}
         <div
-          className={`px-4 py-3 text-sm leading-relaxed ${
+          className={`px-4 py-3 text-sm leading-relaxed overflow-hidden ${
             isUser
               ? 'bg-blue-500 text-white rounded-2xl rounded-tr-sm'
               : 'bg-gray-100 text-gray-900 rounded-2xl rounded-tl-sm'
           }`}
+          style={{
+            wordBreak: 'break-word',
+            overflowWrap: 'break-word',
+            hyphens: 'auto'
+          }}
         >
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          <p className="whitespace-pre-wrap" style={{ wordBreak: 'break-word' }}>
+            {message.content}
+          </p>
         </div>
 
         {/* Timestamp */}
