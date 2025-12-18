@@ -86,67 +86,84 @@ export interface ParsedTranscript {
   credits?: number;
 }
 
-// Fetch all transcripts for the project with pagination support
+// Fetch all transcripts for the project with proper pagination
+// Voiceflow API uses limit/offset pagination - we need to loop through all pages
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     console.error('Voiceflow API key or Project ID not configured');
     throw new Error('Voiceflow API not configured');
   }
 
-  // Debug logging
-  console.log('[Voiceflow] Fetching transcripts...');
-  console.log('[Voiceflow] API Key (first 20 chars):', VOICEFLOW_API_KEY?.substring(0, 20) + '...');
-  console.log('[Voiceflow] Project ID:', VOICEFLOW_PROJECT_ID);
+  console.log('[Voiceflow] Fetching all transcripts with pagination...');
 
-  // Fetch with pagination - start with a large limit to get all transcripts
-  // Voiceflow API may support limit/offset parameters
-  const limit = 1000; // Request up to 1000 transcripts
-  const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${limit}`;
+  const allTranscripts: VoiceflowTranscript[] = [];
+  const pageSize = 100; // Reasonable page size for API calls
+  let offset = 0;
+  let hasMore = true;
 
-  console.log('[Voiceflow] API URL:', apiUrl);
+  while (hasMore) {
+    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}`;
 
-  // Use GET method for v2 transcripts API
-  const response = await fetch(apiUrl, {
-    method: 'GET',
-    headers: {
-      'Authorization': VOICEFLOW_API_KEY,
-      'Content-Type': 'application/json',
-    },
-  });
+    console.log(`[Voiceflow] Fetching page at offset ${offset}...`);
 
-  console.log('[Voiceflow] Response status:', response.status);
-  console.log('[Voiceflow] Response headers:', Object.fromEntries(response.headers.entries()));
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': VOICEFLOW_API_KEY,
+        'Content-Type': 'application/json',
+      },
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[Voiceflow] Failed to fetch transcripts:', response.status, errorText);
-    throw new Error(`Failed to fetch transcripts: ${response.status}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Voiceflow] Failed to fetch transcripts:', response.status, errorText);
+      throw new Error(`Failed to fetch transcripts: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    // Handle both array response and object with data property
+    const transcripts = Array.isArray(data) ? data : (data.data || data.transcripts || []);
+
+    if (!Array.isArray(transcripts) || transcripts.length === 0) {
+      hasMore = false;
+      console.log('[Voiceflow] No more transcripts to fetch');
+    } else {
+      // Normalize transcript IDs for compatibility
+      const normalizedTranscripts = transcripts.map((transcript: any) => ({
+        ...transcript,
+        _id: transcript._id || transcript.id || transcript.transcriptID,
+      }));
+
+      allTranscripts.push(...normalizedTranscripts);
+      console.log(`[Voiceflow] Fetched ${transcripts.length} transcripts, total: ${allTranscripts.length}`);
+
+      // Check if we got fewer than requested - means we've reached the end
+      if (transcripts.length < pageSize) {
+        hasMore = false;
+      } else {
+        offset += pageSize;
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
   }
 
-  const data = await response.json();
-  console.log('[Voiceflow] Received data (first item):', Array.isArray(data) ? data[0] : 'Not an array');
-  console.log('[Voiceflow] Number of transcripts:', Array.isArray(data) ? data.length : 'Not an array');
-
-  // Normalize v1 API response (id) to match v2 format (_id) for compatibility
-  if (Array.isArray(data)) {
-    return data.map(transcript => ({
-      ...transcript,
-      _id: transcript.id || transcript._id, // Ensure _id exists
-    }));
-  }
-
-  return data;
+  console.log(`[Voiceflow] Total transcripts fetched: ${allTranscripts.length}`);
+  return allTranscripts;
 }
 
-// Fetch a single transcript with conversation logs
+// Fetch a single transcript with conversation logs (turns/dialogs)
+// The API returns an array of turns/traces for the conversation
 export async function fetchTranscriptWithLogs(
-  transcriptID: string
+  transcriptID: string,
+  transcriptMetadata?: VoiceflowTranscript
 ): Promise<VoiceflowTranscriptWithLogs> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     throw new Error('Voiceflow API not configured');
   }
 
-  console.log('[Voiceflow] Fetching transcript with logs:', transcriptID);
+  console.log('[Voiceflow] Fetching transcript dialog:', transcriptID);
 
   const response = await fetch(
     `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
@@ -159,30 +176,43 @@ export async function fetchTranscriptWithLogs(
     }
   );
 
-  console.log('[Voiceflow] Transcript response status:', response.status);
-
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('[Voiceflow] Failed to fetch transcript:', response.status, errorText);
+    console.error('[Voiceflow] Failed to fetch transcript dialog:', response.status, errorText);
     throw new Error(`Failed to fetch transcript: ${response.status}`);
   }
 
   const data = await response.json();
-  console.log('[Voiceflow] Transcript data for', transcriptID, ':', data);
 
-  // v2 API returns turns directly as an array, not wrapped in an object
-  const turns = Array.isArray(data) ? data : (data.turns || []);
-  console.log('[Voiceflow] Number of turns:', turns.length);
+  // API can return turns as array directly or within an object
+  // Handle multiple response formats for compatibility
+  let turns: VoiceflowTurn[] = [];
+  if (Array.isArray(data)) {
+    turns = data;
+  } else if (data.turns) {
+    turns = data.turns;
+  } else if (data.dialogs) {
+    turns = data.dialogs;
+  } else if (data.data && Array.isArray(data.data)) {
+    turns = data.data;
+  }
 
-  // Return in expected format with turns property
+  console.log(`[Voiceflow] Transcript ${transcriptID} has ${turns.length} turns`);
+
+  // Merge metadata from list call if provided, otherwise use what we can extract
   return {
     _id: transcriptID,
-    projectID: VOICEFLOW_PROJECT_ID,
-    sessionID: transcriptID, // v2 doesn't return metadata, use ID as sessionID
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    projectID: transcriptMetadata?.projectID || VOICEFLOW_PROJECT_ID,
+    sessionID: transcriptMetadata?.sessionID || data.sessionID || transcriptID,
+    browser: transcriptMetadata?.browser || data.browser,
+    device: transcriptMetadata?.device || data.device,
+    os: transcriptMetadata?.os || data.os,
+    createdAt: transcriptMetadata?.createdAt || data.createdAt || new Date().toISOString(),
+    updatedAt: transcriptMetadata?.updatedAt || data.updatedAt || new Date().toISOString(),
+    user: transcriptMetadata?.user || data.user,
+    unread: transcriptMetadata?.unread || data.unread,
     turns: turns
-  } as VoiceflowTranscriptWithLogs;
+  };
 }
 
 // Extract text content from Voiceflow slate format
@@ -222,60 +252,121 @@ function extractResponseText(payload: any): string {
 }
 
 // Parse transcript turns into readable messages
+// Handles multiple Voiceflow turn/trace formats for maximum compatibility
 export function parseTranscriptMessages(turns: VoiceflowTurn[]): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
 
   for (const turn of turns) {
+    const turnId = turn.turnID || (turn as any).id || Math.random().toString(36);
+    const timestamp = turn.startTime || (turn as any).time || (turn as any).timestamp || new Date().toISOString();
+
     // User messages: type === 'request'
     if (turn.type === 'request') {
       const payload = turn.payload as VoiceflowTurnRequest;
       let content = '';
 
-      if (payload.type === 'text' || payload.type === 'intent') {
-        content = payload.payload?.query || payload.payload?.label || '';
-      } else if (payload.type === 'launch') {
+      // Handle various request payload formats
+      const innerPayload = (payload as any).payload || payload;
+      if (payload.type === 'text' || payload.type === 'intent' || innerPayload?.type === 'text') {
+        content = innerPayload?.query || innerPayload?.label || payload.payload?.query || '';
+      } else if (payload.type === 'launch' || innerPayload?.type === 'launch') {
         content = '[Conversation started]';
+      } else if (innerPayload?.message) {
+        content = innerPayload.message;
       }
 
       if (content) {
         messages.push({
-          id: turn.turnID + '-req',
+          id: turnId + '-req',
           role: 'user',
           content,
-          timestamp: turn.startTime,
+          timestamp,
         });
       }
     }
-    // Assistant messages: type === 'text' (v2 API format)
+    // Assistant messages: type === 'text' (common trace type)
     else if (turn.type === 'text') {
       const payload = turn.payload as any;
-
-      // v2 API has nested payload structure: payload.payload.message
-      const innerPayload = payload.payload || payload;
-      const content = innerPayload.message || extractTextFromSlate(innerPayload.slate) || '';
+      const innerPayload = payload?.payload || payload;
+      const content = innerPayload?.message || extractTextFromSlate(innerPayload?.slate) || payload?.message || '';
 
       if (content) {
         messages.push({
-          id: turn.turnID + '-text',
+          id: turnId + '-text',
           role: 'assistant',
           content,
-          timestamp: turn.startTime,
+          timestamp,
         });
       }
     }
-    // Legacy format: type === 'response' (keeping for backwards compatibility)
+    // Speak type (voice responses)
+    else if (turn.type === 'speak') {
+      const payload = turn.payload as any;
+      const innerPayload = payload?.payload || payload;
+      const content = innerPayload?.message || innerPayload?.text || payload?.message || '';
+
+      if (content) {
+        messages.push({
+          id: turnId + '-speak',
+          role: 'assistant',
+          content,
+          timestamp,
+        });
+      }
+    }
+    // Legacy format: type === 'response'
     else if (turn.type === 'response') {
       const payload = turn.payload as VoiceflowTurnResponse;
 
-      // Handle different response types
+      // Handle nested response structures
       if (payload.type === 'text' || payload.type === 'speak') {
         const content = extractResponseText(payload.payload);
         if (content) {
           messages.push({
-            id: turn.turnID + '-res',
+            id: turnId + '-res',
             role: 'assistant',
             content,
-            timestamp: turn.startTime,
+            timestamp,
+          });
+        }
+      }
+    }
+    // Block type (can contain text)
+    else if (turn.type === 'block') {
+      const payload = turn.payload as any;
+      if (payload?.blockID && payload?.paths) {
+        // This is navigation data, skip it
+        continue;
+      }
+    }
+    // Visual/Card traces - extract any text content
+    else if (turn.type === 'visual' || turn.type === 'card' || turn.type === 'cardV2') {
+      const payload = turn.payload as any;
+      const innerPayload = payload?.payload || payload;
+      const content = innerPayload?.title || innerPayload?.description || '';
+
+      if (content) {
+        messages.push({
+          id: turnId + '-visual',
+          role: 'assistant',
+          content,
+          timestamp,
+        });
+      }
+    }
+    // Carousel type
+    else if (turn.type === 'carousel') {
+      const payload = turn.payload as any;
+      const innerPayload = payload?.payload || payload;
+      const cards = innerPayload?.cards || [];
+      for (const card of cards) {
+        const content = card.title || card.description;
+        if (content) {
+          messages.push({
+            id: turnId + '-carousel-' + (card.id || Math.random()),
+            role: 'assistant',
+            content,
+            timestamp,
           });
         }
       }
@@ -339,49 +430,67 @@ export function parseTranscript(
 }
 
 // Fetch and parse all transcripts with their messages
+// Uses concurrent fetching with rate limiting for better performance
 export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
   const transcripts = await fetchTranscripts();
+  console.log(`[Voiceflow] Parsing ${transcripts.length} transcripts...`);
 
-  // Fetch details for each transcript (with rate limiting)
+  // Fetch transcript details in batches to improve performance while respecting rate limits
   const parsedTranscripts: ParsedTranscript[] = [];
+  const batchSize = 5; // Concurrent requests per batch
+  const delayBetweenBatches = 200; // ms delay between batches
 
-  for (const transcript of transcripts) {
-    try {
-      const withLogs = await fetchTranscriptWithLogs(transcript._id);
-      parsedTranscripts.push(parseTranscript(withLogs));
+  for (let i = 0; i < transcripts.length; i += batchSize) {
+    const batch = transcripts.slice(i, i + batchSize);
 
-      // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
-    } catch (error) {
-      console.error(`Failed to fetch transcript ${transcript._id}:`, error);
-      // Add basic info without messages
-      parsedTranscripts.push({
-        id: transcript._id,
-        sessionID: transcript.sessionID,
-        userName: transcript.user?.name,
-        userImage: transcript.user?.image,
-        createdAt: transcript.createdAt,
-        updatedAt: transcript.updatedAt,
-        messageCount: 0,
-        preview: 'Failed to load messages',
-        messages: [],
-        browser: transcript.browser,
-        device: transcript.device,
-        os: transcript.os,
-        unread: transcript.unread,
-      });
+    const batchResults = await Promise.allSettled(
+      batch.map(async (transcript) => {
+        try {
+          // Pass the transcript metadata to preserve info from the list call
+          const withLogs = await fetchTranscriptWithLogs(transcript._id, transcript);
+          return parseTranscript(withLogs);
+        } catch (error) {
+          console.error(`Failed to fetch transcript ${transcript._id}:`, error);
+          // Return partial transcript with available metadata
+          return {
+            id: transcript._id,
+            sessionID: transcript.sessionID || transcript._id,
+            userName: transcript.user?.name,
+            userImage: transcript.user?.image,
+            createdAt: transcript.createdAt || new Date().toISOString(),
+            updatedAt: transcript.updatedAt || new Date().toISOString(),
+            messageCount: 0,
+            preview: 'Failed to load messages',
+            messages: [],
+            browser: transcript.browser,
+            device: transcript.device,
+            os: transcript.os,
+            unread: transcript.unread,
+          } as ParsedTranscript;
+        }
+      })
+    );
+
+    // Extract successful results
+    for (const result of batchResults) {
+      if (result.status === 'fulfilled') {
+        parsedTranscripts.push(result.value);
+      }
+    }
+
+    // Progress logging
+    console.log(`[Voiceflow] Parsed ${Math.min(i + batchSize, transcripts.length)}/${transcripts.length} transcripts`);
+
+    // Delay between batches (except for last batch)
+    if (i + batchSize < transcripts.length) {
+      await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
     }
   }
 
-  // Sort by most recent first (using first message timestamp)
+  // Sort by most recent first (using createdAt or first message timestamp)
   return parsedTranscripts.sort((a, b) => {
-    // Use first message timestamp if available, otherwise fall back to updatedAt
-    const aTime = a.messages.length > 0
-      ? new Date(a.messages[0].timestamp).getTime()
-      : new Date(a.updatedAt).getTime();
-    const bTime = b.messages.length > 0
-      ? new Date(b.messages[0].timestamp).getTime()
-      : new Date(b.updatedAt).getTime();
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
     return bTime - aTime; // Sort descending (newest first)
   });
 }

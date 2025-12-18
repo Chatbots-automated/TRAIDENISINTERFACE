@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown } from 'lucide-react';
-import { fetchVoiceflowDocuments, deleteVoiceflowDocument, getDocumentTitle, getDaysAgo, VoiceflowDocument } from '../lib/voiceflowKB';
+import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown, RefreshCw } from 'lucide-react';
+import {
+  fetchVoiceflowDocuments,
+  deleteVoiceflowDocument,
+  uploadVoiceflowDocument,
+  getDocumentTitle,
+  getDaysAgo,
+  VoiceflowDocument
+} from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
@@ -31,8 +38,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const data = await fetchVoiceflowDocuments();
-      setDocuments(data || []);
+      // API now fetches only pdf, text, docx documents (excludes URLs)
+      const docs = await fetchVoiceflowDocuments();
+      setDocuments(docs || []);
+      console.log(`[Documents] Loaded ${docs?.length || 0} user documents (pdf, text, docx)`);
     } catch (error) {
       console.error('Error loading documents:', error);
       setError('Failed to load documents');
@@ -100,9 +109,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         metadata: { project_id: projectId, file_type: selectedFile.type }
       });
 
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
       // Merge system metadata with user-provided metadata
       let userMetadata = {};
       try {
@@ -111,62 +117,43 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         console.warn('Invalid user metadata, using empty object');
       }
 
-      // Add metadata filter based on chunking strategy
-      let metadataFilter = {};
+      // ALWAYS set KB:UserDocs metadata based on chunking strategy
+      // This ensures all uploaded documents are tagged and can be filtered in the UserDocs folder
+      let docsValue = 'Default'; // Default value if no strategy selected
       if (chunkingStrategy === 'standartinis') {
-        metadataFilter = { UserDocs: 'Standartinis' };
+        docsValue = 'Standartinis';
       } else if (chunkingStrategy === 'nestandartinis') {
-        metadataFilter = { UserDocs: 'Nestandartinis' };
+        docsValue = 'Nestandartinis';
       } else if (chunkingStrategy === 'bendra') {
-        metadataFilter = { UserDocs: 'General' };
+        docsValue = 'General';
       }
 
-      const systemMetadata = {
+      const metadataFilter: Record<string, string> = { 'KB:UserDocs': docsValue };
+
+      const finalMetadata = {
         uploaded_by: user.email,
         user_id: user.id,
         project_id: projectId,
         upload_date: new Date().toISOString(),
-        ...metadataFilter
+        ...metadataFilter,
+        ...userMetadata
       };
-
-      const finalMetadata = { ...systemMetadata, ...userMetadata };
-      formData.append('metadata', JSON.stringify(finalMetadata));
 
       console.log('Uploading file:', selectedFile.name, 'to Voiceflow Knowledge Base...');
 
-      const apiKey = import.meta.env.VITE_VOICEFLOW_API_KEY;
-
-      // Build URL with query parameters based on chunking strategy
-      const baseUrl = 'https://api.voiceflow.com/v1/knowledge-base/docs/upload';
-      const queryParams = new URLSearchParams();
-
-      if (chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis') {
-        // Smart Chunking - enable smart chunking features
-        queryParams.append('llmBasedChunks', 'true');
-        queryParams.append('llmPrependContext', 'true');
-        queryParams.append('markdownConversion', 'true');
-      } else if (chunkingStrategy === 'bendra') {
-        // FAQ optimization - use smaller chunks for FAQ-style Q&A
-        queryParams.append('maxChunkSize', '500');
-        queryParams.append('llmGeneratedQ', 'true');
-      }
-
-      const uploadUrl = queryParams.toString()
-        ? `${baseUrl}?${queryParams.toString()}`
-        : baseUrl;
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': apiKey
-        },
-        body: formData
+      // Use the centralized upload service with proper options
+      const result = await uploadVoiceflowDocument({
+        file: selectedFile,
+        metadata: finalMetadata,
+        // Chunking strategy options based on document type
+        llmBasedChunks: chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis',
+        llmPrependContext: chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis',
+        markdownConversion: chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis',
+        maxChunkSize: chunkingStrategy === 'bendra' ? 500 : undefined,
+        llmGeneratedQ: chunkingStrategy === 'bendra',
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.message || `${response.status} ${response.statusText}`;
-
+      if (!result.success) {
         await appLogger.logDocument({
           action: 'upload_failed',
           userId: user.id,
@@ -176,14 +163,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           level: 'error',
           metadata: {
             project_id: projectId,
-            error: errorMessage,
-            response_data: errorData
+            error: result.error,
+            response_data: result.data
           }
         });
-        throw new Error(`Upload to Voiceflow failed: ${errorMessage}`);
+        throw new Error(`Upload to Voiceflow failed: ${result.error}`);
       }
 
-      const result = await response.json();
       console.log('Voiceflow upload successful:', result);
 
       // Log upload success
@@ -195,8 +181,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         fileSize: selectedFile.size,
         metadata: {
           project_id: projectId,
-          voiceflow_result: result,
-          document_id: result.data?.documentID || result.documentID
+          voiceflow_result: result.data,
+          document_id: result.documentID
         }
       });
 
@@ -456,17 +442,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </p>
               </div>
 
-              {/* Dokumento Tipas */}
+              {/* Dokumento Tipas - REQUIRED */}
               <div>
                 <label htmlFor="chunking-strategy-select" className="block text-sm font-medium text-gray-700 mb-2">
-                  Dokumento Tipas
+                  Dokumento Tipas <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <button
                     id="chunking-strategy-select"
                     type="button"
                     onClick={() => setShowStrategyDropdown(!showStrategyDropdown)}
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors"
+                    className={`w-full px-3 py-2.5 border rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors ${
+                      !chunkingStrategy ? 'border-gray-300' : 'border-blue-400'
+                    }`}
                     aria-haspopup="listbox"
                     aria-expanded={showStrategyDropdown}
                   >
@@ -474,7 +462,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       {chunkingStrategy === 'standartinis' && 'Standartinis Komercinis'}
                       {chunkingStrategy === 'nestandartinis' && 'Nestandartinis Komercinis'}
                       {chunkingStrategy === 'bendra' && 'Bendra'}
-                      {!chunkingStrategy && 'Select strategy (optional)'}
+                      {!chunkingStrategy && 'Pasirinkite dokumento tipą...'}
                     </span>
                     <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showStrategyDropdown ? 'rotate-180' : ''}`} />
                   </button>
@@ -580,8 +568,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               <button
                 type="button"
                 onClick={performUpload}
-                disabled={uploadingFile || !selectedFile}
+                disabled={uploadingFile || !selectedFile || !chunkingStrategy}
                 className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                title={!chunkingStrategy ? 'Pasirinkite dokumento tipą' : !selectedFile ? 'Pasirinkite failą' : 'Importuoti dokumentą'}
               >
                 {uploadingFile ? (
                   <>
@@ -711,12 +700,33 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         </h3>
                       </div>
 
-                      {/* Data Type and Tags */}
-                      <div className="flex items-center gap-2 mb-1.5">
+                      {/* Data Type, UserDocs Type, and Tags */}
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         {document.data?.type && (
                           <span className="text-xs text-gray-600 font-medium">
                             {document.data.type.toUpperCase()}
                           </span>
+                        )}
+                        {/* Show KB:UserDocs type (document category) */}
+                        {document.integrationMetadata?.['KB:UserDocs'] && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span
+                              className="inline-flex items-center rounded font-medium"
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: '11px',
+                                color: document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? '#1e40af' :
+                                       document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? '#7c2d12' :
+                                       document.integrationMetadata['KB:UserDocs'] === 'General' ? '#166534' : '#4a5568',
+                                backgroundColor: document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? '#dbeafe' :
+                                                 document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? '#fed7aa' :
+                                                 document.integrationMetadata['KB:UserDocs'] === 'General' ? '#dcfce7' : '#e2e8f0'
+                              }}
+                            >
+                              {document.integrationMetadata['KB:UserDocs']}
+                            </span>
+                          </>
                         )}
                         {document.tags && document.tags.length > 0 && (
                           <>
@@ -748,15 +758,29 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </div>
                   </div>
 
-                  {/* Delete Button Only */}
-                  <div className="flex items-center ml-4">
+                  {/* Action Buttons */}
+                  <div className="flex items-center ml-4 gap-1">
+                    {/* Retry button for failed documents */}
+                    {document.status?.type === 'ERROR' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setError('Šis dokumentas nepavyko apdoroti. Prašome ištrinti ir įkelti iš naujo.');
+                        }}
+                        className="p-2.5 text-amber-600 hover:bg-amber-50 rounded-xl transition-colors"
+                        title="Pakartoti apdorojimą (Retry)"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    )}
+                    {/* Delete button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteDocument(document.documentID);
                       }}
                       className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                      title="Delete document"
+                      title="Ištrinti dokumentą"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
