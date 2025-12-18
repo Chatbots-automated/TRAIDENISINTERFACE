@@ -1,6 +1,9 @@
 // Voiceflow API Service
 // Handles fetching transcripts and conversation data from Voiceflow
 
+import { supabase } from './supabase';
+import type { AppUser } from '../types';
+
 const VOICEFLOW_API_KEY = import.meta.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = import.meta.env.VITE_VOICEFLOW_PROJECT_ID;
 const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v2';
@@ -69,6 +72,14 @@ export interface ParsedMessage {
   timestamp: string;
 }
 
+// App user info extracted from the interface database
+export interface LinkedAppUser {
+  id: string;
+  email: string;
+  display_name?: string;
+  is_admin?: boolean;
+}
+
 export interface ParsedTranscript {
   id: string;
   sessionID: string;
@@ -84,6 +95,9 @@ export interface ParsedTranscript {
   os?: string;
   unread?: boolean;
   credits?: number;
+  // Linked app user from interface database
+  appUser?: LinkedAppUser;
+  voiceflowUserId?: string;
 }
 
 // Fetch all transcripts for the project with pagination support
@@ -398,5 +412,180 @@ export function filterTranscriptsByUser(
   userId: string
 ): ParsedTranscript[] {
   const voiceflowUserId = generateVoiceflowUserId(userId);
-  return transcripts.filter(t => t.sessionID.includes(voiceflowUserId));
+  return transcripts.filter(t =>
+    t.sessionID.includes(voiceflowUserId) ||
+    t.voiceflowUserId === voiceflowUserId ||
+    t.appUser?.id === userId
+  );
+}
+
+// ============================================================================
+// USER-VOICEFLOW SESSION MANAGEMENT
+// ============================================================================
+
+/**
+ * Record or update a Voiceflow session for a user.
+ * Called when Voiceflow chat widget initializes.
+ */
+export async function recordVoiceflowSession(user: AppUser): Promise<void> {
+  const voiceflowUserId = generateVoiceflowUserId(user.id);
+
+  try {
+    const { error } = await supabase
+      .from('user_voiceflow_sessions')
+      .upsert({
+        app_user_id: user.id,
+        voiceflow_user_id: voiceflowUserId,
+        last_activity_at: new Date().toISOString(),
+        metadata: {
+          display_name: user.display_name,
+          email: user.email,
+          recorded_at: new Date().toISOString()
+        }
+      }, {
+        onConflict: 'app_user_id,voiceflow_user_id'
+      });
+
+    if (error) {
+      console.error('[Voiceflow] Failed to record session:', error);
+    } else {
+      console.log('[Voiceflow] Session recorded for user:', user.email, 'VF ID:', voiceflowUserId);
+    }
+  } catch (err) {
+    console.error('[Voiceflow] Error recording session:', err);
+  }
+}
+
+/**
+ * Extract the Voiceflow user ID from a session ID.
+ * Session IDs typically contain the userID we passed in.
+ * Format: something_traidenis_uuid_something
+ */
+export function extractVoiceflowUserId(sessionID: string): string | null {
+  // Match the pattern: traidenis_ followed by a UUID
+  const match = sessionID.match(/traidenis_([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+  if (match) {
+    return `traidenis_${match[1]}`;
+  }
+  return null;
+}
+
+/**
+ * Get all user-voiceflow session mappings from the database.
+ */
+export async function getUserVoiceflowMappings(): Promise<Map<string, LinkedAppUser>> {
+  try {
+    const { data, error } = await supabase
+      .from('user_voiceflow_sessions')
+      .select(`
+        voiceflow_user_id,
+        app_user_id,
+        metadata
+      `);
+
+    if (error) {
+      console.error('[Voiceflow] Failed to fetch user mappings:', error);
+      return new Map();
+    }
+
+    // Also fetch all app_users for complete info
+    const { data: users, error: usersError } = await supabase
+      .from('app_users')
+      .select('id, email, display_name, is_admin');
+
+    if (usersError) {
+      console.error('[Voiceflow] Failed to fetch app users:', usersError);
+      return new Map();
+    }
+
+    // Create a lookup map for users
+    const usersMap = new Map(users?.map(u => [u.id, u]) || []);
+
+    // Create voiceflow_user_id -> LinkedAppUser map
+    const mappings = new Map<string, LinkedAppUser>();
+
+    for (const session of data || []) {
+      const appUser = usersMap.get(session.app_user_id);
+      if (appUser) {
+        mappings.set(session.voiceflow_user_id, {
+          id: appUser.id,
+          email: appUser.email,
+          display_name: appUser.display_name,
+          is_admin: appUser.is_admin
+        });
+      }
+    }
+
+    console.log('[Voiceflow] Loaded', mappings.size, 'user-voiceflow mappings');
+    return mappings;
+  } catch (err) {
+    console.error('[Voiceflow] Error fetching user mappings:', err);
+    return new Map();
+  }
+}
+
+/**
+ * Enrich transcripts with linked app user information.
+ * This provides robust user identification in transcripts.
+ */
+export async function enrichTranscriptsWithUserInfo(
+  transcripts: ParsedTranscript[]
+): Promise<ParsedTranscript[]> {
+  // Get the user-voiceflow mappings
+  const mappings = await getUserVoiceflowMappings();
+
+  // Also get all app_users for fallback matching
+  const { data: allUsers } = await supabase
+    .from('app_users')
+    .select('id, email, display_name, is_admin');
+
+  const usersById = new Map(allUsers?.map(u => [u.id, u]) || []);
+
+  return transcripts.map(transcript => {
+    // Try to extract the voiceflow user ID from session ID
+    const voiceflowUserId = extractVoiceflowUserId(transcript.sessionID);
+
+    let appUser: LinkedAppUser | undefined;
+
+    // Method 1: Try database mapping (most reliable)
+    if (voiceflowUserId && mappings.has(voiceflowUserId)) {
+      appUser = mappings.get(voiceflowUserId);
+    }
+
+    // Method 2: If no mapping, try to extract UUID and match directly
+    if (!appUser && voiceflowUserId) {
+      const uuidMatch = voiceflowUserId.match(/traidenis_(.+)/);
+      if (uuidMatch) {
+        const userId = uuidMatch[1];
+        const user = usersById.get(userId);
+        if (user) {
+          appUser = {
+            id: user.id,
+            email: user.email,
+            display_name: user.display_name,
+            is_admin: user.is_admin
+          };
+        }
+      }
+    }
+
+    // If we found an app user, use their display name as userName
+    const enrichedUserName = appUser?.display_name || appUser?.email || transcript.userName;
+
+    return {
+      ...transcript,
+      appUser,
+      voiceflowUserId: voiceflowUserId || undefined,
+      userName: enrichedUserName
+    };
+  });
+}
+
+/**
+ * Fetch and parse all transcripts with user enrichment.
+ * This is the main function to use for getting transcripts with full user info.
+ */
+export async function fetchEnrichedTranscripts(): Promise<ParsedTranscript[]> {
+  const transcripts = await fetchParsedTranscripts();
+  return enrichTranscriptsWithUserInfo(transcripts);
 }

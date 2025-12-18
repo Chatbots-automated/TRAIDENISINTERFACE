@@ -11,10 +11,11 @@ import {
   ChevronRight
 } from 'lucide-react';
 import {
-  fetchParsedTranscripts,
+  fetchEnrichedTranscripts,
   filterTranscriptsByUser,
   ParsedTranscript,
-  ParsedMessage
+  ParsedMessage,
+  LinkedAppUser
 } from '../lib/voiceflow';
 import type { AppUser } from '../types';
 
@@ -39,7 +40,8 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchParsedTranscripts();
+      // Use enriched transcripts to get linked app user info
+      const data = await fetchEnrichedTranscripts();
       setTranscripts(data);
     } catch (err: any) {
       console.error('Error loading transcripts:', err);
@@ -52,7 +54,8 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const data = await fetchParsedTranscripts();
+      // Use enriched transcripts to get linked app user info
+      const data = await fetchEnrichedTranscripts();
       setTranscripts(data);
       setError(null);
     } catch (err: any) {
@@ -259,14 +262,27 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                           <h3 className="text-sm font-bold text-gray-900">
-                            {transcript.userName || 'Anonymous User'}
+                            {transcript.appUser?.display_name || transcript.userName || 'Anonymous User'}
                           </h3>
+                          {/* Show verified badge if linked to app user */}
+                          {transcript.appUser && (
+                            <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium" title={`Verified: ${transcript.appUser.email}`}>
+                              Verified
+                            </span>
+                          )}
                           {transcript.unread && (
                             <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
                               New
                             </span>
                           )}
                         </div>
+
+                        {/* Show email if linked to app user */}
+                        {transcript.appUser?.email && (
+                          <p className="text-xs text-gray-500 mb-0.5">
+                            {transcript.appUser.email}
+                          </p>
+                        )}
 
                         {/* Preview message with ellipsis */}
                         <p
@@ -351,7 +367,7 @@ function TranscriptModal({
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <h2 className="text-base font-semibold text-gray-900 truncate">
-                  {transcript.userName || 'Anonymous User'}
+                  {transcript.appUser?.display_name || transcript.userName || 'Anonymous User'}
                 </h2>
                 <p className="text-sm text-gray-500 mt-0.5 truncate">{transcript.preview}</p>
               </div>
@@ -382,6 +398,40 @@ function TranscriptModal({
           {/* Left Panel - Metadata */}
           <div className="w-80 min-w-[280px] max-w-[320px] border-r border-gray-200 overflow-y-auto bg-gray-50 flex-shrink-0" style={{ padding: '24px' }}>
             <div className="space-y-3">
+              {/* Interface User (if linked) */}
+              {transcript.appUser && (
+                <>
+                  <div className="pb-2 mb-2 border-b border-gray-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                        Verified User
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Name</span>
+                    <span className="text-xs text-gray-900 font-medium text-right">
+                      {transcript.appUser.display_name || 'N/A'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-500">Email</span>
+                    <span className="text-xs text-gray-900 text-right truncate max-w-[160px]" title={transcript.appUser.email}>
+                      {transcript.appUser.email}
+                    </span>
+                  </div>
+                  {transcript.appUser.is_admin && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Role</span>
+                      <span className="text-xs text-purple-700 font-medium text-right">
+                        Admin
+                      </span>
+                    </div>
+                  )}
+                  <div className="my-2 border-b border-gray-200" />
+                </>
+              )}
+
               {/* Date & Time */}
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-500">Date & Time</span>
@@ -393,8 +443,20 @@ function TranscriptModal({
                 </span>
               </div>
 
-              {/* User ID with copy feature */}
+              {/* Session ID with copy feature */}
               <UserIDField sessionID={transcript.sessionID} />
+
+              {/* Voiceflow User ID (if extracted) */}
+              {transcript.voiceflowUserId && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">VF User ID</span>
+                  <span className="text-xs text-gray-900 font-mono text-right truncate max-w-[140px]" title={transcript.voiceflowUserId}>
+                    {transcript.voiceflowUserId.length > 18
+                      ? transcript.voiceflowUserId.substring(0, 15) + '...'
+                      : transcript.voiceflowUserId}
+                  </span>
+                </div>
+              )}
 
               {/* Platform */}
               <div className="flex items-center justify-between">
@@ -470,7 +532,7 @@ function TranscriptModal({
   );
 }
 
-// UserID Field with copy functionality
+// Session ID Field with copy functionality
 function UserIDField({ sessionID }: { sessionID: string }) {
   const [showTooltip, setShowTooltip] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
@@ -490,7 +552,7 @@ function UserIDField({ sessionID }: { sessionID: string }) {
 
   return (
     <div className="flex items-center justify-between group relative">
-      <span className="text-xs text-gray-500">User ID</span>
+      <span className="text-xs text-gray-500">Session ID</span>
       <div className="relative">
         <button
           onClick={handleCopy}

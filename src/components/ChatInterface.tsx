@@ -21,7 +21,7 @@ import {
   hasAcceptedMessages,
   cleanupDeletedThreads
 } from '../lib/commercialOfferStorage';
-import { generateVoiceflowUserId } from '../lib/voiceflow';
+import { generateVoiceflowUserId, recordVoiceflowSession } from '../lib/voiceflow';
 import type { AppUser } from '../types';
 
 // Voiceflow configuration from environment
@@ -402,6 +402,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 voiceflowInitializedRef.current = true;
                 console.log('✅ Voiceflow widget initialized with userID:', voiceflowUserId);
 
+                // Record this session in the database for robust user-transcript linking
+                recordVoiceflowSession(user);
+
                 // Re-inject CSS after widget loads to ensure it takes effect
                 setTimeout(() => injectHeaderHidingCSS(), 500);
                 setTimeout(() => injectHeaderHidingCSS(), 1500);
@@ -449,6 +452,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           });
           voiceflowInitializedRef.current = true;
           console.log('✅ Voiceflow widget initialized with userID:', voiceflowUserId);
+
+          // Record this session in the database for robust user-transcript linking
+          recordVoiceflowSession(user);
 
           // Re-inject CSS after widget loads to ensure it takes effect
           setTimeout(() => injectHeaderHidingCSS(), 500);
