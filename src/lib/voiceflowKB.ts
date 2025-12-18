@@ -43,90 +43,80 @@ export interface FetchDocumentsOptions {
 
 // Fetch all documents from Voiceflow Knowledge Base with pagination
 // API: GET /v1/knowledge-base/docs
+// Filter by documentType to exclude URLs (only show pdf, text, docx - user uploaded files)
 export async function fetchVoiceflowDocuments(options?: FetchDocumentsOptions): Promise<VoiceflowDocument[]> {
   if (!VOICEFLOW_API_KEY) {
     console.error('Voiceflow API key not configured');
     throw new Error('Voiceflow API not configured');
   }
 
-  console.log('[Voiceflow KB] Fetching all documents with pagination...');
+  console.log('[Voiceflow KB] Fetching user documents (pdf, text, docx)...');
 
+  // We need to fetch each document type separately since API only supports one type per query
+  // Exclude 'url' type - only fetch user-uploaded file types
+  const documentTypes: Array<'pdf' | 'text' | 'docx'> = ['pdf', 'text', 'docx'];
   const allDocuments: VoiceflowDocument[] = [];
-  const pageSize = 100; // Request up to 100 docs per page
-  let page = 1;
-  let hasMore = true;
 
-  while (hasMore) {
-    // Build query params - Voiceflow KB API uses page-based pagination
-    const queryParams = new URLSearchParams();
-    queryParams.append('limit', pageSize.toString());
-    queryParams.append('page', page.toString());
+  for (const docType of documentTypes) {
+    let page = 1;
+    let hasMore = true;
+    const pageSize = 100; // Max allowed by API
 
-    if (options?.documentType) {
-      queryParams.append('documentType', options.documentType);
-    }
+    while (hasMore) {
+      const queryParams = new URLSearchParams();
+      queryParams.append('page', page.toString());
+      queryParams.append('limit', pageSize.toString());
+      queryParams.append('documentType', docType);
 
-    const url = `${VOICEFLOW_KB_BASE}/docs?${queryParams.toString()}`;
-    console.log(`[Voiceflow KB] Fetching page ${page}...`);
+      const url = `${VOICEFLOW_KB_BASE}/docs?${queryParams.toString()}`;
+      console.log(`[Voiceflow KB] Fetching ${docType} documents, page ${page}...`);
 
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': VOICEFLOW_API_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': VOICEFLOW_API_KEY,
+            'accept': 'application/json',
+          },
+        });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Voiceflow KB] Failed to fetch documents:', response.status, errorText);
-        throw new Error(`Failed to fetch documents: ${response.status}`);
-      }
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[Voiceflow KB] Failed to fetch documents:', response.status, errorText);
+          throw new Error(`Failed to fetch documents: ${response.status}`);
+        }
 
-      const data = await response.json();
+        const data = await response.json();
 
-      // Handle multiple response formats
-      let documents: VoiceflowDocument[];
-      let totalDocs: number | undefined;
+        // API returns { total: number, data: VoiceflowDocument[] }
+        const documents: VoiceflowDocument[] = data.data || [];
+        const total: number = data.total || 0;
 
-      if (Array.isArray(data)) {
-        documents = data;
-      } else if (data.data && Array.isArray(data.data)) {
-        documents = data.data;
-        totalDocs = data.total || data.totalCount;
-      } else if (data.documents && Array.isArray(data.documents)) {
-        documents = data.documents;
-        totalDocs = data.total;
-      } else {
-        documents = [];
-      }
-
-      if (documents.length === 0) {
-        hasMore = false;
-        console.log('[Voiceflow KB] No more documents to fetch');
-      } else {
-        allDocuments.push(...documents);
-        console.log(`[Voiceflow KB] Fetched ${documents.length} documents, total: ${allDocuments.length}`);
-
-        // Check if we've fetched all documents
-        if (totalDocs && allDocuments.length >= totalDocs) {
-          hasMore = false;
-        } else if (documents.length < pageSize) {
+        if (documents.length === 0) {
           hasMore = false;
         } else {
-          page++;
-          // Small delay to avoid rate limiting
-          await new Promise(resolve => setTimeout(resolve, 100));
+          allDocuments.push(...documents);
+          console.log(`[Voiceflow KB] Fetched ${documents.length} ${docType} documents, total for type: ${allDocuments.filter(d => d.data?.type === docType).length}`);
+
+          // Check if we've fetched all documents of this type
+          const fetchedOfType = allDocuments.filter(d => d.data?.type === docType).length;
+          if (fetchedOfType >= total || documents.length < pageSize) {
+            hasMore = false;
+          } else {
+            page++;
+            // Small delay to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 50));
+          }
         }
+      } catch (error) {
+        console.error(`[Voiceflow KB] Error fetching ${docType} documents:`, error);
+        // Continue with other types even if one fails
+        hasMore = false;
       }
-    } catch (error) {
-      console.error('[Voiceflow KB] Error fetching documents page:', error);
-      throw error;
     }
   }
 
-  console.log(`[Voiceflow KB] Total documents fetched: ${allDocuments.length}`);
+  console.log(`[Voiceflow KB] Total user documents fetched: ${allDocuments.length}`);
   return allDocuments;
 }
 

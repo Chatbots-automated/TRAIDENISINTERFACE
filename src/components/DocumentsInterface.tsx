@@ -6,7 +6,6 @@ import {
   uploadVoiceflowDocument,
   getDocumentTitle,
   getDaysAgo,
-  filterUserDocuments,
   VoiceflowDocument
 } from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
@@ -39,11 +38,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const allDocs = await fetchVoiceflowDocuments();
-      // Filter to only show documents with UserDocs metadata (uploaded through our interface)
-      const userDocs = filterUserDocuments(allDocs || []);
-      setDocuments(userDocs);
-      console.log(`[Documents] Showing ${userDocs.length} user documents out of ${allDocs?.length || 0} total`);
+      // API now fetches only pdf, text, docx documents (excludes URLs)
+      const docs = await fetchVoiceflowDocuments();
+      setDocuments(docs || []);
+      console.log(`[Documents] Loaded ${docs?.length || 0} user documents (pdf, text, docx)`);
     } catch (error) {
       console.error('Error loading documents:', error);
       setError('Failed to load documents');
