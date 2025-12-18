@@ -102,6 +102,7 @@ export interface ParsedTranscript {
 
 // Fetch all transcripts for the project with proper pagination
 // Voiceflow API uses limit/offset pagination - we need to loop through all pages
+// Added range parameter to ensure we get recent transcripts
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     console.error('Voiceflow API key or Project ID not configured');
@@ -115,10 +116,15 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   let offset = 0;
   let hasMore = true;
 
-  while (hasMore) {
-    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}`;
+  // Fetch transcripts from last 90 days to ensure we get recent ones
+  // The range parameter tells Voiceflow to return transcripts from the last N days
+  const rangeDays = 90;
 
-    console.log(`[Voiceflow] Fetching page at offset ${offset}...`);
+  while (hasMore) {
+    // Add range parameter to get recent transcripts
+    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}&range=${rangeDays}`;
+
+    console.log(`[Voiceflow] Fetching page at offset ${offset} (range: ${rangeDays} days)...`);
 
     const response = await fetch(apiUrl, {
       method: 'GET',
