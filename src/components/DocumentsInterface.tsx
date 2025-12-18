@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown } from 'lucide-react';
+import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown, RefreshCw } from 'lucide-react';
 import {
   fetchVoiceflowDocuments,
   deleteVoiceflowDocument,
   uploadVoiceflowDocument,
   getDocumentTitle,
   getDaysAgo,
+  filterUserDocuments,
   VoiceflowDocument
 } from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
@@ -38,8 +39,11 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      const data = await fetchVoiceflowDocuments();
-      setDocuments(data || []);
+      const allDocs = await fetchVoiceflowDocuments();
+      // Filter to only show documents with UserDocs metadata (uploaded through our interface)
+      const userDocs = filterUserDocuments(allDocs || []);
+      setDocuments(userDocs);
+      console.log(`[Documents] Showing ${userDocs.length} user documents out of ${allDocs?.length || 0} total`);
     } catch (error) {
       console.error('Error loading documents:', error);
       setError('Failed to load documents');
@@ -115,15 +119,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         console.warn('Invalid user metadata, using empty object');
       }
 
-      // Add metadata filter based on chunking strategy
-      let metadataFilter: Record<string, string> = {};
+      // ALWAYS set UserDocs metadata based on chunking strategy
+      // This ensures all uploaded documents are tagged and can be filtered
+      let userDocsValue = 'Default'; // Default value if no strategy selected
       if (chunkingStrategy === 'standartinis') {
-        metadataFilter = { UserDocs: 'Standartinis' };
+        userDocsValue = 'Standartinis';
       } else if (chunkingStrategy === 'nestandartinis') {
-        metadataFilter = { UserDocs: 'Nestandartinis' };
+        userDocsValue = 'Nestandartinis';
       } else if (chunkingStrategy === 'bendra') {
-        metadataFilter = { UserDocs: 'General' };
+        userDocsValue = 'General';
       }
+
+      const metadataFilter: Record<string, string> = { UserDocs: userDocsValue };
 
       const finalMetadata = {
         uploaded_by: user.email,
@@ -437,17 +444,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </p>
               </div>
 
-              {/* Dokumento Tipas */}
+              {/* Dokumento Tipas - REQUIRED */}
               <div>
                 <label htmlFor="chunking-strategy-select" className="block text-sm font-medium text-gray-700 mb-2">
-                  Dokumento Tipas
+                  Dokumento Tipas <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <button
                     id="chunking-strategy-select"
                     type="button"
                     onClick={() => setShowStrategyDropdown(!showStrategyDropdown)}
-                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors"
+                    className={`w-full px-3 py-2.5 border rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors ${
+                      !chunkingStrategy ? 'border-gray-300' : 'border-blue-400'
+                    }`}
                     aria-haspopup="listbox"
                     aria-expanded={showStrategyDropdown}
                   >
@@ -455,7 +464,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       {chunkingStrategy === 'standartinis' && 'Standartinis Komercinis'}
                       {chunkingStrategy === 'nestandartinis' && 'Nestandartinis Komercinis'}
                       {chunkingStrategy === 'bendra' && 'Bendra'}
-                      {!chunkingStrategy && 'Select strategy (optional)'}
+                      {!chunkingStrategy && 'Pasirinkite dokumento tipą...'}
                     </span>
                     <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showStrategyDropdown ? 'rotate-180' : ''}`} />
                   </button>
@@ -561,8 +570,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               <button
                 type="button"
                 onClick={performUpload}
-                disabled={uploadingFile || !selectedFile}
+                disabled={uploadingFile || !selectedFile || !chunkingStrategy}
                 className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                title={!chunkingStrategy ? 'Pasirinkite dokumento tipą' : !selectedFile ? 'Pasirinkite failą' : 'Importuoti dokumentą'}
               >
                 {uploadingFile ? (
                   <>
@@ -692,12 +702,33 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         </h3>
                       </div>
 
-                      {/* Data Type and Tags */}
-                      <div className="flex items-center gap-2 mb-1.5">
+                      {/* Data Type, UserDocs Type, and Tags */}
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         {document.data?.type && (
                           <span className="text-xs text-gray-600 font-medium">
                             {document.data.type.toUpperCase()}
                           </span>
+                        )}
+                        {/* Show UserDocs type (document category) */}
+                        {document.integrationMetadata?.UserDocs && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span
+                              className="inline-flex items-center rounded font-medium"
+                              style={{
+                                padding: '2px 8px',
+                                fontSize: '11px',
+                                color: document.integrationMetadata.UserDocs === 'Standartinis' ? '#1e40af' :
+                                       document.integrationMetadata.UserDocs === 'Nestandartinis' ? '#7c2d12' :
+                                       document.integrationMetadata.UserDocs === 'General' ? '#166534' : '#4a5568',
+                                backgroundColor: document.integrationMetadata.UserDocs === 'Standartinis' ? '#dbeafe' :
+                                                 document.integrationMetadata.UserDocs === 'Nestandartinis' ? '#fed7aa' :
+                                                 document.integrationMetadata.UserDocs === 'General' ? '#dcfce7' : '#e2e8f0'
+                              }}
+                            >
+                              {document.integrationMetadata.UserDocs}
+                            </span>
+                          </>
                         )}
                         {document.tags && document.tags.length > 0 && (
                           <>
@@ -729,15 +760,29 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </div>
                   </div>
 
-                  {/* Delete Button Only */}
-                  <div className="flex items-center ml-4">
+                  {/* Action Buttons */}
+                  <div className="flex items-center ml-4 gap-1">
+                    {/* Retry button for failed documents */}
+                    {document.status?.type === 'ERROR' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setError('Šis dokumentas nepavyko apdoroti. Prašome ištrinti ir įkelti iš naujo.');
+                        }}
+                        className="p-2.5 text-amber-600 hover:bg-amber-50 rounded-xl transition-colors"
+                        title="Pakartoti apdorojimą (Retry)"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                      </button>
+                    )}
+                    {/* Delete button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteDocument(document.documentID);
                       }}
                       className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                      title="Delete document"
+                      title="Ištrinti dokumentą"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

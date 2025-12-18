@@ -405,3 +405,62 @@ export async function getDocumentStatus(documentID: string): Promise<VoiceflowDo
     return null;
   }
 }
+
+// Resync a document by re-uploading with overwrite
+// This is used when a document fails during chunking/processing
+// Voiceflow doesn't have a direct resync API, so we delete and re-upload
+export async function resyncVoiceflowDocument(documentID: string): Promise<UploadDocumentResult> {
+  if (!VOICEFLOW_API_KEY) {
+    throw new Error('Voiceflow API not configured');
+  }
+
+  console.log(`[Voiceflow KB] Resyncing document: ${documentID}`);
+
+  try {
+    // Get current document info first
+    const docInfo = await getDocumentStatus(documentID);
+    if (!docInfo) {
+      return {
+        success: false,
+        error: 'Could not find document to resync',
+      };
+    }
+
+    // For URL documents, we can re-upload the URL
+    if (docInfo.data?.type === 'url' && docInfo.data?.url) {
+      // Delete the failed document first
+      await deleteVoiceflowDocument(documentID);
+
+      // Re-upload the URL
+      return await uploadVoiceflowURL(docInfo.data.url, docInfo.integrationMetadata);
+    }
+
+    // For file documents, we cannot resync without the original file
+    // The user will need to re-upload the file
+    return {
+      success: false,
+      error: 'File documents cannot be automatically resynced. Please delete and re-upload the file.',
+    };
+  } catch (error: any) {
+    console.error('[Voiceflow KB] Resync error:', error);
+    return {
+      success: false,
+      error: error.message || 'Resync failed',
+    };
+  }
+}
+
+// Filter documents to only show UserDocs (documents uploaded through our interface)
+export function filterUserDocuments(documents: VoiceflowDocument[]): VoiceflowDocument[] {
+  return documents.filter(doc => {
+    // Check if document has UserDocs metadata (any value)
+    const userDocsValue = doc.integrationMetadata?.UserDocs;
+    return userDocsValue !== undefined && userDocsValue !== null && userDocsValue !== '';
+  });
+}
+
+// Check if a document is a user document (has UserDocs metadata)
+export function isUserDocument(doc: VoiceflowDocument): boolean {
+  const userDocsValue = doc.integrationMetadata?.UserDocs;
+  return userDocsValue !== undefined && userDocsValue !== null && userDocsValue !== '';
+}
