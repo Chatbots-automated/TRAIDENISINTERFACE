@@ -102,7 +102,6 @@ export interface ParsedTranscript {
 
 // Fetch all transcripts for the project with proper pagination
 // Voiceflow API uses limit/offset pagination - we need to loop through all pages
-// Added range parameter to ensure we get recent transcripts
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     console.error('Voiceflow API key or Project ID not configured');
@@ -115,16 +114,13 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   const pageSize = 100; // Reasonable page size for API calls
   let offset = 0;
   let hasMore = true;
+  const maxPages = 50; // Safety limit to prevent infinite loops
+  let pageCount = 0;
 
-  // Fetch transcripts from last 90 days to ensure we get recent ones
-  // The range parameter tells Voiceflow to return transcripts from the last N days
-  const rangeDays = 90;
+  while (hasMore && pageCount < maxPages) {
+    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}`;
 
-  while (hasMore) {
-    // Add range parameter to get recent transcripts
-    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}&range=${rangeDays}`;
-
-    console.log(`[Voiceflow] Fetching page at offset ${offset} (range: ${rangeDays} days)...`);
+    console.log(`[Voiceflow] Fetching page ${pageCount + 1} at offset ${offset}...`);
 
     const response = await fetch(apiUrl, {
       method: 'GET',
@@ -163,10 +159,20 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
         hasMore = false;
       } else {
         offset += pageSize;
+        pageCount++;
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
+  }
+
+  // Log date range of fetched transcripts for debugging
+  if (allTranscripts.length > 0) {
+    const dates = allTranscripts
+      .map(t => t.createdAt)
+      .filter(Boolean)
+      .sort();
+    console.log(`[Voiceflow] Date range: ${dates[0]} to ${dates[dates.length - 1]}`);
   }
 
   console.log(`[Voiceflow] Total transcripts fetched: ${allTranscripts.length}`);
