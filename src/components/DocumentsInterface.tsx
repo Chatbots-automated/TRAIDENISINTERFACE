@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown } from 'lucide-react';
-import { fetchVoiceflowDocuments, deleteVoiceflowDocument, getDocumentTitle, getDaysAgo, VoiceflowDocument } from '../lib/voiceflowKB';
+import {
+  fetchVoiceflowDocuments,
+  deleteVoiceflowDocument,
+  uploadVoiceflowDocument,
+  getDocumentTitle,
+  getDaysAgo,
+  VoiceflowDocument
+} from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 
@@ -100,9 +107,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         metadata: { project_id: projectId, file_type: selectedFile.type }
       });
 
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
       // Merge system metadata with user-provided metadata
       let userMetadata = {};
       try {
@@ -112,7 +116,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       }
 
       // Add metadata filter based on chunking strategy
-      let metadataFilter = {};
+      let metadataFilter: Record<string, string> = {};
       if (chunkingStrategy === 'standartinis') {
         metadataFilter = { UserDocs: 'Standartinis' };
       } else if (chunkingStrategy === 'nestandartinis') {
@@ -121,52 +125,30 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         metadataFilter = { UserDocs: 'General' };
       }
 
-      const systemMetadata = {
+      const finalMetadata = {
         uploaded_by: user.email,
         user_id: user.id,
         project_id: projectId,
         upload_date: new Date().toISOString(),
-        ...metadataFilter
+        ...metadataFilter,
+        ...userMetadata
       };
-
-      const finalMetadata = { ...systemMetadata, ...userMetadata };
-      formData.append('metadata', JSON.stringify(finalMetadata));
 
       console.log('Uploading file:', selectedFile.name, 'to Voiceflow Knowledge Base...');
 
-      const apiKey = import.meta.env.VITE_VOICEFLOW_API_KEY;
-
-      // Build URL with query parameters based on chunking strategy
-      const baseUrl = 'https://api.voiceflow.com/v1/knowledge-base/docs/upload';
-      const queryParams = new URLSearchParams();
-
-      if (chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis') {
-        // Smart Chunking - enable smart chunking features
-        queryParams.append('llmBasedChunks', 'true');
-        queryParams.append('llmPrependContext', 'true');
-        queryParams.append('markdownConversion', 'true');
-      } else if (chunkingStrategy === 'bendra') {
-        // FAQ optimization - use smaller chunks for FAQ-style Q&A
-        queryParams.append('maxChunkSize', '500');
-        queryParams.append('llmGeneratedQ', 'true');
-      }
-
-      const uploadUrl = queryParams.toString()
-        ? `${baseUrl}?${queryParams.toString()}`
-        : baseUrl;
-
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': apiKey
-        },
-        body: formData
+      // Use the centralized upload service with proper options
+      const result = await uploadVoiceflowDocument({
+        file: selectedFile,
+        metadata: finalMetadata,
+        // Chunking strategy options based on document type
+        llmBasedChunks: chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis',
+        llmPrependContext: chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis',
+        markdownConversion: chunkingStrategy === 'standartinis' || chunkingStrategy === 'nestandartinis',
+        maxChunkSize: chunkingStrategy === 'bendra' ? 500 : undefined,
+        llmGeneratedQ: chunkingStrategy === 'bendra',
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.message || `${response.status} ${response.statusText}`;
-
+      if (!result.success) {
         await appLogger.logDocument({
           action: 'upload_failed',
           userId: user.id,
@@ -176,14 +158,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           level: 'error',
           metadata: {
             project_id: projectId,
-            error: errorMessage,
-            response_data: errorData
+            error: result.error,
+            response_data: result.data
           }
         });
-        throw new Error(`Upload to Voiceflow failed: ${errorMessage}`);
+        throw new Error(`Upload to Voiceflow failed: ${result.error}`);
       }
 
-      const result = await response.json();
       console.log('Voiceflow upload successful:', result);
 
       // Log upload success
@@ -195,8 +176,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         fileSize: selectedFile.size,
         metadata: {
           project_id: projectId,
-          voiceflow_result: result,
-          document_id: result.data?.documentID || result.documentID
+          voiceflow_result: result.data,
+          document_id: result.documentID
         }
       });
 

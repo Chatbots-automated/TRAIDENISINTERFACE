@@ -30,6 +30,7 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
   const [showOnlyMine, setShowOnlyMine] = useState(!user.is_admin);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [loadingProgress, setLoadingProgress] = useState<string>('');
 
   useEffect(() => {
     loadTranscripts();
@@ -39,11 +40,14 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
     try {
       setLoading(true);
       setError(null);
+      setLoadingProgress('Fetching transcripts...');
       const data = await fetchParsedTranscripts();
       setTranscripts(data);
+      setLoadingProgress('');
     } catch (err: any) {
       console.error('Error loading transcripts:', err);
       setError(err.message || 'Failed to load transcripts');
+      setLoadingProgress('');
     } finally {
       setLoading(false);
     }
@@ -51,13 +55,16 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setLoadingProgress('Refreshing transcripts...');
     try {
       const data = await fetchParsedTranscripts();
       setTranscripts(data);
       setError(null);
+      setLoadingProgress('');
     } catch (err: any) {
       console.error('Error refreshing transcripts:', err);
       setError(err.message || 'Failed to refresh transcripts');
+      setLoadingProgress('');
     } finally {
       setRefreshing(false);
     }
@@ -208,12 +215,15 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
         {/* Transcripts Data Table */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 vf-scrollbar">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="flex items-center gap-1.5">
+            <div className="flex flex-col items-center justify-center h-full">
+              <div className="flex items-center gap-1.5 mb-4">
                 <div className="w-3 h-3 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
                 <div className="w-3 h-3 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
                 <div className="w-3 h-3 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
               </div>
+              {loadingProgress && (
+                <p className="text-sm text-gray-500">{loadingProgress}</p>
+              )}
             </div>
           ) : displayTranscripts.length === 0 ? (
             <div className="text-center py-16">
