@@ -101,7 +101,7 @@ export interface ParsedTranscript {
 }
 
 // Fetch all transcripts for the project with proper pagination
-// Voiceflow API uses limit/offset pagination - we need to loop through all pages
+// Voiceflow API uses agentID query parameter (not path parameter)
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     console.error('Voiceflow API key or Project ID not configured');
@@ -109,6 +109,7 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   }
 
   console.log('[Voiceflow] Fetching all transcripts with pagination...');
+  console.log('[Voiceflow] Using agentID:', VOICEFLOW_PROJECT_ID);
 
   const allTranscripts: VoiceflowTranscript[] = [];
   const pageSize = 100; // Reasonable page size for API calls
@@ -118,9 +119,11 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   let pageCount = 0;
 
   while (hasMore && pageCount < maxPages) {
-    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}`;
+    // Use agentID as query parameter per Voiceflow documentation
+    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts?agentID=${VOICEFLOW_PROJECT_ID}&limit=${pageSize}&offset=${offset}`;
 
     console.log(`[Voiceflow] Fetching page ${pageCount + 1} at offset ${offset}...`);
+    console.log(`[Voiceflow] URL: ${apiUrl}`);
 
     const response = await fetch(apiUrl, {
       method: 'GET',
