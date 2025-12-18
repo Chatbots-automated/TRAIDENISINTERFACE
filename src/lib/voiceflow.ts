@@ -141,6 +141,13 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
 
     const data = await response.json();
 
+    // Debug: Log the actual API response structure
+    console.log('[Voiceflow] Raw API response:', JSON.stringify(data).substring(0, 500));
+    console.log('[Voiceflow] Response type:', typeof data, Array.isArray(data) ? 'array' : 'object');
+    if (!Array.isArray(data)) {
+      console.log('[Voiceflow] Response keys:', Object.keys(data));
+    }
+
     // Handle both array response and object with data property
     const transcripts = Array.isArray(data) ? data : (data.data || data.transcripts || []);
 
