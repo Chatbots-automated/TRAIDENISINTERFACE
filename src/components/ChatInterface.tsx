@@ -77,6 +77,9 @@ const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
 // LocalStorage key for tracking if user has seen the query type tooltip
 const QUERY_TOOLTIP_SHOWN_KEY = 'traidenis_query_tooltip_shown';
 
+// SessionStorage key for tracking if chat has been started this session
+const VOICEFLOW_CHAT_STARTED_KEY = 'traidenis_voiceflow_chat_started';
+
 // Fun loading messages that rotate while waiting for response
 const LOADING_MESSAGES = [
   "Hmmm...",
@@ -152,7 +155,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [showQueryTooltip, setShowQueryTooltip] = useState(false);
   const [showCommercialSpotlight, setShowCommercialSpotlight] = useState(false);
   const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
-  const [chatStarted, setChatStarted] = useState(false); // Track if user has started the chat
+  // Track if user has started the chat this session (persists across navigation, clears on logout/browser close)
+  const [chatStarted, setChatStarted] = useState(() => {
+    return sessionStorage.getItem(VOICEFLOW_CHAT_STARTED_KEY) === 'true';
+  });
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -268,12 +274,12 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     return () => clearInterval(interval);
   }, [loading, isStreaming]);
 
-  // Reset chat started state when thread changes
+  // Persist chatStarted to sessionStorage when it changes
   useEffect(() => {
-    if (isNewVersion && currentThread) {
-      setChatStarted(false);
+    if (chatStarted) {
+      sessionStorage.setItem(VOICEFLOW_CHAT_STARTED_KEY, 'true');
     }
-  }, [currentThread?.id, isNewVersion]);
+  }, [chatStarted]);
 
   // Initialize Voiceflow when New Version mode is activated
   useEffect(() => {
@@ -348,17 +354,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         return;
       }
 
-      // If Voiceflow is already initialized, re-initialize it
+      // If Voiceflow is already initialized, don't re-initialize (keeps chat alive during navigation)
       if (voiceflowInitializedRef.current && window.voiceflow?.chat) {
-        console.log('♻️ Re-initializing existing Voiceflow instance');
-        try {
-          if (window.voiceflow.chat.destroy) {
-            window.voiceflow.chat.destroy();
-          }
-        } catch (e) {
-          console.warn('Failed to destroy previous instance:', e);
-        }
-        voiceflowInitializedRef.current = false;
+        console.log('✅ Voiceflow already initialized, keeping existing chat session');
+        return;
       }
 
       // Load script if not already loaded
@@ -467,19 +466,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     initializeVoiceflow();
 
-    // Cleanup function
-    return () => {
-      if (!isNewVersion && window.voiceflow?.chat?.destroy) {
-        try {
-          window.voiceflow.chat.destroy();
-          voiceflowInitializedRef.current = false;
-          console.log('🧹 Voiceflow instance destroyed');
-        } catch (e) {
-          console.warn('Failed to destroy Voiceflow instance:', e);
-        }
-      }
-    };
-  }, [isNewVersion, currentThread, chatStarted]);
+    // No cleanup - we want to keep the Voiceflow chat alive during navigation
+    // The chat will only reset on logout (which clears sessionStorage) or browser close
+  }, [isNewVersion, chatStarted, user.id]);
 
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
