@@ -450,17 +450,17 @@ export async function resyncVoiceflowDocument(documentID: string): Promise<Uploa
   }
 }
 
-// Filter documents to only show user documents (documents with Docs metadata - uploaded through our interface)
+// Filter documents to only show user documents (documents with KB:UserDocs metadata - uploaded through our interface)
 export function filterUserDocuments(documents: VoiceflowDocument[]): VoiceflowDocument[] {
   return documents.filter(doc => {
-    // Check if document has Docs metadata (any value) - this is the folder name in Voiceflow KB
-    const docsValue = doc.integrationMetadata?.Docs;
+    // Check if document has KB:UserDocs metadata (any value)
+    const docsValue = doc.integrationMetadata?.['KB:UserDocs'];
     return docsValue !== undefined && docsValue !== null && docsValue !== '';
   });
 }
 
-// Check if a document is a user document (has Docs metadata)
+// Check if a document is a user document (has KB:UserDocs metadata)
 export function isUserDocument(doc: VoiceflowDocument): boolean {
-  const docsValue = doc.integrationMetadata?.Docs;
+  const docsValue = doc.integrationMetadata?.['KB:UserDocs'];
   return docsValue !== undefined && docsValue !== null && docsValue !== '';
 }

@@ -119,8 +119,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         console.warn('Invalid user metadata, using empty object');
       }
 
-      // ALWAYS set Docs metadata based on chunking strategy
-      // This ensures all uploaded documents are tagged and stored in the "Docs" folder in Voiceflow KB
+      // ALWAYS set KB:UserDocs metadata based on chunking strategy
+      // This ensures all uploaded documents are tagged and can be filtered in the UserDocs folder
       let docsValue = 'Default'; // Default value if no strategy selected
       if (chunkingStrategy === 'standartinis') {
         docsValue = 'Standartinis';
@@ -130,7 +130,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         docsValue = 'General';
       }
 
-      const metadataFilter: Record<string, string> = { Docs: docsValue };
+      const metadataFilter: Record<string, string> = { 'KB:UserDocs': docsValue };
 
       const finalMetadata = {
         uploaded_by: user.email,
@@ -709,8 +709,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                             {document.data.type.toUpperCase()}
                           </span>
                         )}
-                        {/* Show Docs type (document category) */}
-                        {document.integrationMetadata?.Docs && (
+                        {/* Show KB:UserDocs type (document category) */}
+                        {document.integrationMetadata?.['KB:UserDocs'] && (
                           <>
                             <span className="text-gray-300">•</span>
                             <span
@@ -718,15 +718,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                               style={{
                                 padding: '2px 8px',
                                 fontSize: '11px',
-                                color: document.integrationMetadata.Docs === 'Standartinis' ? '#1e40af' :
-                                       document.integrationMetadata.Docs === 'Nestandartinis' ? '#7c2d12' :
-                                       document.integrationMetadata.Docs === 'General' ? '#166534' : '#4a5568',
-                                backgroundColor: document.integrationMetadata.Docs === 'Standartinis' ? '#dbeafe' :
-                                                 document.integrationMetadata.Docs === 'Nestandartinis' ? '#fed7aa' :
-                                                 document.integrationMetadata.Docs === 'General' ? '#dcfce7' : '#e2e8f0'
+                                color: document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? '#1e40af' :
+                                       document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? '#7c2d12' :
+                                       document.integrationMetadata['KB:UserDocs'] === 'General' ? '#166534' : '#4a5568',
+                                backgroundColor: document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? '#dbeafe' :
+                                                 document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? '#fed7aa' :
+                                                 document.integrationMetadata['KB:UserDocs'] === 'General' ? '#dcfce7' : '#e2e8f0'
                               }}
                             >
-                              {document.integrationMetadata.Docs}
+                              {document.integrationMetadata['KB:UserDocs']}
                             </span>
                           </>
                         )}
