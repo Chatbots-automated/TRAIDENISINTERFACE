@@ -19,7 +19,7 @@ export interface VoiceflowDocument {
     user_id?: string;
     project_id?: string;
     upload_date?: string;
-    UserDocs?: string;
+    Docs?: string;  // Document type/category: 'Standartinis', 'Nestandartinis', 'General', 'Default'
     [key: string]: any;
   };
   createdAt?: string;
@@ -450,17 +450,17 @@ export async function resyncVoiceflowDocument(documentID: string): Promise<Uploa
   }
 }
 
-// Filter documents to only show UserDocs (documents uploaded through our interface)
+// Filter documents to only show user documents (documents with Docs metadata - uploaded through our interface)
 export function filterUserDocuments(documents: VoiceflowDocument[]): VoiceflowDocument[] {
   return documents.filter(doc => {
-    // Check if document has UserDocs metadata (any value)
-    const userDocsValue = doc.integrationMetadata?.UserDocs;
-    return userDocsValue !== undefined && userDocsValue !== null && userDocsValue !== '';
+    // Check if document has Docs metadata (any value) - this is the folder name in Voiceflow KB
+    const docsValue = doc.integrationMetadata?.Docs;
+    return docsValue !== undefined && docsValue !== null && docsValue !== '';
   });
 }
 
-// Check if a document is a user document (has UserDocs metadata)
+// Check if a document is a user document (has Docs metadata)
 export function isUserDocument(doc: VoiceflowDocument): boolean {
-  const userDocsValue = doc.integrationMetadata?.UserDocs;
-  return userDocsValue !== undefined && userDocsValue !== null && userDocsValue !== '';
+  const docsValue = doc.integrationMetadata?.Docs;
+  return docsValue !== undefined && docsValue !== null && docsValue !== '';
 }
