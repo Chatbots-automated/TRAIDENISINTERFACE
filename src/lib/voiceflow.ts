@@ -7,6 +7,7 @@ import type { AppUser } from '../types';
 const VOICEFLOW_API_KEY = import.meta.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = import.meta.env.VITE_VOICEFLOW_PROJECT_ID;
 const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v2';
+const VOICEFLOW_ANALYTICS_API_BASE = 'https://analytics-api.voiceflow.com';
 
 // Types for Voiceflow API responses
 export interface VoiceflowTranscript {
@@ -101,47 +102,46 @@ export interface ParsedTranscript {
 }
 
 // Fetch all transcripts for the project with proper pagination
-// Uses Voiceflow Transcripts API with time range filtering
+// Uses new Voiceflow Analytics API (analytics-api.voiceflow.com)
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
     console.error('Voiceflow API key or Project ID not configured');
     throw new Error('Voiceflow API not configured');
   }
 
-  console.log('[Voiceflow] Fetching all transcripts...');
+  console.log('[Voiceflow] Fetching all transcripts using Analytics API...');
   console.log('[Voiceflow] Agent/Project ID:', VOICEFLOW_PROJECT_ID);
 
   const allTranscripts: VoiceflowTranscript[] = [];
-  const pageSize = 100;
-  let offset = 0;
+  const pageSize = 100; // 'take' parameter
+  let skip = 0;
   let hasMore = true;
   const maxPages = 50;
   let pageCount = 0;
 
-  // Calculate date range: last 90 days
-  const endTime = new Date().toISOString();
-  const startTime = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-
   while (hasMore && pageCount < maxPages) {
-    // Try the format from CLI docs: use agentID and time range parameters
+    // Build URL with query parameters for Analytics API
     const params = new URLSearchParams({
-      limit: pageSize.toString(),
-      offset: offset.toString(),
+      take: pageSize.toString(),
+      skip: skip.toString(),
+      order: 'DESC', // Most recent first
     });
 
-    // Build URL - try path parameter format first (original working format)
-    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?${params.toString()}`;
+    const apiUrl = `${VOICEFLOW_ANALYTICS_API_BASE}/v1/transcript/project/${VOICEFLOW_PROJECT_ID}?${params.toString()}`;
 
-    console.log(`[Voiceflow] Fetching page ${pageCount + 1} at offset ${offset}...`);
+    console.log(`[Voiceflow] Fetching page ${pageCount + 1} (skip: ${skip})...`);
     console.log(`[Voiceflow] URL: ${apiUrl}`);
 
     const response = await fetch(apiUrl, {
-      method: 'GET',
+      method: 'POST',
       headers: {
-        'Authorization': VOICEFLOW_API_KEY,
+        'Authorization': `Bearer ${VOICEFLOW_API_KEY}`,
         'Content-Type': 'application/json',
-        'accept': 'application/json',
+        'Accept': 'application/json',
       },
+      body: JSON.stringify({
+        // Empty body - no filters for now, get all transcripts
+      }),
     });
 
     console.log(`[Voiceflow] Response status: ${response.status}`);
@@ -161,8 +161,8 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
       console.log('[Voiceflow] Response keys:', Object.keys(data));
     }
 
-    // Handle both array response and object with data property
-    const transcripts = Array.isArray(data) ? data : (data.data || data.transcripts || data.items || []);
+    // Analytics API returns { transcripts: [...] }
+    const transcripts = Array.isArray(data) ? data : (data.transcripts || data.data || data.items || []);
 
     if (!Array.isArray(transcripts) || transcripts.length === 0) {
       hasMore = false;
@@ -174,11 +174,31 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
         console.log('[Voiceflow] First transcript keys:', Object.keys(transcripts[0]));
       }
 
-      // Normalize transcript IDs for compatibility
-      const normalizedTranscripts = transcripts.map((transcript: any) => ({
-        ...transcript,
-        _id: transcript._id || transcript.id || transcript.transcriptID || transcript.transcriptId,
-      }));
+      // Normalize transcript data from Analytics API format
+      // Analytics API uses 'properties' array instead of direct fields
+      const normalizedTranscripts = transcripts.map((transcript: any) => {
+        // Extract properties from the properties array if present
+        const properties = transcript.properties || [];
+        const propsMap = new Map(properties.map((p: any) => [p.name, p.value]));
+
+        return {
+          _id: transcript._id || transcript.id || transcript.transcriptID,
+          id: transcript._id || transcript.id || transcript.transcriptID,
+          projectID: transcript.projectID || VOICEFLOW_PROJECT_ID,
+          sessionID: transcript.sessionID || propsMap.get('sessionID') || transcript._id,
+          browser: transcript.browser || propsMap.get('browser'),
+          device: transcript.device || propsMap.get('device'),
+          os: transcript.os || propsMap.get('os'),
+          createdAt: transcript.createdAt || transcript.created_at || propsMap.get('createdAt'),
+          updatedAt: transcript.updatedAt || transcript.updated_at || propsMap.get('updatedAt'),
+          user: transcript.user || {
+            name: propsMap.get('user_name'),
+            image: propsMap.get('user_image'),
+          },
+          reportTags: transcript.reportTags || [],
+          unread: transcript.unread ?? true,
+        };
+      });
 
       allTranscripts.push(...normalizedTranscripts);
       console.log(`[Voiceflow] Fetched ${transcripts.length} transcripts, total: ${allTranscripts.length}`);
@@ -187,7 +207,7 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
       if (transcripts.length < pageSize) {
         hasMore = false;
       } else {
-        offset += pageSize;
+        skip += pageSize;
         pageCount++;
         // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -211,7 +231,7 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
 }
 
 // Fetch a single transcript with conversation logs (turns/dialogs)
-// The API returns an array of turns/traces for the conversation
+// Uses Voiceflow Analytics API for transcript details
 export async function fetchTranscriptWithLogs(
   transcriptID: string,
   transcriptMetadata?: VoiceflowTranscript
@@ -222,16 +242,31 @@ export async function fetchTranscriptWithLogs(
 
   console.log('[Voiceflow] Fetching transcript dialog:', transcriptID);
 
-  const response = await fetch(
-    `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
-    {
-      method: 'GET',
-      headers: {
-        'Authorization': VOICEFLOW_API_KEY,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
+  // Try Analytics API first for transcript details
+  const analyticsUrl = `${VOICEFLOW_ANALYTICS_API_BASE}/v1/transcript/${transcriptID}/dialog`;
+
+  let response = await fetch(analyticsUrl, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${VOICEFLOW_API_KEY}`,
+      'Accept': 'application/json',
+    },
+  });
+
+  // If Analytics API fails, fall back to the v2 API for dialog content
+  if (!response.ok) {
+    console.log('[Voiceflow] Analytics API failed, trying v2 API...');
+    response = await fetch(
+      `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
+      {
+        method: 'GET',
+        headers: {
+          'Authorization': VOICEFLOW_API_KEY,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -250,6 +285,8 @@ export async function fetchTranscriptWithLogs(
     turns = data.turns;
   } else if (data.dialogs) {
     turns = data.dialogs;
+  } else if (data.dialog) {
+    turns = data.dialog;
   } else if (data.data && Array.isArray(data.data)) {
     turns = data.data;
   }
