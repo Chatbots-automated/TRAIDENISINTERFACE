@@ -104,19 +104,16 @@ export interface ParsedTranscript {
 }
 
 // Fetch all transcripts for the project with proper pagination
-// Uses Netlify Functions proxy to call Voiceflow Analytics API (avoids CORS)
+// Uses Netlify Functions proxy to call Voiceflow API (avoids CORS)
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
-  console.log('[Voiceflow] Fetching all transcripts via proxy...');
-
   const allTranscripts: VoiceflowTranscript[] = [];
-  const pageSize = 100; // 'take' parameter
+  const pageSize = 100;
   let skip = 0;
   let hasMore = true;
   const maxPages = 50;
   let pageCount = 0;
 
   while (hasMore && pageCount < maxPages) {
-    // Build URL with query parameters for the proxy
     const params = new URLSearchParams({
       action: 'list',
       take: pageSize.toString(),
@@ -126,49 +123,25 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
 
     const proxyUrl = `${VOICEFLOW_PROXY_URL}?${params.toString()}`;
 
-    console.log(`[Voiceflow] Fetching page ${pageCount + 1} (skip: ${skip})...`);
-
     const response = await fetch(proxyUrl, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
+      headers: { 'Accept': 'application/json' },
     });
-
-    console.log(`[Voiceflow] Response status: ${response.status}`);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Voiceflow] Failed to fetch transcripts:', response.status, errorText);
+      console.error('[Voiceflow] Failed to fetch transcripts:', response.status);
       throw new Error(`Failed to fetch transcripts: ${response.status}`);
     }
 
     const data = await response.json();
-
-    // Debug: Log the actual API response structure
-    console.log('[Voiceflow] Raw API response (first 1000 chars):', JSON.stringify(data).substring(0, 1000));
-    console.log('[Voiceflow] Response type:', typeof data, Array.isArray(data) ? `array[${data.length}]` : 'object');
-    if (!Array.isArray(data) && data) {
-      console.log('[Voiceflow] Response keys:', Object.keys(data));
-    }
-
-    // Analytics API returns { transcripts: [...] }
     const transcripts = Array.isArray(data) ? data : (data.transcripts || data.data || data.items || []);
 
     if (!Array.isArray(transcripts) || transcripts.length === 0) {
       hasMore = false;
-      console.log('[Voiceflow] No more transcripts to fetch');
     } else {
-      // Log first transcript structure for debugging
-      if (pageCount === 0 && transcripts.length > 0) {
-        console.log('[Voiceflow] First transcript structure:', JSON.stringify(transcripts[0]).substring(0, 500));
-        console.log('[Voiceflow] First transcript keys:', Object.keys(transcripts[0]));
-      }
-
-      // Normalize transcript data from Analytics API format
-      // Analytics API uses 'properties' array instead of direct fields
+      // Normalize transcript data
       const normalizedTranscripts = transcripts.map((transcript: any) => {
-        // Extract properties from the properties array if present
         const properties = transcript.properties || [];
         const propsMap = new Map(properties.map((p: any) => [p.name, p.value]));
 
@@ -192,32 +165,17 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
       });
 
       allTranscripts.push(...normalizedTranscripts);
-      console.log(`[Voiceflow] Fetched ${transcripts.length} transcripts, total: ${allTranscripts.length}`);
 
-      // Check if we got fewer than requested - means we've reached the end
       if (transcripts.length < pageSize) {
         hasMore = false;
       } else {
         skip += pageSize;
         pageCount++;
-        // Small delay to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
   }
 
-  // Log date range of fetched transcripts for debugging
-  if (allTranscripts.length > 0) {
-    const dates = allTranscripts
-      .map(t => t.createdAt || (t as any).created_at || (t as any).createdDate)
-      .filter(Boolean)
-      .sort();
-    if (dates.length > 0) {
-      console.log(`[Voiceflow] Date range: ${dates[0]} to ${dates[dates.length - 1]}`);
-    }
-  }
-
-  console.log(`[Voiceflow] Total transcripts fetched: ${allTranscripts.length}`);
   return allTranscripts;
 }
 
@@ -227,9 +185,6 @@ export async function fetchTranscriptWithLogs(
   transcriptID: string,
   transcriptMetadata?: VoiceflowTranscript
 ): Promise<VoiceflowTranscriptWithLogs> {
-  console.log('[Voiceflow] Fetching transcript dialog:', transcriptID);
-
-  // Use the proxy to fetch transcript dialog
   const params = new URLSearchParams({
     action: 'dialog',
     transcriptId: transcriptID,
@@ -239,21 +194,16 @@ export async function fetchTranscriptWithLogs(
 
   const response = await fetch(proxyUrl, {
     method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
+    headers: { 'Accept': 'application/json' },
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[Voiceflow] Failed to fetch transcript dialog:', response.status, errorText);
     throw new Error(`Failed to fetch transcript: ${response.status}`);
   }
 
   const data = await response.json();
 
-  // API can return turns as array directly or within an object
-  // Handle multiple response formats for compatibility
+  // Handle multiple response formats
   let turns: VoiceflowTurn[] = [];
   if (Array.isArray(data)) {
     turns = data;
@@ -266,8 +216,6 @@ export async function fetchTranscriptWithLogs(
   } else if (data.data && Array.isArray(data.data)) {
     turns = data.data;
   }
-
-  console.log(`[Voiceflow] Transcript ${transcriptID} has ${turns.length} turns`);
 
   // Merge metadata from list call if provided, otherwise use what we can extract
   return {
@@ -503,12 +451,11 @@ export function parseTranscript(
 // Uses concurrent fetching with rate limiting for better performance
 export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
   const transcripts = await fetchTranscripts();
-  console.log(`[Voiceflow] Parsing ${transcripts.length} transcripts...`);
 
-  // Fetch transcript details in batches to improve performance while respecting rate limits
+  // Fetch transcript details in batches
   const parsedTranscripts: ParsedTranscript[] = [];
-  const batchSize = 5; // Concurrent requests per batch
-  const delayBetweenBatches = 200; // ms delay between batches
+  const batchSize = 5;
+  const delayBetweenBatches = 200;
 
   for (let i = 0; i < transcripts.length; i += batchSize) {
     const batch = transcripts.slice(i, i + batchSize);
@@ -516,11 +463,9 @@ export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
     const batchResults = await Promise.allSettled(
       batch.map(async (transcript) => {
         try {
-          // Pass the transcript metadata to preserve info from the list call
           const withLogs = await fetchTranscriptWithLogs(transcript._id, transcript);
           return parseTranscript(withLogs);
-        } catch (error) {
-          console.error(`Failed to fetch transcript ${transcript._id}:`, error);
+        } catch {
           // Return partial transcript with available metadata
           return {
             id: transcript._id,
@@ -541,17 +486,12 @@ export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
       })
     );
 
-    // Extract successful results
     for (const result of batchResults) {
       if (result.status === 'fulfilled') {
         parsedTranscripts.push(result.value);
       }
     }
 
-    // Progress logging
-    console.log(`[Voiceflow] Parsed ${Math.min(i + batchSize, transcripts.length)}/${transcripts.length} transcripts`);
-
-    // Delay between batches (except for last batch)
     if (i + batchSize < transcripts.length) {
       await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
     }
@@ -613,8 +553,6 @@ export async function recordVoiceflowSession(user: AppUser): Promise<void> {
 
     if (error) {
       console.error('[Voiceflow] Failed to record session:', error);
-    } else {
-      console.log('[Voiceflow] Session recorded for user:', user.email, 'VF ID:', voiceflowUserId);
     }
   } catch (err) {
     console.error('[Voiceflow] Error recording session:', err);
@@ -681,7 +619,6 @@ export async function getUserVoiceflowMappings(): Promise<Map<string, LinkedAppU
       }
     }
 
-    console.log('[Voiceflow] Loaded', mappings.size, 'user-voiceflow mappings');
     return mappings;
   } catch (err) {
     console.error('[Voiceflow] Error fetching user mappings:', err);
