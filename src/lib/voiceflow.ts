@@ -7,7 +7,9 @@ import type { AppUser } from '../types';
 const VOICEFLOW_API_KEY = import.meta.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = import.meta.env.VITE_VOICEFLOW_PROJECT_ID;
 const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v2';
-const VOICEFLOW_ANALYTICS_API_BASE = 'https://analytics-api.voiceflow.com';
+
+// Use Netlify Functions proxy to avoid CORS issues with Analytics API
+const VOICEFLOW_PROXY_URL = '/.netlify/functions/voiceflow-transcripts';
 
 // Types for Voiceflow API responses
 export interface VoiceflowTranscript {
@@ -102,15 +104,9 @@ export interface ParsedTranscript {
 }
 
 // Fetch all transcripts for the project with proper pagination
-// Uses new Voiceflow Analytics API (analytics-api.voiceflow.com)
+// Uses Netlify Functions proxy to call Voiceflow Analytics API (avoids CORS)
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
-  if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
-    console.error('Voiceflow API key or Project ID not configured');
-    throw new Error('Voiceflow API not configured');
-  }
-
-  console.log('[Voiceflow] Fetching all transcripts using Analytics API...');
-  console.log('[Voiceflow] Agent/Project ID:', VOICEFLOW_PROJECT_ID);
+  console.log('[Voiceflow] Fetching all transcripts via proxy...');
 
   const allTranscripts: VoiceflowTranscript[] = [];
   const pageSize = 100; // 'take' parameter
@@ -120,28 +116,23 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
   let pageCount = 0;
 
   while (hasMore && pageCount < maxPages) {
-    // Build URL with query parameters for Analytics API
+    // Build URL with query parameters for the proxy
     const params = new URLSearchParams({
+      action: 'list',
       take: pageSize.toString(),
       skip: skip.toString(),
-      order: 'DESC', // Most recent first
+      order: 'DESC',
     });
 
-    const apiUrl = `${VOICEFLOW_ANALYTICS_API_BASE}/v1/transcript/project/${VOICEFLOW_PROJECT_ID}?${params.toString()}`;
+    const proxyUrl = `${VOICEFLOW_PROXY_URL}?${params.toString()}`;
 
     console.log(`[Voiceflow] Fetching page ${pageCount + 1} (skip: ${skip})...`);
-    console.log(`[Voiceflow] URL: ${apiUrl}`);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
+    const response = await fetch(proxyUrl, {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${VOICEFLOW_API_KEY}`,
-        'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
-      body: JSON.stringify({
-        // Empty body - no filters for now, get all transcripts
-      }),
     });
 
     console.log(`[Voiceflow] Response status: ${response.status}`);
@@ -231,42 +222,27 @@ export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
 }
 
 // Fetch a single transcript with conversation logs (turns/dialogs)
-// Uses Voiceflow Analytics API for transcript details
+// Uses Netlify Functions proxy to call Voiceflow API (avoids CORS)
 export async function fetchTranscriptWithLogs(
   transcriptID: string,
   transcriptMetadata?: VoiceflowTranscript
 ): Promise<VoiceflowTranscriptWithLogs> {
-  if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
-    throw new Error('Voiceflow API not configured');
-  }
-
   console.log('[Voiceflow] Fetching transcript dialog:', transcriptID);
 
-  // Try Analytics API first for transcript details
-  const analyticsUrl = `${VOICEFLOW_ANALYTICS_API_BASE}/v1/transcript/${transcriptID}/dialog`;
+  // Use the proxy to fetch transcript dialog
+  const params = new URLSearchParams({
+    action: 'dialog',
+    transcriptId: transcriptID,
+  });
 
-  let response = await fetch(analyticsUrl, {
+  const proxyUrl = `${VOICEFLOW_PROXY_URL}?${params.toString()}`;
+
+  const response = await fetch(proxyUrl, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${VOICEFLOW_API_KEY}`,
       'Accept': 'application/json',
     },
   });
-
-  // If Analytics API fails, fall back to the v2 API for dialog content
-  if (!response.ok) {
-    console.log('[Voiceflow] Analytics API failed, trying v2 API...');
-    response = await fetch(
-      `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
-      {
-        method: 'GET',
-        headers: {
-          'Authorization': VOICEFLOW_API_KEY,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-  }
 
   if (!response.ok) {
     const errorText = await response.text();
