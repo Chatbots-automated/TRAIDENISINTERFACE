@@ -23,11 +23,7 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        error: 'Voiceflow API configuration missing',
-        hasKey: !!VOICEFLOW_API_KEY,
-        hasProjectId: !!VOICEFLOW_PROJECT_ID
-      }),
+      body: JSON.stringify({ error: 'Voiceflow API configuration missing' }),
     };
   }
 
@@ -40,79 +36,40 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       const take = params.take || '100';
       const skip = params.skip || '0';
 
-      // Try Analytics API first (has all transcripts)
+      // Use Analytics API (no Bearer prefix!)
       const analyticsUrl = `${VOICEFLOW_ANALYTICS_API}/v1/transcript/project/${VOICEFLOW_PROJECT_ID}?take=${take}&skip=${skip}&order=DESC`;
 
-      console.log('[Proxy] Trying Analytics API:', analyticsUrl);
-      console.log('[Proxy] Auth header format: Bearer <key>');
-
-      const analyticsResponse = await fetch(analyticsUrl, {
+      const response = await fetch(analyticsUrl, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${VOICEFLOW_API_KEY}`,
+          'Authorization': VOICEFLOW_API_KEY,  // No Bearer prefix
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: JSON.stringify({}),
       });
 
-      console.log('[Proxy] Analytics API status:', analyticsResponse.status);
-
-      if (analyticsResponse.ok) {
-        const data = await analyticsResponse.json();
-        console.log('[Proxy] Analytics API success, transcripts:', data.transcripts?.length || 0);
+      if (!response.ok) {
+        const errorText = await response.text();
         return {
-          statusCode: 200,
+          statusCode: response.status,
           headers,
-          body: JSON.stringify({
-            ...data,
-            source: 'analytics_api'
-          }),
+          body: JSON.stringify({ error: `Analytics API error: ${response.status}`, details: errorText }),
         };
       }
 
-      // Log why Analytics API failed
-      const analyticsError = await analyticsResponse.text();
-      console.log('[Proxy] Analytics API failed:', analyticsResponse.status, analyticsError);
-
-      // Fall back to v2 API
-      console.log('[Proxy] Falling back to v2 API');
-      const v2Url = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${take}&offset=${skip}`;
-
-      const v2Response = await fetch(v2Url, {
-        method: 'GET',
-        headers: {
-          'Authorization': VOICEFLOW_API_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!v2Response.ok) {
-        const errorText = await v2Response.text();
-        return {
-          statusCode: v2Response.status,
-          headers,
-          body: JSON.stringify({
-            error: 'Both APIs failed',
-            analyticsStatus: analyticsResponse.status,
-            analyticsError: analyticsError.substring(0, 500),
-            v2Status: v2Response.status,
-            v2Error: errorText.substring(0, 500)
-          }),
-        };
-      }
-
-      const data = await v2Response.json();
+      const data = await response.json();
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
-          transcripts: Array.isArray(data) ? data : (data.transcripts || []),
-          source: 'v2_api'
+          ...data,
+          source: 'analytics_api'
         }),
       };
 
     } else if (action === 'dialog' && transcriptId) {
+      // Use v2 API for dialog content
       const apiUrl = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
 
       const response = await fetch(apiUrl, {
