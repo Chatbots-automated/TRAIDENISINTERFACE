@@ -36,13 +36,13 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       const take = params.take || '100';
       const skip = params.skip || '0';
 
-      // Use Analytics API (no Bearer prefix!)
+      // Use Analytics API (no Bearer prefix)
       const analyticsUrl = `${VOICEFLOW_ANALYTICS_API}/v1/transcript/project/${VOICEFLOW_PROJECT_ID}?take=${take}&skip=${skip}&order=DESC`;
 
       const response = await fetch(analyticsUrl, {
         method: 'POST',
         headers: {
-          'Authorization': VOICEFLOW_API_KEY,  // No Bearer prefix
+          'Authorization': VOICEFLOW_API_KEY,
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
@@ -69,16 +69,29 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       };
 
     } else if (action === 'dialog' && transcriptId) {
-      // Use v2 API for dialog content
-      const apiUrl = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
+      // Try Analytics API first for dialog
+      const analyticsDialogUrl = `${VOICEFLOW_ANALYTICS_API}/v1/transcript/${transcriptId}/dialog`;
 
-      const response = await fetch(apiUrl, {
+      let response = await fetch(analyticsDialogUrl, {
         method: 'GET',
         headers: {
           'Authorization': VOICEFLOW_API_KEY,
-          'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
       });
+
+      // If Analytics API fails, try v2 API as fallback
+      if (!response.ok) {
+        const v2Url = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
+
+        response = await fetch(v2Url, {
+          method: 'GET',
+          headers: {
+            'Authorization': VOICEFLOW_API_KEY,
+            'Content-Type': 'application/json',
+          },
+        });
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -91,14 +104,16 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
 
       let data = await response.json();
 
-      if (Array.isArray(data) && data.length > MAX_TURNS) {
-        data = data.slice(-MAX_TURNS);
+      // Handle turns array - limit if too large
+      let turns = Array.isArray(data) ? data : (data.turns || data.dialog || []);
+      if (turns.length > MAX_TURNS) {
+        turns = turns.slice(-MAX_TURNS);
       }
 
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify(data),
+        body: JSON.stringify(Array.isArray(data) ? turns : { ...data, turns }),
       };
 
     } else {
