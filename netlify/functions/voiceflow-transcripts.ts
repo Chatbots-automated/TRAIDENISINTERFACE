@@ -2,9 +2,9 @@ import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 
 const VOICEFLOW_API_KEY = process.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = process.env.VITE_VOICEFLOW_PROJECT_ID;
-const VOICEFLOW_V2_API_BASE = 'https://api.voiceflow.com/v2';
+const VOICEFLOW_ANALYTICS_API = 'https://analytics-api.voiceflow.com';
+const VOICEFLOW_V2_API = 'https://api.voiceflow.com/v2';
 
-// Max turns to return (Netlify has ~6MB response limit)
 const MAX_TURNS = 500;
 
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
@@ -23,7 +23,11 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'Voiceflow API configuration missing' }),
+      body: JSON.stringify({
+        error: 'Voiceflow API configuration missing',
+        hasKey: !!VOICEFLOW_API_KEY,
+        hasProjectId: !!VOICEFLOW_PROJECT_ID
+      }),
     };
   }
 
@@ -36,40 +40,80 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       const take = params.take || '100';
       const skip = params.skip || '0';
 
-      // Use v2 API for transcript list
-      const apiUrl = `${VOICEFLOW_V2_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${take}&offset=${skip}`;
+      // Try Analytics API first (has all transcripts)
+      const analyticsUrl = `${VOICEFLOW_ANALYTICS_API}/v1/transcript/project/${VOICEFLOW_PROJECT_ID}?take=${take}&skip=${skip}&order=DESC`;
 
-      const response = await fetch(apiUrl, {
+      console.log('[Proxy] Trying Analytics API:', analyticsUrl);
+      console.log('[Proxy] Auth header format: Bearer <key>');
+
+      const analyticsResponse = await fetch(analyticsUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${VOICEFLOW_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      console.log('[Proxy] Analytics API status:', analyticsResponse.status);
+
+      if (analyticsResponse.ok) {
+        const data = await analyticsResponse.json();
+        console.log('[Proxy] Analytics API success, transcripts:', data.transcripts?.length || 0);
+        return {
+          statusCode: 200,
+          headers,
+          body: JSON.stringify({
+            ...data,
+            source: 'analytics_api'
+          }),
+        };
+      }
+
+      // Log why Analytics API failed
+      const analyticsError = await analyticsResponse.text();
+      console.log('[Proxy] Analytics API failed:', analyticsResponse.status, analyticsError);
+
+      // Fall back to v2 API
+      console.log('[Proxy] Falling back to v2 API');
+      const v2Url = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${take}&offset=${skip}`;
+
+      const v2Response = await fetch(v2Url, {
         method: 'GET',
         headers: {
           'Authorization': VOICEFLOW_API_KEY,
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
         },
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
+      if (!v2Response.ok) {
+        const errorText = await v2Response.text();
         return {
-          statusCode: response.status,
+          statusCode: v2Response.status,
           headers,
-          body: JSON.stringify({ error: `API error: ${response.status}`, details: errorText }),
+          body: JSON.stringify({
+            error: 'Both APIs failed',
+            analyticsStatus: analyticsResponse.status,
+            analyticsError: analyticsError.substring(0, 500),
+            v2Status: v2Response.status,
+            v2Error: errorText.substring(0, 500)
+          }),
         };
       }
 
-      const data = await response.json();
-
+      const data = await v2Response.json();
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
-          transcripts: Array.isArray(data) ? data : (data.transcripts || data.data || []),
+          transcripts: Array.isArray(data) ? data : (data.transcripts || []),
           source: 'v2_api'
         }),
       };
 
     } else if (action === 'dialog' && transcriptId) {
-      const apiUrl = `${VOICEFLOW_V2_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
+      const apiUrl = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
 
       const response = await fetch(apiUrl, {
         method: 'GET',
@@ -90,9 +134,8 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
 
       let data = await response.json();
 
-      // Limit turns to avoid exceeding Netlify response size limit
       if (Array.isArray(data) && data.length > MAX_TURNS) {
-        data = data.slice(-MAX_TURNS); // Keep most recent turns
+        data = data.slice(-MAX_TURNS);
       }
 
       return {
