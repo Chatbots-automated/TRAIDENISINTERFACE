@@ -3,7 +3,7 @@ import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 const VOICEFLOW_API_KEY = process.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = process.env.VITE_VOICEFLOW_PROJECT_ID;
 const VOICEFLOW_ANALYTICS_API = 'https://analytics-api.voiceflow.com';
-const VOICEFLOW_V2_API = 'https://api.voiceflow.com/v2';
+const VOICEFLOW_V1_API = 'https://api.voiceflow.com/v1';
 
 const MAX_TURNS = 500;
 
@@ -69,29 +69,16 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       };
 
     } else if (action === 'dialog' && transcriptId) {
-      // Try Analytics API first for dialog
-      const analyticsDialogUrl = `${VOICEFLOW_ANALYTICS_API}/v1/transcript/${transcriptId}/dialog`;
+      // Use v1 API for dialog: GET /v1/transcripts/{projectID}/{transcriptID}
+      const dialogUrl = `${VOICEFLOW_V1_API}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
 
-      let response = await fetch(analyticsDialogUrl, {
+      const response = await fetch(dialogUrl, {
         method: 'GET',
         headers: {
           'Authorization': VOICEFLOW_API_KEY,
           'Accept': 'application/json',
         },
       });
-
-      // If Analytics API fails, try v2 API as fallback
-      if (!response.ok) {
-        const v2Url = `${VOICEFLOW_V2_API}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptId}`;
-
-        response = await fetch(v2Url, {
-          method: 'GET',
-          headers: {
-            'Authorization': VOICEFLOW_API_KEY,
-            'Content-Type': 'application/json',
-          },
-        });
-      }
 
       if (!response.ok) {
         const errorText = await response.text();
