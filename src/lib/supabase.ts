@@ -121,6 +121,8 @@ export const signOut = async () => {
     const { user } = await getCurrentUser();
     // Remove user from localStorage
     localStorage.removeItem('currentUser');
+    // Clear Voiceflow chat session state (forces "Start Chat" button on next login)
+    sessionStorage.removeItem('traidenis_voiceflow_chat_started');
 
     if (user) {
       await appLogger.logAuth({

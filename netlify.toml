@@ -1,6 +1,10 @@
 [build]
   publish = "dist"
   command = "npm run build"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
 
 [build.environment]
   VITE_SUPABASE_URL = "https://tahsnionivotlbbbyuya.supabase.co"

@@ -7,7 +7,8 @@ import {
   ChevronUp,
   Check,
   X,
-  MessageSquare
+  MessageSquare,
+  Plus
 } from 'lucide-react';
 import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
@@ -21,7 +22,7 @@ import {
   hasAcceptedMessages,
   cleanupDeletedThreads
 } from '../lib/commercialOfferStorage';
-import { generateVoiceflowUserId } from '../lib/voiceflow';
+import { generateVoiceflowUserId, recordVoiceflowSession } from '../lib/voiceflow';
 import type { AppUser } from '../types';
 
 // Voiceflow configuration from environment
@@ -42,6 +43,7 @@ interface ChatInterfaceProps {
   onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
   onFirstCommercialAccept?: () => void;
   onThreadsUpdate?: () => void;
+  onCreateThread?: () => void;
   naujokasMode?: boolean;
   isNewVersion?: boolean;
 }
@@ -76,6 +78,9 @@ const DEFAULT_QUERY_TAG = QUERY_TAGS[0]; // /General as default
 
 // LocalStorage key for tracking if user has seen the query type tooltip
 const QUERY_TOOLTIP_SHOWN_KEY = 'traidenis_query_tooltip_shown';
+
+// SessionStorage key for tracking if chat has been started this session
+const VOICEFLOW_CHAT_STARTED_KEY = 'traidenis_voiceflow_chat_started';
 
 // Fun loading messages that rotate while waiting for response
 const LOADING_MESSAGES = [
@@ -143,7 +148,7 @@ const getDisplayName = (authorName?: string, authorRef?: string): string => {
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 };
 
-export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, naujokasMode = true, isNewVersion = false }: ChatInterfaceProps) {
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, onCreateThread, naujokasMode = true, isNewVersion = false }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -152,7 +157,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   const [showQueryTooltip, setShowQueryTooltip] = useState(false);
   const [showCommercialSpotlight, setShowCommercialSpotlight] = useState(false);
   const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
-  const [chatStarted, setChatStarted] = useState(false); // Track if user has started the chat
+  // Track if user has started the chat this session (persists across navigation, clears on logout/browser close)
+  const [chatStarted, setChatStarted] = useState(() => {
+    return sessionStorage.getItem(VOICEFLOW_CHAT_STARTED_KEY) === 'true';
+  });
   const [streamingContent, setStreamingContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
@@ -268,12 +276,12 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
     return () => clearInterval(interval);
   }, [loading, isStreaming]);
 
-  // Reset chat started state when thread changes
+  // Persist chatStarted to sessionStorage when it changes
   useEffect(() => {
-    if (isNewVersion && currentThread) {
-      setChatStarted(false);
+    if (chatStarted) {
+      sessionStorage.setItem(VOICEFLOW_CHAT_STARTED_KEY, 'true');
     }
-  }, [currentThread?.id, isNewVersion]);
+  }, [chatStarted]);
 
   // Initialize Voiceflow when New Version mode is activated
   useEffect(() => {
@@ -348,17 +356,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
         return;
       }
 
-      // If Voiceflow is already initialized, re-initialize it
+      // If Voiceflow is already initialized, don't re-initialize (keeps chat alive during navigation)
       if (voiceflowInitializedRef.current && window.voiceflow?.chat) {
-        console.log('♻️ Re-initializing existing Voiceflow instance');
-        try {
-          if (window.voiceflow.chat.destroy) {
-            window.voiceflow.chat.destroy();
-          }
-        } catch (e) {
-          console.warn('Failed to destroy previous instance:', e);
-        }
-        voiceflowInitializedRef.current = false;
+        console.log('✅ Voiceflow already initialized, keeping existing chat session');
+        return;
       }
 
       // Load script if not already loaded
@@ -401,6 +402,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 });
                 voiceflowInitializedRef.current = true;
                 console.log('✅ Voiceflow widget initialized with userID:', voiceflowUserId);
+
+                // Record this session in the database for robust user-transcript linking
+                recordVoiceflowSession(user);
 
                 // Re-inject CSS after widget loads to ensure it takes effect
                 setTimeout(() => injectHeaderHidingCSS(), 500);
@@ -450,6 +454,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
           voiceflowInitializedRef.current = true;
           console.log('✅ Voiceflow widget initialized with userID:', voiceflowUserId);
 
+          // Record this session in the database for robust user-transcript linking
+          recordVoiceflowSession(user);
+
           // Re-inject CSS after widget loads to ensure it takes effect
           setTimeout(() => injectHeaderHidingCSS(), 500);
           setTimeout(() => injectHeaderHidingCSS(), 1500);
@@ -461,19 +468,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
     initializeVoiceflow();
 
-    // Cleanup function
-    return () => {
-      if (!isNewVersion && window.voiceflow?.chat?.destroy) {
-        try {
-          window.voiceflow.chat.destroy();
-          voiceflowInitializedRef.current = false;
-          console.log('🧹 Voiceflow instance destroyed');
-        } catch (e) {
-          console.warn('Failed to destroy Voiceflow instance:', e);
-        }
-      }
-    };
-  }, [isNewVersion, currentThread, chatStarted]);
+    // No cleanup - we want to keep the Voiceflow chat alive during navigation
+    // The chat will only reset on logout (which clears sessionStorage) or browser close
+  }, [isNewVersion, chatStarted, user.id]);
 
   const scrollToBottom = () => {
     // Use setTimeout to ensure DOM has updated
@@ -1436,9 +1433,18 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 No chat selected
               </h3>
-              <p className="text-gray-500">
-                Select a chat from the sidebar or create a new one
+              <p className="text-gray-500 mb-6">
+                Start a new conversation with the assistant
               </p>
+              {onCreateThread && (
+                <button
+                  onClick={onCreateThread}
+                  className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors inline-flex items-center space-x-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Start new chat</span>
+                </button>
+              )}
             </div>
           </div>
         )}
