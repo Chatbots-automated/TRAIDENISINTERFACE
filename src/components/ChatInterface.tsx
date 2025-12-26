@@ -7,7 +7,8 @@ import {
   ChevronUp,
   Check,
   X,
-  MessageSquare
+  MessageSquare,
+  Plus
 } from 'lucide-react';
 import { sendMessage, getChatMessages, updateChatThreadTitle } from '../lib/supabase';
 import { appLogger } from '../lib/appLogger';
@@ -42,6 +43,7 @@ interface ChatInterfaceProps {
   onCommercialOfferUpdate?: (threadId: string, hasOffer: boolean) => void;
   onFirstCommercialAccept?: () => void;
   onThreadsUpdate?: () => void;
+  onCreateThread?: () => void;
   naujokasMode?: boolean;
   isNewVersion?: boolean;
 }
@@ -146,7 +148,7 @@ const getDisplayName = (authorName?: string, authorRef?: string): string => {
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 };
 
-export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, naujokasMode = true, isNewVersion = false }: ChatInterfaceProps) {
+export default function ChatInterface({ user, projectId, currentThread, onCommercialOfferUpdate, onFirstCommercialAccept, onThreadsUpdate, onCreateThread, naujokasMode = true, isNewVersion = false }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -1431,9 +1433,18 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 No chat selected
               </h3>
-              <p className="text-gray-500">
-                Select a chat from the sidebar or create a new one
+              <p className="text-gray-500 mb-6">
+                Start a new conversation with the assistant
               </p>
+              {onCreateThread && (
+                <button
+                  onClick={onCreateThread}
+                  className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors inline-flex items-center space-x-2"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Start new chat</span>
+                </button>
+              )}
             </div>
           </div>
         )}

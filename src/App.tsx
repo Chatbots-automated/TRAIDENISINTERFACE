@@ -338,6 +338,7 @@ function App() {
             onCommercialOfferUpdate={handleCommercialOfferUpdate}
             onFirstCommercialAccept={handleFirstCommercialAccept}
             onThreadsUpdate={loadThreads}
+            onCreateThread={handleCreateThread}
             naujokasMode={naujokasMode}
             isNewVersion={isNewVersion}
           />
