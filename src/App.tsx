@@ -5,13 +5,14 @@ import ChatInterface from './components/ChatInterface';
 import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
 import TranscriptsInterface from './components/TranscriptsInterface';
+import InstructionsInterface from './components/InstructionsInterface';
 import AuthForm from './components/AuthForm';
 import CommercialOfferPanel from './components/CommercialOfferPanel';
 import { hasCommercialOffer } from './lib/commercialOfferStorage';
 import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History } from 'lucide-react';
 import type { AppUser } from './types';
 
-type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts';
+type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos';
 
 interface Thread {
   id: string;
@@ -338,6 +339,7 @@ function App() {
             onCommercialOfferUpdate={handleCommercialOfferUpdate}
             onFirstCommercialAccept={handleFirstCommercialAccept}
             onThreadsUpdate={loadThreads}
+            onCreateThread={handleCreateThread}
             naujokasMode={naujokasMode}
             isNewVersion={isNewVersion}
           />
@@ -348,6 +350,8 @@ function App() {
         return <AdminUsersInterface user={user} />;
       case 'transcripts':
         return <TranscriptsInterface user={user} />;
+      case 'instrukcijos':
+        return <InstructionsInterface user={user} />;
       default:
         return null;
     }

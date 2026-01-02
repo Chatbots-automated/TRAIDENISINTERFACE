@@ -791,6 +791,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
         )}
       </div>
+
     </div>
   );
 }

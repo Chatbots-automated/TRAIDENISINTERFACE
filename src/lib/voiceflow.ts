@@ -1,9 +1,15 @@
 // Voiceflow API Service
 // Handles fetching transcripts and conversation data from Voiceflow
 
+import { supabase } from './supabase';
+import type { AppUser } from '../types';
+
 const VOICEFLOW_API_KEY = import.meta.env.VITE_VOICEFLOW_API_KEY;
 const VOICEFLOW_PROJECT_ID = import.meta.env.VITE_VOICEFLOW_PROJECT_ID;
 const VOICEFLOW_API_BASE = 'https://api.voiceflow.com/v2';
+
+// Use Netlify Functions proxy to avoid CORS issues with Analytics API
+const VOICEFLOW_PROXY_URL = '/.netlify/functions/voiceflow-transcripts';
 
 // Types for Voiceflow API responses
 export interface VoiceflowTranscript {
@@ -69,6 +75,14 @@ export interface ParsedMessage {
   timestamp: string;
 }
 
+// App user info extracted from the interface database
+export interface LinkedAppUser {
+  id: string;
+  email: string;
+  display_name?: string;
+  is_admin?: boolean;
+}
+
 export interface ParsedTranscript {
   id: string;
   sessionID: string;
@@ -84,108 +98,112 @@ export interface ParsedTranscript {
   os?: string;
   unread?: boolean;
   credits?: number;
+  // Linked app user from interface database
+  appUser?: LinkedAppUser;
+  voiceflowUserId?: string;
 }
 
 // Fetch all transcripts for the project with proper pagination
-// Voiceflow API uses limit/offset pagination - we need to loop through all pages
+// Uses Netlify Functions proxy to call Voiceflow API (avoids CORS)
 export async function fetchTranscripts(): Promise<VoiceflowTranscript[]> {
-  if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
-    console.error('Voiceflow API key or Project ID not configured');
-    throw new Error('Voiceflow API not configured');
-  }
-
-  console.log('[Voiceflow] Fetching all transcripts with pagination...');
-
   const allTranscripts: VoiceflowTranscript[] = [];
-  const pageSize = 100; // Reasonable page size for API calls
-  let offset = 0;
+  const pageSize = 100;
+  let skip = 0;
   let hasMore = true;
+  const maxPages = 50;
+  let pageCount = 0;
 
-  while (hasMore) {
-    const apiUrl = `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}?limit=${pageSize}&offset=${offset}`;
+  while (hasMore && pageCount < maxPages) {
+    const params = new URLSearchParams({
+      action: 'list',
+      take: pageSize.toString(),
+      skip: skip.toString(),
+      order: 'DESC',
+    });
 
-    console.log(`[Voiceflow] Fetching page at offset ${offset}...`);
+    const proxyUrl = `${VOICEFLOW_PROXY_URL}?${params.toString()}`;
 
-    const response = await fetch(apiUrl, {
+    const response = await fetch(proxyUrl, {
       method: 'GET',
-      headers: {
-        'Authorization': VOICEFLOW_API_KEY,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Accept': 'application/json' },
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[Voiceflow] Failed to fetch transcripts:', response.status, errorText);
+      console.error('[Voiceflow] Failed to fetch transcripts:', response.status);
       throw new Error(`Failed to fetch transcripts: ${response.status}`);
     }
 
     const data = await response.json();
-
-    // Handle both array response and object with data property
-    const transcripts = Array.isArray(data) ? data : (data.data || data.transcripts || []);
+    const transcripts = Array.isArray(data) ? data : (data.transcripts || data.data || data.items || []);
 
     if (!Array.isArray(transcripts) || transcripts.length === 0) {
       hasMore = false;
-      console.log('[Voiceflow] No more transcripts to fetch');
     } else {
-      // Normalize transcript IDs for compatibility
-      const normalizedTranscripts = transcripts.map((transcript: any) => ({
-        ...transcript,
-        _id: transcript._id || transcript.id || transcript.transcriptID,
-      }));
+      // Normalize transcript data
+      const normalizedTranscripts = transcripts.map((transcript: any) => {
+        const properties = transcript.properties || [];
+        const propsMap = new Map(properties.map((p: any) => [p.name, p.value]));
+
+        return {
+          _id: transcript._id || transcript.id || transcript.transcriptID,
+          id: transcript._id || transcript.id || transcript.transcriptID,
+          projectID: transcript.projectID || VOICEFLOW_PROJECT_ID,
+          sessionID: transcript.sessionID || propsMap.get('sessionID') || transcript._id,
+          browser: transcript.browser || propsMap.get('browser'),
+          device: transcript.device || propsMap.get('device'),
+          os: transcript.os || propsMap.get('os'),
+          createdAt: transcript.createdAt || transcript.created_at || propsMap.get('createdAt'),
+          updatedAt: transcript.updatedAt || transcript.updated_at || propsMap.get('updatedAt'),
+          user: transcript.user || {
+            name: propsMap.get('user_name'),
+            image: propsMap.get('user_image'),
+          },
+          reportTags: transcript.reportTags || [],
+          unread: transcript.unread ?? true,
+        };
+      });
 
       allTranscripts.push(...normalizedTranscripts);
-      console.log(`[Voiceflow] Fetched ${transcripts.length} transcripts, total: ${allTranscripts.length}`);
 
-      // Check if we got fewer than requested - means we've reached the end
       if (transcripts.length < pageSize) {
         hasMore = false;
       } else {
-        offset += pageSize;
-        // Small delay to avoid rate limiting
+        skip += pageSize;
+        pageCount++;
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     }
   }
 
-  console.log(`[Voiceflow] Total transcripts fetched: ${allTranscripts.length}`);
   return allTranscripts;
 }
 
 // Fetch a single transcript with conversation logs (turns/dialogs)
-// The API returns an array of turns/traces for the conversation
+// Uses Netlify Functions proxy to call Voiceflow API (avoids CORS)
 export async function fetchTranscriptWithLogs(
   transcriptID: string,
   transcriptMetadata?: VoiceflowTranscript
 ): Promise<VoiceflowTranscriptWithLogs> {
-  if (!VOICEFLOW_API_KEY || !VOICEFLOW_PROJECT_ID) {
-    throw new Error('Voiceflow API not configured');
-  }
+  const params = new URLSearchParams({
+    action: 'dialog',
+    transcriptId: transcriptID,
+  });
 
-  console.log('[Voiceflow] Fetching transcript dialog:', transcriptID);
+  const proxyUrl = `${VOICEFLOW_PROXY_URL}?${params.toString()}`;
 
-  const response = await fetch(
-    `${VOICEFLOW_API_BASE}/transcripts/${VOICEFLOW_PROJECT_ID}/${transcriptID}`,
-    {
-      method: 'GET',
-      headers: {
-        'Authorization': VOICEFLOW_API_KEY,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
+  const response = await fetch(proxyUrl, {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' },
+  });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[Voiceflow] Failed to fetch transcript dialog:', response.status, errorText);
     throw new Error(`Failed to fetch transcript: ${response.status}`);
   }
 
   const data = await response.json();
 
-  // API can return turns as array directly or within an object
-  // Handle multiple response formats for compatibility
+  // Handle multiple response formats
   let turns: VoiceflowTurn[] = [];
   if (Array.isArray(data)) {
     turns = data;
@@ -193,11 +211,11 @@ export async function fetchTranscriptWithLogs(
     turns = data.turns;
   } else if (data.dialogs) {
     turns = data.dialogs;
+  } else if (data.dialog) {
+    turns = data.dialog;
   } else if (data.data && Array.isArray(data.data)) {
     turns = data.data;
   }
-
-  console.log(`[Voiceflow] Transcript ${transcriptID} has ${turns.length} turns`);
 
   // Merge metadata from list call if provided, otherwise use what we can extract
   return {
@@ -433,12 +451,11 @@ export function parseTranscript(
 // Uses concurrent fetching with rate limiting for better performance
 export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
   const transcripts = await fetchTranscripts();
-  console.log(`[Voiceflow] Parsing ${transcripts.length} transcripts...`);
 
-  // Fetch transcript details in batches to improve performance while respecting rate limits
+  // Fetch transcript details in batches
   const parsedTranscripts: ParsedTranscript[] = [];
-  const batchSize = 5; // Concurrent requests per batch
-  const delayBetweenBatches = 200; // ms delay between batches
+  const batchSize = 5;
+  const delayBetweenBatches = 200;
 
   for (let i = 0; i < transcripts.length; i += batchSize) {
     const batch = transcripts.slice(i, i + batchSize);
@@ -446,11 +463,9 @@ export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
     const batchResults = await Promise.allSettled(
       batch.map(async (transcript) => {
         try {
-          // Pass the transcript metadata to preserve info from the list call
           const withLogs = await fetchTranscriptWithLogs(transcript._id, transcript);
           return parseTranscript(withLogs);
-        } catch (error) {
-          console.error(`Failed to fetch transcript ${transcript._id}:`, error);
+        } catch {
           // Return partial transcript with available metadata
           return {
             id: transcript._id,
@@ -471,17 +486,12 @@ export async function fetchParsedTranscripts(): Promise<ParsedTranscript[]> {
       })
     );
 
-    // Extract successful results
     for (const result of batchResults) {
       if (result.status === 'fulfilled') {
         parsedTranscripts.push(result.value);
       }
     }
 
-    // Progress logging
-    console.log(`[Voiceflow] Parsed ${Math.min(i + batchSize, transcripts.length)}/${transcripts.length} transcripts`);
-
-    // Delay between batches (except for last batch)
     if (i + batchSize < transcripts.length) {
       await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
     }
@@ -507,5 +517,177 @@ export function filterTranscriptsByUser(
   userId: string
 ): ParsedTranscript[] {
   const voiceflowUserId = generateVoiceflowUserId(userId);
-  return transcripts.filter(t => t.sessionID.includes(voiceflowUserId));
+  return transcripts.filter(t =>
+    t.sessionID.includes(voiceflowUserId) ||
+    t.voiceflowUserId === voiceflowUserId ||
+    t.appUser?.id === userId
+  );
+}
+
+// ============================================================================
+// USER-VOICEFLOW SESSION MANAGEMENT
+// ============================================================================
+
+/**
+ * Record or update a Voiceflow session for a user.
+ * Called when Voiceflow chat widget initializes.
+ */
+export async function recordVoiceflowSession(user: AppUser): Promise<void> {
+  const voiceflowUserId = generateVoiceflowUserId(user.id);
+
+  try {
+    const { error } = await supabase
+      .from('user_voiceflow_sessions')
+      .upsert({
+        app_user_id: user.id,
+        voiceflow_user_id: voiceflowUserId,
+        last_activity_at: new Date().toISOString(),
+        metadata: {
+          display_name: user.display_name,
+          email: user.email,
+          recorded_at: new Date().toISOString()
+        }
+      }, {
+        onConflict: 'app_user_id,voiceflow_user_id'
+      });
+
+    if (error) {
+      console.error('[Voiceflow] Failed to record session:', error);
+    }
+  } catch (err) {
+    console.error('[Voiceflow] Error recording session:', err);
+  }
+}
+
+/**
+ * Extract the Voiceflow user ID from a session ID.
+ * Session IDs typically contain the userID we passed in.
+ * Format: something_traidenis_uuid_something
+ */
+export function extractVoiceflowUserId(sessionID: string): string | null {
+  // Match the pattern: traidenis_ followed by a UUID
+  const match = sessionID.match(/traidenis_([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+  if (match) {
+    return `traidenis_${match[1]}`;
+  }
+  return null;
+}
+
+/**
+ * Get all user-voiceflow session mappings from the database.
+ */
+export async function getUserVoiceflowMappings(): Promise<Map<string, LinkedAppUser>> {
+  try {
+    const { data, error } = await supabase
+      .from('user_voiceflow_sessions')
+      .select(`
+        voiceflow_user_id,
+        app_user_id,
+        metadata
+      `);
+
+    if (error) {
+      console.error('[Voiceflow] Failed to fetch user mappings:', error);
+      return new Map();
+    }
+
+    // Also fetch all app_users for complete info
+    const { data: users, error: usersError } = await supabase
+      .from('app_users')
+      .select('id, email, display_name, is_admin');
+
+    if (usersError) {
+      console.error('[Voiceflow] Failed to fetch app users:', usersError);
+      return new Map();
+    }
+
+    // Create a lookup map for users
+    const usersMap = new Map(users?.map(u => [u.id, u]) || []);
+
+    // Create voiceflow_user_id -> LinkedAppUser map
+    const mappings = new Map<string, LinkedAppUser>();
+
+    for (const session of data || []) {
+      const appUser = usersMap.get(session.app_user_id);
+      if (appUser) {
+        mappings.set(session.voiceflow_user_id, {
+          id: appUser.id,
+          email: appUser.email,
+          display_name: appUser.display_name,
+          is_admin: appUser.is_admin
+        });
+      }
+    }
+
+    return mappings;
+  } catch (err) {
+    console.error('[Voiceflow] Error fetching user mappings:', err);
+    return new Map();
+  }
+}
+
+/**
+ * Enrich transcripts with linked app user information.
+ * This provides robust user identification in transcripts.
+ */
+export async function enrichTranscriptsWithUserInfo(
+  transcripts: ParsedTranscript[]
+): Promise<ParsedTranscript[]> {
+  // Get the user-voiceflow mappings
+  const mappings = await getUserVoiceflowMappings();
+
+  // Also get all app_users for fallback matching
+  const { data: allUsers } = await supabase
+    .from('app_users')
+    .select('id, email, display_name, is_admin');
+
+  const usersById = new Map(allUsers?.map(u => [u.id, u]) || []);
+
+  return transcripts.map(transcript => {
+    // Try to extract the voiceflow user ID from session ID
+    const voiceflowUserId = extractVoiceflowUserId(transcript.sessionID);
+
+    let appUser: LinkedAppUser | undefined;
+
+    // Method 1: Try database mapping (most reliable)
+    if (voiceflowUserId && mappings.has(voiceflowUserId)) {
+      appUser = mappings.get(voiceflowUserId);
+    }
+
+    // Method 2: If no mapping, try to extract UUID and match directly
+    if (!appUser && voiceflowUserId) {
+      const uuidMatch = voiceflowUserId.match(/traidenis_(.+)/);
+      if (uuidMatch) {
+        const userId = uuidMatch[1];
+        const user = usersById.get(userId);
+        if (user) {
+          appUser = {
+            id: user.id,
+            email: user.email,
+            display_name: user.display_name,
+            is_admin: user.is_admin
+          };
+        }
+      }
+    }
+
+    // If we found an app user, use their display name as userName
+    const enrichedUserName = appUser?.display_name || appUser?.email || transcript.userName;
+
+    return {
+      ...transcript,
+      appUser,
+      voiceflowUserId: voiceflowUserId || undefined,
+      userName: enrichedUserName
+    };
+  });
+}
+
+/**
+ * Fetch and parse all transcripts with user enrichment.
+ * This is the main function to use for getting transcripts with full user info.
+ */
+export async function fetchEnrichedTranscripts(): Promise<ParsedTranscript[]> {
+  const transcripts = await fetchParsedTranscripts();
+  return enrichTranscriptsWithUserInfo(transcripts);
 }
