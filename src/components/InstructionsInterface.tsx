@@ -215,12 +215,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             <div className="flex items-center space-x-3">
               <button
                 onClick={() => setView('editor')}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 hover:text-violet-700 transition-colors"
               >
                 ← Atgal
               </button>
               <div className="w-px h-5 bg-gray-300" />
-              <Clock className="w-5 h-5 text-gray-400" />
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+                <Clock className="w-4 h-4 text-white" />
+              </div>
               <h2 className="text-lg font-semibold text-gray-900">Versijų istorija</h2>
             </div>
           </div>
@@ -263,11 +265,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               {versions.map((version, index) => (
                 <div
                   key={version.id}
-                  className={`bg-white rounded-lg p-4 border ${index === 0 ? 'border-green-300 bg-green-50/50' : 'border-gray-200'}`}
+                  className={`bg-white rounded-lg p-4 border ${index === 0 ? 'border-violet-300 bg-violet-50/50' : 'border-gray-200'}`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
-                      <span className={`text-sm font-mono px-2 py-1 rounded ${index === 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                      <span className={`text-sm font-mono px-2 py-1 rounded ${index === 0 ? 'bg-violet-100 text-violet-700' : 'bg-gray-100 text-gray-600'}`}>
                         v{version.version_number}
                       </span>
                       <div>
@@ -280,12 +282,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       </div>
                     </div>
                     {index === 0 ? (
-                      <span className="text-xs text-green-600 font-medium">Dabartinė</span>
+                      <span className="text-xs text-violet-600 font-medium">Dabartinė</span>
                     ) : (
                       <button
                         onClick={() => handleRevert(version.version_number)}
                         disabled={revertingVersion === version.version_number}
-                        className="text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-1"
+                        className="text-sm text-gray-500 hover:text-violet-700 flex items-center space-x-1 transition-colors"
                       >
                         {revertingVersion === version.version_number ? (
                           <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
@@ -313,12 +315,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       {/* Left Sidebar - Table of Contents */}
       <div className="w-72 border-r border-gray-200 flex flex-col bg-gray-50">
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-violet-50 to-indigo-50">
           <div className="flex items-center space-x-2 mb-1">
-            <BookOpen className="w-4 h-4 text-gray-500" />
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center">
+              <BookOpen className="w-3.5 h-3.5 text-white" />
+            </div>
             <h2 className="text-sm font-semibold text-gray-900">AI Agento Instrukcijos</h2>
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 ml-8">
             {variables.filter(v => v.content).length} iš {variables.length} užpildyta
           </p>
         </div>
@@ -339,13 +343,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   onClick={() => setSelectedIndex(index)}
                   className={`w-full text-left px-3 py-2.5 rounded-lg transition-all group ${
                     selectedIndex === index
-                      ? 'bg-white shadow-sm border border-gray-200'
+                      ? 'bg-white shadow-sm border border-violet-200 border-l-2 border-l-violet-500'
                       : 'hover:bg-white/60'
                   }`}
                 >
                   <div className="flex items-start space-x-3">
                     <span className={`text-xs font-mono mt-0.5 ${
-                      selectedIndex === index ? 'text-blue-600' : 'text-gray-400'
+                      selectedIndex === index ? 'text-violet-600' : 'text-gray-400'
                     }`}>
                       {String(index + 1).padStart(2, '0')}
                     </span>
@@ -360,7 +364,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       )}
                     </div>
                     {selectedIndex === index && (
-                      <ChevronRight className="w-4 h-4 text-gray-400 mt-0.5" />
+                      <ChevronRight className="w-4 h-4 text-violet-400 mt-0.5" />
                     )}
                   </div>
                 </button>
@@ -373,7 +377,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         <div className="p-3 border-t border-gray-200">
           <button
             onClick={() => setView('versions')}
-            className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-colors"
+            className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg transition-colors"
           >
             <Clock className="w-4 h-4" />
             <span>Versijų istorija</span>
@@ -389,11 +393,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             <div className="border-b border-gray-200 px-8 py-5">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="text-xs font-mono text-violet-600 bg-violet-50 px-2 py-0.5 rounded border border-violet-200">
                       {selectedVariable.variable_key}
                     </span>
-                    <span className="text-xs text-gray-400">•</span>
+                    <span className="text-xs text-gray-300">•</span>
                     <span className="text-xs text-gray-400">
                       Sekcija {selectedIndex + 1} iš {variables.length}
                     </span>
@@ -418,7 +422,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       <button
                         onClick={handleSave}
                         disabled={saving || editContent === selectedVariable.content}
-                        className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                        className="px-4 py-2 text-sm text-white bg-gradient-to-r from-violet-600 to-indigo-600 rounded-lg hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center space-x-2"
                       >
                         {saving ? (
                           <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -431,7 +435,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   ) : (
                     <button
                       onClick={() => setShowPasswordInput(true)}
-                      className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                      className="px-4 py-2 text-sm text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 border border-violet-200 transition-colors flex items-center space-x-2"
                     >
                       <Pencil className="w-4 h-4" />
                       <span>Redaguoti</span>
@@ -499,7 +503,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   <textarea
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full min-h-[500px] p-4 text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-colors"
+                    className="w-full min-h-[500px] p-4 text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent focus:bg-white transition-colors"
                     style={{
                       lineHeight: '1.75',
                       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
@@ -520,12 +524,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         {selectedVariable.content}
                       </pre>
                     ) : (
-                      <div className="text-center py-16 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-                        <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                      <div className="text-center py-16 bg-gradient-to-b from-violet-50/50 to-gray-50 rounded-lg border-2 border-dashed border-violet-200">
+                        <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center mx-auto mb-3">
+                          <FileText className="w-6 h-6 text-violet-400" />
+                        </div>
                         <p className="text-gray-500 mb-4">Ši sekcija dar neužpildyta</p>
                         <button
                           onClick={() => setShowPasswordInput(true)}
-                          className="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
+                          className="px-4 py-2 text-sm text-violet-600 hover:text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50 transition-colors"
                         >
                           Pridėti turinį
                         </button>
