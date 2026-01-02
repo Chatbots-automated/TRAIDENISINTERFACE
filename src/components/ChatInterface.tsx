@@ -1058,7 +1058,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
   };
 
   return (
-    <div className="flex flex-col h-full bg-white relative">
+    <div className="flex flex-col h-full bg-white/50 backdrop-blur-sm relative">
       {/* Naujokas spotlight overlay - dims everything except spotlighted element */}
       {showCommercialSpotlight && (
         <div
@@ -1074,13 +1074,13 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             {/* Conditional rendering based on version */}
             {isNewVersion ? (
               // New Version: Voiceflow Embedded Chat
-              <div className="flex-1 overflow-hidden bg-gradient-to-br from-purple-50 to-indigo-50">
+              <div className="flex-1 overflow-hidden bg-gradient-to-br from-macos-purple/5 to-macos-indigo/5">
                 {!chatStarted ? (
                   // Show "Start Chat" button before initializing Voiceflow
-                  <div className="flex flex-col items-center justify-center h-full animate-fade-in">
+                  <div className="flex flex-col items-center justify-center h-full macos-animate-fade">
                     <button
                       onClick={() => setChatStarted(true)}
-                      className="vf-btn vf-btn-primary px-10 py-4 text-base font-medium shadow-vf-lg hover:shadow-vf hover:scale-105 active:scale-95 rounded-vf-lg"
+                      className="macos-btn macos-btn-primary px-10 py-4 text-base font-medium shadow-macos-lg hover:shadow-macos-xl hover:scale-[1.02] active:scale-[0.98] rounded-macos-lg transition-all"
                     >
                       Pradėti pokalbį
                     </button>
@@ -1108,14 +1108,14 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {/* Welcome screen when chat is empty */}
               {messages.length === 0 && !loading && (
-                <div className="flex flex-col items-center justify-center h-full text-center">
+                <div className="flex flex-col items-center justify-center h-full text-center macos-animate-fade">
                   {/* Greeting */}
                   <div className="mb-8">
                     <div className="text-4xl mb-4">🌿</div>
-                    <h2 className="text-3xl font-light text-gray-800 mb-2">
+                    <h2 className="text-3xl font-light text-macos-gray-800 mb-2 tracking-macos-tight">
                       {getGreeting()}, {user.display_name?.split(' ')[0] || 'Vartotojau'}
                     </h2>
-                    <p className="text-gray-500 text-lg">Kuo galiu padėti?</p>
+                    <p className="text-macos-gray-500 text-lg">Kuo galiu padėti?</p>
                   </div>
 
                   {/* Quick action suggestions */}
@@ -1126,7 +1126,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                         handleTagSelect(QUERY_TAGS[1]); // Commercial
                         inputRef.current?.focus();
                       }}
-                      className="px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm hover:bg-blue-100 transition-colors border border-blue-200"
+                      className="px-4 py-2 bg-macos-blue/10 text-macos-blue rounded-full text-sm hover:bg-macos-blue/15 transition-colors border-[0.5px] border-macos-blue/20"
                     >
                       📄 Komercinis pasiūlymas
                     </button>
@@ -1136,7 +1136,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                         handleTagSelect(QUERY_TAGS[0]); // General
                         inputRef.current?.focus();
                       }}
-                      className="px-4 py-2 bg-green-50 text-green-700 rounded-full text-sm hover:bg-green-100 transition-colors border border-green-200"
+                      className="px-4 py-2 bg-macos-green/10 text-macos-green rounded-full text-sm hover:bg-macos-green/15 transition-colors border-[0.5px] border-macos-green/20"
                     >
                       💬 Bendras klausimas
                     </button>
@@ -1146,14 +1146,14 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                         handleTagSelect(QUERY_TAGS[2]); // Custom
                         inputRef.current?.focus();
                       }}
-                      className="px-4 py-2 bg-purple-50 text-purple-700 rounded-full text-sm hover:bg-purple-100 transition-colors border border-purple-200"
+                      className="px-4 py-2 bg-macos-purple/10 text-macos-purple rounded-full text-sm hover:bg-macos-purple/15 transition-colors border-[0.5px] border-macos-purple/20"
                     >
                       🔧 Nestandartinis gaminys
                     </button>
                   </div>
 
                   {/* Hint about query types */}
-                  <p className="text-xs text-gray-400 mt-6 max-w-md">
+                  <p className="text-xs text-macos-gray-400 mt-6 max-w-md">
                     Pasirinkite užklausos tipą kairėje pusėje arba tiesiog pradėkite rašyti
                   </p>
                 </div>
@@ -1167,10 +1167,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                   }`}
                 >
                   <div
-                    className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                    className={`max-w-xs lg:max-w-md px-4 py-2.5 rounded-2xl ${
                       message.role === 'user'
-                        ? 'bg-gradient-to-r from-green-500 to-blue-500 text-white'
-                        : 'bg-gray-100 text-gray-900'
+                        ? 'bg-gradient-to-br from-macos-blue to-macos-indigo text-white shadow-macos-sm'
+                        : 'bg-macos-gray-100 text-macos-gray-900 border-[0.5px] border-black/5'
                     }`}
                   >
                     <div className="flex items-center space-x-2 mb-1">
@@ -1327,9 +1327,9 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             </div>
 
             {/* Message Input with Query Type Tag */}
-            <div className="p-4 border-t border-gray-200 bg-white flex-shrink-0">
+            <div className="p-4 border-t border-black/5 bg-white/80 backdrop-blur-macos flex-shrink-0">
               <form onSubmit={handleSendMessage} className="flex space-x-3">
-                <div className="flex-1 flex items-center border border-gray-300 rounded-lg focus-within:ring-2 focus-within:ring-green-500 focus-within:border-transparent bg-white">
+                <div className="flex-1 flex items-center border-[0.5px] border-black/10 rounded-macos-lg focus-within:ring-2 focus-within:ring-macos-blue/30 focus-within:border-macos-blue bg-white shadow-macos-inset">
                   {/* Query Type Tag with Dropdown */}
                   <div
                     className="relative"
@@ -1366,7 +1366,7 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     <button
                       type="button"
                       disabled={loading}
-                      className="flex items-center space-x-1 px-3 py-2 bg-green-100 text-green-700 font-medium text-sm rounded-l-lg hover:bg-green-200 transition-colors border-r border-gray-200 disabled:opacity-50"
+                      className="flex items-center space-x-1 px-3 py-2 bg-macos-blue/10 text-macos-blue font-medium text-sm rounded-l-macos-lg hover:bg-macos-blue/15 transition-colors border-r border-black/5 disabled:opacity-50"
                     >
                       <span>{currentQueryTag.tag}</span>
                       <ChevronUp className="w-3 h-3" />
@@ -1374,10 +1374,10 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
 
                     {/* Dropdown Menu (drops UP since input is at bottom) */}
                     {showTagDropdown && (
-                      <div className="absolute bottom-full left-0 z-50 pb-2">
+                      <div className="absolute bottom-full left-0 z-50 pb-2 macos-animate-slide-up">
                         {/* pb-2 creates invisible bridge to prevent hover gap issues */}
-                        <div className="w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1">
-                          <div className="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100">
+                        <div className="w-64 bg-white/95 backdrop-blur-macos rounded-macos-lg shadow-macos-lg border-[0.5px] border-black/10 py-1">
+                          <div className="px-3 py-2 text-xs font-semibold text-macos-gray-500 border-b border-black/5">
                             Pasirinkite užklausos tipą
                           </div>
                           {QUERY_TAGS.map((tag) => (
@@ -1385,17 +1385,17 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                               key={tag.tag}
                               type="button"
                               onClick={() => handleTagSelect(tag)}
-                              className={`w-full text-left px-3 py-2 hover:bg-green-50 transition-colors ${
-                                currentQueryTag.tag === tag.tag ? 'bg-green-50' : ''
+                              className={`w-full text-left px-3 py-2 hover:bg-macos-blue/10 transition-colors ${
+                                currentQueryTag.tag === tag.tag ? 'bg-macos-blue/10' : ''
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className={`font-medium text-sm ${currentQueryTag.tag === tag.tag ? 'text-green-700' : 'text-gray-700'}`}>
+                                <span className={`font-medium text-sm ${currentQueryTag.tag === tag.tag ? 'text-macos-blue' : 'text-macos-gray-700'}`}>
                                   {tag.tag}
                                 </span>
-                                <span className="text-xs text-gray-500">{tag.label}</span>
+                                <span className="text-xs text-macos-gray-500">{tag.label}</span>
                               </div>
-                              <p className="text-xs text-gray-400 mt-0.5">{tag.description}</p>
+                              <p className="text-xs text-macos-gray-400 mt-0.5">{tag.description}</p>
                             </button>
                           ))}
                         </div>
@@ -1410,14 +1410,14 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
                     value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Type your message..."
-                    className="flex-1 px-3 py-2 border-0 focus:ring-0 focus:outline-none rounded-r-lg"
+                    className="flex-1 px-3 py-2.5 border-0 focus:ring-0 focus:outline-none rounded-r-macos-lg bg-transparent text-macos-gray-900 placeholder:text-macos-gray-400"
                     disabled={loading}
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={loading || !newMessage.trim()}
-                  className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="macos-btn macos-btn-primary px-4 py-2.5 rounded-macos-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -1427,19 +1427,19 @@ export default function ChatInterface({ user, projectId, currentThread, onCommer
             )}
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center macos-animate-fade">
             <div className="text-center">
-              <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <MessageSquare className="w-16 h-16 text-macos-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-macos-gray-900 mb-2 tracking-macos-tight">
                 No chat selected
               </h3>
-              <p className="text-gray-500 mb-6">
+              <p className="text-macos-gray-500 mb-6">
                 Start a new conversation with the assistant
               </p>
               {onCreateThread && (
                 <button
                   onClick={onCreateThread}
-                  className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors inline-flex items-center space-x-2"
+                  className="macos-btn macos-btn-primary px-6 py-3 rounded-macos-lg font-medium inline-flex items-center space-x-2"
                 >
                   <Plus className="w-5 h-5" />
                   <span>Start new chat</span>

@@ -304,10 +304,10 @@ function App() {
 
   if (initialLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-macos-gray-50 flex items-center justify-center">
+        <div className="text-center macos-animate-fade">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-macos-gray-200 border-t-macos-blue mx-auto mb-4"></div>
+          <p className="text-macos-gray-500 text-sm">Loading...</p>
         </div>
       </div>
     );
@@ -319,10 +319,10 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-teal-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="min-h-screen bg-macos-gray-50 flex items-center justify-center">
+        <div className="text-center macos-animate-fade">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-macos-gray-200 border-t-macos-blue mx-auto mb-4"></div>
+          <p className="text-macos-gray-500 text-sm">Loading...</p>
         </div>
       </div>
     );
@@ -382,65 +382,41 @@ function App() {
       <div className="flex flex-col h-full">
         {/* Navigation Bar - Hidden when in New Version mode */}
         {!isNewVersion && (
-        <div className="bg-white border-b border-gray-200 flex-shrink-0">
-        <div className="flex items-center justify-between px-6">
-          {/* Left: Navigation Tabs */}
-          <div className="flex space-x-8">
+        <div className="bg-white/80 backdrop-blur-macos border-b border-black/5 flex-shrink-0">
+        <div className="flex items-center justify-between px-6 py-3">
+          {/* Left: macOS Segmented Control */}
+          <div className="macos-segmented-control">
             <button
               onClick={() => setViewMode('chat')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                viewMode === 'chat'
-                  ? 'border-green-500 text-green-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-green-300'
-              }`}
+              className={`macos-segment flex items-center space-x-2 ${viewMode === 'chat' ? 'active' : ''}`}
             >
-              <div className="flex items-center space-x-2">
-                <MessageSquare className="w-4 h-4" />
-                <span>Chat</span>
-              </div>
+              <MessageSquare className="w-4 h-4" />
+              <span>Chat</span>
             </button>
 
             <button
               onClick={() => setViewMode('documents')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                viewMode === 'documents'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-blue-300'
-              }`}
+              className={`macos-segment flex items-center space-x-2 ${viewMode === 'documents' ? 'active' : ''}`}
             >
-              <div className="flex items-center space-x-2">
-                <FileText className="w-4 h-4" />
-                <span>Documents</span>
-              </div>
+              <FileText className="w-4 h-4" />
+              <span>Documents</span>
             </button>
 
             <button
               onClick={() => setViewMode('transcripts')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                viewMode === 'transcripts'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-indigo-300'
-              }`}
+              className={`macos-segment flex items-center space-x-2 ${viewMode === 'transcripts' ? 'active' : ''}`}
             >
-              <div className="flex items-center space-x-2">
-                <History className="w-4 h-4" />
-                <span>Transcripts</span>
-              </div>
+              <History className="w-4 h-4" />
+              <span>Transcripts</span>
             </button>
 
             {user.is_admin && (
               <button
                 onClick={() => setViewMode('users')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  viewMode === 'users'
-                    ? 'border-purple-500 text-purple-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-purple-300'
-                }`}
+                className={`macos-segment flex items-center space-x-2 ${viewMode === 'users' ? 'active' : ''}`}
               >
-                <div className="flex items-center space-x-2">
-                  <Users className="w-4 h-4" />
-                  <span>Users</span>
-                </div>
+                <Users className="w-4 h-4" />
+                <span>Users</span>
               </button>
             )}
           </div>
@@ -451,10 +427,10 @@ function App() {
             {viewMode === 'chat' && (
               <button
                 onClick={toggleNewVersion}
-                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg font-medium text-sm transition-all duration-300 transform hover:scale-105 ${
+                className={`macos-btn flex items-center space-x-2 px-3 py-1.5 rounded-macos text-sm transition-all duration-150 ${
                   isNewVersion
-                    ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white hover:from-purple-600 hover:to-indigo-700'
-                    : 'bg-gradient-to-r from-green-500 to-blue-500 text-white hover:from-green-600 hover:to-blue-600'
+                    ? 'macos-btn-primary'
+                    : 'macos-btn-secondary'
                 }`}
                 title={isNewVersion ? 'Naujas variantas (Voiceflow)' : 'Standartinis pokalbis'}
               >
@@ -478,29 +454,29 @@ function App() {
                 // Dismiss tooltip when user clicks
                 setShowDocIconTooltip(false);
               }}
-              className={`p-2 rounded-lg hover:bg-white hover:shadow-sm transition-all relative ${
+              className={`p-2 rounded-macos transition-all relative ${
                 hasOffer
-                  ? 'text-blue-600 bg-gradient-to-r from-green-100 to-blue-100'
-                  : 'text-gray-400 bg-gray-100'
+                  ? 'text-macos-blue bg-macos-blue/10'
+                  : 'text-macos-gray-400 bg-macos-gray-100'
               } ${
                 showDocGlow
-                  ? 'animate-pulse ring-2 ring-purple-400 ring-offset-1 shadow-lg shadow-purple-300/50'
-                  : ''
+                  ? 'animate-pulse ring-2 ring-macos-purple ring-offset-1 shadow-lg shadow-macos-purple/30'
+                  : 'hover:bg-black/5'
               }`}
               title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
             >
               <FileText className="w-4 h-4" />
               {showDocGlow && (
                 <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-macos-purple opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-macos-purple"></span>
                 </span>
               )}
             </button>
             {/* Naujokas tooltip pointing to doc icon */}
             {showDocIconTooltip && naujokasMode && (
-              <div className="absolute top-full right-0 mt-2 z-50 animate-bounce">
-                <div className="bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg whitespace-nowrap">
+              <div className="absolute top-full right-0 mt-2 z-50 macos-animate-spring">
+                <div className="bg-macos-gray-900 text-white text-sm px-3 py-2 rounded-macos shadow-macos-lg whitespace-nowrap">
                   <div className="flex items-center space-x-2">
                     <span>Pasiūlymas išsaugotas! Spauskite čia peržiūrėti</span>
                     <button
@@ -508,13 +484,13 @@ function App() {
                         e.stopPropagation();
                         setShowDocIconTooltip(false);
                       }}
-                      className="text-gray-400 hover:text-white ml-1"
+                      className="text-macos-gray-400 hover:text-white ml-1"
                     >
                       <span className="text-xs">✕</span>
                     </button>
                   </div>
                   {/* Arrow pointing up */}
-                  <div className="absolute bottom-full right-4 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-gray-900" />
+                  <div className="absolute bottom-full right-4 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-macos-gray-900" />
                 </div>
               </div>
             )}
