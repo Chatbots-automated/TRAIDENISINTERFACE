@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 
 export interface Webhook {
   id: string;
@@ -18,10 +18,10 @@ const webhookCache: Map<string, { url: string; timestamp: number }> = new Map();
 const CACHE_TTL = 60000; // 1 minute cache
 
 /**
- * Get all webhooks
+ * Get all webhooks (uses admin client to bypass RLS - UI already restricts to admins)
  */
 export async function getWebhooks(): Promise<Webhook[]> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('webhooks')
     .select('*')
     .order('webhook_name', { ascending: true });
@@ -44,7 +44,7 @@ export async function getWebhookUrl(webhookKey: string): Promise<string | null> 
     return cached.url;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('webhooks')
     .select('url, is_active')
     .eq('webhook_key', webhookKey)
@@ -73,7 +73,7 @@ export async function updateWebhook(
   url: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('webhooks')
       .update({
         url,
@@ -103,7 +103,7 @@ export async function toggleWebhookActive(
   isActive: boolean
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('webhooks')
       .update({
         is_active: isActive,
@@ -149,7 +149,7 @@ export async function testWebhook(
     });
 
     // Update last test info in database
-    await supabase
+    await supabaseAdmin
       .from('webhooks')
       .update({
         last_tested_at: new Date().toISOString(),
@@ -165,7 +165,7 @@ export async function testWebhook(
     console.error('Error testing webhook:', error);
 
     // Update test status as failed
-    await supabase
+    await supabaseAdmin
       .from('webhooks')
       .update({
         last_tested_at: new Date().toISOString(),
