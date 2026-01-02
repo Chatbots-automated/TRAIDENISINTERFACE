@@ -283,23 +283,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const displayDocuments = getDisplayDocuments();
 
   return (
-    <div className="h-full flex flex-col bg-vf-background">
+    <div className="h-full flex flex-col bg-macos-gray-50">
       {/* Header */}
-      <div className="p-6 border-b border-vf-border bg-white">
+      <div className="p-6 border-b border-black/5 bg-white/80 backdrop-blur-macos">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Documents</h2>
-            <p className="text-sm text-vf-secondary mt-1">Create, edit, and organize your documents</p>
+            <h2 className="text-2xl font-semibold text-macos-gray-900 tracking-macos-tight">Documents</h2>
+            <p className="text-sm text-macos-gray-500 mt-1">Create, edit, and organize your documents</p>
           </div>
           <div className="flex items-center space-x-3">
             <button
               onClick={openUploadModal}
               disabled={uploadingFile}
-              className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+              className="macos-btn macos-btn-primary px-6 py-2.5 rounded-macos-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               {uploadingFile ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
                   <span>Uploading...</span>
                 </>
               ) : (
@@ -326,18 +326,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         {/* Search and Filter */}
         <div className="flex items-center space-x-3">
           <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-vf-secondary w-4 h-4" />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-macos-gray-400 w-4 h-4" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Search documents by name or metadata..."
-              className="vf-input w-full pl-11 pr-4 py-3 text-sm"
+              className="macos-input w-full pl-11 pr-4 py-2.5 text-sm rounded-macos-lg"
             />
           </div>
 
-          <button className="px-4 py-3 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors">
-            <Filter className="w-5 h-5 text-gray-600" />
+          <button className="p-2.5 bg-macos-gray-100 rounded-macos-lg hover:bg-macos-gray-200 transition-colors border-[0.5px] border-black/5">
+            <Filter className="w-5 h-5 text-macos-gray-600" />
           </button>
         </div>
       </div>
@@ -345,48 +345,51 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       {/* Messages */}
       {error && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
+        <div className="mx-6 mt-4 flex items-center space-x-2 text-macos-red bg-macos-red/10 p-3 rounded-macos border-[0.5px] border-macos-red/20">
           <AlertCircle className="w-5 h-5" />
           <span className="text-sm">{error}</span>
         </div>
       )}
 
       {success && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 text-green-600 bg-green-50 p-3 rounded-lg">
+        <div className="mx-6 mt-4 flex items-center space-x-2 text-macos-green bg-macos-green/10 p-3 rounded-macos border-[0.5px] border-macos-green/20">
           <Check className="w-5 h-5" />
           <span className="text-sm">Operation completed successfully!</span>
         </div>
       )}
 
-      {/* Import File Modal (Voiceflow Style) */}
+      {/* Import File Modal (macOS Style) */}
       {showMetadataModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-20">
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-start justify-center p-4 pt-20">
           <div
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full min-h-[550px] flex flex-col"
+            className="macos-animate-spring bg-white/95 backdrop-blur-macos rounded-macos-xl shadow-macos-window max-w-md w-full min-h-[550px] flex flex-col border-[0.5px] border-black/10"
             role="dialog"
             aria-labelledby="import-modal-title"
             aria-modal="true"
           >
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
+            <div className="px-6 py-4 border-b border-black/5 bg-macos-gray-50/50 rounded-t-macos-xl">
               <div className="flex items-center justify-between">
-                <h2 id="import-modal-title" className="text-base font-semibold text-gray-900">
+                <div className="flex items-center space-x-3">
+                  <div className="macos-window-controls p-0">
+                    <button
+                      onClick={() => {
+                        setShowMetadataModal(false);
+                        setSelectedFile(null);
+                        setChunkingStrategy('');
+                        setShowStrategyDropdown(false);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                      className="macos-dot macos-dot-close hover:opacity-80 transition-opacity"
+                    />
+                    <div className="macos-dot macos-dot-minimize opacity-60" />
+                    <div className="macos-dot macos-dot-maximize opacity-60" />
+                  </div>
+                </div>
+                <h2 id="import-modal-title" className="text-base font-semibold text-macos-gray-900 absolute left-1/2 transform -translate-x-1/2">
                   Import file
                 </h2>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMetadataModal(false);
-                    setSelectedFile(null);
-                    setChunkingStrategy('');
-                    setShowStrategyDropdown(false);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                  aria-label="Close modal"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="w-16" />
               </div>
             </div>
 
@@ -394,15 +397,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <div className="px-6 py-5 space-y-5">
               {/* File(s) Section */}
               <div>
-                <label htmlFor="file-upload-input" className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="file-upload-input" className="block text-sm font-medium text-macos-gray-700 mb-2">
                   File(s)
                 </label>
                 {selectedFile ? (
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-white">
-                    <p className="text-sm text-gray-600 mb-3">
-                      <span className="font-mono text-gray-900">{selectedFile.name}</span>
+                  <div className="border-[0.5px] border-dashed border-macos-gray-300 rounded-macos-lg p-6 text-center bg-macos-gray-50">
+                    <p className="text-sm text-macos-gray-600 mb-3">
+                      <span className="font-mono text-macos-gray-900">{selectedFile.name}</span>
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-macos-gray-500">
                       {(selectedFile.size / 1024).toFixed(2)} KB
                     </p>
                   </div>
@@ -410,7 +413,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   <div
                     onDrop={handleFileDrop}
                     onDragOver={handleDragOver}
-                    className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center bg-white transition-colors cursor-pointer"
+                    className="border-[0.5px] border-dashed border-macos-gray-300 rounded-macos-lg p-8 text-center bg-macos-gray-50 transition-colors cursor-pointer hover:border-macos-blue hover:bg-macos-blue/5"
                     onClick={triggerFileUpload}
                     role="button"
                     tabIndex={0}
@@ -422,12 +425,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     }}
                     aria-describedby="file-type-info"
                   >
-                    <p className="text-sm text-gray-600 mb-3">
+                    <p className="text-sm text-macos-gray-600 mb-3">
                       Drop file(s) here or
                     </p>
                     <button
                       type="button"
-                      className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                      className="macos-btn macos-btn-secondary px-6 py-2.5 rounded-macos-lg font-medium"
                       onClick={(e) => {
                         e.stopPropagation();
                         triggerFileUpload();
@@ -437,44 +440,44 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </button>
                   </div>
                 )}
-                <p id="file-type-info" className="text-xs text-gray-500 mt-2">
+                <p id="file-type-info" className="text-xs text-macos-gray-500 mt-2">
                   Supported file types: pdf, txt, docx - 10mb max.
                 </p>
               </div>
 
               {/* Dokumento Tipas - REQUIRED */}
               <div>
-                <label htmlFor="chunking-strategy-select" className="block text-sm font-medium text-gray-700 mb-2">
-                  Dokumento Tipas <span className="text-red-500">*</span>
+                <label htmlFor="chunking-strategy-select" className="block text-sm font-medium text-macos-gray-700 mb-2">
+                  Dokumento Tipas <span className="text-macos-red">*</span>
                 </label>
                 <div className="relative">
                   <button
                     id="chunking-strategy-select"
                     type="button"
                     onClick={() => setShowStrategyDropdown(!showStrategyDropdown)}
-                    className={`w-full px-3 py-2.5 border rounded-lg bg-white text-sm text-left flex items-center justify-between hover:border-gray-400 transition-colors ${
-                      !chunkingStrategy ? 'border-gray-300' : 'border-blue-400'
+                    className={`w-full px-3 py-2.5 border-[0.5px] rounded-macos-lg bg-white text-sm text-left flex items-center justify-between hover:border-macos-gray-400 transition-colors ${
+                      !chunkingStrategy ? 'border-macos-gray-200' : 'border-macos-blue'
                     }`}
                     aria-haspopup="listbox"
                     aria-expanded={showStrategyDropdown}
                   >
-                    <span className={chunkingStrategy ? 'text-gray-900' : 'text-gray-500'}>
+                    <span className={chunkingStrategy ? 'text-macos-gray-900' : 'text-macos-gray-500'}>
                       {chunkingStrategy === 'standartinis' && 'Standartinis Komercinis'}
                       {chunkingStrategy === 'nestandartinis' && 'Nestandartinis Komercinis'}
                       {chunkingStrategy === 'bendra' && 'Bendra'}
                       {!chunkingStrategy && 'Pasirinkite dokumento tipą...'}
                     </span>
-                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showStrategyDropdown ? 'rotate-180' : ''}`} />
+                    <ChevronDown className={`w-4 h-4 text-macos-gray-400 transition-transform duration-200 ${showStrategyDropdown ? 'rotate-180' : ''}`} />
                   </button>
 
                   {showStrategyDropdown && (
                     <div
-                      className="absolute z-10 w-full mt-2 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto"
+                      className="absolute z-10 w-full mt-2 bg-white/95 backdrop-blur-macos border-[0.5px] border-black/10 rounded-macos-lg shadow-macos-lg max-h-96 overflow-y-auto macos-animate-slide-down"
                       role="listbox"
                     >
                       <div className="p-2 space-y-1">
                         {/* Standartinis Komercinis */}
-                        <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                        <label className="flex items-start p-3 hover:bg-macos-blue/10 rounded-macos cursor-pointer transition-colors">
                           <input
                             type="radio"
                             name="chunking-strategy"
@@ -484,20 +487,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                               setChunkingStrategy(e.target.value);
                               setShowStrategyDropdown(false);
                             }}
-                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                            className="mt-0.5 w-4 h-4 text-macos-blue border-macos-gray-300 focus:ring-macos-blue"
                           />
                           <div className="ml-3 flex-1">
-                            <div className="text-sm font-semibold text-gray-900">
+                            <div className="text-sm font-semibold text-macos-gray-900">
                               Standartinis Komercinis
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5">
+                            <div className="text-xs text-macos-gray-500 mt-0.5">
                               Skirta standartiniams komerciniams dokumentams su aiškia struktūra. Naudoja pažangų AI skaidymą pagal tematiką.
                             </div>
                           </div>
                         </label>
 
                         {/* Nestandartinis Komercinis */}
-                        <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                        <label className="flex items-start p-3 hover:bg-macos-blue/10 rounded-macos cursor-pointer transition-colors">
                           <input
                             type="radio"
                             name="chunking-strategy"
@@ -507,20 +510,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                               setChunkingStrategy(e.target.value);
                               setShowStrategyDropdown(false);
                             }}
-                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                            className="mt-0.5 w-4 h-4 text-macos-blue border-macos-gray-300 focus:ring-macos-blue"
                           />
                           <div className="ml-3 flex-1">
-                            <div className="text-sm font-semibold text-gray-900">
+                            <div className="text-sm font-semibold text-macos-gray-900">
                               Nestandartinis Komercinis
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5">
+                            <div className="text-xs text-macos-gray-500 mt-0.5">
                               Skirtų sudėtingiems dokumentams su įvairiomis temomis. Optimizuotas AI skaidymas su konteksto priedu.
                             </div>
                           </div>
                         </label>
 
                         {/* Bendra */}
-                        <label className="flex items-start p-3 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors">
+                        <label className="flex items-start p-3 hover:bg-macos-blue/10 rounded-macos cursor-pointer transition-colors">
                           <input
                             type="radio"
                             name="chunking-strategy"
@@ -530,13 +533,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                               setChunkingStrategy(e.target.value);
                               setShowStrategyDropdown(false);
                             }}
-                            className="mt-0.5 w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                            className="mt-0.5 w-4 h-4 text-macos-blue border-macos-gray-300 focus:ring-macos-blue"
                           />
                           <div className="ml-3 flex-1">
-                            <div className="text-sm font-semibold text-gray-900">
+                            <div className="text-sm font-semibold text-macos-gray-900">
                               Bendra (DUK optimizacija)
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5">
+                            <div className="text-xs text-macos-gray-500 mt-0.5">
                               Sukuria pavyzdinius klausimus kiekvienai sekcijai. Geriausias pasirinkimas DUK kūrimui.
                             </div>
                           </div>
@@ -550,7 +553,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 border-t border-black/5 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -561,7 +564,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   setShowStrategyDropdown(false);
                   if (fileInputRef.current) fileInputRef.current.value = '';
                 }}
-                className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                className="macos-btn macos-btn-secondary px-6 py-2.5 rounded-macos-lg font-medium"
               >
                 Cancel
               </button>
@@ -569,12 +572,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 type="button"
                 onClick={performUpload}
                 disabled={uploadingFile || !selectedFile || !chunkingStrategy}
-                className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="macos-btn macos-btn-primary px-6 py-2.5 rounded-macos-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                 title={!chunkingStrategy ? 'Pasirinkite dokumento tipą' : !selectedFile ? 'Pasirinkite failą' : 'Importuoti dokumentą'}
               >
                 {uploadingFile ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
                     <span>Uploading...</span>
                   </>
                 ) : (
@@ -587,20 +590,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       )}
 
       {/* Documents List */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 vf-scrollbar">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6">
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-24 bg-gray-100 rounded-vf animate-pulse" />
+              <div key={i} className="h-24 bg-macos-gray-100 rounded-macos-lg animate-pulse" />
             ))}
           </div>
         ) : displayDocuments.length === 0 ? (
-          <div className="text-center py-16">
-            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          <div className="text-center py-16 macos-animate-fade">
+            <FileText className="w-16 h-16 text-macos-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-macos-gray-900 mb-2 tracking-macos-tight">
               {searchQuery ? 'No documents found' : 'No documents yet'}
             </h3>
-            <p className="text-vf-secondary mb-8 text-sm">
+            <p className="text-macos-gray-500 mb-8 text-sm">
               {searchQuery
                 ? 'Try adjusting your search terms'
                 : 'Upload your first document to get started'
@@ -609,7 +612,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {!searchQuery && (
               <button
                 onClick={openUploadModal}
-                className="px-8 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors"
+                className="macos-btn macos-btn-primary px-8 py-3 rounded-macos-lg font-medium"
               >
                 Upload Document
               </button>
@@ -620,52 +623,32 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {displayDocuments.map((document) => (
               <div
                 key={document.documentID}
-                className="bg-white rounded-lg cursor-pointer transition-all"
+                className="bg-white rounded-macos-lg cursor-pointer transition-all duration-150 border-[0.5px] border-black/5 hover:border-black/10 hover:shadow-macos"
                 style={{
                   padding: '14px 16px',
-                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
+                  boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
                   overflow: 'hidden'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#f7f7f7';
-                  e.currentTarget.style.boxShadow = '0 3px 6px 0 rgba(0, 0, 0, 0.08)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'white';
-                  e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)';
                 }}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center flex-1" style={{ gap: '14px' }}>
                     {/* Icon and Status Badge */}
                     <div className="flex flex-col items-center gap-1.5">
-                      <div
-                        className="w-10 h-10 rounded-lg flex items-center justify-center border"
-                        style={{
-                          backgroundColor: '#eff6ff',
-                          borderColor: '#bfdbfe'
-                        }}
-                      >
+                      <div className="w-10 h-10 rounded-macos flex items-center justify-center bg-macos-blue/10 border-[0.5px] border-macos-blue/20">
                         {document.data?.type === 'url' ? (
-                          <Globe className="w-5 h-5 text-blue-600" />
+                          <Globe className="w-5 h-5 text-macos-blue" />
                         ) : (
-                          <FileText className="w-5 h-5 text-blue-600" />
+                          <FileText className="w-5 h-5 text-macos-blue" />
                         )}
                       </div>
                       {/* Status Badge */}
                       {document.status?.type && (
                         <span
-                          className="text-[10px] font-semibold px-2 py-0.5 rounded uppercase"
-                          style={{
-                            backgroundColor:
-                              document.status.type === 'SUCCESS' ? '#dcfce7' :
-                              document.status.type === 'PENDING' ? '#fef3c7' :
-                              document.status.type === 'ERROR' ? '#fee2e2' : '#f3f4f6',
-                            color:
-                              document.status.type === 'SUCCESS' ? '#166534' :
-                              document.status.type === 'PENDING' ? '#92400e' :
-                              document.status.type === 'ERROR' ? '#991b1b' : '#374151'
-                          }}
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-md uppercase ${
+                            document.status.type === 'SUCCESS' ? 'bg-macos-green/15 text-macos-green' :
+                            document.status.type === 'PENDING' ? 'bg-macos-orange/15 text-macos-orange' :
+                            document.status.type === 'ERROR' ? 'bg-macos-red/15 text-macos-red' : 'bg-macos-gray-100 text-macos-gray-600'
+                          }`}
                         >
                           {document.status.type}
                         </span>
@@ -680,7 +663,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                             e.stopPropagation();
                             toggleTitleExpansion(document.documentID);
                           }}
-                          className="text-sm font-bold text-gray-900 cursor-pointer transition-transform"
+                          className="text-sm font-semibold text-macos-gray-900 cursor-pointer transition-all hover:text-macos-blue"
                           style={{
                             ...(expandedTitles.has(document.documentID) ? {} : {
                               whiteSpace: 'nowrap',
@@ -688,12 +671,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                               textOverflow: 'ellipsis',
                               maxWidth: '500px'
                             })
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = 'scale(1.02)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = 'scale(1)';
                           }}
                         >
                           {getDocumentTitle(document)}
@@ -703,26 +680,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       {/* Data Type, UserDocs Type, and Tags */}
                       <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                         {document.data?.type && (
-                          <span className="text-xs text-gray-600 font-medium">
+                          <span className="text-xs text-macos-gray-500 font-medium">
                             {document.data.type.toUpperCase()}
                           </span>
                         )}
                         {/* Show KB:UserDocs type (document category) */}
                         {document.integrationMetadata?.['KB:UserDocs'] && (
                           <>
-                            <span className="text-gray-300">•</span>
+                            <span className="text-macos-gray-300">•</span>
                             <span
-                              className="inline-flex items-center rounded font-medium"
-                              style={{
-                                padding: '2px 8px',
-                                fontSize: '11px',
-                                color: document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? '#1e40af' :
-                                       document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? '#7c2d12' :
-                                       document.integrationMetadata['KB:UserDocs'] === 'General' ? '#166534' : '#4a5568',
-                                backgroundColor: document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? '#dbeafe' :
-                                                 document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? '#fed7aa' :
-                                                 document.integrationMetadata['KB:UserDocs'] === 'General' ? '#dcfce7' : '#e2e8f0'
-                              }}
+                              className={`inline-flex items-center rounded-md font-medium text-[11px] px-2 py-0.5 ${
+                                document.integrationMetadata['KB:UserDocs'] === 'Standartinis' ? 'bg-macos-blue/10 text-macos-blue' :
+                                document.integrationMetadata['KB:UserDocs'] === 'Nestandartinis' ? 'bg-macos-orange/10 text-macos-orange' :
+                                document.integrationMetadata['KB:UserDocs'] === 'General' ? 'bg-macos-green/10 text-macos-green' : 'bg-macos-gray-100 text-macos-gray-600'
+                              }`}
                             >
                               {document.integrationMetadata['KB:UserDocs']}
                             </span>
@@ -730,18 +701,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         )}
                         {document.tags && document.tags.length > 0 && (
                           <>
-                            <span className="text-gray-300">•</span>
+                            <span className="text-macos-gray-300">•</span>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {document.tags.map((tag, idx) => (
                                 <span
                                   key={idx}
-                                  className="inline-flex items-center rounded font-medium"
-                                  style={{
-                                    padding: '2px 8px',
-                                    fontSize: '11px',
-                                    color: '#4a5568',
-                                    backgroundColor: '#e2e8f0'
-                                  }}
+                                  className="inline-flex items-center rounded-md font-medium text-[11px] px-2 py-0.5 bg-macos-gray-100 text-macos-gray-600"
                                 >
                                   {tag}
                                 </span>
@@ -752,7 +717,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       </div>
 
                       {/* Date - Days Ago */}
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-macos-gray-500">
                         {document.createdAt && getDaysAgo(document.createdAt)}
                       </div>
                     </div>
@@ -767,7 +732,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           e.stopPropagation();
                           setError('Šis dokumentas nepavyko apdoroti. Prašome ištrinti ir įkelti iš naujo.');
                         }}
-                        className="p-2.5 text-amber-600 hover:bg-amber-50 rounded-xl transition-colors"
+                        className="p-2.5 text-macos-orange hover:bg-macos-orange/10 rounded-macos transition-colors"
                         title="Pakartoti apdorojimą (Retry)"
                       >
                         <RefreshCw className="w-4 h-4" />
@@ -779,7 +744,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         e.stopPropagation();
                         handleDeleteDocument(document.documentID);
                       }}
-                      className="p-2.5 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                      className="p-2.5 text-macos-red hover:bg-macos-red/10 rounded-macos transition-colors"
                       title="Ištrinti dokumentą"
                     >
                       <Trash2 className="w-4 h-4" />

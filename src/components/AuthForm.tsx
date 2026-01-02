@@ -48,24 +48,31 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
       <div className="geometric-shape shape-square-2" />
       <div className="geometric-shape shape-square-3" />
 
-      {/* Login Card */}
+      {/* Login Card - macOS Style */}
       <div className="relative z-10 w-full max-w-md mx-4">
-        <div className="glass-card auth-card-enter rounded-2xl p-10">
+        <div className="macos-animate-spring bg-white/90 backdrop-blur-macos rounded-macos-xl p-10 shadow-macos-window border-[0.5px] border-black/10">
+          {/* macOS Window Controls (decorative) */}
+          <div className="absolute top-4 left-4 macos-window-controls">
+            <div className="macos-dot macos-dot-close opacity-60" />
+            <div className="macos-dot macos-dot-minimize opacity-60" />
+            <div className="macos-dot macos-dot-maximize opacity-60" />
+          </div>
+
           {/* Logo */}
-          <div className="flex justify-center mb-8">
+          <div className="flex justify-center mb-8 mt-4">
             <img
               src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
               alt="Traidenis Logo"
-              className="w-16 h-16 object-contain"
+              className="w-16 h-16 object-contain rounded-macos-lg shadow-macos"
             />
           </div>
 
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-2xl font-semibold text-macos-gray-900 mb-2 tracking-macos-tight">
               Log into Traidenis
             </h1>
-            <p className="text-gray-500 text-sm">
+            <p className="text-macos-gray-500 text-sm">
               High-Performance Knowledge Base
             </p>
           </div>
@@ -74,23 +81,23 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email*
+              <label className="block text-sm font-medium text-macos-gray-700 mb-2">
+                Email
               </label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 placeholder="email@example.com"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-vf-primary focus:border-transparent transition-all"
+                className="w-full macos-input rounded-macos text-macos-gray-900"
                 required
               />
             </div>
 
             {/* Password Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password*
+              <label className="block text-sm font-medium text-macos-gray-700 mb-2">
+                Password
               </label>
               <div className="relative">
                 <input
@@ -98,13 +105,13 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-vf-primary focus:border-transparent transition-all pr-12"
+                  className="w-full macos-input rounded-macos text-macos-gray-900 pr-12"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-macos-gray-400 hover:text-macos-gray-600 transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -113,9 +120,9 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
 
             {/* Error Message */}
             {error && (
-              <div className="flex items-start space-x-2 p-3 rounded-lg bg-red-50 border border-red-200">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <span className="text-sm text-red-600">{error}</span>
+              <div className="flex items-start space-x-2 p-3 rounded-macos bg-macos-red/10 border-[0.5px] border-macos-red/20">
+                <AlertCircle className="w-5 h-5 text-macos-red flex-shrink-0 mt-0.5" />
+                <span className="text-sm text-macos-red">{error}</span>
               </div>
             )}
 
@@ -123,11 +130,11 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 text-white font-semibold py-3.5 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-lg mt-6"
+              className="w-full macos-btn macos-btn-primary py-3 px-6 rounded-macos text-base font-medium shadow-macos-lg hover:shadow-macos-xl disabled:opacity-50 disabled:cursor-not-allowed mt-6"
             >
               {loading ? (
                 <div className="flex items-center justify-center space-x-2">
-                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white" />
                   <span>Signing in...</span>
                 </div>
               ) : (

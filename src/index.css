@@ -1,82 +1,281 @@
-@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Voiceflow-inspired CSS styling */
+/* macOS-inspired Premium CSS Styling */
 @layer base {
   * {
-    font-family: 'Urbanist', 'Ucity Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'Urbanist', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   body {
-    background: #f9fafb;
-    color: #374151;
+    background: #F5F5F7;
+    color: #1D1D1F;
     font-size: 14px;
     line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+
+  /* macOS-style thin scrollbars globally */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.35);
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 }
 
 @layer components {
-  /* Voiceflow-style buttons */
+  /* ===== macOS Button Styles ===== */
+  .macos-btn {
+    @apply rounded-lg font-medium transition-all duration-150;
+    border: 0.5px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .macos-btn:hover {
+    filter: brightness(1.05);
+  }
+
+  .macos-btn:active {
+    filter: brightness(0.95);
+    transform: scale(0.98);
+  }
+
+  .macos-btn-primary {
+    background: linear-gradient(180deg, #3a8dff 0%, #007AFF 100%);
+    @apply text-white;
+  }
+
+  .macos-btn-primary:hover {
+    background: linear-gradient(180deg, #4a9dff 0%, #0056CC 100%);
+  }
+
+  .macos-btn-secondary {
+    background: rgba(0, 0, 0, 0.05);
+    border: 0.5px solid rgba(0, 0, 0, 0.1);
+    @apply text-macos-gray-900;
+  }
+
+  .macos-btn-secondary:hover {
+    background: rgba(0, 0, 0, 0.08);
+  }
+
+  /* Legacy vf buttons (mapped to macOS style) */
   .vf-btn {
-    @apply rounded-lg transition-all duration-200 font-medium;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    @apply rounded-macos transition-all duration-150 font-medium;
+    border: 0.5px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
 
   .vf-btn:hover {
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    filter: brightness(1.02);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .vf-btn:active {
+    transform: scale(0.98);
   }
 
   .vf-btn-primary {
-    @apply bg-[#397DFF] text-white;
+    background: linear-gradient(180deg, #3a8dff 0%, #007AFF 100%);
+    @apply text-white;
+    border: 0.5px solid rgba(0, 0, 0, 0.15);
   }
 
   .vf-btn-primary:hover {
-    @apply bg-[#2968e6];
+    background: linear-gradient(180deg, #4a9dff 0%, #0056CC 100%);
   }
 
-  /* Voiceflow-style input fields */
-  .vf-input {
-    @apply rounded-lg border border-gray-200 px-4 py-3 transition-all duration-200;
+  /* ===== macOS Input Styles ===== */
+  .macos-input {
+    @apply rounded-lg px-3 py-2 transition-all duration-150;
+    background: rgba(0, 0, 0, 0.04);
+    border: 0.5px solid rgba(0, 0, 0, 0.1);
+  }
+
+  .macos-input:focus {
     background: white;
+    border-color: #007AFF;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2);
+    @apply outline-none;
+  }
+
+  .macos-input::placeholder {
+    color: #8E8E93;
+  }
+
+  /* Legacy vf inputs (mapped to macOS style) */
+  .vf-input {
+    @apply rounded-macos px-4 py-3 transition-all duration-150;
+    background: rgba(0, 0, 0, 0.03);
+    border: 0.5px solid rgba(0, 0, 0, 0.08);
   }
 
   .vf-input:focus {
-    @apply outline-none border-[#397DFF] ring-2 ring-[#397DFF] ring-opacity-20;
+    background: white;
+    border-color: #007AFF;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+    @apply outline-none;
   }
 
-  /* Voiceflow-style cards */
+  /* ===== macOS Card Styles ===== */
+  .macos-card {
+    @apply bg-white rounded-macos-lg;
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  }
+
+  .macos-card:hover {
+    box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  }
+
+  /* Legacy vf cards (mapped to macOS style) */
   .vf-card {
-    @apply bg-white rounded-xl border border-gray-100;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    @apply bg-white rounded-macos-lg;
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
   }
 
-  /* Voiceflow-style sidebar */
+  .vf-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  }
+
+  /* ===== macOS Glassmorphism Sidebar ===== */
+  .macos-sidebar {
+    background: rgba(246, 246, 248, 0.72);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-right: 0.5px solid rgba(0, 0, 0, 0.1);
+  }
+
+  /* Legacy vf sidebar (mapped to macOS glassmorphism) */
   .vf-sidebar {
-    @apply bg-white border-r border-gray-100;
-    box-shadow: 1px 0 3px rgba(0, 0, 0, 0.02);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-right: 0.5px solid rgba(0, 0, 0, 0.08);
   }
 
-  /* Voiceflow-style chat container */
+  /* ===== macOS Chat Container ===== */
   .vf-chat-container {
-    @apply bg-white rounded-xl;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    @apply bg-white rounded-macos-lg;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
   }
 
-  /* Voiceflow-style message bubbles */
+  /* ===== macOS Message Bubbles ===== */
   .vf-message-user {
-    @apply bg-[#397DFF] text-white rounded-2xl px-4 py-2;
+    background: linear-gradient(180deg, #3a8dff 0%, #007AFF 100%);
+    @apply text-white rounded-2xl px-4 py-2;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
 
   .vf-message-assistant {
-    @apply bg-gray-100 text-gray-900 rounded-2xl px-4 py-2;
+    @apply bg-macos-gray-100 text-macos-gray-900 rounded-2xl px-4 py-2;
+    border: 0.5px solid rgba(0, 0, 0, 0.04);
   }
 
-  /* Smooth scrollbars */
+  /* ===== macOS Segmented Control ===== */
+  .macos-segmented-control {
+    background: rgba(0, 0, 0, 0.05);
+    @apply rounded-lg p-0.5 inline-flex;
+    border: 0.5px solid rgba(0, 0, 0, 0.06);
+  }
+
+  .macos-segment {
+    @apply px-4 py-1.5 rounded-md font-medium text-sm transition-all duration-200;
+    color: #6E6E73;
+  }
+
+  .macos-segment:hover:not(.active) {
+    color: #1D1D1F;
+  }
+
+  .macos-segment.active {
+    @apply bg-white text-macos-gray-900;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  /* ===== macOS List Items ===== */
+  .macos-list-item {
+    @apply rounded-md px-2.5 py-1.5 transition-colors duration-150;
+  }
+
+  .macos-list-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  .macos-list-item.active {
+    background: rgba(0, 122, 255, 0.12);
+    color: #007AFF;
+  }
+
+  /* ===== macOS Window Controls (Traffic Lights) ===== */
+  .macos-window-controls {
+    @apply flex gap-2 p-3;
+  }
+
+  .macos-dot {
+    @apply w-3 h-3 rounded-full transition-opacity;
+  }
+
+  .macos-dot-close {
+    background: #FF5F57;
+  }
+
+  .macos-dot-minimize {
+    background: #FEBC2E;
+  }
+
+  .macos-dot-maximize {
+    background: #28C840;
+  }
+
+  .macos-window-controls:hover .macos-dot {
+    opacity: 1;
+  }
+
+  /* ===== macOS Toggle Switch ===== */
+  .macos-toggle {
+    @apply relative w-10 h-6 rounded-full transition-colors duration-200;
+    background: #E8E8ED;
+  }
+
+  .macos-toggle.active {
+    background: #34C759;
+  }
+
+  .macos-toggle-thumb {
+    @apply absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+
+  .macos-toggle.active .macos-toggle-thumb {
+    transform: translateX(16px);
+  }
+
+  /* ===== macOS Scrollbars (legacy class) ===== */
   .vf-scrollbar::-webkit-scrollbar {
-    width: 6px;
+    width: 8px;
   }
 
   .vf-scrollbar::-webkit-scrollbar-track {
@@ -84,22 +283,55 @@
   }
 
   .vf-scrollbar::-webkit-scrollbar-thumb {
-    background: #d1d5db;
-    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 
   .vf-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #9ca3af;
+    background: rgba(0, 0, 0, 0.35);
+    border: 2px solid transparent;
+    background-clip: padding-box;
   }
 
-  /* Smooth animations */
-  @keyframes fadeIn {
+  /* ===== macOS Spring Animations ===== */
+  @keyframes macosSpring {
+    0% { transform: scale(0.95); opacity: 0; }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes macosFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  @keyframes macosSlideUp {
     from {
+      transform: translateY(20px);
       opacity: 0;
     }
     to {
+      transform: translateY(0);
       opacity: 1;
     }
+  }
+
+  @keyframes macosSlideDown {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
   @keyframes slideInFromBottom {
@@ -124,34 +356,46 @@
     }
   }
 
+  .macos-animate-spring {
+    animation: macosSpring 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  .macos-animate-fade {
+    animation: macosFadeIn 0.2s ease-out;
+  }
+
+  .macos-animate-slide-up {
+    animation: macosSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .macos-animate-slide-down {
+    animation: macosSlideDown 0.2s ease-out;
+  }
+
   .animate-fade-in {
     animation: fadeIn 0.2s ease-out;
   }
 
   .animate-slide-in-bottom {
-    animation: slideInFromBottom 0.3s ease-out;
+    animation: slideInFromBottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .animate-slide-in-top {
     animation: slideInFromTop 0.2s ease-out;
   }
 
-  /* Micro-interactions */
-  .vf-btn, .vf-card, button {
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  /* ===== Micro-interactions ===== */
+  .vf-btn, .vf-card, .macos-btn, .macos-card, button {
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  .vf-card:hover {
-    transform: translateY(-1px);
-  }
-
-  /* Better focus states */
+  /* ===== Better Focus States (macOS style) ===== */
   button:focus-visible,
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid #397DFF;
-    outline-offset: 2px;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.3);
   }
 
   /* Geometric Login Background - CSS3 */
