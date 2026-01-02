@@ -51,13 +51,6 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
       {/* Login Card - macOS Style */}
       <div className="relative z-10 w-full max-w-md mx-4">
         <div className="macos-animate-spring bg-white/90 backdrop-blur-macos rounded-macos-xl p-10 shadow-macos-window border-[0.5px] border-black/10">
-          {/* macOS Window Controls (decorative) */}
-          <div className="absolute top-4 left-4 macos-window-controls">
-            <div className="macos-dot macos-dot-close opacity-60" />
-            <div className="macos-dot macos-dot-minimize opacity-60" />
-            <div className="macos-dot macos-dot-maximize opacity-60" />
-          </div>
-
           {/* Logo */}
           <div className="flex justify-center mb-8 mt-4">
             <img

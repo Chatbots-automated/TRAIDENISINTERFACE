@@ -380,10 +380,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         setShowStrategyDropdown(false);
                         if (fileInputRef.current) fileInputRef.current.value = '';
                       }}
-                      className="macos-dot macos-dot-close hover:opacity-80 transition-opacity"
-                    />
-                    <div className="macos-dot macos-dot-minimize opacity-60" />
-                    <div className="macos-dot macos-dot-maximize opacity-60" />
+                      className="w-6 h-6 rounded-full bg-macos-gray-100 hover:bg-macos-gray-200 flex items-center justify-center transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5 text-macos-gray-500" />
+                    </button>
                   </div>
                 </div>
                 <h2 id="import-modal-title" className="text-base font-semibold text-macos-gray-900 absolute left-1/2 transform -translate-x-1/2">
