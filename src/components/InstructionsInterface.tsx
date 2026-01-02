@@ -1,23 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText,
   Save,
   Edit3,
   Clock,
-  ChevronLeft,
   ChevronRight,
   RotateCcw,
   Check,
   AlertCircle,
   X,
   Shield,
-  Sparkles,
   BookOpen,
-  Zap,
-  Target,
-  Layers,
-  Settings2,
-  Code2
+  Lock,
+  ChevronDown,
+  Eye,
+  Pencil
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import {
@@ -34,23 +31,11 @@ interface InstructionsInterfaceProps {
   user: AppUser;
 }
 
-type View = 'list' | 'editor' | 'versions';
-
-// Color themes for cards
-const cardThemes = [
-  { bg: 'from-violet-500 to-purple-600', light: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-600', icon: Sparkles },
-  { bg: 'from-blue-500 to-cyan-500', light: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-600', icon: Zap },
-  { bg: 'from-emerald-500 to-teal-500', light: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', icon: Target },
-  { bg: 'from-orange-500 to-amber-500', light: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-600', icon: Layers },
-  { bg: 'from-pink-500 to-rose-500', light: 'bg-pink-50', border: 'border-pink-200', text: 'text-pink-600', icon: BookOpen },
-  { bg: 'from-indigo-500 to-blue-600', light: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-600', icon: Settings2 },
-  { bg: 'from-cyan-500 to-blue-500', light: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-600', icon: Code2 },
-];
+type View = 'editor' | 'versions';
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
-  const [view, setView] = useState<View>('list');
+  const [view, setView] = useState<View>('editor');
   const [variables, setVariables] = useState<InstructionVariable[]>([]);
-  const [selectedVariable, setSelectedVariable] = useState<InstructionVariable | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
   const [editContent, setEditContent] = useState('');
   const [isEditing, setIsEditing] = useState(false);
@@ -65,6 +50,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [versions, setVersions] = useState<InstructionVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const selectedVariable = variables[selectedIndex] || null;
 
   useEffect(() => {
     loadVariables();
@@ -75,6 +63,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       loadVersions();
     }
   }, [view]);
+
+  useEffect(() => {
+    if (selectedVariable) {
+      setEditContent(selectedVariable.content);
+      setIsEditing(false);
+      setIsAuthenticated(false);
+      setShowPasswordInput(false);
+      setPassword('');
+      setPasswordError('');
+    }
+  }, [selectedIndex, variables]);
 
   const loadVariables = async () => {
     try {
@@ -99,18 +98,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     } finally {
       setLoadingVersions(false);
     }
-  };
-
-  const handleSelectVariable = (variable: InstructionVariable, index: number) => {
-    setSelectedVariable(variable);
-    setSelectedIndex(index);
-    setEditContent(variable.content);
-    setIsEditing(false);
-    setIsAuthenticated(false);
-    setShowPasswordInput(false);
-    setPassword('');
-    setPasswordError('');
-    setView('editor');
   };
 
   const handleAuthenticate = async () => {
@@ -142,13 +129,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       );
 
       if (result.success) {
-        setSuccess('Išsaugota sėkmingai!');
+        setSuccess('Išsaugota!');
         setTimeout(() => setSuccess(null), 3000);
         setIsEditing(false);
         setIsAuthenticated(false);
-
         await loadVariables();
-        setSelectedVariable(prev => prev ? { ...prev, content: editContent } : null);
       } else {
         setError(result.error || 'Nepavyko išsaugoti');
       }
@@ -169,7 +154,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const result = await revertToVersion(versionNumber, user.id, user.email);
 
       if (result.success) {
-        setSuccess('Versija grąžinta sėkmingai!');
+        setSuccess('Versija grąžinta!');
         setTimeout(() => setSuccess(null), 3000);
         await loadVariables();
         await loadVersions();
@@ -183,19 +168,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   };
 
-  const handleBack = () => {
-    if (view === 'editor') {
-      if (isEditing && editContent !== selectedVariable?.content) {
-        if (!confirm('Išeiti be išsaugojimo?')) {
-          return;
-        }
-      }
-      setSelectedVariable(null);
-      setIsEditing(false);
-      setIsAuthenticated(false);
-      setShowPasswordInput(false);
+  const handleCancelEdit = () => {
+    if (selectedVariable) {
+      setEditContent(selectedVariable.content);
     }
-    setView('list');
+    setIsEditing(false);
+    setIsAuthenticated(false);
   };
 
   const getRelativeTime = (dateString: string) => {
@@ -213,178 +191,15 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     return date.toLocaleDateString('lt-LT');
   };
 
-  const getTheme = (index: number) => cardThemes[index % cardThemes.length];
-
   if (!user.is_admin) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="flex-1 flex items-center justify-center bg-gray-50">
         <div className="text-center">
-          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-10 h-10 text-red-400" />
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-red-400" />
           </div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            Prieiga uždrausta
-          </h3>
-          <p className="text-gray-500">
-            Jums reikia administratoriaus teisių
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Editor View
-  if (view === 'editor' && selectedVariable) {
-    const theme = getTheme(selectedIndex);
-    const IconComponent = theme.icon;
-
-    return (
-      <div className="h-full flex flex-col bg-gray-50">
-        {/* Gradient Header */}
-        <div className={`bg-gradient-to-r ${theme.bg} px-6 py-8`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={handleBack}
-                className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5 text-white" />
-              </button>
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                <IconComponent className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold text-white">{selectedVariable.variable_name}</h2>
-                <p className="text-white/80 text-sm">{selectedVariable.description || selectedVariable.variable_key}</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              {isEditing ? (
-                <>
-                  <button
-                    onClick={() => { setEditContent(selectedVariable.content); setIsEditing(false); setIsAuthenticated(false); }}
-                    className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors"
-                  >
-                    Atšaukti
-                  </button>
-                  <button
-                    onClick={handleSave}
-                    disabled={saving || editContent === selectedVariable.content}
-                    className="px-5 py-2 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 font-medium"
-                  >
-                    {saving ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-gray-600" />
-                        <span>Saugoma...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        <span>Išsaugoti</span>
-                      </>
-                    )}
-                  </button>
-                </>
-              ) : (
-                !showPasswordInput && (
-                  <button
-                    onClick={() => setShowPasswordInput(true)}
-                    className="px-5 py-2 bg-white text-gray-900 rounded-lg hover:bg-gray-100 transition-colors flex items-center space-x-2 font-medium"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    <span>Redaguoti</span>
-                  </button>
-                )
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Password Input */}
-        {showPasswordInput && !isAuthenticated && (
-          <div className={`px-6 py-5 ${theme.light} border-b ${theme.border}`}>
-            <div className="max-w-xl">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-lg font-semibold ${theme.text}`}>Patvirtinkite tapatybę</h3>
-                <button
-                  onClick={() => { setShowPasswordInput(false); setPassword(''); setPasswordError(''); }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="flex items-center space-x-3">
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAuthenticate()}
-                  placeholder="Įveskite slaptažodį"
-                  className={`flex-1 px-4 py-2.5 border ${theme.border} rounded-lg focus:ring-2 focus:ring-offset-0 focus:outline-none`}
-                  autoFocus
-                />
-                <button
-                  onClick={handleAuthenticate}
-                  className={`px-6 py-2.5 bg-gradient-to-r ${theme.bg} text-white rounded-lg hover:opacity-90 transition-opacity font-medium`}
-                >
-                  Patvirtinti
-                </button>
-              </div>
-              {passwordError && (
-                <p className="mt-2 text-sm text-red-600">{passwordError}</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Messages */}
-        <div className="px-6">
-          {error && (
-            <div className="mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-4 rounded-xl border border-red-200">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm font-medium">{error}</span>
-              <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {success && (
-            <div className="mt-4 flex items-center space-x-2 text-green-600 bg-green-50 p-4 rounded-xl border border-green-200">
-              <Check className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm font-medium">{success}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {isEditing ? (
-            <textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className={`w-full h-full min-h-[500px] px-5 py-4 text-sm text-gray-900 bg-white border-2 ${theme.border} rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-offset-0 shadow-sm`}
-              style={{ lineHeight: '1.8', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif' }}
-              placeholder="Įveskite instrukcijos turinį..."
-              autoFocus
-            />
-          ) : (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 min-h-[300px]">
-              <div
-                className="text-sm text-gray-700 whitespace-pre-wrap"
-                style={{ lineHeight: '1.8', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif' }}
-              >
-                {selectedVariable.content || (
-                  <div className="text-center py-12">
-                    <div className={`w-16 h-16 ${theme.light} rounded-full flex items-center justify-center mx-auto mb-4`}>
-                      <FileText className={`w-8 h-8 ${theme.text}`} />
-                    </div>
-                    <p className="text-gray-400 italic">Instrukcija tuščia</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Prieiga uždrausta</h3>
+          <p className="text-gray-500">Jums reikia administratoriaus teisių</p>
         </div>
       </div>
     );
@@ -394,110 +209,97 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   if (view === 'versions') {
     return (
       <div className="h-full flex flex-col bg-gray-50">
-        {/* Gradient Header */}
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-8">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={handleBack}
-              className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5 text-white" />
-            </button>
-            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-              <Clock className="w-6 h-6 text-white" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white">Versijų istorija</h2>
-              <p className="text-white/80 text-sm">Peržiūrėkite ir grąžinkite ankstesnes versijas</p>
+        {/* Simple Header */}
+        <div className="bg-white border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setView('editor')}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ← Atgal
+              </button>
+              <div className="w-px h-5 bg-gray-300" />
+              <Clock className="w-5 h-5 text-gray-400" />
+              <h2 className="text-lg font-semibold text-gray-900">Versijų istorija</h2>
             </div>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="px-6">
-          {error && (
-            <div className="mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-4 rounded-xl border border-red-200">
-              <AlertCircle className="w-5 h-5" />
-              <span className="text-sm font-medium">{error}</span>
-            </div>
-          )}
-
-          {success && (
-            <div className="mt-4 flex items-center space-x-2 text-green-600 bg-green-50 p-4 rounded-xl border border-green-200">
-              <Check className="w-5 h-5" />
-              <span className="text-sm font-medium">{success}</span>
-            </div>
-          )}
-        </div>
+        {(error || success) && (
+          <div className="px-6 pt-4">
+            {error && (
+              <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                <AlertCircle className="w-4 h-4" />
+                <span className="text-sm">{error}</span>
+                <button onClick={() => setError(null)} className="ml-auto"><X className="w-4 h-4" /></button>
+              </div>
+            )}
+            {success && (
+              <div className="flex items-center space-x-2 text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
+                <Check className="w-4 h-4" />
+                <span className="text-sm">{success}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Versions List */}
         <div className="flex-1 overflow-y-auto p-6">
           {loadingVersions ? (
-            <div className="space-y-4">
-              {[1, 2, 3, 4].map(i => (
-                <div key={i} className="h-24 bg-white rounded-2xl animate-pulse" />
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-16 bg-white rounded-lg animate-pulse" />
               ))}
             </div>
           ) : versions.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Clock className="w-10 h-10 text-indigo-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-2">Versijų dar nėra</h3>
-              <p className="text-gray-500">Kai pakeisite instrukcijas, versijos bus rodomos čia</p>
+            <div className="text-center py-16 text-gray-500">
+              <Clock className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p>Versijų dar nėra</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {versions.map((version, index) => {
-                const theme = getTheme(index);
-                return (
-                  <div
-                    key={version.id}
-                    className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-all ${index === 0 ? 'ring-2 ring-indigo-500 ring-offset-2' : ''}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className={`w-14 h-14 bg-gradient-to-br ${theme.bg} rounded-xl flex items-center justify-center shadow-lg`}>
-                          <span className="text-lg font-bold text-white">v{version.version_number}</span>
-                        </div>
-                        <div>
-                          <div className="flex items-center space-x-2">
-                            <h3 className="text-lg font-semibold text-gray-900">
-                              {version.change_description || version.variable_key}
-                            </h3>
-                            {index === 0 && (
-                              <span className="px-3 py-1 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-full">
-                                Dabartinė
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-500 mt-1">
-                            {version.changed_by_email || 'Sistema'} • {getRelativeTime(version.created_at)}
-                          </p>
-                        </div>
+            <div className="space-y-2 max-w-2xl">
+              {versions.map((version, index) => (
+                <div
+                  key={version.id}
+                  className={`bg-white rounded-lg p-4 border ${index === 0 ? 'border-green-300 bg-green-50/50' : 'border-gray-200'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <span className={`text-sm font-mono px-2 py-1 rounded ${index === 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                        v{version.version_number}
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {version.variable_key}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {version.changed_by_email || 'Sistema'} • {getRelativeTime(version.created_at)}
+                        </p>
                       </div>
-
-                      {index !== 0 && (
-                        <button
-                          onClick={() => handleRevert(version.version_number)}
-                          disabled={revertingVersion === version.version_number}
-                          className="px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg disabled:opacity-50 transition-colors flex items-center space-x-2"
-                          title="Grąžinti šią versiją"
-                        >
-                          {revertingVersion === version.version_number ? (
-                            <div className="w-5 h-5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-                          ) : (
-                            <>
-                              <RotateCcw className="w-4 h-4" />
-                              <span className="text-sm font-medium">Grąžinti</span>
-                            </>
-                          )}
-                        </button>
-                      )}
                     </div>
+                    {index === 0 ? (
+                      <span className="text-xs text-green-600 font-medium">Dabartinė</span>
+                    ) : (
+                      <button
+                        onClick={() => handleRevert(version.version_number)}
+                        disabled={revertingVersion === version.version_number}
+                        className="text-sm text-gray-500 hover:text-gray-700 flex items-center space-x-1"
+                      >
+                        {revertingVersion === version.version_number ? (
+                          <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                        ) : (
+                          <>
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Grąžinti</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -505,128 +307,266 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     );
   }
 
-  // Main List View
+  // Main Editor View - Document Style
   return (
-    <div className="h-full flex flex-col bg-gray-50">
-      {/* Gradient Header */}
-      <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 px-6 py-8">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
-              <BookOpen className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-white">Instrukcijos</h2>
-              <p className="text-white/80">Valdykite AI agento instrukcijų kintamuosius</p>
-            </div>
+    <div className="h-full flex bg-white">
+      {/* Left Sidebar - Table of Contents */}
+      <div className="w-72 border-r border-gray-200 flex flex-col bg-gray-50">
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center space-x-2 mb-1">
+            <BookOpen className="w-4 h-4 text-gray-500" />
+            <h2 className="text-sm font-semibold text-gray-900">AI Agento Instrukcijos</h2>
           </div>
+          <p className="text-xs text-gray-500">
+            {variables.filter(v => v.content).length} iš {variables.length} užpildyta
+          </p>
+        </div>
+
+        {/* Navigation Items */}
+        <div className="flex-1 overflow-y-auto py-2">
+          {loading ? (
+            <div className="px-4 space-y-2">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-10 bg-gray-200 rounded animate-pulse" />
+              ))}
+            </div>
+          ) : (
+            <nav className="space-y-0.5 px-2">
+              {variables.map((variable, index) => (
+                <button
+                  key={variable.id}
+                  onClick={() => setSelectedIndex(index)}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg transition-all group ${
+                    selectedIndex === index
+                      ? 'bg-white shadow-sm border border-gray-200'
+                      : 'hover:bg-white/60'
+                  }`}
+                >
+                  <div className="flex items-start space-x-3">
+                    <span className={`text-xs font-mono mt-0.5 ${
+                      selectedIndex === index ? 'text-blue-600' : 'text-gray-400'
+                    }`}>
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${
+                        selectedIndex === index ? 'text-gray-900' : 'text-gray-700'
+                      }`}>
+                        {variable.variable_name}
+                      </p>
+                      {!variable.content && (
+                        <p className="text-xs text-amber-600 mt-0.5">Tuščia</p>
+                      )}
+                    </div>
+                    {selectedIndex === index && (
+                      <ChevronRight className="w-4 h-4 text-gray-400 mt-0.5" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </nav>
+          )}
+        </div>
+
+        {/* Sidebar Footer */}
+        <div className="p-3 border-t border-gray-200">
           <button
             onClick={() => setView('versions')}
-            className="px-5 py-2.5 bg-white/20 hover:bg-white/30 text-white rounded-xl transition-colors flex items-center space-x-2 font-medium"
+            className="w-full flex items-center justify-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-colors"
           >
             <Clock className="w-4 h-4" />
             <span>Versijų istorija</span>
           </button>
         </div>
-
-        {/* Stats */}
-        <div className="mt-6 flex items-center space-x-6">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-              <FileText className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{variables.length}</p>
-              <p className="text-xs text-white/70">Instrukcijos</p>
-            </div>
-          </div>
-          <div className="w-px h-10 bg-white/20" />
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-              <Check className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{variables.filter(v => v.content).length}</p>
-              <p className="text-xs text-white/70">Užpildytos</p>
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Messages */}
-      <div className="px-6">
-        {error && (
-          <div className="mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-4 rounded-xl border border-red-200">
-            <AlertCircle className="w-5 h-5" />
-            <span className="text-sm font-medium">{error}</span>
-          </div>
-        )}
-
-        {success && (
-          <div className="mt-4 flex items-center space-x-2 text-green-600 bg-green-50 p-4 rounded-xl border border-green-200">
-            <Check className="w-5 h-5" />
-            <span className="text-sm font-medium">{success}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Instructions List */}
-      <div className="flex-1 overflow-y-auto p-6">
-        {loading ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="h-32 bg-white rounded-2xl animate-pulse" />
-            ))}
-          </div>
-        ) : variables.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-20 h-20 bg-violet-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <FileText className="w-10 h-10 text-violet-400" />
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">Instrukcijų nerasta</h3>
-            <p className="text-gray-500">Instrukcijų kintamieji bus rodomi čia</p>
-          </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {variables.map((variable, index) => {
-              const theme = getTheme(index);
-              const IconComponent = theme.icon;
-
-              return (
-                <button
-                  key={variable.id}
-                  onClick={() => handleSelectVariable(variable, index)}
-                  className="bg-white rounded-2xl p-5 text-left hover:shadow-lg transition-all duration-200 group border border-gray-100 hover:border-gray-200"
-                >
-                  <div className="flex items-start space-x-4">
-                    <div className={`w-12 h-12 bg-gradient-to-br ${theme.bg} rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
-                      <IconComponent className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-2">
-                        <h3 className="text-base font-semibold text-gray-900 truncate">
-                          {variable.variable_name}
-                        </h3>
-                        {!variable.content && (
-                          <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
-                            tuščia
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-500 mt-1 truncate">
-                        {variable.variable_key}
-                      </p>
-                      {variable.content && (
-                        <p className="text-xs text-gray-400 mt-2 line-clamp-2">
-                          {variable.content.substring(0, 120)}...
-                        </p>
-                      )}
-                    </div>
-                    <ChevronRight className={`w-5 h-5 ${theme.text} opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0`} />
+      {/* Right Panel - Content Editor */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {selectedVariable ? (
+          <>
+            {/* Content Header */}
+            <div className="border-b border-gray-200 px-8 py-5">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                      {selectedVariable.variable_key}
+                    </span>
+                    <span className="text-xs text-gray-400">•</span>
+                    <span className="text-xs text-gray-400">
+                      Sekcija {selectedIndex + 1} iš {variables.length}
+                    </span>
                   </div>
-                </button>
-              );
-            })}
+                  <h1 className="text-xl font-semibold text-gray-900">
+                    {selectedVariable.variable_name}
+                  </h1>
+                  {selectedVariable.description && (
+                    <p className="text-sm text-gray-500 mt-1">{selectedVariable.description}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-2 ml-4">
+                  {isEditing ? (
+                    <>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Atšaukti
+                      </button>
+                      <button
+                        onClick={handleSave}
+                        disabled={saving || editContent === selectedVariable.content}
+                        className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                      >
+                        {saving ? (
+                          <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        <span>Išsaugoti</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setShowPasswordInput(true)}
+                      className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors flex items-center space-x-2"
+                    >
+                      <Pencil className="w-4 h-4" />
+                      <span>Redaguoti</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Password Input */}
+              {showPasswordInput && !isAuthenticated && (
+                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Lock className="w-4 h-4 text-amber-600" />
+                    <span className="text-sm font-medium text-amber-800">Patvirtinkite tapatybę</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAuthenticate()}
+                      placeholder="Įveskite slaptažodį"
+                      className="flex-1 px-3 py-2 text-sm border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-white"
+                      autoFocus
+                    />
+                    <button
+                      onClick={handleAuthenticate}
+                      className="px-4 py-2 text-sm text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors"
+                    >
+                      Patvirtinti
+                    </button>
+                    <button
+                      onClick={() => { setShowPasswordInput(false); setPassword(''); setPasswordError(''); }}
+                      className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
+                    >
+                      Atšaukti
+                    </button>
+                  </div>
+                  {passwordError && (
+                    <p className="mt-2 text-sm text-red-600">{passwordError}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Messages */}
+              {error && (
+                <div className="mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg border border-red-200">
+                  <AlertCircle className="w-4 h-4" />
+                  <span className="text-sm">{error}</span>
+                  <button onClick={() => setError(null)} className="ml-auto"><X className="w-4 h-4" /></button>
+                </div>
+              )}
+              {success && (
+                <div className="mt-4 flex items-center space-x-2 text-green-600 bg-green-50 p-3 rounded-lg border border-green-200">
+                  <Check className="w-4 h-4" />
+                  <span className="text-sm">{success}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto" ref={contentRef}>
+              <div className="px-8 py-6">
+                {isEditing ? (
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="w-full min-h-[500px] p-4 text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-colors"
+                    style={{
+                      lineHeight: '1.75',
+                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+                    }}
+                    placeholder="Įveskite instrukcijos turinį..."
+                    autoFocus
+                  />
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    {selectedVariable.content ? (
+                      <pre
+                        className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-6 rounded-lg border border-gray-100"
+                        style={{
+                          lineHeight: '1.75',
+                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+                        }}
+                      >
+                        {selectedVariable.content}
+                      </pre>
+                    ) : (
+                      <div className="text-center py-16 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                        <FileText className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 mb-4">Ši sekcija dar neužpildyta</p>
+                        <button
+                          onClick={() => setShowPasswordInput(true)}
+                          className="px-4 py-2 text-sm text-blue-600 hover:text-blue-700 border border-blue-300 rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          Pridėti turinį
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Navigation Footer */}
+              <div className="px-8 py-4 border-t border-gray-100 bg-gray-50">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
+                    disabled={selectedIndex === 0}
+                    className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <span>←</span>
+                    <span>Ankstesnė sekcija</span>
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    {selectedIndex + 1} / {variables.length}
+                  </span>
+                  <button
+                    onClick={() => setSelectedIndex(Math.min(variables.length - 1, selectedIndex + 1))}
+                    disabled={selectedIndex === variables.length - 1}
+                    className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <span>Kita sekcija</span>
+                    <span>→</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-gray-500">
+            <div className="text-center">
+              <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p>Pasirinkite instrukciją iš sąrašo</p>
+            </div>
           </div>
         )}
       </div>
