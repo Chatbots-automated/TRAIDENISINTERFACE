@@ -150,7 +150,7 @@ export default function Layout({
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={`flex items-center border-b border-vf-border ${sidebarCollapsed ? 'justify-center p-3' : 'justify-between p-4'}`}>
+          <div className={`flex items-center justify-between border-b border-vf-border ${sidebarCollapsed ? 'p-2' : 'p-4'}`}>
             <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-3'}`}>
               <img
                 src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
@@ -164,12 +164,27 @@ export default function Layout({
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="lg:hidden p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <X className="w-5 h-5 text-vf-secondary" />
-            </button>
+            <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-1'}`}>
+              {/* Collapse Toggle Button - Desktop only */}
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="hidden lg:flex p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-vf-secondary"
+                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                {sidebarCollapsed ? (
+                  <PanelLeft className="w-4 h-4" />
+                ) : (
+                  <PanelLeftClose className="w-4 h-4" />
+                )}
+              </button>
+              {/* Mobile close button */}
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="lg:hidden p-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <X className="w-5 h-5 text-vf-secondary" />
+              </button>
+            </div>
           </div>
 
           {/* Primary Navigation - Only Chat and Documents */}
@@ -355,21 +370,6 @@ export default function Layout({
 
           {/* Footer - Absolute Bottom */}
           <div className="border-t border-vf-border mt-auto">
-            {/* Collapse Toggle Button */}
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className={`hidden lg:flex w-full items-center py-2.5 text-vf-secondary hover:bg-gray-50 transition-colors border-b border-vf-border ${
-                sidebarCollapsed ? 'justify-center px-2' : 'justify-end px-4'
-              }`}
-              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {sidebarCollapsed ? (
-                <PanelLeft className="w-4 h-4" />
-              ) : (
-                <PanelLeftClose className="w-4 h-4" />
-              )}
-            </button>
-
             {/* Admin Section - Only visible to admins */}
             {user.is_admin && (
               <>
