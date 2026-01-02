@@ -540,30 +540,30 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Navigation Footer */}
-              <div className="px-8 py-4 border-t border-gray-100 bg-gray-50">
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
-                    disabled={selectedIndex === 0}
-                    className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <span>←</span>
-                    <span>Ankstesnė sekcija</span>
-                  </button>
-                  <span className="text-xs text-gray-400">
-                    {selectedIndex + 1} / {variables.length}
-                  </span>
-                  <button
-                    onClick={() => setSelectedIndex(Math.min(variables.length - 1, selectedIndex + 1))}
-                    disabled={selectedIndex === variables.length - 1}
-                    className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-30 disabled:cursor-not-allowed"
-                  >
-                    <span>Kita sekcija</span>
-                    <span>→</span>
-                  </button>
-                </div>
+            {/* Navigation Footer - Fixed at bottom */}
+            <div className="px-8 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
+                  disabled={selectedIndex === 0}
+                  className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600 transition-colors"
+                >
+                  <span>←</span>
+                  <span>Ankstesnė</span>
+                </button>
+                <span className="text-sm text-gray-400 font-medium">
+                  {selectedIndex + 1} / {variables.length}
+                </span>
+                <button
+                  onClick={() => setSelectedIndex(Math.min(variables.length - 1, selectedIndex + 1))}
+                  disabled={selectedIndex === variables.length - 1}
+                  className="flex items-center space-x-2 px-4 py-2 text-sm text-gray-600 hover:text-violet-700 hover:bg-violet-50 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-600 transition-colors"
+                >
+                  <span>Kita</span>
+                  <span>→</span>
+                </button>
               </div>
             </div>
           </>
