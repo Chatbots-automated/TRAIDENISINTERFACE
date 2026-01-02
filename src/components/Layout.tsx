@@ -150,21 +150,21 @@ export default function Layout({
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={`flex items-center justify-between border-b border-vf-border ${sidebarCollapsed ? 'p-2' : 'p-4'}`}>
-            <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-3'}`}>
-              <img
-                src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
-                alt="Traidenis Logo"
-                className="w-8 h-8 object-contain rounded-lg flex-shrink-0"
-              />
-              {!sidebarCollapsed && (
+          <div className={`flex items-center border-b border-vf-border ${sidebarCollapsed ? 'justify-center p-2' : 'justify-between p-4'}`}>
+            {!sidebarCollapsed && (
+              <div className="flex items-center space-x-3">
+                <img
+                  src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
+                  alt="Traidenis Logo"
+                  className="w-8 h-8 object-contain rounded-lg flex-shrink-0"
+                />
                 <div>
                   <h1 className="text-base font-semibold text-gray-900">Traidenis</h1>
                   <p className="text-xs text-vf-secondary">Knowledge Base</p>
                 </div>
-              )}
-            </div>
-            <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-1'}`}>
+              </div>
+            )}
+            <div className="flex items-center">
               {/* Collapse Toggle Button - Desktop only */}
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
