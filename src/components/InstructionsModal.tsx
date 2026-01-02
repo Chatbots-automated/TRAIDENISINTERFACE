@@ -200,7 +200,7 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
   if (view === 'editor' && selectedVariable) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-20">
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif' }}>
           {/* Modal Header */}
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
             <div className="flex items-center justify-between">
@@ -250,7 +250,7 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   className="w-full h-full min-h-[350px] px-4 py-3 text-sm text-gray-900 bg-white border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  style={{ lineHeight: '1.7' }}
+                  style={{ lineHeight: '1.7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif' }}
                   placeholder="Įveskite instrukcijos turinį..."
                   autoFocus
                 />
@@ -259,7 +259,7 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
               <div className="flex-1 overflow-y-auto px-6 py-5">
                 <div
                   className="text-sm text-gray-700 whitespace-pre-wrap"
-                  style={{ lineHeight: '1.7' }}
+                  style={{ lineHeight: '1.7', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif' }}
                 >
                   {selectedVariable.content || (
                     <span className="text-gray-400 italic">Instrukcija tuščia</span>
@@ -349,7 +349,7 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
   // Main View
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-20">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif' }}>
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 rounded-t-2xl">
           <div className="flex items-center justify-between">
