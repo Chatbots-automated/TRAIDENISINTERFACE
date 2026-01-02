@@ -23,7 +23,6 @@ import {
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
 import WebhooksModal from './WebhooksModal';
-import InstructionsModal from './InstructionsModal';
 
 interface Thread {
   id: string;
@@ -48,8 +47,8 @@ interface LayoutProps {
   onToggleNaujokas?: () => void;
   // New version mode props
   isNewVersion?: boolean;
-  viewMode?: 'chat' | 'documents' | 'users' | 'transcripts';
-  onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts') => void;
+  viewMode?: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos';
+  onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos') => void;
   onToggleNewVersion?: () => void;
   hasOffer?: boolean;
   showDocGlow?: boolean;
@@ -81,7 +80,6 @@ export default function Layout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -410,9 +408,13 @@ export default function Layout({
 
                   {/* Instrukcijos */}
                   <button
-                    onClick={() => setInstructionsOpen(true)}
-                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors ${
+                    onClick={() => onViewModeChange?.('instrukcijos')}
+                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                       sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    } ${
+                      viewMode === 'instrukcijos'
+                        ? 'bg-vf-primary text-white'
+                        : 'text-vf-secondary hover:bg-gray-50'
                     }`}
                     title={sidebarCollapsed ? 'Instrukcijos' : undefined}
                   >
@@ -623,13 +625,6 @@ export default function Layout({
       <WebhooksModal
         isOpen={webhooksOpen}
         onClose={() => setWebhooksOpen(false)}
-        user={user}
-      />
-
-      {/* Instructions Modal - Admin Only */}
-      <InstructionsModal
-        isOpen={instructionsOpen}
-        onClose={() => setInstructionsOpen(false)}
         user={user}
       />
 
