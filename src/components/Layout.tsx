@@ -14,10 +14,14 @@ import {
   Check,
   ChevronUp,
   Users,
-  History
+  History,
+  Zap,
+  BookOpen
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
+import WebhooksModal from './WebhooksModal';
+import InstructionsModal from './InstructionsModal';
 
 interface Thread {
   id: string;
@@ -73,6 +77,8 @@ export default function Layout({
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [webhooksOpen, setWebhooksOpen] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -334,138 +340,188 @@ export default function Layout({
 
           {/* Footer - Absolute Bottom */}
           <div className="border-t border-vf-border mt-auto">
-            {/* Settings Dropdown Button */}
-            <div className="relative" ref={settingsDropdownRef}>
-              {/* Dropup Menu */}
-              {settingsDropdownOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 animate-slide-in-bottom">
-                  <div className="mx-3 bg-white rounded-vf border border-vf-border shadow-vf-lg py-1">
-                    {/* Users - Admin Only */}
-                    {user.is_admin && (
-                      <button
-                        onClick={() => {
-                          onViewModeChange?.('users');
-                          setSettingsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium transition-all ${
-                          viewMode === 'users'
-                            ? 'bg-vf-primary text-white'
-                            : 'text-vf-secondary hover:bg-gray-50'
-                        }`}
-                      >
-                        <Users className="w-4 h-4" />
-                        <span>Users</span>
-                      </button>
-                    )}
+            {/* Admin Section - Only visible to admins */}
+            {user.is_admin && (
+              <>
+                {/* Admin Separator */}
+                <div className="flex items-center px-4 py-2">
+                  <div className="flex-1 border-t border-gray-300" />
+                  <span className="px-3 text-xs text-gray-400 font-medium uppercase tracking-wider">admin</span>
+                  <div className="flex-1 border-t border-gray-300" />
+                </div>
 
-                    {/* Offers */}
-                    {isNewVersion && (
-                      <button
+                {/* Admin Buttons */}
+                <div className="px-3 pb-2 space-y-1">
+                  {/* Settings */}
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                  >
+                    <Settings className="w-4 h-4" />
+                    <span>Settings</span>
+                  </button>
+
+                  {/* Webhooks */}
+                  <button
+                    onClick={() => setWebhooksOpen(true)}
+                    className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                  >
+                    <Zap className="w-4 h-4" />
+                    <span>Webhooks</span>
+                  </button>
+
+                  {/* Instrukcijos */}
+                  <button
+                    onClick={() => setInstructionsOpen(true)}
+                    className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Instrukcijos</span>
+                  </button>
+
+                  {/* Users */}
+                  <button
+                    onClick={() => onViewModeChange?.('users')}
+                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      viewMode === 'users'
+                        ? 'bg-vf-primary text-white'
+                        : 'text-vf-secondary hover:bg-gray-50'
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Users</span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Settings Dropdown Button - Only for non-admins */}
+            {!user.is_admin && (
+              <div className="relative" ref={settingsDropdownRef}>
+                {/* Dropup Menu */}
+                {settingsDropdownOpen && (
+                  <div className="absolute bottom-full left-0 right-0 mb-1 animate-slide-in-bottom">
+                    <div className="mx-3 bg-white rounded-vf border border-vf-border shadow-vf-lg py-1">
+                      {/* Offers */}
+                      {isNewVersion && (
+                        <button
+                          onClick={() => {
+                            onOpenCommercialPanel?.();
+                            setSettingsDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium transition-all relative ${
+                            hasOffer
+                              ? 'text-vf-primary hover:bg-blue-50'
+                              : 'text-gray-400 hover:bg-gray-50'
+                          }`}
+                          title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Database className="w-4 h-4" />
+                            <span>Offers</span>
+                          </div>
+                          {showDocGlow && (
+                            <span className="flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-vf-primary opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-vf-primary"></span>
+                            </span>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Divider */}
+                      <div className="my-1 border-t border-vf-border" />
+
+                      {/* Naujokas Mode Toggle */}
+                      <div
                         onClick={() => {
-                          onOpenCommercialPanel?.();
-                          setSettingsDropdownOpen(false);
+                          onToggleNaujokas?.();
                         }}
-                        className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium transition-all relative ${
-                          hasOffer
-                            ? 'text-vf-primary hover:bg-blue-50'
-                            : 'text-gray-400 hover:bg-gray-50'
-                        }`}
-                        title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                        className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 cursor-pointer transition-colors"
                       >
                         <div className="flex items-center space-x-3">
-                          <Database className="w-4 h-4" />
-                          <span>Offers</span>
+                          <span className="text-base">🎓</span>
+                          <span className="text-sm font-medium text-vf-secondary">Naujokas</span>
                         </div>
-                        {showDocGlow && (
-                          <span className="flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-vf-primary opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-vf-primary"></span>
-                          </span>
-                        )}
-                      </button>
-                    )}
-
-                    {/* Divider */}
-                    <div className="my-1 border-t border-vf-border" />
-
-                    {/* Naujokas Mode Toggle */}
-                    <div
-                      onClick={() => {
-                        onToggleNaujokas?.();
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <span className="text-base">🎓</span>
-                        <span className="text-sm font-medium text-vf-secondary">Naujokas</span>
-                      </div>
-                      <div
-                        className={`relative w-9 h-5 rounded-full transition-colors ${
-                          naujokasMode ? 'bg-vf-primary' : 'bg-gray-300'
-                        }`}
-                      >
                         <div
-                          className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                            naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                          className={`relative w-9 h-5 rounded-full transition-colors ${
+                            naujokasMode ? 'bg-vf-primary' : 'bg-gray-300'
                           }`}
-                        />
+                        >
+                          <div
+                            className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                              naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                            }`}
+                          />
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Nauja Toggle - Locked */}
-                    {isNewVersion && (
+                      {/* Nauja Toggle - Locked */}
+                      {isNewVersion && (
+                        <button
+                          disabled
+                          className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium bg-purple-50 text-purple-600 opacity-50 cursor-not-allowed"
+                          title="New version is active"
+                        >
+                          <span className="text-base">✨</span>
+                          <span>Nauja</span>
+                        </button>
+                      )}
+
+                      {/* Divider */}
+                      <div className="my-1 border-t border-vf-border" />
+
+                      {/* Settings Modal */}
                       <button
-                        disabled
-                        className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium bg-purple-50 text-purple-600 opacity-50 cursor-not-allowed"
-                        title="New version is active"
+                        onClick={() => {
+                          setSettingsOpen(true);
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
                       >
-                        <span className="text-base">✨</span>
-                        <span>Nauja</span>
+                        <Settings className="w-4 h-4" />
+                        <span>Settings</span>
                       </button>
-                    )}
 
-                    {/* Divider */}
-                    <div className="my-1 border-t border-vf-border" />
-
-                    {/* Settings Modal */}
-                    <button
-                      onClick={() => {
-                        setSettingsOpen(true);
-                        setSettingsDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span>Settings</span>
-                    </button>
-
-                    {/* Sign Out */}
-                    <button
-                      onClick={() => {
-                        handleSignOut();
-                        setSettingsDropdownOpen(false);
-                      }}
-                      className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      <span>Sign Out</span>
-                    </button>
+                      {/* Sign Out */}
+                      <button
+                        onClick={() => {
+                          handleSignOut();
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center space-x-3 px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Settings Button */}
+                {/* Settings Button */}
+                <button
+                  onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-vf-secondary border-b border-vf-border transition-colors"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Settings className="w-4 h-4" />
+                    <span className="text-sm font-medium">Settings</span>
+                  </div>
+                  <ChevronUp className={`w-4 h-4 transition-transform ${settingsDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+            )}
+
+            {/* Sign Out Button - For admins (since they don't have the dropdown) */}
+            {user.is_admin && (
               <button
-                onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-vf-secondary border-b border-vf-border transition-colors"
+                onClick={handleSignOut}
+                className="w-full flex items-center space-x-3 px-6 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors border-t border-vf-border"
               >
-                <div className="flex items-center space-x-3">
-                  <Settings className="w-4 h-4" />
-                  <span className="text-sm font-medium">Settings</span>
-                </div>
-                <ChevronUp className={`w-4 h-4 transition-transform ${settingsDropdownOpen ? 'rotate-180' : ''}`} />
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out</span>
               </button>
-            </div>
+            )}
 
             {/* User Info - Absolute Bottom */}
             <div className="px-4 py-3 bg-gray-50">
@@ -491,6 +547,20 @@ export default function Layout({
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        user={user}
+      />
+
+      {/* Webhooks Modal - Admin Only */}
+      <WebhooksModal
+        isOpen={webhooksOpen}
+        onClose={() => setWebhooksOpen(false)}
+        user={user}
+      />
+
+      {/* Instructions Modal - Admin Only */}
+      <InstructionsModal
+        isOpen={instructionsOpen}
+        onClose={() => setInstructionsOpen(false)}
         user={user}
       />
 

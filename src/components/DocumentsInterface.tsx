@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown, RefreshCw, Settings2 } from 'lucide-react';
+import { Upload, FileText, X, Search, Filter, Trash2, AlertCircle, Check, Globe, ChevronDown, RefreshCw } from 'lucide-react';
 import {
   fetchVoiceflowDocuments,
   deleteVoiceflowDocument,
@@ -10,7 +10,6 @@ import {
 } from '../lib/voiceflowKB';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
-import InstructionsModal from './InstructionsModal';
 
 interface DocumentsInterfaceProps {
   user: AppUser;
@@ -30,7 +29,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [showMetadataModal, setShowMetadataModal] = useState(false);
   const [chunkingStrategy, setChunkingStrategy] = useState('');
   const [showStrategyDropdown, setShowStrategyDropdown] = useState(false);
-  const [showInstructionsModal, setShowInstructionsModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -294,17 +292,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <p className="text-sm text-vf-secondary mt-1">Create, edit, and organize your documents</p>
           </div>
           <div className="flex items-center space-x-3">
-            {/* Instrukcijos Button - Only visible to admins */}
-            {user.is_admin && (
-              <button
-                onClick={() => setShowInstructionsModal(true)}
-                className="px-5 py-3 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition-colors flex items-center space-x-2"
-              >
-                <Settings2 className="w-4 h-4" />
-                <span>Instrukcijos</span>
-              </button>
-            )}
-
             <button
               onClick={openUploadModal}
               disabled={uploadingFile}
@@ -805,12 +792,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         )}
       </div>
 
-      {/* Instructions Modal */}
-      <InstructionsModal
-        isOpen={showInstructionsModal}
-        onClose={() => setShowInstructionsModal(false)}
-        user={user}
-      />
     </div>
   );
 }
