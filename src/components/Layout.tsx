@@ -16,7 +16,9 @@ import {
   Users,
   History,
   Zap,
-  BookOpen
+  BookOpen,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -76,6 +78,7 @@ export default function Layout({
   onOpenCommercialPanel
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
@@ -140,23 +143,26 @@ export default function Layout({
 
       {/* Sidebar */}
       <div className={`
-        fixed inset-y-0 left-0 z-50 w-64 vf-sidebar transform transition-transform duration-300 ease-in-out
+        fixed inset-y-0 left-0 z-50 vf-sidebar transform transition-all duration-300 ease-in-out
         lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${sidebarCollapsed ? 'w-16' : 'w-64'}
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-vf-border">
-            <div className="flex items-center space-x-3">
+          <div className={`flex items-center border-b border-vf-border ${sidebarCollapsed ? 'justify-center p-3' : 'justify-between p-4'}`}>
+            <div className={`flex items-center ${sidebarCollapsed ? '' : 'space-x-3'}`}>
               <img
                 src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
                 alt="Traidenis Logo"
-                className="w-8 h-8 object-contain rounded-lg"
+                className="w-8 h-8 object-contain rounded-lg flex-shrink-0"
               />
-              <div>
-                <h1 className="text-base font-semibold text-gray-900">Traidenis</h1>
-                <p className="text-xs text-vf-secondary">Knowledge Base</p>
-              </div>
+              {!sidebarCollapsed && (
+                <div>
+                  <h1 className="text-base font-semibold text-gray-900">Traidenis</h1>
+                  <p className="text-xs text-vf-secondary">Knowledge Base</p>
+                </div>
+              )}
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
@@ -168,41 +174,50 @@ export default function Layout({
 
           {/* Primary Navigation - Only Chat and Documents */}
           {isNewVersion && (
-            <div className="border-b border-vf-border px-3 py-3 space-y-1">
+            <div className={`border-b border-vf-border py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
               <button
                 onClick={() => onViewModeChange?.('chat')}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                className={`w-full flex items-center px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                } ${
                   viewMode === 'chat'
                     ? 'bg-vf-primary text-white shadow-vf-sm'
                     : 'text-vf-secondary hover:bg-gray-50'
                 }`}
+                title={sidebarCollapsed ? 'Chat' : undefined}
               >
-                <MessageSquare className="w-4 h-4" />
-                <span>Chat</span>
+                <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Chat</span>}
               </button>
 
               <button
                 onClick={() => onViewModeChange?.('documents')}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                className={`w-full flex items-center px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                } ${
                   viewMode === 'documents'
                     ? 'bg-vf-primary text-white shadow-vf-sm'
                     : 'text-vf-secondary hover:bg-gray-50'
                 }`}
+                title={sidebarCollapsed ? 'Documents' : undefined}
               >
-                <Database className="w-4 h-4" />
-                <span>Documents</span>
+                <Database className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Documents</span>}
               </button>
 
               <button
                 onClick={() => onViewModeChange?.('transcripts')}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                className={`w-full flex items-center px-3 py-2.5 rounded-vf text-sm font-medium transition-all ${
+                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                } ${
                   viewMode === 'transcripts'
                     ? 'bg-vf-primary text-white shadow-vf-sm'
                     : 'text-vf-secondary hover:bg-gray-50'
                 }`}
+                title={sidebarCollapsed ? 'Transcripts' : undefined}
               >
-                <History className="w-4 h-4" />
-                <span>Transcripts</span>
+                <History className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Transcripts</span>}
               </button>
             </div>
           )}
@@ -340,63 +355,92 @@ export default function Layout({
 
           {/* Footer - Absolute Bottom */}
           <div className="border-t border-vf-border mt-auto">
+            {/* Collapse Toggle Button */}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className={`hidden lg:flex w-full items-center py-2.5 text-vf-secondary hover:bg-gray-50 transition-colors border-b border-vf-border ${
+                sidebarCollapsed ? 'justify-center px-2' : 'justify-end px-4'
+              }`}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeft className="w-4 h-4" />
+              ) : (
+                <PanelLeftClose className="w-4 h-4" />
+              )}
+            </button>
+
             {/* Admin Section - Only visible to admins */}
             {user.is_admin && (
               <>
                 {/* Admin Separator */}
-                <div className="flex items-center px-4 py-2">
-                  <div className="flex-1 border-t border-gray-300" />
-                  <span className="px-3 text-xs text-gray-400 font-medium uppercase tracking-wider">admin</span>
-                  <div className="flex-1 border-t border-gray-300" />
-                </div>
+                {!sidebarCollapsed && (
+                  <div className="flex items-center px-4 py-2">
+                    <div className="flex-1 border-t border-gray-300" />
+                    <span className="px-3 text-xs text-gray-400 font-medium uppercase tracking-wider">admin</span>
+                    <div className="flex-1 border-t border-gray-300" />
+                  </div>
+                )}
 
                 {/* Admin Buttons */}
-                <div className="px-3 pb-2 space-y-1">
+                <div className={`pb-2 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
                   {/* Settings */}
                   <button
                     onClick={() => setSettingsOpen(true)}
-                    className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors ${
+                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    }`}
+                    title={sidebarCollapsed ? 'Settings' : undefined}
                   >
-                    <Settings className="w-4 h-4" />
-                    <span>Settings</span>
+                    <Settings className="w-4 h-4 flex-shrink-0" />
+                    {!sidebarCollapsed && <span>Settings</span>}
                   </button>
 
                   {/* Webhooks */}
                   <button
                     onClick={() => setWebhooksOpen(true)}
-                    className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors ${
+                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    }`}
+                    title={sidebarCollapsed ? 'Webhooks' : undefined}
                   >
-                    <Zap className="w-4 h-4" />
-                    <span>Webhooks</span>
+                    <Zap className="w-4 h-4 flex-shrink-0" />
+                    {!sidebarCollapsed && <span>Webhooks</span>}
                   </button>
 
                   {/* Instrukcijos */}
                   <button
                     onClick={() => setInstructionsOpen(true)}
-                    className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors ${
+                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    }`}
+                    title={sidebarCollapsed ? 'Instrukcijos' : undefined}
                   >
-                    <BookOpen className="w-4 h-4" />
-                    <span>Instrukcijos</span>
+                    <BookOpen className="w-4 h-4 flex-shrink-0" />
+                    {!sidebarCollapsed && <span>Instrukcijos</span>}
                   </button>
 
                   {/* Users */}
                   <button
                     onClick={() => onViewModeChange?.('users')}
-                    className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                    className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    } ${
                       viewMode === 'users'
                         ? 'bg-vf-primary text-white'
                         : 'text-vf-secondary hover:bg-gray-50'
                     }`}
+                    title={sidebarCollapsed ? 'Users' : undefined}
                   >
-                    <Users className="w-4 h-4" />
-                    <span>Users</span>
+                    <Users className="w-4 h-4 flex-shrink-0" />
+                    {!sidebarCollapsed && <span>Users</span>}
                   </button>
                 </div>
               </>
             )}
 
             {/* Settings Dropdown Button - Only for non-admins */}
-            {!user.is_admin && (
+            {!user.is_admin && !sidebarCollapsed && (
               <div className="relative" ref={settingsDropdownRef}>
                 {/* Dropup Menu */}
                 {settingsDropdownOpen && (
@@ -512,31 +556,56 @@ export default function Layout({
               </div>
             )}
 
+            {/* Collapsed non-admin buttons */}
+            {!user.is_admin && sidebarCollapsed && (
+              <div className="px-2 pb-2 space-y-1">
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium text-vf-secondary hover:bg-gray-50 transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleSignOut}
+                  className="w-full flex items-center justify-center px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Sign Out Button - For admins (since they don't have the dropdown) */}
             {user.is_admin && (
               <button
                 onClick={handleSignOut}
-                className="w-full flex items-center space-x-3 px-6 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors border-t border-vf-border"
+                className={`w-full flex items-center py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors border-t border-vf-border ${
+                  sidebarCollapsed ? 'justify-center px-2' : 'space-x-3 px-6'
+                }`}
+                title={sidebarCollapsed ? 'Sign Out' : undefined}
               >
-                <LogOut className="w-4 h-4" />
-                <span>Sign Out</span>
+                <LogOut className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Sign Out</span>}
               </button>
             )}
 
             {/* User Info - Absolute Bottom */}
-            <div className="px-4 py-3 bg-gray-50">
-              <div className="flex items-center space-x-3">
+            <div className={`py-3 bg-gray-50 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
+              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'}`}>
                 <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-sm font-medium">
                     {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {user.display_name || user.email}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                </div>
+                {!sidebarCollapsed && (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {user.display_name || user.email}
+                    </p>
+                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
