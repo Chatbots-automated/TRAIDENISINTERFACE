@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package } from 'lucide-react';
+import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package, Download } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
 import type { AppUser } from '../types';
@@ -969,67 +969,93 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                 )}
               </div>
 
-              {/* Files Display - Claude.ai Project Style */}
+              {/* Files Display - Reference Image Style */}
               {(response.emlFile || response.attachmentFile) && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {response.emlFile && (
                     <div
-                      onClick={() => downloadFile(response.emlFile!)}
-                      className="macos-card p-4 hover:shadow-macos-lg transition-all cursor-pointer group macos-animate-slide-up border-[0.5px] border-macos-purple/20"
+                      className="macos-card p-5 macos-animate-slide-up border-[0.5px] border-black/10 hover:border-black/20 transition-all"
                       style={{ animationDelay: '0.1s' }}
                     >
-                      <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 bg-macos-purple/10 rounded-macos-lg flex items-center justify-center flex-shrink-0 group-hover:bg-macos-purple/20 transition-colors">
-                          {getFileIcon(response.emlFile.mimeType)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <h5 className="text-sm font-semibold text-macos-gray-900 truncate">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Left: Icon + Text */}
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-macos flex items-center justify-center bg-macos-gray-100 flex-shrink-0">
+                            <FileText className="w-5 h-5 text-macos-gray-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h5 className="text-sm font-medium text-macos-gray-900 truncate mb-0.5">
                               {response.emlFile.filename}
                             </h5>
-                            <span className="px-2 py-0.5 bg-macos-purple/10 text-macos-purple text-[10px] font-bold rounded uppercase flex-shrink-0">
-                              {getFileTypeLabel(response.emlFile.filename)}
-                            </span>
+                            <p className="text-xs text-macos-gray-500">
+                              Document · {getFileTypeLabel(response.emlFile.filename)}
+                            </p>
                           </div>
-                          <p className="text-xs text-macos-gray-500">
-                            {formatFileSize(response.emlFile.content)}
-                          </p>
                         </div>
-                        <div className="text-macos-gray-400 group-hover:text-macos-purple transition-colors">
-                          <Upload className="w-5 h-5 transform rotate-180" />
-                        </div>
+
+                        {/* Right: Download Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadFile(response.emlFile!);
+                          }}
+                          className="macos-btn macos-btn-secondary px-5 py-2 rounded-macos-lg text-sm font-medium flex items-center gap-2 flex-shrink-0"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download</span>
+                        </button>
                       </div>
                     </div>
                   )}
 
                   {response.attachmentFile && (
                     <div
-                      onClick={() => downloadFile(response.attachmentFile!)}
-                      className="macos-card p-4 hover:shadow-macos-lg transition-all cursor-pointer group macos-animate-slide-up border-[0.5px] border-macos-blue/20"
+                      className="macos-card p-5 macos-animate-slide-up border-[0.5px] border-black/10 hover:border-black/20 transition-all"
                       style={{ animationDelay: '0.2s' }}
                     >
-                      <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 bg-macos-blue/10 rounded-macos-lg flex items-center justify-center flex-shrink-0 group-hover:bg-macos-blue/20 transition-colors">
-                          {getFileIcon(response.attachmentFile.mimeType)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <h5 className="text-sm font-semibold text-macos-gray-900 truncate">
+                      <div className="flex items-center justify-between gap-4">
+                        {/* Left: Icon + Text */}
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
+                          <div className="w-10 h-10 rounded-macos flex items-center justify-center bg-macos-gray-100 flex-shrink-0">
+                            <FileText className="w-5 h-5 text-macos-gray-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h5 className="text-sm font-medium text-macos-gray-900 truncate mb-0.5">
                               {response.attachmentFile.filename}
                             </h5>
-                            <span className="px-2 py-0.5 bg-macos-blue/10 text-macos-blue text-[10px] font-bold rounded uppercase flex-shrink-0">
-                              {getFileTypeLabel(response.attachmentFile.filename)}
-                            </span>
+                            <p className="text-xs text-macos-gray-500">
+                              Document · {getFileTypeLabel(response.attachmentFile.filename)}
+                            </p>
                           </div>
-                          <p className="text-xs text-macos-gray-500">
-                            {formatFileSize(response.attachmentFile.content)}
-                          </p>
                         </div>
-                        <div className="text-macos-gray-400 group-hover:text-macos-blue transition-colors">
-                          <Upload className="w-5 h-5 transform rotate-180" />
-                        </div>
+
+                        {/* Right: Download Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            downloadFile(response.attachmentFile!);
+                          }}
+                          className="macos-btn macos-btn-secondary px-5 py-2 rounded-macos-lg text-sm font-medium flex items-center gap-2 flex-shrink-0"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Download</span>
+                        </button>
                       </div>
                     </div>
+                  )}
+
+                  {/* Download All Button */}
+                  {response.emlFile && response.attachmentFile && (
+                    <button
+                      onClick={() => {
+                        if (response.emlFile) downloadFile(response.emlFile);
+                        if (response.attachmentFile) downloadFile(response.attachmentFile);
+                      }}
+                      className="w-full macos-btn macos-btn-secondary py-3 rounded-macos-lg font-medium flex items-center justify-center gap-2 mt-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download all</span>
+                    </button>
                   )}
                 </div>
               )}
