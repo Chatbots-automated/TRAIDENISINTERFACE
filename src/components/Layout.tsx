@@ -19,7 +19,7 @@ import {
   BookOpen,
   PanelLeftClose,
   PanelLeft,
-  Upload
+  FlaskConical
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -243,10 +243,10 @@ export default function Layout({
                     ? 'bg-macos-blue/10 text-macos-blue'
                     : 'text-macos-gray-600 hover:bg-black/5'
                 }`}
-                title={sidebarCollapsed ? 'EML Upload' : undefined}
+                title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
               >
-                <Upload className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>EML Upload</span>}
+                <FlaskConical className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Nestandartiniai Projektai</span>}
               </button>
             </div>
           )}
