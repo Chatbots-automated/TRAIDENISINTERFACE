@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
+import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
 import type { AppUser } from '../types';
 
 interface NestandardiniaiInterfaceProps {
@@ -19,25 +20,94 @@ interface WebhookResponse {
   description: string;
   emlFile?: ResponseFile;
   attachmentFile?: ResponseFile;
+  message?: string; // For simple upload responses
 }
 
+type WorkflowMode = 'upload-request' | 'upload-solution';
+type UploadAction = 'just-upload' | 'find-similar';
+
 export default function NestandardiniaiInterface({ user, projectId }: NestandardiniaiInterfaceProps) {
+  // Mode selection
+  const [workflowMode, setWorkflowMode] = useState<WorkflowMode>('upload-request');
+
+  // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<WebhookResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Upload action for new .eml files
+  const [uploadAction, setUploadAction] = useState<UploadAction>('find-similar');
+
+  // Project selection state
+  const [projects, setProjects] = useState<NestandardinisProject[]>([]);
+  const [selectedProject, setSelectedProject] = useState<NestandardinisProject | null>(null);
+  const [projectSearchQuery, setProjectSearchQuery] = useState('');
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Load projects on mount
+  useEffect(() => {
+    if (workflowMode === 'upload-solution') {
+      loadProjects();
+    }
+  }, [workflowMode]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (projectDropdownRef.current && !projectDropdownRef.current.contains(event.target as Node)) {
+        setShowProjectDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const loadProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const projectsData = await fetchNestandardiniaiProjects();
+      setProjects(projectsData);
+    } catch (error) {
+      console.error('Error loading projects:', error);
+      setError('Nepavyko užkrauti projektų sąrašo');
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  const handleProjectSearch = async (query: string) => {
+    setProjectSearchQuery(query);
+    if (!query.trim()) {
+      loadProjects();
+      return;
+    }
+
+    try {
+      const results = await searchProjectsBySubjectLine(query);
+      setProjects(results);
+    } catch (error) {
+      console.error('Error searching projects:', error);
+    }
+  };
+
   const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check if file is .eml
-    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (fileExtension !== '.eml') {
-      setError('Tik .eml failai yra palaikomi. Prašome įkelti .eml failą.');
-      return;
+    // Check file type based on workflow mode
+    if (workflowMode === 'upload-request') {
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (fileExtension !== '.eml') {
+        setError('Tik .eml failai yra palaikomi naujų užklausų įkėlimui.');
+        return;
+      }
     }
+    // For upload-solution, we accept any file type
 
     setSelectedFile(file);
     setError(null);
@@ -49,11 +119,13 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     const file = event.dataTransfer.files?.[0];
     if (!file) return;
 
-    // Check file type
-    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (fileExtension !== '.eml') {
-      setError('Tik .eml failai yra palaikomi. Prašome įkelti .eml failą.');
-      return;
+    // Check file type based on workflow mode
+    if (workflowMode === 'upload-request') {
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (fileExtension !== '.eml') {
+        setError('Tik .eml failai yra palaikomi naujų užklausų įkėlimui.');
+        return;
+      }
     }
 
     setSelectedFile(file);
@@ -69,9 +141,181 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     fileInputRef.current?.click();
   };
 
-  const handleSearchSimilar = async () => {
-    if (!selectedFile) {
-      setError('Prašome pasirinkti .eml failą');
+  const handleSubmit = async () => {
+    // Validation
+    if (workflowMode === 'upload-request') {
+      if (!selectedFile) {
+        setError('Prašome pasirinkti .eml failą');
+        return;
+      }
+    } else if (workflowMode === 'upload-solution') {
+      if (!selectedProject) {
+        setError('Prašome pasirinkti projektą');
+        return;
+      }
+      if (!selectedFile) {
+        setError('Prašome pasirinkti komercinį pasiūlymą (failą)');
+        return;
+      }
+    }
+
+    setUploading(true);
+    setError(null);
+    setResponse(null);
+
+    try {
+      if (workflowMode === 'upload-request') {
+        await handleUploadRequest();
+      } else {
+        await handleUploadSolution();
+      }
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      setError(`Operacija nepavyko: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUploadRequest = async () => {
+    if (!selectedFile) return;
+
+    // Log upload start
+    await appLogger.logDocument({
+      action: uploadAction === 'just-upload' ? 'eml_upload_started' : 'eml_search_started',
+      userId: user.id,
+      userEmail: user.email,
+      filename: selectedFile.name,
+      fileSize: selectedFile.size,
+      metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: uploadAction }
+    });
+
+    // Convert file to base64
+    const base64Content = await fileToBase64(selectedFile);
+
+    // Get appropriate webhook URL
+    const webhookUrl = uploadAction === 'just-upload'
+      ? import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_NEW
+      : import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
+
+    if (!webhookUrl) {
+      throw new Error('Webhook URL nėra sukonfigūruotas. Prašome susisiekti su administratoriumi.');
+    }
+
+    // Send to n8n webhook
+    const webhookResponse = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: uploadAction,
+        filename: selectedFile.name,
+        fileContent: base64Content,
+        mimeType: selectedFile.type || 'message/rfc822',
+        userId: user.id,
+        userEmail: user.email,
+        projectId: projectId,
+        timestamp: new Date().toISOString()
+      })
+    });
+
+    if (!webhookResponse.ok) {
+      throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
+    }
+
+    const responseData: WebhookResponse = await webhookResponse.json();
+
+    // Log success
+    await appLogger.logDocument({
+      action: uploadAction === 'just-upload' ? 'eml_upload_success' : 'eml_search_success',
+      userId: user.id,
+      userEmail: user.email,
+      filename: selectedFile.name,
+      fileSize: selectedFile.size,
+      metadata: {
+        project_id: projectId,
+        subject_line: responseData.subjectLine,
+        upload_action: uploadAction
+      }
+    });
+
+    setResponse(responseData);
+  };
+
+  const handleUploadSolution = async () => {
+    if (!selectedFile || !selectedProject) return;
+
+    // Log upload start
+    await appLogger.logDocument({
+      action: 'commercial_offer_upload_started',
+      userId: user.id,
+      userEmail: user.email,
+      filename: selectedFile.name,
+      fileSize: selectedFile.size,
+      metadata: {
+        project_id: projectId,
+        nestandartinis_project_id: selectedProject.id,
+        project_subject: selectedProject.subject_line,
+        file_type: selectedFile.type
+      }
+    });
+
+    // Convert file to base64
+    const base64Content = await fileToBase64(selectedFile);
+
+    // Get webhook URL for commercial offer upload
+    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_SOLUTION;
+
+    if (!webhookUrl) {
+      throw new Error('Webhook URL nėra sukonfigūruotas. Prašome susisiekti su administratoriumi.');
+    }
+
+    // Send to n8n webhook
+    const webhookResponse = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'upload-solution',
+        projectId: selectedProject.id,
+        projectSubjectLine: selectedProject.subject_line,
+        filename: selectedFile.name,
+        fileContent: base64Content,
+        mimeType: selectedFile.type,
+        userId: user.id,
+        userEmail: user.email,
+        timestamp: new Date().toISOString()
+      })
+    });
+
+    if (!webhookResponse.ok) {
+      throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
+    }
+
+    const responseData: WebhookResponse = await webhookResponse.json();
+
+    // Log success
+    await appLogger.logDocument({
+      action: 'commercial_offer_upload_success',
+      userId: user.id,
+      userEmail: user.email,
+      filename: selectedFile.name,
+      fileSize: selectedFile.size,
+      metadata: {
+        project_id: projectId,
+        nestandartinis_project_id: selectedProject.id,
+        project_subject: selectedProject.subject_line
+      }
+    });
+
+    setResponse(responseData);
+  };
+
+  const handleFindSimilarByProject = async () => {
+    if (!selectedProject) {
+      setError('Prašome pasirinkti projektą');
       return;
     }
 
@@ -80,39 +324,34 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     setResponse(null);
 
     try {
-      // Log upload start
       await appLogger.logDocument({
-        action: 'eml_search_started',
+        action: 'find_similar_by_project_started',
         userId: user.id,
         userEmail: user.email,
-        filename: selectedFile.name,
-        fileSize: selectedFile.size,
-        metadata: { project_id: projectId, file_type: selectedFile.type }
+        metadata: {
+          project_id: projectId,
+          nestandartinis_project_id: selectedProject.id,
+          project_subject: selectedProject.subject_line
+        }
       });
 
-      // Convert file to base64
-      const base64Content = await fileToBase64(selectedFile);
-
-      // Get webhook URL from environment variable
-      const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_URL;
+      const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
 
       if (!webhookUrl) {
         throw new Error('Webhook URL nėra sukonfigūruotas. Prašome susisiekti su administratoriumi.');
       }
 
-      // Send to n8n webhook
       const webhookResponse = await fetch(webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          filename: selectedFile.name,
-          fileContent: base64Content,
-          mimeType: selectedFile.type || 'message/rfc822',
+          action: 'find-similar-by-project',
+          projectId: selectedProject.id,
+          projectSubjectLine: selectedProject.subject_line,
           userId: user.id,
           userEmail: user.email,
-          projectId: projectId,
           timestamp: new Date().toISOString()
         })
       });
@@ -123,32 +362,31 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
       const responseData: WebhookResponse = await webhookResponse.json();
 
-      // Log success
       await appLogger.logDocument({
-        action: 'eml_search_success',
+        action: 'find_similar_by_project_success',
         userId: user.id,
         userEmail: user.email,
-        filename: selectedFile.name,
-        fileSize: selectedFile.size,
         metadata: {
           project_id: projectId,
+          nestandartinis_project_id: selectedProject.id,
+          project_subject: selectedProject.subject_line,
           subject_line: responseData.subjectLine
         }
       });
 
       setResponse(responseData);
     } catch (error: any) {
-      console.error('EML search error:', error);
+      console.error('Find similar error:', error);
       setError(`Paieška nepavyko: ${error.message}`);
 
       await appLogger.logError({
-        action: 'eml_search_error',
+        action: 'find_similar_by_project_error',
         error,
         userId: user.id,
         userEmail: user.email,
         metadata: {
-          filename: selectedFile.name,
-          file_size: selectedFile.size,
+          nestandartinis_project_id: selectedProject.id,
+          project_subject: selectedProject.subject_line,
           project_id: projectId
         }
       });
@@ -221,6 +459,15 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const resetForm = () => {
+    setResponse(null);
+    setSelectedFile(null);
+    setSelectedProject(null);
+    setProjectSearchQuery('');
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   return (
     <div className="h-full flex flex-col bg-macos-gray-50">
       {/* Header */}
@@ -231,9 +478,35 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
               Nestandartiniai Gaminiai
             </h2>
             <p className="text-sm text-macos-gray-500 mt-1">
-              Įkelkite .eml failą ir raskite panašius gaminius
+              Valdykite nestandardinių gaminių užklausas ir komercinius pasiūlymus
             </p>
           </div>
+        </div>
+
+        {/* Mode Selection */}
+        <div className="macos-segmented-control">
+          <button
+            onClick={() => {
+              setWorkflowMode('upload-request');
+              resetForm();
+            }}
+            className={`macos-segment flex items-center space-x-2 ${workflowMode === 'upload-request' ? 'active' : ''}`}
+          >
+            <Upload className="w-4 h-4" />
+            <span>Nauja Užklausa</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setWorkflowMode('upload-solution');
+              resetForm();
+              loadProjects();
+            }}
+            className={`macos-segment flex items-center space-x-2 ${workflowMode === 'upload-solution' ? 'active' : ''}`}
+          >
+            <Package className="w-4 h-4" />
+            <span>Įkelti Sprendimą</span>
+          </button>
         </div>
       </div>
 
@@ -254,109 +527,383 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto p-6">
         <div className="max-w-4xl mx-auto space-y-6">
-          {/* Upload Area */}
           {!response && (
-            <div className="macos-card p-8 macos-animate-fade">
-              <div className="text-center mb-6">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-macos-purple/10 rounded-macos-xl mb-4">
-                  <Upload className="w-8 h-8 text-macos-purple" />
-                </div>
-                <h3 className="text-lg font-semibold text-macos-gray-900 mb-2">
-                  Įkelkite .eml failą
-                </h3>
-                <p className="text-sm text-macos-gray-500">
-                  Palaikomi dideli failai (10mb ir daugiau)
-                </p>
-              </div>
+            <>
+              {/* Upload Request Mode */}
+              {workflowMode === 'upload-request' && (
+                <div className="space-y-6">
+                  {/* Upload Action Selection */}
+                  <div className="macos-card p-6">
+                    <h3 className="text-base font-semibold text-macos-gray-900 mb-4">
+                      Pasirinkite veiksmą
+                    </h3>
+                    <div className="space-y-3">
+                      <label className="flex items-start p-4 border-[0.5px] border-macos-gray-300 rounded-macos cursor-pointer hover:border-macos-blue hover:bg-macos-blue/5 transition-all">
+                        <input
+                          type="radio"
+                          name="upload-action"
+                          value="find-similar"
+                          checked={uploadAction === 'find-similar'}
+                          onChange={(e) => setUploadAction(e.target.value as UploadAction)}
+                          className="mt-0.5 w-4 h-4 text-macos-blue border-macos-gray-300 focus:ring-macos-blue"
+                        />
+                        <div className="ml-3 flex-1">
+                          <div className="text-sm font-semibold text-macos-gray-900">
+                            Rasti panašius gaminius
+                          </div>
+                          <div className="text-xs text-macos-gray-500 mt-0.5">
+                            Įkelkite .eml failą ir sistema ras panašius gaminius bei susijusius dokumentus
+                          </div>
+                        </div>
+                      </label>
 
-              {selectedFile ? (
-                <div className="border-[0.5px] border-macos-purple/30 rounded-macos-lg p-6 bg-macos-purple/5 mb-6 macos-animate-slide-down">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-macos-purple/10 rounded-macos flex items-center justify-center">
-                        <FileArchive className="w-6 h-6 text-macos-purple" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold text-macos-gray-900">
-                          {selectedFile.name}
-                        </p>
-                        <p className="text-xs text-macos-gray-500">
-                          {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                        </p>
-                      </div>
+                      <label className="flex items-start p-4 border-[0.5px] border-macos-gray-300 rounded-macos cursor-pointer hover:border-macos-blue hover:bg-macos-blue/5 transition-all">
+                        <input
+                          type="radio"
+                          name="upload-action"
+                          value="just-upload"
+                          checked={uploadAction === 'just-upload'}
+                          onChange={(e) => setUploadAction(e.target.value as UploadAction)}
+                          className="mt-0.5 w-4 h-4 text-macos-blue border-macos-gray-300 focus:ring-macos-blue"
+                        />
+                        <div className="ml-3 flex-1">
+                          <div className="text-sm font-semibold text-macos-gray-900">
+                            Tiesiog įkelti naują įrašą
+                          </div>
+                          <div className="text-xs text-macos-gray-500 mt-0.5">
+                            Įkelkite .eml failą į sistemą be paieškos (papildo žinių bazę)
+                          </div>
+                        </div>
+                      </label>
                     </div>
+                  </div>
+
+                  {/* File Upload Area */}
+                  <div className="macos-card p-8 macos-animate-fade">
+                    <div className="text-center mb-6">
+                      <div className="inline-flex items-center justify-center w-16 h-16 bg-macos-purple/10 rounded-macos-xl mb-4">
+                        <Upload className="w-8 h-8 text-macos-purple" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-macos-gray-900 mb-2">
+                        Įkelkite .eml failą
+                      </h3>
+                      <p className="text-sm text-macos-gray-500">
+                        Palaikomi dideli failai (10mb ir daugiau)
+                      </p>
+                    </div>
+
+                    {selectedFile ? (
+                      <div className="border-[0.5px] border-macos-purple/30 rounded-macos-lg p-6 bg-macos-purple/5 mb-6 macos-animate-slide-down">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-12 h-12 bg-macos-purple/10 rounded-macos flex items-center justify-center">
+                              <FileArchive className="w-6 h-6 text-macos-purple" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-macos-gray-900">
+                                {selectedFile.name}
+                              </p>
+                              <p className="text-xs text-macos-gray-500">
+                                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setSelectedFile(null);
+                              if (fileInputRef.current) fileInputRef.current.value = '';
+                            }}
+                            className="p-2 text-macos-gray-400 hover:text-macos-red hover:bg-macos-red/10 rounded-macos transition-colors"
+                          >
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div
+                        onDrop={handleFileDrop}
+                        onDragOver={handleDragOver}
+                        className="border-[0.5px] border-dashed border-macos-gray-300 rounded-macos-lg p-12 text-center bg-macos-gray-50 transition-all cursor-pointer hover:border-macos-purple hover:bg-macos-purple/5 mb-6"
+                        onClick={triggerFileUpload}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            triggerFileUpload();
+                          }
+                        }}
+                      >
+                        <p className="text-sm text-macos-gray-600 mb-4">
+                          Nutempkite .eml failą čia arba
+                        </p>
+                        <button
+                          type="button"
+                          className="macos-btn macos-btn-secondary px-8 py-3 rounded-macos-lg font-medium"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerFileUpload();
+                          }}
+                        >
+                          Naršyti failus
+                        </button>
+                        <p className="text-xs text-macos-gray-500 mt-4">
+                          Palaikomi failai: .eml (iki 25MB)
+                        </p>
+                      </div>
+                    )}
+
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileSelection}
+                      className="hidden"
+                      accept=".eml"
+                    />
+
+                    {/* Submit Button */}
                     <button
-                      onClick={() => {
-                        setSelectedFile(null);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
-                      }}
-                      className="p-2 text-macos-gray-400 hover:text-macos-red hover:bg-macos-red/10 rounded-macos transition-colors"
+                      onClick={handleSubmit}
+                      disabled={!selectedFile || uploading}
+                      className="w-full macos-btn macos-btn-primary py-4 rounded-macos-lg font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-3 macos-animate-spring"
                     >
-                      <X className="w-5 h-5" />
+                      {uploading ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          <span>{uploadAction === 'find-similar' ? 'Ieškoma...' : 'Įkeliama...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-5 h-5" />
+                          <span>{uploadAction === 'find-similar' ? 'Rasti Panašų' : 'Įkelti Įrašą'}</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
-              ) : (
-                <div
-                  onDrop={handleFileDrop}
-                  onDragOver={handleDragOver}
-                  className="border-[0.5px] border-dashed border-macos-gray-300 rounded-macos-lg p-12 text-center bg-macos-gray-50 transition-all cursor-pointer hover:border-macos-purple hover:bg-macos-purple/5 mb-6"
-                  onClick={triggerFileUpload}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      triggerFileUpload();
-                    }
-                  }}
-                >
-                  <p className="text-sm text-macos-gray-600 mb-4">
-                    Nutempkite .eml failą čia arba
-                  </p>
-                  <button
-                    type="button"
-                    className="macos-btn macos-btn-secondary px-8 py-3 rounded-macos-lg font-medium"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerFileUpload();
-                    }}
-                  >
-                    Naršyti failus
-                  </button>
-                  <p className="text-xs text-macos-gray-500 mt-4">
-                    Palaikomi failai: .eml (iki 25MB)
-                  </p>
-                </div>
               )}
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                onChange={handleFileSelection}
-                className="hidden"
-                accept=".eml"
-              />
+              {/* Upload Solution Mode */}
+              {workflowMode === 'upload-solution' && (
+                <div className="space-y-6">
+                  {/* Project Selection */}
+                  <div className="macos-card p-6">
+                    <h3 className="text-base font-semibold text-macos-gray-900 mb-4">
+                      Pasirinkite projektą
+                    </h3>
 
-              {/* Search Button */}
-              <button
-                onClick={handleSearchSimilar}
-                disabled={!selectedFile || uploading}
-                className="w-full macos-btn macos-btn-primary py-4 rounded-macos-lg font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-3 macos-animate-spring"
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Ieškoma panašių...</span>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-5 h-5" />
-                    <span>Rasti Panašų</span>
-                  </>
-                )}
-              </button>
-            </div>
+                    <div className="relative" ref={projectDropdownRef}>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-macos-gray-400 w-4 h-4" />
+                        <input
+                          type="text"
+                          value={selectedProject ? selectedProject.subject_line : projectSearchQuery}
+                          onChange={(e) => {
+                            if (!selectedProject) {
+                              handleProjectSearch(e.target.value);
+                            }
+                          }}
+                          onFocus={() => {
+                            if (!selectedProject) {
+                              setShowProjectDropdown(true);
+                            }
+                          }}
+                          onClick={() => {
+                            if (selectedProject) {
+                              setSelectedProject(null);
+                              setProjectSearchQuery('');
+                              loadProjects();
+                            }
+                            setShowProjectDropdown(true);
+                          }}
+                          placeholder="Ieškokite projekto pagal tema..."
+                          className="macos-input w-full pl-10 pr-10 py-3 text-sm rounded-macos-lg"
+                        />
+                        {selectedProject && (
+                          <button
+                            onClick={() => {
+                              setSelectedProject(null);
+                              setProjectSearchQuery('');
+                              loadProjects();
+                            }}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-macos-gray-400 hover:text-macos-red"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                        {!selectedProject && (
+                          <ChevronDown className={`absolute right-3 top-1/2 transform -translate-y-1/2 text-macos-gray-400 w-4 h-4 transition-transform ${showProjectDropdown ? 'rotate-180' : ''}`} />
+                        )}
+                      </div>
+
+                      {/* Dropdown */}
+                      {showProjectDropdown && !selectedProject && (
+                        <div className="absolute z-10 w-full mt-2 bg-white/95 backdrop-blur-macos border-[0.5px] border-black/10 rounded-macos-lg shadow-macos-lg max-h-80 overflow-y-auto macos-animate-slide-down">
+                          {loadingProjects ? (
+                            <div className="p-8 text-center">
+                              <Loader2 className="w-6 h-6 text-macos-blue animate-spin mx-auto mb-2" />
+                              <p className="text-sm text-macos-gray-500">Kraunami projektai...</p>
+                            </div>
+                          ) : projects.length === 0 ? (
+                            <div className="p-8 text-center">
+                              <p className="text-sm text-macos-gray-500">Projektų nerasta</p>
+                            </div>
+                          ) : (
+                            <div className="p-2">
+                              {projects.map((project) => (
+                                <button
+                                  key={project.id}
+                                  onClick={() => {
+                                    setSelectedProject(project);
+                                    setShowProjectDropdown(false);
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-macos-blue/10 rounded-macos transition-colors"
+                                >
+                                  <div className="font-medium text-sm text-macos-gray-900">
+                                    {project.subject_line}
+                                  </div>
+                                  <div className="text-xs text-macos-gray-500 mt-1">
+                                    {new Date(project.created_at).toLocaleDateString('lt-LT')}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Find Similar by Project Button */}
+                    {selectedProject && (
+                      <div className="mt-4">
+                        <button
+                          onClick={handleFindSimilarByProject}
+                          disabled={uploading}
+                          className="w-full macos-btn macos-btn-secondary py-3 rounded-macos-lg font-medium flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {uploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <span>Ieškoma...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Search className="w-4 h-4" />
+                              <span>Rasti panašius šiam projektui</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* File Upload for Solution */}
+                  {selectedProject && (
+                    <div className="macos-card p-8">
+                      <div className="text-center mb-6">
+                        <div className="inline-flex items-center justify-center w-16 h-16 bg-macos-blue/10 rounded-macos-xl mb-4">
+                          <FileText className="w-8 h-8 text-macos-blue" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-macos-gray-900 mb-2">
+                          Įkelkite komercinį pasiūlymą
+                        </h3>
+                        <p className="text-sm text-macos-gray-500">
+                          Projektui: <span className="font-semibold text-macos-gray-700">{selectedProject.subject_line}</span>
+                        </p>
+                      </div>
+
+                      {selectedFile ? (
+                        <div className="border-[0.5px] border-macos-blue/30 rounded-macos-lg p-6 bg-macos-blue/5 mb-6 macos-animate-slide-down">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-12 h-12 bg-macos-blue/10 rounded-macos flex items-center justify-center">
+                                <FileText className="w-6 h-6 text-macos-blue" />
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-macos-gray-900">
+                                  {selectedFile.name}
+                                </p>
+                                <p className="text-xs text-macos-gray-500">
+                                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSelectedFile(null);
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                              }}
+                              className="p-2 text-macos-gray-400 hover:text-macos-red hover:bg-macos-red/10 rounded-macos transition-colors"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          onDrop={handleFileDrop}
+                          onDragOver={handleDragOver}
+                          className="border-[0.5px] border-dashed border-macos-gray-300 rounded-macos-lg p-12 text-center bg-macos-gray-50 transition-all cursor-pointer hover:border-macos-blue hover:bg-macos-blue/5 mb-6"
+                          onClick={triggerFileUpload}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              triggerFileUpload();
+                            }
+                          }}
+                        >
+                          <p className="text-sm text-macos-gray-600 mb-4">
+                            Nutempkite failą čia arba
+                          </p>
+                          <button
+                            type="button"
+                            className="macos-btn macos-btn-secondary px-8 py-3 rounded-macos-lg font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerFileUpload();
+                            }}
+                          >
+                            Naršyti failus
+                          </button>
+                          <p className="text-xs text-macos-gray-500 mt-4">
+                            Palaikomi failai: PDF, Word, Excel, ir kiti (iki 25MB)
+                          </p>
+                        </div>
+                      )}
+
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        onChange={handleFileSelection}
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                      />
+
+                      {/* Submit Button */}
+                      <button
+                        onClick={handleSubmit}
+                        disabled={!selectedFile || uploading}
+                        className="w-full macos-btn macos-btn-primary py-4 rounded-macos-lg font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-3"
+                      >
+                        {uploading ? (
+                          <>
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                            <span>Įkeliama...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-5 h-5" />
+                            <span>Įkelti Sprendimą</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
           {/* Loading State */}
@@ -369,7 +916,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                 Apdorojama užklausa...
               </h3>
               <p className="text-sm text-macos-gray-500">
-                Prašome palaukti, kol sistema suranda panašius gaminius
+                Prašome palaukti, kol sistema apdoroja jūsų užklausą
               </p>
             </div>
           )}
@@ -385,110 +932,115 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-macos-gray-900">
-                      Rasti aktualūs failai
+                      {response.message || 'Rasti aktualūs failai'}
                     </h3>
                     <p className="text-sm text-macos-gray-500">
-                      Sistema sėkmingai rado susijusius dokumentus
+                      {workflowMode === 'upload-solution'
+                        ? 'Komercinis pasiūlymas sėkmingai įkeltas'
+                        : uploadAction === 'just-upload'
+                        ? 'Įrašas sėkmingai įkeltas į sistemą'
+                        : 'Sistema sėkmingai rado susijusius dokumentus'
+                      }
                     </p>
                   </div>
                 </div>
 
                 {/* Subject Line */}
-                <div className="border-t border-black/5 pt-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <div className="w-8 h-8 bg-macos-purple/10 rounded-macos flex items-center justify-center flex-shrink-0">
-                      <FileArchive className="w-4 h-4 text-macos-purple" />
+                {response.subjectLine && (
+                  <div className="border-t border-black/5 pt-4">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <div className="w-8 h-8 bg-macos-purple/10 rounded-macos flex items-center justify-center flex-shrink-0">
+                        <FileArchive className="w-4 h-4 text-macos-purple" />
+                      </div>
+                      <h4 className="text-base font-semibold text-macos-gray-900">
+                        {response.subjectLine}
+                      </h4>
                     </div>
-                    <h4 className="text-base font-semibold text-macos-gray-900">
-                      {response.subjectLine || 'Nestandartiniai Gaminiai'}
-                    </h4>
-                  </div>
 
-                  {/* Description */}
-                  {response.description && (
-                    <div className="bg-macos-gray-50 rounded-macos p-4 border-[0.5px] border-black/5">
-                      <p className="text-sm text-macos-gray-700 leading-relaxed">
-                        {response.description}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                    {/* Description */}
+                    {response.description && (
+                      <div className="bg-macos-gray-50 rounded-macos p-4 border-[0.5px] border-black/5">
+                        <p className="text-sm text-macos-gray-700 leading-relaxed">
+                          {response.description}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Files Display - Claude.ai Project Style */}
-              <div className="space-y-3">
-                {response.emlFile && (
-                  <div
-                    onClick={() => downloadFile(response.emlFile!)}
-                    className="macos-card p-4 hover:shadow-macos-lg transition-all cursor-pointer group macos-animate-slide-up border-[0.5px] border-macos-purple/20"
-                    style={{ animationDelay: '0.1s' }}
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-macos-purple/10 rounded-macos-lg flex items-center justify-center flex-shrink-0 group-hover:bg-macos-purple/20 transition-colors">
-                        {getFileIcon(response.emlFile.mimeType)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h5 className="text-sm font-semibold text-macos-gray-900 truncate">
-                            {response.emlFile.filename}
-                          </h5>
-                          <span className="px-2 py-0.5 bg-macos-purple/10 text-macos-purple text-[10px] font-bold rounded uppercase flex-shrink-0">
-                            {getFileTypeLabel(response.emlFile.filename)}
-                          </span>
+              {(response.emlFile || response.attachmentFile) && (
+                <div className="space-y-3">
+                  {response.emlFile && (
+                    <div
+                      onClick={() => downloadFile(response.emlFile!)}
+                      className="macos-card p-4 hover:shadow-macos-lg transition-all cursor-pointer group macos-animate-slide-up border-[0.5px] border-macos-purple/20"
+                      style={{ animationDelay: '0.1s' }}
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-macos-purple/10 rounded-macos-lg flex items-center justify-center flex-shrink-0 group-hover:bg-macos-purple/20 transition-colors">
+                          {getFileIcon(response.emlFile.mimeType)}
                         </div>
-                        <p className="text-xs text-macos-gray-500">
-                          {formatFileSize(response.emlFile.content)}
-                        </p>
-                      </div>
-                      <div className="text-macos-gray-400 group-hover:text-macos-purple transition-colors">
-                        <Upload className="w-5 h-5 transform rotate-180" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <h5 className="text-sm font-semibold text-macos-gray-900 truncate">
+                              {response.emlFile.filename}
+                            </h5>
+                            <span className="px-2 py-0.5 bg-macos-purple/10 text-macos-purple text-[10px] font-bold rounded uppercase flex-shrink-0">
+                              {getFileTypeLabel(response.emlFile.filename)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-macos-gray-500">
+                            {formatFileSize(response.emlFile.content)}
+                          </p>
+                        </div>
+                        <div className="text-macos-gray-400 group-hover:text-macos-purple transition-colors">
+                          <Upload className="w-5 h-5 transform rotate-180" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {response.attachmentFile && (
-                  <div
-                    onClick={() => downloadFile(response.attachmentFile!)}
-                    className="macos-card p-4 hover:shadow-macos-lg transition-all cursor-pointer group macos-animate-slide-up border-[0.5px] border-macos-blue/20"
-                    style={{ animationDelay: '0.2s' }}
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-macos-blue/10 rounded-macos-lg flex items-center justify-center flex-shrink-0 group-hover:bg-macos-blue/20 transition-colors">
-                        {getFileIcon(response.attachmentFile.mimeType)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <h5 className="text-sm font-semibold text-macos-gray-900 truncate">
-                            {response.attachmentFile.filename}
-                          </h5>
-                          <span className="px-2 py-0.5 bg-macos-blue/10 text-macos-blue text-[10px] font-bold rounded uppercase flex-shrink-0">
-                            {getFileTypeLabel(response.attachmentFile.filename)}
-                          </span>
+                  {response.attachmentFile && (
+                    <div
+                      onClick={() => downloadFile(response.attachmentFile!)}
+                      className="macos-card p-4 hover:shadow-macos-lg transition-all cursor-pointer group macos-animate-slide-up border-[0.5px] border-macos-blue/20"
+                      style={{ animationDelay: '0.2s' }}
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 bg-macos-blue/10 rounded-macos-lg flex items-center justify-center flex-shrink-0 group-hover:bg-macos-blue/20 transition-colors">
+                          {getFileIcon(response.attachmentFile.mimeType)}
                         </div>
-                        <p className="text-xs text-macos-gray-500">
-                          {formatFileSize(response.attachmentFile.content)}
-                        </p>
-                      </div>
-                      <div className="text-macos-gray-400 group-hover:text-macos-blue transition-colors">
-                        <Upload className="w-5 h-5 transform rotate-180" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <h5 className="text-sm font-semibold text-macos-gray-900 truncate">
+                              {response.attachmentFile.filename}
+                            </h5>
+                            <span className="px-2 py-0.5 bg-macos-blue/10 text-macos-blue text-[10px] font-bold rounded uppercase flex-shrink-0">
+                              {getFileTypeLabel(response.attachmentFile.filename)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-macos-gray-500">
+                            {formatFileSize(response.attachmentFile.content)}
+                          </p>
+                        </div>
+                        <div className="text-macos-gray-400 group-hover:text-macos-blue transition-colors">
+                          <Upload className="w-5 h-5 transform rotate-180" />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* New Search Button */}
               <button
-                onClick={() => {
-                  setResponse(null);
-                  setSelectedFile(null);
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-                }}
+                onClick={resetForm}
                 className="w-full macos-btn macos-btn-secondary py-3 rounded-macos-lg font-medium flex items-center justify-center space-x-2"
               >
-                <Upload className="w-4 h-4" />
-                <span>Nauja paieška</span>
+                <Plus className="w-4 h-4" />
+                <span>Nauja operacija</span>
               </button>
             </div>
           )}
