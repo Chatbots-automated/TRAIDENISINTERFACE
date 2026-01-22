@@ -29,13 +29,14 @@ export default function SettingsModal({ isOpen, onClose, user }: SettingsModalPr
       <div className="macos-animate-spring bg-white/95 backdrop-blur-macos rounded-macos-xl shadow-macos-window max-w-2xl w-full max-h-[90vh] overflow-hidden border-[0.5px] border-black/10">
         {/* Header with macOS window controls */}
         <div className="flex items-center justify-between p-5 border-b border-black/5">
-          <div className="flex items-center space-x-3">
-            {/* macOS Window Controls */}
-            <div className="macos-window-controls p-0">
-              <button onClick={onClose} className="macos-dot macos-dot-close hover:opacity-80 transition-opacity" />
-              <div className="macos-dot macos-dot-minimize opacity-60" />
-              <div className="macos-dot macos-dot-maximize opacity-60" />
-            </div>
+          <div className="flex items-center">
+            {/* Close button */}
+            <button
+              onClick={onClose}
+              className="w-6 h-6 rounded-full bg-macos-gray-100 hover:bg-macos-gray-200 flex items-center justify-center transition-colors"
+            >
+              <X className="w-3.5 h-3.5 text-macos-gray-500" />
+            </button>
           </div>
           <h2 className="text-lg font-semibold text-macos-gray-900 tracking-macos-tight absolute left-1/2 transform -translate-x-1/2">Settings</h2>
           <div className="w-16" /> {/* Spacer for centering */}
