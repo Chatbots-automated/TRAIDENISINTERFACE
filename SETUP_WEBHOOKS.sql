@@ -16,7 +16,7 @@ INSERT INTO webhooks (
   'n8n_upload_new',
   'Upload New EML',
   'Uploads .eml file to knowledge base without searching for similar products. Used when "Tiesiog įkelti naują įrašą" is selected.',
-  'https://n8n.traidenis.lt:5678/webhook-test/4929719e-8f1b-45da-9b0e-2427184f67eb',
+  'http://n8n.traidenis.lt:5678/webhook-test/4929719e-8f1b-45da-9b0e-2427184f67eb',
   true,
   NOW(),
   NOW()
@@ -42,7 +42,7 @@ INSERT INTO webhooks (
   'n8n_find_similar',
   'Find Similar Products',
   'Searches for similar products and returns .eml file + PDF/Word attachments. Used when "Rasti panašius gaminius" is selected or when searching by project.',
-  'https://your-n8n-instance.com/webhook/find-similar',
+  'http://n8n.traidenis.lt:5678/webhook/find-similar',
   false,
   NOW(),
   NOW()
@@ -68,7 +68,7 @@ INSERT INTO webhooks (
   'n8n_upload_solution',
   'Upload Commercial Offer',
   'Uploads commercial offer file (PDF, Word, etc.) for a selected project. Used in "Įkelti Sprendimą" mode.',
-  'https://your-n8n-instance.com/webhook/upload-solution',
+  'http://n8n.traidenis.lt:5678/webhook/upload-solution',
   false,
   NOW(),
   NOW()
