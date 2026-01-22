@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package, Download, Sparkles } from 'lucide-react';
+import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package, Download } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
 import type { AppUser } from '../types';
@@ -103,11 +103,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (workflowMode === 'upload-request') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
-        setError('Tik .eml failai yra palaikomi naujų užklausų įkėlimui.');
+        setError('Only .eml files are supported.');
         return;
       }
     }
-    // For upload-solution, we accept any file type
 
     setSelectedFile(file);
     setError(null);
@@ -123,7 +122,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (workflowMode === 'upload-request') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
-        setError('Tik .eml failai yra palaikomi naujų užklausų įkėlimui.');
+        setError('Only .eml files are supported.');
         return;
       }
     }
@@ -145,16 +144,16 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     // Validation
     if (workflowMode === 'upload-request') {
       if (!selectedFile) {
-        setError('Prašome pasirinkti .eml failą');
+        setError('Please select an .eml file');
         return;
       }
     } else if (workflowMode === 'upload-solution') {
       if (!selectedProject) {
-        setError('Prašome pasirinkti projektą');
+        setError('Please select a project');
         return;
       }
       if (!selectedFile) {
-        setError('Prašome pasirinkti komercinį pasiūlymą (failą)');
+        setError('Please select a file');
         return;
       }
     }
@@ -171,7 +170,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       }
     } catch (error: any) {
       console.error('Upload error:', error);
-      setError(`Operacija nepavyko: ${error.message}`);
+      setError(`Operation failed: ${error.message}`);
     } finally {
       setUploading(false);
     }
@@ -180,7 +179,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   const handleUploadRequest = async () => {
     if (!selectedFile) return;
 
-    // Log upload start
     await appLogger.logDocument({
       action: uploadAction === 'just-upload' ? 'eml_upload_started' : 'eml_search_started',
       userId: user.id,
@@ -190,19 +188,16 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: uploadAction }
     });
 
-    // Convert file to base64
     const base64Content = await fileToBase64(selectedFile);
 
-    // Get appropriate webhook URL
     const webhookUrl = uploadAction === 'just-upload'
       ? import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_NEW
       : import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL nėra sukonfigūruotas. Prašome susisiekti su administratoriumi.');
+      throw new Error('Webhook URL is not configured.');
     }
 
-    // Send to n8n webhook
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
@@ -221,12 +216,11 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     if (!webhookResponse.ok) {
-      throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
+      throw new Error(`Webhook request failed: ${webhookResponse.statusText}`);
     }
 
     const responseData: WebhookResponse = await webhookResponse.json();
 
-    // Log success
     await appLogger.logDocument({
       action: uploadAction === 'just-upload' ? 'eml_upload_success' : 'eml_search_success',
       userId: user.id,
@@ -246,7 +240,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   const handleUploadSolution = async () => {
     if (!selectedFile || !selectedProject) return;
 
-    // Log upload start
     await appLogger.logDocument({
       action: 'commercial_offer_upload_started',
       userId: user.id,
@@ -261,17 +254,13 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       }
     });
 
-    // Convert file to base64
     const base64Content = await fileToBase64(selectedFile);
-
-    // Get webhook URL for commercial offer upload
     const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_SOLUTION;
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL nėra sukonfigūruotas. Prašome susisiekti su administratoriumi.');
+      throw new Error('Webhook URL is not configured.');
     }
 
-    // Send to n8n webhook
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
@@ -291,12 +280,11 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     if (!webhookResponse.ok) {
-      throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
+      throw new Error(`Webhook request failed: ${webhookResponse.statusText}`);
     }
 
     const responseData: WebhookResponse = await webhookResponse.json();
 
-    // Log success
     await appLogger.logDocument({
       action: 'commercial_offer_upload_success',
       userId: user.id,
@@ -315,7 +303,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
   const handleFindSimilarByProject = async () => {
     if (!selectedProject) {
-      setError('Prašome pasirinkti projektą');
+      setError('Please select a project');
       return;
     }
 
@@ -338,7 +326,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
 
       if (!webhookUrl) {
-        throw new Error('Webhook URL nėra sukonfigūruotas. Prašome susisiekti su administratoriumi.');
+        throw new Error('Webhook URL is not configured.');
       }
 
       const webhookResponse = await fetch(webhookUrl, {
@@ -357,7 +345,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       });
 
       if (!webhookResponse.ok) {
-        throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
+        throw new Error(`Webhook request failed: ${webhookResponse.statusText}`);
       }
 
       const responseData: WebhookResponse = await webhookResponse.json();
@@ -377,7 +365,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       setResponse(responseData);
     } catch (error: any) {
       console.error('Find similar error:', error);
-      setError(`Paieška nepavyko: ${error.message}`);
+      setError(`Search failed: ${error.message}`);
 
       await appLogger.logError({
         action: 'find_similar_by_project_error',
@@ -401,7 +389,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       reader.readAsDataURL(file);
       reader.onload = () => {
         const result = reader.result as string;
-        // Remove data URL prefix (e.g., "data:message/rfc822;base64,")
         const base64 = result.split(',')[1];
         resolve(base64);
       };
@@ -411,7 +398,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
   const downloadFile = (file: ResponseFile) => {
     try {
-      // Convert base64 to blob
       const byteCharacters = atob(file.content);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
@@ -420,7 +406,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       const byteArray = new Uint8Array(byteNumbers);
       const blob = new Blob([byteArray], { type: file.mimeType });
 
-      // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -431,32 +416,13 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Download error:', error);
-      setError('Nepavyko atsisiųsti failo');
+      setError('Failed to download file');
     }
-  };
-
-  const getFileIcon = (mimeType: string) => {
-    if (mimeType.includes('pdf')) {
-      return <FileText className="w-6 h-6 text-macos-red" />;
-    } else if (mimeType.includes('word') || mimeType.includes('document')) {
-      return <FileText className="w-6 h-6 text-macos-blue" />;
-    } else if (mimeType.includes('message') || mimeType.includes('eml')) {
-      return <FileArchive className="w-6 h-6 text-macos-purple" />;
-    }
-    return <File className="w-6 h-6 text-macos-gray-500" />;
   };
 
   const getFileTypeLabel = (filename: string) => {
     const ext = filename.split('.').pop()?.toUpperCase();
     return ext || 'FILE';
-  };
-
-  const formatFileSize = (base64Content: string) => {
-    // Estimate file size from base64 (rough approximation)
-    const bytes = base64Content.length * 0.75;
-    if (bytes < 1024) return `${Math.round(bytes)} B`;
-    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
   const resetForm = () => {
@@ -469,286 +435,333 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: 'linear-gradient(to bottom, #faf8f5 0%, #f5f1ea 100%)' }}>
-      {/* Claude-inspired Header */}
-      <div className="px-8 py-6 border-b" style={{ borderColor: '#e8dfd0', background: 'rgba(255, 255, 255, 0.6)' }}>
-        <div className="max-w-5xl mx-auto">
-          <div className="flex items-center space-x-3 mb-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #d4916f 0%, #b87555 100%)', boxShadow: '0 2px 8px rgba(212, 145, 111, 0.3)' }}>
-              <Sparkles className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-serif font-medium" style={{ color: '#5a4a3a' }}>
-                Nestandartiniai Gaminiai
-              </h1>
-              <p className="text-sm" style={{ color: '#8a7a6a' }}>
-                Manage custom product requests and commercial offers
-              </p>
-            </div>
-          </div>
+    <div className="h-full flex flex-col" style={{ background: '#faf8f5' }}>
+      {/* Compact Header */}
+      <div className="px-6 py-4 border-b" style={{ borderColor: '#e8dfd0', background: 'white' }}>
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-3">
+            <h1 className="text-lg font-medium" style={{ color: '#5a4a3a' }}>
+              Nestandartiniai Gaminiai
+            </h1>
 
-          {/* Mode Selection - Claude style */}
-          <div className="flex space-x-2 p-1 rounded-xl" style={{ background: 'rgba(232, 223, 208, 0.4)' }}>
-            <button
-              onClick={() => {
-                setWorkflowMode('upload-request');
-                resetForm();
-              }}
-              className={`flex-1 flex items-center justify-center space-x-2 px-5 py-3 rounded-lg text-sm font-medium transition-all ${
-                workflowMode === 'upload-request'
-                  ? 'shadow-sm'
-                  : ''
-              }`}
-              style={{
-                background: workflowMode === 'upload-request' ? 'rgba(255, 255, 255, 0.9)' : 'transparent',
-                color: workflowMode === 'upload-request' ? '#5a4a3a' : '#8a7a6a'
-              }}
-            >
-              <Upload className="w-4 h-4" />
-              <span>New Request</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setWorkflowMode('upload-solution');
-                resetForm();
-                loadProjects();
-              }}
-              className={`flex-1 flex items-center justify-center space-x-2 px-5 py-3 rounded-lg text-sm font-medium transition-all ${
-                workflowMode === 'upload-solution'
-                  ? 'shadow-sm'
-                  : ''
-              }`}
-              style={{
-                background: workflowMode === 'upload-solution' ? 'rgba(255, 255, 255, 0.9)' : 'transparent',
-                color: workflowMode === 'upload-solution' ? '#5a4a3a' : '#8a7a6a'
-              }}
-            >
-              <Package className="w-4 h-4" />
-              <span>Upload Solution</span>
-            </button>
+            {/* Compact mode selector */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  setWorkflowMode('upload-request');
+                  resetForm();
+                }}
+                className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  workflowMode === 'upload-request' ? 'shadow-sm' : ''
+                }`}
+                style={{
+                  background: workflowMode === 'upload-request' ? '#d4916f' : '#f5f1ea',
+                  color: workflowMode === 'upload-request' ? 'white' : '#8a7a6a'
+                }}
+              >
+                New Request
+              </button>
+              <button
+                onClick={() => {
+                  setWorkflowMode('upload-solution');
+                  resetForm();
+                  loadProjects();
+                }}
+                className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  workflowMode === 'upload-solution' ? 'shadow-sm' : ''
+                }`}
+                style={{
+                  background: workflowMode === 'upload-solution' ? '#d4916f' : '#f5f1ea',
+                  color: workflowMode === 'upload-solution' ? 'white' : '#8a7a6a'
+                }}
+              >
+                Upload Solution
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Error Message */}
       {error && (
-        <div className="mx-8 mt-6 max-w-5xl mx-auto w-full">
-          <div className="flex items-start space-x-3 p-4 rounded-xl border" style={{ background: 'rgba(239, 68, 68, 0.05)', borderColor: 'rgba(239, 68, 68, 0.2)' }}>
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#dc2626' }} />
-            <span className="text-sm flex-1" style={{ color: '#7f1d1d' }}>{error}</span>
-            <button
-              onClick={() => setError(null)}
-              className="text-red-400 hover:text-red-600 transition-colors"
-            >
-              <X className="w-4 h-4" />
+        <div className="px-6 pt-3 max-w-4xl mx-auto w-full">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
+            <AlertCircle className="w-3.5 h-3.5" />
+            <span className="flex-1">{error}</span>
+            <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100">
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto px-8 py-8">
-        <div className="max-w-5xl mx-auto space-y-8">
-          {!response && (
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="max-w-4xl mx-auto">
+          {!response && !uploading && (
             <>
               {/* Upload Request Mode */}
               {workflowMode === 'upload-request' && (
-                <div className="space-y-6">
-                  {/* Upload Action Selection - Claude style */}
-                  <div className="rounded-2xl p-8 border" style={{ background: 'rgba(255, 255, 255, 0.7)', borderColor: '#e8dfd0', boxShadow: '0 1px 3px rgba(90, 74, 58, 0.08)' }}>
-                    <h3 className="text-base font-serif font-medium mb-5" style={{ color: '#5a4a3a' }}>
-                      Choose an action
-                    </h3>
-                    <div className="space-y-3">
-                      <label className="flex items-start p-5 border rounded-xl cursor-pointer transition-all hover:shadow-sm" style={{ borderColor: uploadAction === 'find-similar' ? '#d4916f' : '#e8dfd0', background: uploadAction === 'find-similar' ? 'rgba(212, 145, 111, 0.05)' : 'transparent' }}>
-                        <input
-                          type="radio"
-                          name="upload-action"
-                          value="find-similar"
-                          checked={uploadAction === 'find-similar'}
-                          onChange={(e) => setUploadAction(e.target.value as UploadAction)}
-                          className="mt-0.5 w-4 h-4 flex-shrink-0"
-                          style={{ accentColor: '#d4916f' }}
-                        />
-                        <div className="ml-4 flex-1">
-                          <div className="text-sm font-medium mb-1" style={{ color: '#5a4a3a' }}>
-                            Find similar products
-                          </div>
-                          <div className="text-xs leading-relaxed" style={{ color: '#8a7a6a' }}>
-                            Upload an .eml file and the system will search for similar products and related documents
-                          </div>
-                        </div>
-                      </label>
+                <div className="space-y-4">
+                  {/* Compact Action Selection */}
+                  <div className="flex gap-3">
+                    <label className="flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer text-xs transition-colors" style={{ borderColor: uploadAction === 'find-similar' ? '#d4916f' : '#e8dfd0', background: uploadAction === 'find-similar' ? 'rgba(212, 145, 111, 0.05)' : 'white' }}>
+                      <input
+                        type="radio"
+                        name="upload-action"
+                        value="find-similar"
+                        checked={uploadAction === 'find-similar'}
+                        onChange={(e) => setUploadAction(e.target.value as UploadAction)}
+                        style={{ accentColor: '#d4916f' }}
+                      />
+                      <span style={{ color: '#5a4a3a' }}>Find similar</span>
+                    </label>
 
-                      <label className="flex items-start p-5 border rounded-xl cursor-pointer transition-all hover:shadow-sm" style={{ borderColor: uploadAction === 'just-upload' ? '#d4916f' : '#e8dfd0', background: uploadAction === 'just-upload' ? 'rgba(212, 145, 111, 0.05)' : 'transparent' }}>
-                        <input
-                          type="radio"
-                          name="upload-action"
-                          value="just-upload"
-                          checked={uploadAction === 'just-upload'}
-                          onChange={(e) => setUploadAction(e.target.value as UploadAction)}
-                          className="mt-0.5 w-4 h-4 flex-shrink-0"
-                          style={{ accentColor: '#d4916f' }}
-                        />
-                        <div className="ml-4 flex-1">
-                          <div className="text-sm font-medium mb-1" style={{ color: '#5a4a3a' }}>
-                            Just upload new record
-                          </div>
-                          <div className="text-xs leading-relaxed" style={{ color: '#8a7a6a' }}>
-                            Upload .eml file to the system without searching (adds to knowledge base)
-                          </div>
-                        </div>
-                      </label>
-                    </div>
+                    <label className="flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer text-xs transition-colors" style={{ borderColor: uploadAction === 'just-upload' ? '#d4916f' : '#e8dfd0', background: uploadAction === 'just-upload' ? 'rgba(212, 145, 111, 0.05)' : 'white' }}>
+                      <input
+                        type="radio"
+                        name="upload-action"
+                        value="just-upload"
+                        checked={uploadAction === 'just-upload'}
+                        onChange={(e) => setUploadAction(e.target.value as UploadAction)}
+                        style={{ accentColor: '#d4916f' }}
+                      />
+                      <span style={{ color: '#5a4a3a' }}>Just upload</span>
+                    </label>
                   </div>
 
-                  {/* File Upload Area - Claude style */}
-                  <div className="rounded-2xl p-8 border" style={{ background: 'rgba(255, 255, 255, 0.7)', borderColor: '#e8dfd0', boxShadow: '0 1px 3px rgba(90, 74, 58, 0.08)' }}>
-                    <div className="text-center mb-8">
-                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4" style={{ background: 'linear-gradient(135deg, rgba(212, 145, 111, 0.15) 0%, rgba(184, 117, 85, 0.15) 100%)' }}>
-                        <Upload className="w-8 h-8" style={{ color: '#d4916f' }} />
-                      </div>
-                      <h3 className="text-lg font-serif font-medium mb-2" style={{ color: '#5a4a3a' }}>
-                        Upload your .eml file
-                      </h3>
-                      <p className="text-sm" style={{ color: '#8a7a6a' }}>
-                        Supports large files up to 25MB
-                      </p>
-                    </div>
-
+                  {/* Compact Upload Area */}
+                  <div
+                    onDrop={handleFileDrop}
+                    onDragOver={handleDragOver}
+                    onClick={triggerFileUpload}
+                    className="border-2 border-dashed rounded-lg px-4 py-6 text-center cursor-pointer transition-colors"
+                    style={{ borderColor: '#e8dfd0', background: 'white' }}
+                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#d4916f'}
+                    onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8dfd0'}
+                  >
                     {selectedFile ? (
-                      <div className="rounded-xl p-6 mb-6 border" style={{ background: 'rgba(212, 145, 111, 0.08)', borderColor: '#d4916f40' }}>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(212, 145, 111, 0.15)' }}>
-                              <FileArchive className="w-6 h-6" style={{ color: '#d4916f' }} />
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium" style={{ color: '#5a4a3a' }}>
-                                {selectedFile.name}
-                              </p>
-                              <p className="text-xs mt-0.5" style={{ color: '#8a7a6a' }}>
-                                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                              </p>
-                            </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <FileArchive className="w-5 h-5" style={{ color: '#d4916f' }} />
+                          <div className="text-left">
+                            <p className="text-sm font-medium" style={{ color: '#5a4a3a' }}>
+                              {selectedFile.name}
+                            </p>
+                            <p className="text-xs" style={{ color: '#8a7a6a' }}>
+                              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                            </p>
                           </div>
-                          <button
-                            onClick={() => {
-                              setSelectedFile(null);
-                              if (fileInputRef.current) fileInputRef.current.value = '';
-                            }}
-                            className="p-2 rounded-lg transition-colors"
-                            style={{ color: '#8a7a6a' }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(212, 145, 111, 0.1)'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          >
-                            <X className="w-5 h-5" />
-                          </button>
                         </div>
-                      </div>
-                    ) : (
-                      <div
-                        onDrop={handleFileDrop}
-                        onDragOver={handleDragOver}
-                        className="rounded-xl p-12 text-center border-2 border-dashed transition-all cursor-pointer mb-6"
-                        style={{ borderColor: '#e8dfd0', background: 'rgba(250, 248, 245, 0.5)' }}
-                        onClick={triggerFileUpload}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            triggerFileUpload();
-                          }
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.borderColor = '#d4916f';
-                          e.currentTarget.style.background = 'rgba(212, 145, 111, 0.03)';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.borderColor = '#e8dfd0';
-                          e.currentTarget.style.background = 'rgba(250, 248, 245, 0.5)';
-                        }}
-                      >
-                        <p className="text-sm mb-4" style={{ color: '#8a7a6a' }}>
-                          Drop your .eml file here or
-                        </p>
                         <button
-                          type="button"
-                          className="px-6 py-2.5 rounded-xl text-sm font-medium transition-all"
-                          style={{ background: 'rgba(255, 255, 255, 0.9)', color: '#5a4a3a', border: '1px solid #e8dfd0' }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            triggerFileUpload();
+                            setSelectedFile(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
                           }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(212, 145, 111, 0.15)';
-                            e.currentTarget.style.borderColor = '#d4916f';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.boxShadow = 'none';
-                            e.currentTarget.style.borderColor = '#e8dfd0';
-                          }}
+                          className="p-1.5 rounded hover:bg-gray-100"
                         >
-                          Browse files
+                          <X className="w-4 h-4" style={{ color: '#8a7a6a' }} />
                         </button>
-                        <p className="text-xs mt-4" style={{ color: '#a8988a' }}>
-                          Supported: .eml files up to 25MB
-                        </p>
                       </div>
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: '#d4916f' }} />
+                        <p className="text-sm mb-1" style={{ color: '#5a4a3a' }}>
+                          Drop .eml file or click to browse
+                        </p>
+                        <p className="text-xs" style={{ color: '#8a7a6a' }}>
+                          Up to 25MB
+                        </p>
+                      </>
                     )}
-
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      onChange={handleFileSelection}
-                      className="hidden"
-                      accept=".eml"
-                    />
-
-                    {/* Submit Button - Claude style */}
-                    <button
-                      onClick={handleSubmit}
-                      disabled={!selectedFile || uploading}
-                      className="w-full py-4 rounded-xl text-base font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-                      style={{
-                        background: !selectedFile || uploading ? '#e8dfd0' : 'linear-gradient(135deg, #d4916f 0%, #b87555 100%)',
-                        color: 'white',
-                        boxShadow: !selectedFile || uploading ? 'none' : '0 2px 12px rgba(212, 145, 111, 0.3)'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!uploading && selectedFile) {
-                          e.currentTarget.style.transform = 'translateY(-1px)';
-                          e.currentTarget.style.boxShadow = '0 4px 16px rgba(212, 145, 111, 0.4)';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = !selectedFile || uploading ? 'none' : '0 2px 12px rgba(212, 145, 111, 0.3)';
-                      }}
-                    >
-                      {uploading ? (
-                        <>
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                          <span>{uploadAction === 'find-similar' ? 'Searching...' : 'Uploading...'}</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="w-5 h-5" />
-                          <span>{uploadAction === 'find-similar' ? 'Find Similar' : 'Upload Record'}</span>
-                        </>
-                      )}
-                    </button>
                   </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileSelection}
+                    className="hidden"
+                    accept=".eml"
+                  />
+
+                  {/* Submit Button */}
+                  <button
+                    onClick={handleSubmit}
+                    disabled={!selectedFile}
+                    className="w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+                    style={{
+                      background: selectedFile ? '#d4916f' : '#e8dfd0',
+                      color: 'white'
+                    }}
+                  >
+                    {uploadAction === 'find-similar' ? 'Find Similar' : 'Upload'}
+                  </button>
                 </div>
               )}
 
               {/* Upload Solution Mode */}
               {workflowMode === 'upload-solution' && (
-                <div className="space-y-6">
-                  {/* Rest of upload solution mode code remains the same but with Claude styling applied */}
-                  {/* I'll update this in the next part */}
+                <div className="space-y-4">
+                  {/* Compact Project Selection */}
+                  <div className="relative" ref={projectDropdownRef}>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a7a6a' }} />
+                      <input
+                        type="text"
+                        value={selectedProject ? selectedProject.subject_line : projectSearchQuery}
+                        onChange={(e) => {
+                          if (!selectedProject) {
+                            handleProjectSearch(e.target.value);
+                          }
+                        }}
+                        onFocus={() => {
+                          if (!selectedProject) {
+                            setShowProjectDropdown(true);
+                          }
+                        }}
+                        onClick={() => {
+                          if (selectedProject) {
+                            setSelectedProject(null);
+                            setProjectSearchQuery('');
+                            loadProjects();
+                          }
+                          setShowProjectDropdown(true);
+                        }}
+                        placeholder="Search project..."
+                        className="w-full pl-9 pr-9 py-2 text-sm border rounded-lg"
+                        style={{ borderColor: '#e8dfd0', background: 'white', color: '#5a4a3a' }}
+                      />
+                      {selectedProject ? (
+                        <button
+                          onClick={() => {
+                            setSelectedProject(null);
+                            setProjectSearchQuery('');
+                            loadProjects();
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                        >
+                          <X className="w-4 h-4" style={{ color: '#8a7a6a' }} />
+                        </button>
+                      ) : (
+                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a7a6a' }} />
+                      )}
+                    </div>
+
+                    {/* Dropdown */}
+                    {showProjectDropdown && !selectedProject && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ borderColor: '#e8dfd0' }}>
+                        {loadingProjects ? (
+                          <div className="p-4 text-center">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto" style={{ color: '#d4916f' }} />
+                          </div>
+                        ) : projects.length === 0 ? (
+                          <div className="p-4 text-center text-xs" style={{ color: '#8a7a6a' }}>
+                            No projects found
+                          </div>
+                        ) : (
+                          <div className="p-1">
+                            {projects.map((project) => (
+                              <button
+                                key={project.id}
+                                onClick={() => {
+                                  setSelectedProject(project);
+                                  setShowProjectDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded text-sm"
+                                style={{ color: '#5a4a3a' }}
+                              >
+                                {project.subject_line}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Find Similar by Project */}
+                  {selectedProject && (
+                    <button
+                      onClick={handleFindSimilarByProject}
+                      disabled={uploading}
+                      className="w-full py-2 rounded-lg text-xs font-medium border transition-colors"
+                      style={{ borderColor: '#e8dfd0', color: '#5a4a3a', background: 'white' }}
+                    >
+                      Find similar for this project
+                    </button>
+                  )}
+
+                  {/* File Upload for Solution */}
+                  {selectedProject && (
+                    <>
+                      <div
+                        onDrop={handleFileDrop}
+                        onDragOver={handleDragOver}
+                        onClick={triggerFileUpload}
+                        className="border-2 border-dashed rounded-lg px-4 py-6 text-center cursor-pointer transition-colors"
+                        style={{ borderColor: '#e8dfd0', background: 'white' }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#d4916f'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8dfd0'}
+                      >
+                        {selectedFile ? (
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <FileText className="w-5 h-5" style={{ color: '#d4916f' }} />
+                              <div className="text-left">
+                                <p className="text-sm font-medium" style={{ color: '#5a4a3a' }}>
+                                  {selectedFile.name}
+                                </p>
+                                <p className="text-xs" style={{ color: '#8a7a6a' }}>
+                                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedFile(null);
+                                if (fileInputRef.current) fileInputRef.current.value = '';
+                              }}
+                              className="p-1.5 rounded hover:bg-gray-100"
+                            >
+                              <X className="w-4 h-4" style={{ color: '#8a7a6a' }} />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: '#d4916f' }} />
+                            <p className="text-sm mb-1" style={{ color: '#5a4a3a' }}>
+                              Drop commercial offer or click
+                            </p>
+                            <p className="text-xs" style={{ color: '#8a7a6a' }}>
+                              PDF, Word, Excel, etc.
+                            </p>
+                          </>
+                        )}
+                      </div>
+
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        onChange={handleFileSelection}
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.txt"
+                      />
+
+                      <button
+                        onClick={handleSubmit}
+                        disabled={!selectedFile}
+                        className="w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+                        style={{
+                          background: selectedFile ? '#d4916f' : '#e8dfd0',
+                          color: 'white'
+                        }}
+                      >
+                        Upload Solution
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </>
@@ -756,189 +769,100 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
           {/* Loading State */}
           {uploading && (
-            <div className="rounded-2xl p-12 text-center border" style={{ background: 'rgba(255, 255, 255, 0.7)', borderColor: '#e8dfd0' }}>
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-6" style={{ background: 'rgba(212, 145, 111, 0.1)' }}>
-                <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#d4916f' }} />
-              </div>
-              <h3 className="text-lg font-serif font-medium mb-2" style={{ color: '#5a4a3a' }}>
-                Processing your request
-              </h3>
+            <div className="py-12 text-center">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" style={{ color: '#d4916f' }} />
               <p className="text-sm" style={{ color: '#8a7a6a' }}>
-                Please wait while the system processes your query
+                Processing...
               </p>
             </div>
           )}
 
           {/* Response Display */}
           {response && !uploading && (
-            <div className="space-y-6">
-              {/* Success Header */}
-              <div className="rounded-2xl p-8 border" style={{ background: 'rgba(255, 255, 255, 0.7)', borderColor: '#e8dfd0', boxShadow: '0 1px 3px rgba(90, 74, 58, 0.08)' }}>
-                <div className="flex items-center space-x-4 mb-6">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.1)' }}>
-                    <Check className="w-6 h-6" style={{ color: '#16a34a' }} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-serif font-medium" style={{ color: '#5a4a3a' }}>
-                      {response.message || 'Found relevant files'}
-                    </h3>
-                    <p className="text-sm mt-0.5" style={{ color: '#8a7a6a' }}>
-                      {workflowMode === 'upload-solution'
-                        ? 'Commercial offer uploaded successfully'
-                        : uploadAction === 'just-upload'
-                        ? 'Record added to knowledge base'
-                        : 'System found related documents'
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {/* Subject Line */}
-                {response.subjectLine && (
-                  <div className="pt-6 border-t" style={{ borderColor: '#e8dfd0' }}>
-                    <div className="flex items-center space-x-3 mb-3">
-                      <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(212, 145, 111, 0.1)' }}>
-                        <FileArchive className="w-4 h-4" style={{ color: '#d4916f' }} />
-                      </div>
-                      <h4 className="text-base font-medium font-serif" style={{ color: '#5a4a3a' }}>
-                        {response.subjectLine}
-                      </h4>
-                    </div>
-
-                    {/* Description */}
-                    {response.description && (
-                      <div className="rounded-xl p-4 border mt-3" style={{ background: 'rgba(250, 248, 245, 0.8)', borderColor: '#e8dfd0' }}>
-                        <p className="text-sm leading-relaxed" style={{ color: '#6a5a4a' }}>
-                          {response.description}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+            <div className="space-y-3">
+              {/* Success Message */}
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                <Check className="w-4 h-4" style={{ color: '#16a34a' }} />
+                <span className="text-sm" style={{ color: '#166534' }}>
+                  {response.message || 'Success'}
+                </span>
               </div>
 
-              {/* Files Display - Claude-inspired */}
+              {/* Subject Line & Description */}
+              {response.subjectLine && (
+                <div className="p-3 rounded-lg border" style={{ borderColor: '#e8dfd0', background: 'white' }}>
+                  <p className="text-sm font-medium mb-1" style={{ color: '#5a4a3a' }}>
+                    {response.subjectLine}
+                  </p>
+                  {response.description && (
+                    <p className="text-xs" style={{ color: '#8a7a6a' }}>
+                      {response.description}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Files */}
               {(response.emlFile || response.attachmentFile) && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {response.emlFile && (
-                    <div className="rounded-xl p-5 border transition-all hover:shadow-sm" style={{ background: 'rgba(255, 255, 255, 0.9)', borderColor: '#e8dfd0' }}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(212, 145, 111, 0.1)' }}>
-                            <FileText className="w-5 h-5" style={{ color: '#d4916f' }} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h5 className="text-sm font-medium truncate mb-0.5" style={{ color: '#5a4a3a' }}>
-                              {response.emlFile.filename}
-                            </h5>
-                            <p className="text-xs" style={{ color: '#8a7a6a' }}>
-                              Document · {getFileTypeLabel(response.emlFile.filename)}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadFile(response.emlFile!);
-                          }}
-                          className="px-5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all"
-                          style={{ background: 'rgba(212, 145, 111, 0.1)', color: '#d4916f', border: '1px solid rgba(212, 145, 111, 0.2)' }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(212, 145, 111, 0.15)';
-                            e.currentTarget.style.borderColor = '#d4916f';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(212, 145, 111, 0.1)';
-                            e.currentTarget.style.borderColor = 'rgba(212, 145, 111, 0.2)';
-                          }}
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>Download</span>
-                        </button>
+                    <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8dfd0', background: 'white' }}>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <FileText className="w-4 h-4 flex-shrink-0" style={{ color: '#d4916f' }} />
+                        <span className="text-sm truncate" style={{ color: '#5a4a3a' }}>
+                          {response.emlFile.filename}
+                        </span>
                       </div>
+                      <button
+                        onClick={() => downloadFile(response.emlFile!)}
+                        className="px-3 py-1 rounded text-xs font-medium"
+                        style={{ background: '#f5f1ea', color: '#d4916f' }}
+                      >
+                        Download
+                      </button>
                     </div>
                   )}
 
                   {response.attachmentFile && (
-                    <div className="rounded-xl p-5 border transition-all hover:shadow-sm" style={{ background: 'rgba(255, 255, 255, 0.9)', borderColor: '#e8dfd0' }}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-4 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(212, 145, 111, 0.1)' }}>
-                            <FileText className="w-5 h-5" style={{ color: '#d4916f' }} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h5 className="text-sm font-medium truncate mb-0.5" style={{ color: '#5a4a3a' }}>
-                              {response.attachmentFile.filename}
-                            </h5>
-                            <p className="text-xs" style={{ color: '#8a7a6a' }}>
-                              Document · {getFileTypeLabel(response.attachmentFile.filename)}
-                            </p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadFile(response.attachmentFile!);
-                          }}
-                          className="px-5 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all"
-                          style={{ background: 'rgba(212, 145, 111, 0.1)', color: '#d4916f', border: '1px solid rgba(212, 145, 111, 0.2)' }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'rgba(212, 145, 111, 0.15)';
-                            e.currentTarget.style.borderColor = '#d4916f';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'rgba(212, 145, 111, 0.1)';
-                            e.currentTarget.style.borderColor = 'rgba(212, 145, 111, 0.2)';
-                          }}
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>Download</span>
-                        </button>
+                    <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8dfd0', background: 'white' }}>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <FileText className="w-4 h-4 flex-shrink-0" style={{ color: '#d4916f' }} />
+                        <span className="text-sm truncate" style={{ color: '#5a4a3a' }}>
+                          {response.attachmentFile.filename}
+                        </span>
                       </div>
+                      <button
+                        onClick={() => downloadFile(response.attachmentFile!)}
+                        className="px-3 py-1 rounded text-xs font-medium"
+                        style={{ background: '#f5f1ea', color: '#d4916f' }}
+                      >
+                        Download
+                      </button>
                     </div>
                   )}
 
-                  {/* Download All Button */}
                   {response.emlFile && response.attachmentFile && (
                     <button
                       onClick={() => {
                         if (response.emlFile) downloadFile(response.emlFile);
                         if (response.attachmentFile) downloadFile(response.attachmentFile);
                       }}
-                      className="w-full py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all"
-                      style={{ background: 'rgba(212, 145, 111, 0.08)', color: '#d4916f', border: '1px solid rgba(212, 145, 111, 0.15)' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(212, 145, 111, 0.12)';
-                        e.currentTarget.style.borderColor = 'rgba(212, 145, 111, 0.25)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'rgba(212, 145, 111, 0.08)';
-                        e.currentTarget.style.borderColor = 'rgba(212, 145, 111, 0.15)';
-                      }}
+                      className="w-full py-2 rounded-lg text-xs font-medium border"
+                      style={{ borderColor: '#e8dfd0', color: '#5a4a3a', background: 'white' }}
                     >
-                      <Download className="w-4 h-4" />
-                      <span>Download all</span>
+                      Download all
                     </button>
                   )}
                 </div>
               )}
 
-              {/* New Operation Button */}
+              {/* New Operation */}
               <button
                 onClick={resetForm}
-                className="w-full py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all"
-                style={{ background: 'rgba(255, 255, 255, 0.7)', color: '#8a7a6a', border: '1px solid #e8dfd0' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#d4916f';
-                  e.currentTarget.style.color = '#5a4a3a';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#e8dfd0';
-                  e.currentTarget.style.color = '#8a7a6a';
-                }}
+                className="w-full py-2 rounded-lg text-xs font-medium border"
+                style={{ borderColor: '#e8dfd0', color: '#8a7a6a', background: 'white' }}
               >
-                <Plus className="w-4 h-4" />
-                <span>New operation</span>
+                New operation
               </button>
             </div>
           )}
