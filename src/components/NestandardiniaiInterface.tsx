@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package, Download } from 'lucide-react';
+import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Plus, Package, Download, Info } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
 import type { AppUser } from '../types';
@@ -74,7 +74,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       setProjects(projectsData);
     } catch (error) {
       console.error('Error loading projects:', error);
-      setError('Nepavyko užkrauti projektų sąrašo');
+      setError('Failed to load projects list');
     } finally {
       setLoadingProjects(false);
     }
@@ -103,7 +103,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (workflowMode === 'upload-request') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
-        setError('Only .eml files are supported.');
+        setError('Only .eml files are supported for new requests.');
         return;
       }
     }
@@ -122,7 +122,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (workflowMode === 'upload-request') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
-        setError('Only .eml files are supported.');
+        setError('Only .eml files are supported for new requests.');
         return;
       }
     }
@@ -435,31 +435,40 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#faf8f5' }}>
-      {/* Compact Header */}
-      <div className="px-6 py-4 border-b" style={{ borderColor: '#e8dfd0', background: 'white' }}>
+    <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
+      {/* Header */}
+      <div className="px-6 py-4 border-b" style={{ borderColor: '#f0ede8', background: 'white' }}>
         <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="text-lg font-medium" style={{ color: '#5a4a3a' }}>
-              Nestandartiniai Gaminiai
-            </h1>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-lg font-medium mb-0.5" style={{ color: '#3d3935' }}>
+                Nestandartiniai Gaminiai
+              </h1>
+              <p className="text-xs" style={{ color: '#8a857f' }}>
+                Manage custom product requests and commercial offers
+              </p>
+            </div>
 
-            {/* Compact mode selector */}
+            {/* Clear mode selector with labels */}
             <div className="flex gap-2">
               <button
                 onClick={() => {
                   setWorkflowMode('upload-request');
                   resetForm();
                 }}
-                className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                className={`px-4 py-2 text-xs font-medium rounded-lg border transition-all ${
                   workflowMode === 'upload-request' ? 'shadow-sm' : ''
                 }`}
                 style={{
-                  background: workflowMode === 'upload-request' ? '#d4916f' : '#f5f1ea',
-                  color: workflowMode === 'upload-request' ? 'white' : '#8a7a6a'
+                  background: workflowMode === 'upload-request' ? '#3d3935' : 'white',
+                  color: workflowMode === 'upload-request' ? 'white' : '#3d3935',
+                  borderColor: workflowMode === 'upload-request' ? '#3d3935' : '#e8e5e0'
                 }}
               >
-                New Request
+                <div className="flex items-center gap-1.5">
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>New Request</span>
+                </div>
               </button>
               <button
                 onClick={() => {
@@ -467,15 +476,19 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   resetForm();
                   loadProjects();
                 }}
-                className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                className={`px-4 py-2 text-xs font-medium rounded-lg border transition-all ${
                   workflowMode === 'upload-solution' ? 'shadow-sm' : ''
                 }`}
                 style={{
-                  background: workflowMode === 'upload-solution' ? '#d4916f' : '#f5f1ea',
-                  color: workflowMode === 'upload-solution' ? 'white' : '#8a7a6a'
+                  background: workflowMode === 'upload-solution' ? '#3d3935' : 'white',
+                  color: workflowMode === 'upload-solution' ? 'white' : '#3d3935',
+                  borderColor: workflowMode === 'upload-solution' ? '#3d3935' : '#e8e5e0'
                 }}
               >
-                Upload Solution
+                <div className="flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Upload Solution</span>
+                </div>
               </button>
             </div>
           </div>
@@ -484,97 +497,134 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
       {/* Error Message */}
       {error && (
-        <div className="px-6 pt-3 max-w-4xl mx-auto w-full">
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
-            <AlertCircle className="w-3.5 h-3.5" />
+        <div className="px-6 pt-4 max-w-4xl mx-auto w-full">
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
+            <AlertCircle className="w-4 h-4" />
             <span className="flex-1">{error}</span>
             <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100">
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto px-6 py-5">
         <div className="max-w-4xl mx-auto">
           {!response && !uploading && (
             <>
               {/* Upload Request Mode */}
               {workflowMode === 'upload-request' && (
                 <div className="space-y-4">
-                  {/* Compact Action Selection */}
-                  <div className="flex gap-3">
-                    <label className="flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer text-xs transition-colors" style={{ borderColor: uploadAction === 'find-similar' ? '#d4916f' : '#e8dfd0', background: uploadAction === 'find-similar' ? 'rgba(212, 145, 111, 0.05)' : 'white' }}>
-                      <input
-                        type="radio"
-                        name="upload-action"
-                        value="find-similar"
-                        checked={uploadAction === 'find-similar'}
-                        onChange={(e) => setUploadAction(e.target.value as UploadAction)}
-                        style={{ accentColor: '#d4916f' }}
-                      />
-                      <span style={{ color: '#5a4a3a' }}>Find similar</span>
+                  {/* Action Selection with context */}
+                  <div>
+                    <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
+                      What would you like to do?
                     </label>
+                    <div className="flex gap-3">
+                      <label className="flex-1 flex items-start gap-2.5 px-3 py-2.5 border rounded-lg cursor-pointer text-xs transition-all" style={{ borderColor: uploadAction === 'find-similar' ? '#5a5550' : '#e8e5e0', background: uploadAction === 'find-similar' ? '#faf9f7' : 'white' }}>
+                        <input
+                          type="radio"
+                          name="upload-action"
+                          value="find-similar"
+                          checked={uploadAction === 'find-similar'}
+                          onChange={(e) => setUploadAction(e.target.value as UploadAction)}
+                          className="mt-0.5"
+                          style={{ accentColor: '#5a5550' }}
+                        />
+                        <div>
+                          <div className="font-medium mb-0.5" style={{ color: '#3d3935' }}>Find similar products</div>
+                          <div style={{ color: '#8a857f' }}>Search for related items and documents</div>
+                        </div>
+                      </label>
 
-                    <label className="flex-1 flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer text-xs transition-colors" style={{ borderColor: uploadAction === 'just-upload' ? '#d4916f' : '#e8dfd0', background: uploadAction === 'just-upload' ? 'rgba(212, 145, 111, 0.05)' : 'white' }}>
-                      <input
-                        type="radio"
-                        name="upload-action"
-                        value="just-upload"
-                        checked={uploadAction === 'just-upload'}
-                        onChange={(e) => setUploadAction(e.target.value as UploadAction)}
-                        style={{ accentColor: '#d4916f' }}
-                      />
-                      <span style={{ color: '#5a4a3a' }}>Just upload</span>
-                    </label>
+                      <label className="flex-1 flex items-start gap-2.5 px-3 py-2.5 border rounded-lg cursor-pointer text-xs transition-all" style={{ borderColor: uploadAction === 'just-upload' ? '#5a5550' : '#e8e5e0', background: uploadAction === 'just-upload' ? '#faf9f7' : 'white' }}>
+                        <input
+                          type="radio"
+                          name="upload-action"
+                          value="just-upload"
+                          checked={uploadAction === 'just-upload'}
+                          onChange={(e) => setUploadAction(e.target.value as UploadAction)}
+                          className="mt-0.5"
+                          style={{ accentColor: '#5a5550' }}
+                        />
+                        <div>
+                          <div className="font-medium mb-0.5" style={{ color: '#3d3935' }}>Just upload</div>
+                          <div style={{ color: '#8a857f' }}>Add to knowledge base without search</div>
+                        </div>
+                      </label>
+                    </div>
                   </div>
 
-                  {/* Compact Upload Area */}
-                  <div
-                    onDrop={handleFileDrop}
-                    onDragOver={handleDragOver}
-                    onClick={triggerFileUpload}
-                    className="border-2 border-dashed rounded-lg px-4 py-6 text-center cursor-pointer transition-colors"
-                    style={{ borderColor: '#e8dfd0', background: 'white' }}
-                    onMouseEnter={(e) => e.currentTarget.style.borderColor = '#d4916f'}
-                    onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8dfd0'}
-                  >
-                    {selectedFile ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <FileArchive className="w-5 h-5" style={{ color: '#d4916f' }} />
-                          <div className="text-left">
-                            <p className="text-sm font-medium" style={{ color: '#5a4a3a' }}>
-                              {selectedFile.name}
-                            </p>
-                            <p className="text-xs" style={{ color: '#8a7a6a' }}>
-                              {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                            </p>
+                  {/* Contextual help message */}
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
+                    <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
+                    <div style={{ color: '#5a5550' }}>
+                      {uploadAction === 'find-similar'
+                        ? 'Upload a .eml email file to find similar products and receive related documents including PDFs and commercial offers.'
+                        : 'Upload a .eml email file to add it to the knowledge base. Only .eml format is accepted for new requests.'
+                      }
+                    </div>
+                  </div>
+
+                  {/* Upload Area */}
+                  <div>
+                    <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
+                      Select file
+                    </label>
+                    <div
+                      onDrop={handleFileDrop}
+                      onDragOver={handleDragOver}
+                      onClick={triggerFileUpload}
+                      className="border-2 border-dashed rounded-lg px-4 py-6 text-center cursor-pointer transition-all"
+                      style={{ borderColor: '#e8e5e0', background: 'white' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#5a5550';
+                        e.currentTarget.style.background = '#faf9f7';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#e8e5e0';
+                        e.currentTarget.style.background = 'white';
+                      }}
+                    >
+                      {selectedFile ? (
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: '#f0ede8' }}>
+                              <FileArchive className="w-4 h-4" style={{ color: '#5a5550' }} />
+                            </div>
+                            <div className="text-left">
+                              <p className="text-sm font-medium" style={{ color: '#3d3935' }}>
+                                {selectedFile.name}
+                              </p>
+                              <p className="text-xs" style={{ color: '#8a857f' }}>
+                                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                              </p>
+                            </div>
                           </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedFile(null);
+                              if (fileInputRef.current) fileInputRef.current.value = '';
+                            }}
+                            className="p-1.5 rounded hover:bg-gray-100"
+                          >
+                            <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                          </button>
                         </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedFile(null);
-                            if (fileInputRef.current) fileInputRef.current.value = '';
-                          }}
-                          className="p-1.5 rounded hover:bg-gray-100"
-                        >
-                          <X className="w-4 h-4" style={{ color: '#8a7a6a' }} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: '#d4916f' }} />
-                        <p className="text-sm mb-1" style={{ color: '#5a4a3a' }}>
-                          Drop .eml file or click to browse
-                        </p>
-                        <p className="text-xs" style={{ color: '#8a7a6a' }}>
-                          Up to 25MB
-                        </p>
-                      </>
-                    )}
+                      ) : (
+                        <>
+                          <Upload className="w-7 h-7 mx-auto mb-2" style={{ color: '#8a857f' }} />
+                          <p className="text-sm mb-1" style={{ color: '#3d3935' }}>
+                            Drop .eml file or click to browse
+                          </p>
+                          <p className="text-xs" style={{ color: '#8a857f' }}>
+                            Required: .eml format • Max: 25MB
+                          </p>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   <input
@@ -589,13 +639,13 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   <button
                     onClick={handleSubmit}
                     disabled={!selectedFile}
-                    className="w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+                    className="w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{
-                      background: selectedFile ? '#d4916f' : '#e8dfd0',
-                      color: 'white'
+                      background: selectedFile ? '#3d3935' : '#e8e5e0',
+                      color: selectedFile ? 'white' : '#8a857f'
                     }}
                   >
-                    {uploadAction === 'find-similar' ? 'Find Similar' : 'Upload'}
+                    {uploadAction === 'find-similar' ? 'Find Similar Products' : 'Upload to Knowledge Base'}
                   </button>
                 </div>
               )}
@@ -603,81 +653,94 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
               {/* Upload Solution Mode */}
               {workflowMode === 'upload-solution' && (
                 <div className="space-y-4">
-                  {/* Compact Project Selection */}
-                  <div className="relative" ref={projectDropdownRef}>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a7a6a' }} />
-                      <input
-                        type="text"
-                        value={selectedProject ? selectedProject.subject_line : projectSearchQuery}
-                        onChange={(e) => {
-                          if (!selectedProject) {
-                            handleProjectSearch(e.target.value);
-                          }
-                        }}
-                        onFocus={() => {
-                          if (!selectedProject) {
-                            setShowProjectDropdown(true);
-                          }
-                        }}
-                        onClick={() => {
-                          if (selectedProject) {
-                            setSelectedProject(null);
-                            setProjectSearchQuery('');
-                            loadProjects();
-                          }
-                          setShowProjectDropdown(true);
-                        }}
-                        placeholder="Search project..."
-                        className="w-full pl-9 pr-9 py-2 text-sm border rounded-lg"
-                        style={{ borderColor: '#e8dfd0', background: 'white', color: '#5a4a3a' }}
-                      />
-                      {selectedProject ? (
-                        <button
-                          onClick={() => {
-                            setSelectedProject(null);
-                            setProjectSearchQuery('');
-                            loadProjects();
-                          }}
-                          className="absolute right-3 top-1/2 transform -translate-y-1/2"
-                        >
-                          <X className="w-4 h-4" style={{ color: '#8a7a6a' }} />
-                        </button>
-                      ) : (
-                        <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a7a6a' }} />
-                      )}
+                  {/* Context message */}
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
+                    <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
+                    <div style={{ color: '#5a5550' }}>
+                      Select an existing project and upload your commercial offer or solution file (PDF, Word, Excel, etc.)
                     </div>
+                  </div>
 
-                    {/* Dropdown */}
-                    {showProjectDropdown && !selectedProject && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ borderColor: '#e8dfd0' }}>
-                        {loadingProjects ? (
-                          <div className="p-4 text-center">
-                            <Loader2 className="w-5 h-5 animate-spin mx-auto" style={{ color: '#d4916f' }} />
-                          </div>
-                        ) : projects.length === 0 ? (
-                          <div className="p-4 text-center text-xs" style={{ color: '#8a7a6a' }}>
-                            No projects found
-                          </div>
+                  {/* Project Selection */}
+                  <div>
+                    <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
+                      Select project
+                    </label>
+                    <div className="relative" ref={projectDropdownRef}>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a857f' }} />
+                        <input
+                          type="text"
+                          value={selectedProject ? selectedProject.subject_line : projectSearchQuery}
+                          onChange={(e) => {
+                            if (!selectedProject) {
+                              handleProjectSearch(e.target.value);
+                            }
+                          }}
+                          onFocus={() => {
+                            if (!selectedProject) {
+                              setShowProjectDropdown(true);
+                            }
+                          }}
+                          onClick={() => {
+                            if (selectedProject) {
+                              setSelectedProject(null);
+                              setProjectSearchQuery('');
+                              loadProjects();
+                            }
+                            setShowProjectDropdown(true);
+                          }}
+                          placeholder="Search by project name..."
+                          className="w-full pl-9 pr-9 py-2.5 text-sm border rounded-lg"
+                          style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
+                        />
+                        {selectedProject ? (
+                          <button
+                            onClick={() => {
+                              setSelectedProject(null);
+                              setProjectSearchQuery('');
+                              loadProjects();
+                            }}
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                          >
+                            <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                          </button>
                         ) : (
-                          <div className="p-1">
-                            {projects.map((project) => (
-                              <button
-                                key={project.id}
-                                onClick={() => {
-                                  setSelectedProject(project);
-                                  setShowProjectDropdown(false);
-                                }}
-                                className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded text-sm"
-                                style={{ color: '#5a4a3a' }}
-                              >
-                                {project.subject_line}
-                              </button>
-                            ))}
-                          </div>
+                          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a857f' }} />
                         )}
                       </div>
-                    )}
+
+                      {/* Dropdown */}
+                      {showProjectDropdown && !selectedProject && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                          {loadingProjects ? (
+                            <div className="p-4 text-center">
+                              <Loader2 className="w-5 h-5 animate-spin mx-auto" style={{ color: '#5a5550' }} />
+                            </div>
+                          ) : projects.length === 0 ? (
+                            <div className="p-4 text-center text-xs" style={{ color: '#8a857f' }}>
+                              No projects found
+                            </div>
+                          ) : (
+                            <div className="p-1">
+                              {projects.map((project) => (
+                                <button
+                                  key={project.id}
+                                  onClick={() => {
+                                    setSelectedProject(project);
+                                    setShowProjectDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-gray-50 rounded text-sm transition-colors"
+                                  style={{ color: '#3d3935' }}
+                                >
+                                  {project.subject_line}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Find Similar by Project */}
@@ -686,59 +749,72 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       onClick={handleFindSimilarByProject}
                       disabled={uploading}
                       className="w-full py-2 rounded-lg text-xs font-medium border transition-colors"
-                      style={{ borderColor: '#e8dfd0', color: '#5a4a3a', background: 'white' }}
+                      style={{ borderColor: '#e8e5e0', color: '#3d3935', background: 'white' }}
                     >
-                      Find similar for this project
+                      Find similar products for this project
                     </button>
                   )}
 
                   {/* File Upload for Solution */}
                   {selectedProject && (
                     <>
-                      <div
-                        onDrop={handleFileDrop}
-                        onDragOver={handleDragOver}
-                        onClick={triggerFileUpload}
-                        className="border-2 border-dashed rounded-lg px-4 py-6 text-center cursor-pointer transition-colors"
-                        style={{ borderColor: '#e8dfd0', background: 'white' }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#d4916f'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8dfd0'}
-                      >
-                        {selectedFile ? (
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <FileText className="w-5 h-5" style={{ color: '#d4916f' }} />
-                              <div className="text-left">
-                                <p className="text-sm font-medium" style={{ color: '#5a4a3a' }}>
-                                  {selectedFile.name}
-                                </p>
-                                <p className="text-xs" style={{ color: '#8a7a6a' }}>
-                                  {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                                </p>
+                      <div>
+                        <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
+                          Upload commercial offer
+                        </label>
+                        <div
+                          onDrop={handleFileDrop}
+                          onDragOver={handleDragOver}
+                          onClick={triggerFileUpload}
+                          className="border-2 border-dashed rounded-lg px-4 py-6 text-center cursor-pointer transition-all"
+                          style={{ borderColor: '#e8e5e0', background: 'white' }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = '#5a5550';
+                            e.currentTarget.style.background = '#faf9f7';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = '#e8e5e0';
+                            e.currentTarget.style.background = 'white';
+                          }}
+                        >
+                          {selectedFile ? (
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: '#f0ede8' }}>
+                                  <FileText className="w-4 h-4" style={{ color: '#5a5550' }} />
+                                </div>
+                                <div className="text-left">
+                                  <p className="text-sm font-medium" style={{ color: '#3d3935' }}>
+                                    {selectedFile.name}
+                                  </p>
+                                  <p className="text-xs" style={{ color: '#8a857f' }}>
+                                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                                  </p>
+                                </div>
                               </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedFile(null);
+                                  if (fileInputRef.current) fileInputRef.current.value = '';
+                                }}
+                                className="p-1.5 rounded hover:bg-gray-100"
+                              >
+                                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                              </button>
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedFile(null);
-                                if (fileInputRef.current) fileInputRef.current.value = '';
-                              }}
-                              className="p-1.5 rounded hover:bg-gray-100"
-                            >
-                              <X className="w-4 h-4" style={{ color: '#8a7a6a' }} />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: '#d4916f' }} />
-                            <p className="text-sm mb-1" style={{ color: '#5a4a3a' }}>
-                              Drop commercial offer or click
-                            </p>
-                            <p className="text-xs" style={{ color: '#8a7a6a' }}>
-                              PDF, Word, Excel, etc.
-                            </p>
-                          </>
-                        )}
+                          ) : (
+                            <>
+                              <Upload className="w-7 h-7 mx-auto mb-2" style={{ color: '#8a857f' }} />
+                              <p className="text-sm mb-1" style={{ color: '#3d3935' }}>
+                                Drop file or click to browse
+                              </p>
+                              <p className="text-xs" style={{ color: '#8a857f' }}>
+                                Accepted: PDF, Word, Excel, TXT • Max: 25MB
+                              </p>
+                            </>
+                          )}
+                        </div>
                       </div>
 
                       <input
@@ -752,13 +828,13 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       <button
                         onClick={handleSubmit}
                         disabled={!selectedFile}
-                        className="w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+                        className="w-full py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
-                          background: selectedFile ? '#d4916f' : '#e8dfd0',
-                          color: 'white'
+                          background: selectedFile ? '#3d3935' : '#e8e5e0',
+                          color: selectedFile ? 'white' : '#8a857f'
                         }}
                       >
-                        Upload Solution
+                        Upload Commercial Offer
                       </button>
                     </>
                   )}
@@ -769,33 +845,36 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
           {/* Loading State */}
           {uploading && (
-            <div className="py-12 text-center">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" style={{ color: '#d4916f' }} />
-              <p className="text-sm" style={{ color: '#8a7a6a' }}>
-                Processing...
+            <div className="py-16 text-center">
+              <Loader2 className="w-7 h-7 animate-spin mx-auto mb-3" style={{ color: '#5a5550' }} />
+              <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>
+                Processing your request
+              </p>
+              <p className="text-xs" style={{ color: '#8a857f' }}>
+                Please wait while we process your file...
               </p>
             </div>
           )}
 
           {/* Response Display */}
           {response && !uploading && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {/* Success Message */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
                 <Check className="w-4 h-4" style={{ color: '#16a34a' }} />
-                <span className="text-sm" style={{ color: '#166534' }}>
-                  {response.message || 'Success'}
+                <span className="text-sm font-medium" style={{ color: '#166534' }}>
+                  {response.message || 'Operation completed successfully'}
                 </span>
               </div>
 
               {/* Subject Line & Description */}
               {response.subjectLine && (
-                <div className="p-3 rounded-lg border" style={{ borderColor: '#e8dfd0', background: 'white' }}>
-                  <p className="text-sm font-medium mb-1" style={{ color: '#5a4a3a' }}>
+                <div className="p-4 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                  <p className="text-sm font-medium mb-2" style={{ color: '#3d3935' }}>
                     {response.subjectLine}
                   </p>
                   {response.description && (
-                    <p className="text-xs" style={{ color: '#8a7a6a' }}>
+                    <p className="text-xs leading-relaxed" style={{ color: '#5a5550' }}>
                       {response.description}
                     </p>
                   )}
@@ -806,17 +885,19 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
               {(response.emlFile || response.attachmentFile) && (
                 <div className="space-y-2">
                   {response.emlFile && (
-                    <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8dfd0', background: 'white' }}>
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <FileText className="w-4 h-4 flex-shrink-0" style={{ color: '#d4916f' }} />
-                        <span className="text-sm truncate" style={{ color: '#5a4a3a' }}>
+                    <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
+                          <FileText className="w-4 h-4" style={{ color: '#5a5550' }} />
+                        </div>
+                        <span className="text-sm truncate" style={{ color: '#3d3935' }}>
                           {response.emlFile.filename}
                         </span>
                       </div>
                       <button
                         onClick={() => downloadFile(response.emlFile!)}
-                        className="px-3 py-1 rounded text-xs font-medium"
-                        style={{ background: '#f5f1ea', color: '#d4916f' }}
+                        className="px-3 py-1.5 rounded text-xs font-medium border"
+                        style={{ background: 'white', color: '#3d3935', borderColor: '#e8e5e0' }}
                       >
                         Download
                       </button>
@@ -824,17 +905,19 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   )}
 
                   {response.attachmentFile && (
-                    <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8dfd0', background: 'white' }}>
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <FileText className="w-4 h-4 flex-shrink-0" style={{ color: '#d4916f' }} />
-                        <span className="text-sm truncate" style={{ color: '#5a4a3a' }}>
+                    <div className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                        <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
+                          <FileText className="w-4 h-4" style={{ color: '#5a5550' }} />
+                        </div>
+                        <span className="text-sm truncate" style={{ color: '#3d3935' }}>
                           {response.attachmentFile.filename}
                         </span>
                       </div>
                       <button
                         onClick={() => downloadFile(response.attachmentFile!)}
-                        className="px-3 py-1 rounded text-xs font-medium"
-                        style={{ background: '#f5f1ea', color: '#d4916f' }}
+                        className="px-3 py-1.5 rounded text-xs font-medium border"
+                        style={{ background: 'white', color: '#3d3935', borderColor: '#e8e5e0' }}
                       >
                         Download
                       </button>
@@ -848,9 +931,9 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         if (response.attachmentFile) downloadFile(response.attachmentFile);
                       }}
                       className="w-full py-2 rounded-lg text-xs font-medium border"
-                      style={{ borderColor: '#e8dfd0', color: '#5a4a3a', background: 'white' }}
+                      style={{ borderColor: '#e8e5e0', color: '#3d3935', background: 'white' }}
                     >
-                      Download all
+                      Download all files
                     </button>
                   )}
                 </div>
@@ -860,9 +943,9 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
               <button
                 onClick={resetForm}
                 className="w-full py-2 rounded-lg text-xs font-medium border"
-                style={{ borderColor: '#e8dfd0', color: '#8a7a6a', background: 'white' }}
+                style={{ borderColor: '#e8e5e0', color: '#5a5550', background: 'white' }}
               >
-                New operation
+                Start new operation
               </button>
             </div>
           )}
