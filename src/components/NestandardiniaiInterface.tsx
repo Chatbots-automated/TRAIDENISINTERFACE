@@ -23,12 +23,12 @@ interface WebhookResponse {
   message?: string; // For simple upload responses
 }
 
-type WorkflowMode = 'upload-request' | 'upload-solution';
+type WorkflowMode = 'upload-request' | 'upload-solution' | null;
 type UploadAction = 'just-upload' | 'find-similar';
 
 export default function NestandardiniaiInterface({ user, projectId }: NestandardiniaiInterfaceProps) {
   // Mode selection
-  const [workflowMode, setWorkflowMode] = useState<WorkflowMode>('upload-request');
+  const [workflowMode, setWorkflowMode] = useState<WorkflowMode>(null);
 
   // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -74,7 +74,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       setProjects(projectsData);
     } catch (error) {
       console.error('Error loading projects:', error);
-      setError('Failed to load projects list');
+      setError('Nepavyko užkrauti projektų sąrašo');
     } finally {
       setLoadingProjects(false);
     }
@@ -103,7 +103,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (workflowMode === 'upload-request') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
-        setError('Only .eml files are supported for new requests.');
+        setError('Naujosioms užklausoms palaikomi tik .eml failai.');
         return;
       }
     }
@@ -122,7 +122,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (workflowMode === 'upload-request') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
-        setError('Only .eml files are supported for new requests.');
+        setError('Naujosioms užklausoms palaikomi tik .eml failai.');
         return;
       }
     }
@@ -144,16 +144,16 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     // Validation
     if (workflowMode === 'upload-request') {
       if (!selectedFile) {
-        setError('Please select an .eml file');
+        setError('Prašome pasirinkti .eml failą');
         return;
       }
     } else if (workflowMode === 'upload-solution') {
       if (!selectedProject) {
-        setError('Please select a project');
+        setError('Prašome pasirinkti projektą');
         return;
       }
       if (!selectedFile) {
-        setError('Please select a file');
+        setError('Prašome pasirinkti failą');
         return;
       }
     }
@@ -170,7 +170,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       }
     } catch (error: any) {
       console.error('Upload error:', error);
-      setError(`Operation failed: ${error.message}`);
+      setError(`Operacija nepavyko: ${error.message}`);
     } finally {
       setUploading(false);
     }
@@ -195,7 +195,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       : import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL is not configured.');
+      throw new Error('Webhook URL nesukonfigūruotas.');
     }
 
     const webhookResponse = await fetch(webhookUrl, {
@@ -216,7 +216,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     if (!webhookResponse.ok) {
-      throw new Error(`Webhook request failed: ${webhookResponse.statusText}`);
+      throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
     const responseData: WebhookResponse = await webhookResponse.json();
@@ -258,7 +258,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_SOLUTION;
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL is not configured.');
+      throw new Error('Webhook URL nesukonfigūruotas.');
     }
 
     const webhookResponse = await fetch(webhookUrl, {
@@ -280,7 +280,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     if (!webhookResponse.ok) {
-      throw new Error(`Webhook request failed: ${webhookResponse.statusText}`);
+      throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
     const responseData: WebhookResponse = await webhookResponse.json();
@@ -303,7 +303,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
   const handleFindSimilarByProject = async () => {
     if (!selectedProject) {
-      setError('Please select a project');
+      setError('Prašome pasirinkti projektą');
       return;
     }
 
@@ -326,7 +326,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
 
       if (!webhookUrl) {
-        throw new Error('Webhook URL is not configured.');
+        throw new Error('Webhook URL nesukonfigūruotas.');
       }
 
       const webhookResponse = await fetch(webhookUrl, {
@@ -345,7 +345,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       });
 
       if (!webhookResponse.ok) {
-        throw new Error(`Webhook request failed: ${webhookResponse.statusText}`);
+        throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
       }
 
       const responseData: WebhookResponse = await webhookResponse.json();
@@ -365,7 +365,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       setResponse(responseData);
     } catch (error: any) {
       console.error('Find similar error:', error);
-      setError(`Search failed: ${error.message}`);
+      setError(`Paieška nepavyko: ${error.message}`);
 
       await appLogger.logError({
         action: 'find_similar_by_project_error',
@@ -416,7 +416,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Download error:', error);
-      setError('Failed to download file');
+      setError('Nepavyko atsisiųsti failo');
     }
   };
 
@@ -438,59 +438,28 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
       {/* Header */}
       <div className="px-6 py-4 border-b" style={{ borderColor: '#f0ede8', background: 'white' }}>
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-5xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-lg font-medium mb-0.5" style={{ color: '#3d3935' }}>
                 Nestandartiniai Gaminiai
               </h1>
               <p className="text-xs" style={{ color: '#8a857f' }}>
-                Manage custom product requests and commercial offers
+                Tvarkykite užklausas dėl nestandartinių gaminių ir komercinius pasiūlymus
               </p>
             </div>
-
-            {/* Clear mode selector with labels */}
-            <div className="flex gap-2">
+            {workflowMode && (
               <button
                 onClick={() => {
-                  setWorkflowMode('upload-request');
+                  setWorkflowMode(null);
                   resetForm();
                 }}
-                className={`px-4 py-2 text-xs font-medium rounded-lg border transition-all ${
-                  workflowMode === 'upload-request' ? 'shadow-sm' : ''
-                }`}
-                style={{
-                  background: workflowMode === 'upload-request' ? '#3d3935' : 'white',
-                  color: workflowMode === 'upload-request' ? 'white' : '#3d3935',
-                  borderColor: workflowMode === 'upload-request' ? '#3d3935' : '#e8e5e0'
-                }}
+                className="px-4 py-2 text-xs font-medium rounded-lg border transition-all"
+                style={{ background: 'white', color: '#5a5550', borderColor: '#e8e5e0' }}
               >
-                <div className="flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>New Request</span>
-                </div>
+                ← Grįžti į pasirinkimą
               </button>
-              <button
-                onClick={() => {
-                  setWorkflowMode('upload-solution');
-                  resetForm();
-                  loadProjects();
-                }}
-                className={`px-4 py-2 text-xs font-medium rounded-lg border transition-all ${
-                  workflowMode === 'upload-solution' ? 'shadow-sm' : ''
-                }`}
-                style={{
-                  background: workflowMode === 'upload-solution' ? '#3d3935' : 'white',
-                  color: workflowMode === 'upload-solution' ? 'white' : '#3d3935',
-                  borderColor: workflowMode === 'upload-solution' ? '#3d3935' : '#e8e5e0'
-                }}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Upload Solution</span>
-                </div>
-              </button>
-            </div>
+            )}
           </div>
         </div>
       </div>
@@ -510,16 +479,107 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="max-w-4xl mx-auto">
-          {!response && !uploading && (
+        <div className="max-w-5xl mx-auto">
+          {/* Mode Selection Screen */}
+          {!workflowMode && (
+            <div className="py-12">
+              <div className="text-center mb-8">
+                <h2 className="text-xl font-medium mb-2" style={{ color: '#3d3935' }}>
+                  Pasirinkite veiksmą
+                </h2>
+                <p className="text-sm" style={{ color: '#8a857f' }}>
+                  Ką norėtumėte atlikti su nestandartiniais gaminiais?
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6 max-w-4xl mx-auto">
+                {/* New Request Card */}
+                <button
+                  onClick={() => {
+                    setWorkflowMode('upload-request');
+                    resetForm();
+                  }}
+                  className="group p-8 rounded-xl border-2 text-left transition-all hover:shadow-lg"
+                  style={{
+                    borderColor: '#e8e5e0',
+                    background: 'white'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#5a5550';
+                    e.currentTarget.style.background = '#faf9f7';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e8e5e0';
+                    e.currentTarget.style.background = 'white';
+                  }}
+                >
+                  <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 transition-colors"
+                       style={{ background: '#f0ede8' }}>
+                    <Upload className="w-7 h-7" style={{ color: '#5a5550' }} />
+                  </div>
+                  <h3 className="text-lg font-medium mb-2" style={{ color: '#3d3935' }}>
+                    Nauja Užklausa
+                  </h3>
+                  <p className="text-sm leading-relaxed mb-4" style={{ color: '#5a5550' }}>
+                    Įkelkite .eml formato el. laiško failą, kad surastumėte panašius gaminius arba tiesiog pridėtumėte jį į žinių bazę.
+                  </p>
+                  <div className="flex items-center gap-2 text-xs font-medium" style={{ color: '#8a857f' }}>
+                    <span>Tinka: .eml failai</span>
+                    <span>•</span>
+                    <span>Iki 25MB</span>
+                  </div>
+                </button>
+
+                {/* Upload Solution Card */}
+                <button
+                  onClick={() => {
+                    setWorkflowMode('upload-solution');
+                    resetForm();
+                    loadProjects();
+                  }}
+                  className="group p-8 rounded-xl border-2 text-left transition-all hover:shadow-lg"
+                  style={{
+                    borderColor: '#e8e5e0',
+                    background: 'white'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#5a5550';
+                    e.currentTarget.style.background = '#faf9f7';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e8e5e0';
+                    e.currentTarget.style.background = 'white';
+                  }}
+                >
+                  <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 transition-colors"
+                       style={{ background: '#f0ede8' }}>
+                    <Package className="w-7 h-7" style={{ color: '#5a5550' }} />
+                  </div>
+                  <h3 className="text-lg font-medium mb-2" style={{ color: '#3d3935' }}>
+                    Įkelti Sprendimą
+                  </h3>
+                  <p className="text-sm leading-relaxed mb-4" style={{ color: '#5a5550' }}>
+                    Pasirinkite esamą projektą ir įkelkite komercinį pasiūlymą arba sprendimo dokumentą (PDF, Word, Excel).
+                  </p>
+                  <div className="flex items-center gap-2 text-xs font-medium" style={{ color: '#8a857f' }}>
+                    <span>Tinka: PDF, Word, Excel</span>
+                    <span>•</span>
+                    <span>Iki 25MB</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!response && !uploading && workflowMode && (
             <>
               {/* Upload Request Mode */}
               {workflowMode === 'upload-request' && (
-                <div className="space-y-4">
+                <div className="space-y-4 max-w-3xl mx-auto">
                   {/* Action Selection with context */}
                   <div>
                     <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
-                      What would you like to do?
+                      Ką norėtumėte daryti?
                     </label>
                     <div className="flex gap-3">
                       <label className="flex-1 flex items-start gap-2.5 px-3 py-2.5 border rounded-lg cursor-pointer text-xs transition-all" style={{ borderColor: uploadAction === 'find-similar' ? '#5a5550' : '#e8e5e0', background: uploadAction === 'find-similar' ? '#faf9f7' : 'white' }}>
@@ -533,8 +593,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                           style={{ accentColor: '#5a5550' }}
                         />
                         <div>
-                          <div className="font-medium mb-0.5" style={{ color: '#3d3935' }}>Find similar products</div>
-                          <div style={{ color: '#8a857f' }}>Search for related items and documents</div>
+                          <div className="font-medium mb-0.5" style={{ color: '#3d3935' }}>Rasti panašius</div>
+                          <div style={{ color: '#8a857f' }}>Ieškoti susijusių gaminių ir dokumentų</div>
                         </div>
                       </label>
 
@@ -549,8 +609,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                           style={{ accentColor: '#5a5550' }}
                         />
                         <div>
-                          <div className="font-medium mb-0.5" style={{ color: '#3d3935' }}>Just upload</div>
-                          <div style={{ color: '#8a857f' }}>Add to knowledge base without search</div>
+                          <div className="font-medium mb-0.5" style={{ color: '#3d3935' }}>Tiesiog įkelti</div>
+                          <div style={{ color: '#8a857f' }}>Pridėti į žinių bazę be paieškos</div>
                         </div>
                       </label>
                     </div>
@@ -561,8 +621,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                     <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
                     <div style={{ color: '#5a5550' }}>
                       {uploadAction === 'find-similar'
-                        ? 'Upload a .eml email file to find similar products and receive related documents including PDFs and commercial offers.'
-                        : 'Upload a .eml email file to add it to the knowledge base. Only .eml format is accepted for new requests.'
+                        ? 'Įkelkite .eml formato el. laiško failą, kad surastumėte panašius gaminius ir gautumėte susijusius dokumentus, įskaitant PDF ir komercinius pasiūlymus.'
+                        : 'Įkelkite .eml formato el. laiško failą, kad jį pridėtumėte į žinių bazę. Naujosioms užklausoms priimamas tik .eml formatas.'
                       }
                     </div>
                   </div>
@@ -570,7 +630,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   {/* Upload Area */}
                   <div>
                     <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
-                      Select file
+                      Pasirinkite failą
                     </label>
                     <div
                       onDrop={handleFileDrop}
@@ -617,10 +677,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         <>
                           <Upload className="w-7 h-7 mx-auto mb-2" style={{ color: '#8a857f' }} />
                           <p className="text-sm mb-1" style={{ color: '#3d3935' }}>
-                            Drop .eml file or click to browse
+                            Nuvilkite .eml failą arba spustelėkite, kad pasirinktumėte
                           </p>
                           <p className="text-xs" style={{ color: '#8a857f' }}>
-                            Required: .eml format • Max: 25MB
+                            Reikalingas: .eml formatas • Maks: 25MB
                           </p>
                         </>
                       )}
@@ -645,26 +705,26 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       color: selectedFile ? 'white' : '#8a857f'
                     }}
                   >
-                    {uploadAction === 'find-similar' ? 'Find Similar Products' : 'Upload to Knowledge Base'}
+                    {uploadAction === 'find-similar' ? 'Rasti Panašius Gaminius' : 'Įkelti į Žinių Bazę'}
                   </button>
                 </div>
               )}
 
               {/* Upload Solution Mode */}
               {workflowMode === 'upload-solution' && (
-                <div className="space-y-4">
+                <div className="space-y-4 max-w-3xl mx-auto">
                   {/* Context message */}
                   <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
                     <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
                     <div style={{ color: '#5a5550' }}>
-                      Select an existing project and upload your commercial offer or solution file (PDF, Word, Excel, etc.)
+                      Pasirinkite esamą projektą ir įkelkite komercinį pasiūlymą arba sprendimo failą (PDF, Word, Excel ir pan.)
                     </div>
                   </div>
 
                   {/* Project Selection */}
                   <div>
                     <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
-                      Select project
+                      Pasirinkite projektą
                     </label>
                     <div className="relative" ref={projectDropdownRef}>
                       <div className="relative">
@@ -690,7 +750,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             }
                             setShowProjectDropdown(true);
                           }}
-                          placeholder="Search by project name..."
+                          placeholder="Ieškokite pagal projekto pavadinimą..."
                           className="w-full pl-9 pr-9 py-2.5 text-sm border rounded-lg"
                           style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
                         />
@@ -719,7 +779,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             </div>
                           ) : projects.length === 0 ? (
                             <div className="p-4 text-center text-xs" style={{ color: '#8a857f' }}>
-                              No projects found
+                              Projektų nerasta
                             </div>
                           ) : (
                             <div className="p-1">
@@ -751,7 +811,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       className="w-full py-2 rounded-lg text-xs font-medium border transition-colors"
                       style={{ borderColor: '#e8e5e0', color: '#3d3935', background: 'white' }}
                     >
-                      Find similar products for this project
+                      Rasti panašius gaminius šiam projektui
                     </button>
                   )}
 
@@ -760,7 +820,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                     <>
                       <div>
                         <label className="text-xs font-medium block mb-2" style={{ color: '#5a5550' }}>
-                          Upload commercial offer
+                          Įkelti komercinį pasiūlymą
                         </label>
                         <div
                           onDrop={handleFileDrop}
@@ -807,10 +867,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             <>
                               <Upload className="w-7 h-7 mx-auto mb-2" style={{ color: '#8a857f' }} />
                               <p className="text-sm mb-1" style={{ color: '#3d3935' }}>
-                                Drop file or click to browse
+                                Nuvilkite failą arba spustelėkite, kad pasirinktumėte
                               </p>
                               <p className="text-xs" style={{ color: '#8a857f' }}>
-                                Accepted: PDF, Word, Excel, TXT • Max: 25MB
+                                Priimami: PDF, Word, Excel, TXT • Maks: 25MB
                               </p>
                             </>
                           )}
@@ -834,7 +894,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                           color: selectedFile ? 'white' : '#8a857f'
                         }}
                       >
-                        Upload Commercial Offer
+                        Įkelti Komercinį Pasiūlymą
                       </button>
                     </>
                   )}
@@ -845,25 +905,25 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
           {/* Loading State */}
           {uploading && (
-            <div className="py-16 text-center">
+            <div className="py-16 text-center max-w-3xl mx-auto">
               <Loader2 className="w-7 h-7 animate-spin mx-auto mb-3" style={{ color: '#5a5550' }} />
               <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>
-                Processing your request
+                Apdorojama jūsų užklausa
               </p>
               <p className="text-xs" style={{ color: '#8a857f' }}>
-                Please wait while we process your file...
+                Palaukite, kol apdorosime jūsų failą...
               </p>
             </div>
           )}
 
           {/* Response Display */}
           {response && !uploading && (
-            <div className="space-y-4">
+            <div className="space-y-4 max-w-3xl mx-auto">
               {/* Success Message */}
               <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
                 <Check className="w-4 h-4" style={{ color: '#16a34a' }} />
                 <span className="text-sm font-medium" style={{ color: '#166534' }}>
-                  {response.message || 'Operation completed successfully'}
+                  {response.message || 'Operacija sėkmingai užbaigta'}
                 </span>
               </div>
 
@@ -899,7 +959,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         className="px-3 py-1.5 rounded text-xs font-medium border"
                         style={{ background: 'white', color: '#3d3935', borderColor: '#e8e5e0' }}
                       >
-                        Download
+                        Atsisiųsti
                       </button>
                     </div>
                   )}
@@ -919,7 +979,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         className="px-3 py-1.5 rounded text-xs font-medium border"
                         style={{ background: 'white', color: '#3d3935', borderColor: '#e8e5e0' }}
                       >
-                        Download
+                        Atsisiųsti
                       </button>
                     </div>
                   )}
@@ -933,7 +993,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       className="w-full py-2 rounded-lg text-xs font-medium border"
                       style={{ borderColor: '#e8e5e0', color: '#3d3935', background: 'white' }}
                     >
-                      Download all files
+                      Atsisiųsti visus failus
                     </button>
                   )}
                 </div>
@@ -945,7 +1005,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                 className="w-full py-2 rounded-lg text-xs font-medium border"
                 style={{ borderColor: '#e8e5e0', color: '#5a5550', background: 'white' }}
               >
-                Start new operation
+                Pradėti naują operaciją
               </button>
             </div>
           )}
