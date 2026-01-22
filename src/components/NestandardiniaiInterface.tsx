@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Coins, Download, Info } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
+import { getWebhookUrl } from '../lib/webhooksService';
 import type { AppUser } from '../types';
 
 interface NestandardiniaiInterfaceProps {
@@ -187,10 +188,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     const base64Content = await fileToBase64(selectedFile);
-    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_NEW;
+    const webhookUrl = await getWebhookUrl('n8n_upload_new');
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL nesukonfigūruotas.');
+      throw new Error('Webhook "n8n_upload_new" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
     const webhookResponse = await fetch(webhookUrl, {
@@ -245,10 +246,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     const base64Content = await fileToBase64(selectedFile);
-    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_FIND_SIMILAR;
+    const webhookUrl = await getWebhookUrl('n8n_find_similar');
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL nesukonfigūruotas.');
+      throw new Error('Webhook "n8n_find_similar" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
     const webhookResponse = await fetch(webhookUrl, {
@@ -308,10 +309,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     const base64Content = await fileToBase64(selectedFile);
-    const webhookUrl = import.meta.env.VITE_N8N_WEBHOOK_UPLOAD_SOLUTION;
+    const webhookUrl = await getWebhookUrl('n8n_upload_solution');
 
     if (!webhookUrl) {
-      throw new Error('Webhook URL nesukonfigūruotas.');
+      throw new Error('Webhook "n8n_upload_solution" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
     const webhookResponse = await fetch(webhookUrl, {
