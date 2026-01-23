@@ -219,6 +219,8 @@ export async function callWebhookViaProxy(
   try {
     const proxyUrl = '/.netlify/functions/n8n-proxy';
 
+    console.log('[callWebhookViaProxy] Calling proxy with:', { webhookUrl, dataKeys: Object.keys(data) });
+
     const response = await fetch(proxyUrl, {
       method: 'POST',
       headers: {
@@ -230,9 +232,38 @@ export async function callWebhookViaProxy(
       })
     });
 
-    const result = await response.json();
+    console.log('[callWebhookViaProxy] Proxy response status:', response.status);
+
+    // Try to parse JSON response, handle empty responses
+    let result;
+    const contentType = response.headers.get('content-type');
+
+    if (contentType && contentType.includes('application/json')) {
+      const text = await response.text();
+      console.log('[callWebhookViaProxy] Response text:', text.substring(0, 200));
+
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch (e) {
+        console.error('[callWebhookViaProxy] Failed to parse JSON:', e);
+        return {
+          success: false,
+          status: response.status,
+          error: `Invalid JSON response: ${text.substring(0, 100)}`
+        };
+      }
+    } else {
+      const text = await response.text();
+      console.error('[callWebhookViaProxy] Non-JSON response:', text);
+      return {
+        success: false,
+        status: response.status,
+        error: `Non-JSON response: ${text.substring(0, 100)}`
+      };
+    }
 
     if (!response.ok) {
+      console.error('[callWebhookViaProxy] Proxy error:', result);
       return {
         success: false,
         status: response.status,
@@ -240,13 +271,15 @@ export async function callWebhookViaProxy(
       };
     }
 
+    console.log('[callWebhookViaProxy] Success:', result.success, 'Status:', result.status);
+
     return {
       success: result.success,
       status: result.status,
       data: result.data
     };
   } catch (error: any) {
-    console.error('Error calling webhook via proxy:', error);
+    console.error('[callWebhookViaProxy] Exception:', error);
     return {
       success: false,
       status: 0,

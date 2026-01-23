@@ -38,64 +38,109 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
 
   // Only allow POST requests
   if (event.httpMethod !== 'POST') {
+    console.error('[n8n-proxy] Invalid method:', event.httpMethod);
     return {
       statusCode: 405,
       headers,
-      body: JSON.stringify({ error: 'Method not allowed. Use POST.' }),
+      body: JSON.stringify({
+        success: false,
+        status: 405,
+        error: 'Method not allowed. Use POST.'
+      }),
     };
   }
 
   try {
+    console.log('[n8n-proxy] Received request, body length:', event.body?.length);
+
     // Parse request body
-    const body = JSON.parse(event.body || '{}');
-    const { webhookUrl, data } = body;
-
-    // Validate required parameters
-    if (!webhookUrl) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Missing required parameter: webhookUrl' }),
-      };
-    }
-
-    if (!data) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({ error: 'Missing required parameter: data' }),
-      };
-    }
-
-    // Validate webhook URL format
-    if (!webhookUrl.startsWith('https://')) {
+    let body;
+    try {
+      body = JSON.parse(event.body || '{}');
+    } catch (parseError) {
+      console.error('[n8n-proxy] JSON parse error:', parseError);
       return {
         statusCode: 400,
         headers,
         body: JSON.stringify({
-          error: 'Invalid webhookUrl: Must be an HTTPS URL',
-          hint: 'This proxy is designed for HTTPS webhooks with self-signed certificates'
+          success: false,
+          status: 400,
+          error: 'Invalid JSON in request body'
+        }),
+      };
+    }
+
+    const { webhookUrl, data } = body;
+
+    console.log('[n8n-proxy] Parsed request:', {
+      webhookUrl,
+      hasData: !!data,
+      dataType: typeof data
+    });
+
+    // Validate required parameters
+    if (!webhookUrl) {
+      console.error('[n8n-proxy] Missing webhookUrl');
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          status: 400,
+          error: 'Missing required parameter: webhookUrl'
+        }),
+      };
+    }
+
+    if (data === undefined || data === null) {
+      console.error('[n8n-proxy] Missing data');
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          status: 400,
+          error: 'Missing required parameter: data'
+        }),
+      };
+    }
+
+    // Validate webhook URL format (allow both HTTP and HTTPS)
+    if (!webhookUrl.startsWith('http://') && !webhookUrl.startsWith('https://')) {
+      console.error('[n8n-proxy] Invalid webhook URL format:', webhookUrl);
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({
+          success: false,
+          status: 400,
+          error: 'Invalid webhookUrl: Must be an HTTP or HTTPS URL'
         }),
       };
     }
 
     console.log(`[n8n-proxy] Forwarding request to: ${webhookUrl}`);
 
-    // Create custom HTTPS agent that accepts self-signed certificates
-    const httpsAgent = new https.Agent({
-      rejectUnauthorized: false, // Accept self-signed certificates
-    });
-
-    // Forward the request to n8n webhook
-    const response = await fetch(webhookUrl, {
+    // Create custom HTTPS agent that accepts self-signed certificates (only for HTTPS)
+    const isHttps = webhookUrl.startsWith('https://');
+    const fetchOptions: any = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
+    };
+
+    if (isHttps) {
+      const httpsAgent = new https.Agent({
+        rejectUnauthorized: false, // Accept self-signed certificates
+      });
       // @ts-ignore - agent is valid for node-fetch
-      agent: httpsAgent,
-    });
+      fetchOptions.agent = httpsAgent;
+    }
+
+    // Forward the request to n8n webhook
+    const response = await fetch(webhookUrl, fetchOptions);
 
     // Get response body
     let responseData;
@@ -127,11 +172,14 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
 
   } catch (error: any) {
     console.error('[n8n-proxy] Error:', error);
+    console.error('[n8n-proxy] Error stack:', error.stack);
 
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
+        success: false,
+        status: 500,
         error: 'Proxy request failed',
         message: error.message || 'Internal server error',
         details: error.cause?.message,
