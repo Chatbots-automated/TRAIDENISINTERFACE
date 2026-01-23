@@ -1,5 +1,6 @@
 import { appLogger } from './appLogger';
 import { supabase, supabaseAdmin } from './supabase';
+import { callWebhookViaProxy } from './webhooksService';
 
 export interface SearchResult {
   id: string;
@@ -34,20 +35,45 @@ export async function searchDocumentsClient(
     // Get current user for logging
     const { data: { user } } = await supabase.auth.getUser();
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
-      },
-      body: JSON.stringify(requestBody)
-    });
+    // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
+    // Use direct fetch for HTTP or ngrok URLs
+    let result;
+    let responseStatus;
+    let responseData;
+
+    if (webhookUrl.startsWith('https://') && !webhookUrl.includes('ngrok')) {
+      // Use proxy for self-signed HTTPS certificates
+      result = await callWebhookViaProxy(webhookUrl, requestBody);
+      responseStatus = result.status;
+      responseData = result.data;
+    } else {
+      // Direct fetch for HTTP or ngrok tunnels
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      responseStatus = response.status;
+      result = {
+        success: response.ok,
+        status: response.status,
+        error: response.ok ? undefined : await response.text()
+      };
+
+      if (response.ok) {
+        responseData = await response.json();
+      }
+    }
 
     const responseTimeMs = Date.now() - startTime;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Vector search HTTP error:', response.status, errorText);
+    if (!result.success) {
+      const errorText = result.error || 'Unknown error';
+      console.error('Vector search HTTP error:', responseStatus, errorText);
 
       await appLogger.logDocument({
         action: 'search',
@@ -56,7 +82,7 @@ export async function searchDocumentsClient(
         level: 'error',
         metadata: {
           query,
-          error: `${response.status}: ${errorText}`,
+          error: `${responseStatus}: ${errorText}`,
           match_count: opts?.match_count ?? 10
         }
       });
@@ -67,16 +93,16 @@ export async function searchDocumentsClient(
         userEmail: user?.email,
         endpoint: webhookUrl,
         method: 'POST',
-        statusCode: response.status,
+        statusCode: responseStatus,
         responseTimeMs,
         level: 'error',
         metadata: { query, error: errorText }
       });
 
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
+      throw new Error(`HTTP ${responseStatus}: ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = responseData;
     console.log('Vector search results:', data);
 
     await appLogger.logDocument({
@@ -96,7 +122,7 @@ export async function searchDocumentsClient(
       userEmail: user?.email,
       endpoint: webhookUrl,
       method: 'POST',
-      statusCode: response.status,
+      statusCode: responseStatus,
       responseTimeMs,
       metadata: {
         query,

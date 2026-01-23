@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { appLogger } from './appLogger';
+import { callWebhookViaProxy } from './webhooksService';
 
 const WEBHOOK_URL = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/3961e6fa-4199-4f85-82f5-4e7e036f7e18';
 
@@ -267,7 +268,7 @@ export async function saveInstructionVariable(
 }
 
 /**
- * Trigger the n8n webhook with variable data
+ * Trigger the n8n webhook with variable data (uses proxy for SSL bypass)
  */
 async function triggerWebhook(
   variables: Record<string, string>,
@@ -286,19 +287,14 @@ async function triggerWebhook(
       variables
     };
 
-    const response = await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
+    const result = await callWebhookViaProxy(WEBHOOK_URL, payload);
 
-    if (!response.ok) {
-      console.warn('Webhook returned non-OK status:', response.status);
+    if (!result.success) {
+      console.warn('Webhook returned non-OK status:', result.status, result.error);
+    } else {
+      console.log('Webhook triggered successfully for action:', action);
     }
-
-    console.log('Webhook triggered successfully for action:', action);
   } catch (error) {
     // Log but don't throw - webhook failure shouldn't block the save
     console.error('Failed to trigger webhook:', error);

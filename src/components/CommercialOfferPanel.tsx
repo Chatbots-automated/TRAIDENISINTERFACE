@@ -5,6 +5,7 @@ import {
   updateCommercialOffer,
   CommercialOffer,
 } from '../lib/commercialOfferStorage';
+import { callWebhookViaProxy } from '../lib/webhooksService';
 
 interface CommercialOfferPanelProps {
   isOpen: boolean;
@@ -51,31 +52,24 @@ export default function CommercialOfferPanel({
     try {
       const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
 
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
+      const result = await callWebhookViaProxy(webhookUrl, {
+        query_type: 'generate_doc',
+        thread_id: threadId,
+        commercial_offer: {
+          components: offer.components,
+          tech_description: offer.techDescription,
+          economy_tier: offer.economyTier,
+          midi_tier: offer.midiTier,
+          maxi_tier: offer.maxiTier,
         },
-        body: JSON.stringify({
-          query_type: 'generate_doc',
-          thread_id: threadId,
-          commercial_offer: {
-            components: offer.components,
-            tech_description: offer.techDescription,
-            economy_tier: offer.economyTier,
-            midi_tier: offer.midiTier,
-            maxi_tier: offer.maxiTier,
-          },
-        }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Webhook returned ${response.status}`);
+      if (!result.success) {
+        throw new Error(`Webhook returned ${result.status}: ${result.error || 'Unknown error'}`);
       }
 
-      // Wait for and process the response
-      const result = await response.text();
-      console.log('Fill Doc response:', result);
+      console.log('Fill Doc response:', result.data);
 
       // You can add additional handling here based on the webhook response
 

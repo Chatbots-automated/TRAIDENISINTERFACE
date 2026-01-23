@@ -126,7 +126,7 @@ export async function toggleWebhookActive(
 }
 
 /**
- * Test a webhook endpoint
+ * Test a webhook endpoint (uses proxy for HTTPS webhooks with self-signed certs)
  */
 export async function testWebhook(
   webhookKey: string,
@@ -140,26 +140,40 @@ export async function testWebhook(
       message: 'Test request from Traidenis admin panel'
     };
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(testPayload)
-    });
+    // Use proxy for HTTPS URLs (handles self-signed certificates)
+    // Use direct fetch for HTTP URLs
+    let result;
+    if (url.startsWith('https://')) {
+      result = await callWebhookViaProxy(url, testPayload);
+    } else {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(testPayload)
+      });
+
+      result = {
+        success: response.ok,
+        status: response.status,
+        error: response.ok ? undefined : `HTTP ${response.status}`
+      };
+    }
 
     // Update last test info in database
     await supabaseAdmin
       .from('webhooks')
       .update({
         last_tested_at: new Date().toISOString(),
-        last_test_status: response.status
+        last_test_status: result.status
       })
       .eq('webhook_key', webhookKey);
 
     return {
-      success: response.ok,
-      status: response.status
+      success: result.success,
+      status: result.status,
+      error: result.error
     };
   } catch (error: any) {
     console.error('Error testing webhook:', error);
@@ -186,4 +200,57 @@ export async function testWebhook(
  */
 export function clearWebhookCache(): void {
   webhookCache.clear();
+}
+
+/**
+ * Call a webhook through the Netlify proxy function (bypasses SSL certificate issues)
+ *
+ * This function routes webhook calls through a Netlify serverless function
+ * which can bypass self-signed SSL certificate verification.
+ *
+ * @param webhookUrl - The full HTTPS URL of the webhook endpoint
+ * @param data - The payload to send to the webhook
+ * @returns Promise with the webhook response
+ */
+export async function callWebhookViaProxy(
+  webhookUrl: string,
+  data: any
+): Promise<{ success: boolean; status: number; data?: any; error?: string }> {
+  try {
+    const proxyUrl = '/.netlify/functions/n8n-proxy';
+
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        webhookUrl,
+        data
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        status: response.status,
+        error: result.error || result.message || 'Proxy request failed'
+      };
+    }
+
+    return {
+      success: result.success,
+      status: result.status,
+      data: result.data
+    };
+  } catch (error: any) {
+    console.error('Error calling webhook via proxy:', error);
+    return {
+      success: false,
+      status: 0,
+      error: error.message || 'Network error'
+    };
+  }
 }

@@ -113,37 +113,116 @@ Caddy automatically gets and renews Let's Encrypt certificates!
 
 ---
 
-## Solution 4: Backend Proxy (Complex - Not Recommended)
+## Solution 4: Netlify Functions Proxy (✅ IMPLEMENTED)
 
-If you absolutely need to keep self-signed certificates and HTTPS, you'd need to create a backend service that can bypass SSL verification. This requires:
+**This solution is now LIVE in the codebase!**
 
-1. **Node.js/Express backend**
-2. **Custom HTTPS agent with `rejectUnauthorized: false`**
-3. **Deploy the proxy service**
+If you need to keep self-signed certificates and HTTPS, we use Netlify Functions as a serverless proxy to bypass SSL certificate verification.
 
-This is **NOT recommended** because:
-- Adds complexity and maintenance burden
-- Requires additional infrastructure
-- Security risk if misconfigured
-- Better to fix the SSL certificate issue at the source
+### How It Works
+
+1. **Client → Netlify Function**: Browser calls `/.netlify/functions/n8n-proxy` (trusted domain, no SSL issues)
+2. **Netlify Function → n8n**: Server-side Node.js can bypass SSL verification with `NODE_TLS_REJECT_UNAUTHORIZED = '0'`
+3. **Response flows back**: n8n → Netlify Function → Browser
+
+### Implementation Details
+
+**Files Modified:**
+- `netlify/functions/n8n-proxy.ts` - New serverless function that proxies requests
+- `src/lib/webhooksService.ts` - Added `callWebhookViaProxy()` helper function
+- `src/lib/instructionsService.ts` - Updated to use proxy for webhook calls
+- `src/lib/vectorSearch.ts` - Updated to use proxy for HTTPS webhooks
+- `src/components/NestandardiniaiInterface.tsx` - All 3 webhook calls now use proxy
+- `src/components/CommercialOfferPanel.tsx` - Document generation webhook uses proxy
+
+### Usage
+
+The proxy is automatically used for all HTTPS webhooks. No configuration needed!
+
+```typescript
+import { callWebhookViaProxy } from '../lib/webhooksService';
+
+// Automatically handles self-signed certificates
+const result = await callWebhookViaProxy('https://n8n.traidenis.lt:5678/webhook/...', {
+  // your payload
+});
+
+if (result.success) {
+  console.log('Response:', result.data);
+}
+```
+
+### Security Considerations
+
+⚠️ **SECURITY WARNING**: This solution disables SSL certificate verification server-side
+
+- ✅ **Safe for development/internal use**: Good for internal n8n instances with self-signed certs
+- ⚠️ **Vulnerable to MITM attacks**: The Netlify → n8n connection is not fully secure
+- 🎯 **Temporary solution**: Should be replaced with proper SSL certificates (Solution 2 or 3) for production
+
+### When to Use This Solution
+
+- ✅ Internal n8n instance with self-signed certificate
+- ✅ Development/staging environments
+- ✅ Quick deployment without infrastructure changes
+- ❌ Production with public internet traffic (use Let's Encrypt instead)
+
+### Advantages
+
+1. **No infrastructure changes**: Works with existing n8n setup
+2. **Automatic**: All webhook calls transparently use the proxy
+3. **CORS handling**: Bonus benefit - handles CORS issues as well
+4. **Serverless**: No additional servers to maintain (uses Netlify's infrastructure)
+
+### Deployment
+
+Deployed automatically with your Netlify site. The function is available at:
+```
+https://your-site.netlify.app/.netlify/functions/n8n-proxy
+```
+
+No environment variables needed - the function accepts the webhook URL as a parameter.
 
 ---
 
-## What I've Done
+## What Has Been Implemented
 
-1. ✅ **Updated `SETUP_WEBHOOKS.sql`** to use HTTP URLs for all n8n webhooks
-2. ✅ **Left webhook calling code unchanged** - it will work with any valid URL (HTTP or HTTPS)
-3. ✅ **Created this guide** explaining all solutions
+1. ✅ **Netlify Functions Proxy (Solution 4)** - Serverless proxy to bypass SSL verification
+2. ✅ **Updated all webhook calls** - Now use `callWebhookViaProxy()` for HTTPS webhooks
+3. ✅ **Automatic HTTPS detection** - Proxy is used only for HTTPS URLs (HTTP/ngrok URLs still work directly)
+4. ✅ **Backward compatible** - Works with both HTTP and HTTPS webhooks
+5. ✅ **Created this guide** - Comprehensive documentation of all solutions
 
 ---
 
 ## Recommended Approach
 
-### For Development/Internal Networks
-**Use Solution 1 (HTTP)** - Simple, works immediately, safe for internal use
+### For Development/Internal Networks (Current Implementation)
+**✅ Solution 4 (Netlify Proxy)** - Currently implemented and working
+- Handles self-signed certificates automatically
+- No infrastructure changes needed
+- Works immediately
 
-### For Production/Public Internet
-**Use Solution 2 (Let's Encrypt)** or **Solution 3 (Reverse Proxy)** - Free, secure, proper solution
+**Alternative: Solution 1 (HTTP)** - Simpler if you can use HTTP
+- Requires changing webhook URLs to HTTP
+- No proxy needed
+
+### For Production/Public Internet (Future Upgrade)
+**🎯 Solution 2 (Let's Encrypt)** or **Solution 3 (Reverse Proxy)** - Proper long-term solution
+- Free SSL certificates from Let's Encrypt
+- Secure end-to-end encryption
+- Remove the need for proxy bypass
+- Professional production setup
+
+### Migration Path
+
+```
+Current: Browser → Netlify Proxy → n8n (self-signed HTTPS)
+                  ↑ bypasses SSL verification
+
+Future:  Browser → n8n (Let's Encrypt HTTPS)
+                  ✓ fully verified SSL
+```
 
 ---
 
