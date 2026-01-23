@@ -1,5 +1,6 @@
 import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 import https from 'https';
+import http from 'http';
 
 /**
  * Netlify Function to proxy requests to n8n webhooks with self-signed SSL certificates
@@ -22,6 +23,63 @@ import https from 'https';
 // WARNING: This makes the connection vulnerable to MITM attacks
 // Only use for internal/development environments
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+/**
+ * Helper function to make HTTP/HTTPS requests using native Node.js modules
+ */
+function makeRequest(url: string, data: any): Promise<{ statusCode: number; data: any }> {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const isHttps = urlObj.protocol === 'https:';
+    const requestModule = isHttps ? https : http;
+
+    const requestOptions: https.RequestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // For HTTPS, accept self-signed certificates
+      ...(isHttps && {
+        rejectUnauthorized: false,
+      }),
+    };
+
+    const req = requestModule.request(requestOptions, (res) => {
+      let responseData = '';
+
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        // Try to parse as JSON, fallback to text
+        let parsedData;
+        try {
+          parsedData = JSON.parse(responseData);
+        } catch (e) {
+          parsedData = responseData;
+        }
+
+        resolve({
+          statusCode: res.statusCode || 500,
+          data: parsedData,
+        });
+      });
+    });
+
+    req.on('error', (error) => {
+      console.error('[n8n-proxy] Request error:', error);
+      reject(error);
+    });
+
+    // Write the request body
+    req.write(JSON.stringify(data));
+    req.end();
+  });
+}
 
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   const headers = {
@@ -121,52 +179,23 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
 
     console.log(`[n8n-proxy] Forwarding request to: ${webhookUrl}`);
 
-    // Create custom HTTPS agent that accepts self-signed certificates (only for HTTPS)
-    const isHttps = webhookUrl.startsWith('https://');
-    const fetchOptions: any = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    };
+    // Make the HTTP/HTTPS request using native Node.js modules
+    const responseResult = await makeRequest(webhookUrl, data);
 
-    if (isHttps) {
-      const httpsAgent = new https.Agent({
-        rejectUnauthorized: false, // Accept self-signed certificates
-      });
-      // @ts-ignore - agent is valid for node-fetch
-      fetchOptions.agent = httpsAgent;
-    }
-
-    // Forward the request to n8n webhook
-    const response = await fetch(webhookUrl, fetchOptions);
-
-    // Get response body
-    let responseData;
-    const contentType = response.headers.get('content-type');
-
-    if (contentType?.includes('application/json')) {
-      responseData = await response.json();
-    } else {
-      responseData = await response.text();
-    }
-
-    // Log response status
-    console.log(`[n8n-proxy] Response status: ${response.status}`);
+    console.log(`[n8n-proxy] Response status: ${responseResult.statusCode}`);
 
     // Forward the response from n8n
     return {
-      statusCode: response.status,
+      statusCode: responseResult.statusCode,
       headers: {
         ...headers,
         'X-Proxied-By': 'netlify-n8n-proxy',
-        'X-Original-Status': String(response.status),
+        'X-Original-Status': String(responseResult.statusCode),
       },
       body: JSON.stringify({
-        success: response.ok,
-        status: response.status,
-        data: responseData,
+        success: responseResult.statusCode >= 200 && responseResult.statusCode < 300,
+        status: responseResult.statusCode,
+        data: responseResult.data,
       }),
     };
 
