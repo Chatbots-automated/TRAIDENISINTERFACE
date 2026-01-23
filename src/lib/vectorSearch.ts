@@ -1,6 +1,5 @@
 import { appLogger } from './appLogger';
 import { supabase, supabaseAdmin } from './supabase';
-import { callWebhookViaProxy } from './webhooksService';
 
 export interface SearchResult {
   id: string;
@@ -35,38 +34,26 @@ export async function searchDocumentsClient(
     // Get current user for logging
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
-    // Use direct fetch for HTTP or ngrok URLs
-    let result;
-    let responseStatus;
+    // Call webhook directly
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    const responseStatus = response.status;
+    const result = {
+      success: response.ok,
+      status: response.status,
+      error: response.ok ? undefined : await response.text()
+    };
+
     let responseData;
-
-    if (webhookUrl.startsWith('https://') && !webhookUrl.includes('ngrok')) {
-      // Use proxy for self-signed HTTPS certificates
-      result = await callWebhookViaProxy(webhookUrl, requestBody);
-      responseStatus = result.status;
-      responseData = result.data;
-    } else {
-      // Direct fetch for HTTP or ngrok tunnels
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      responseStatus = response.status;
-      result = {
-        success: response.ok,
-        status: response.status,
-        error: response.ok ? undefined : await response.text()
-      };
-
-      if (response.ok) {
-        responseData = await response.json();
-      }
+    if (response.ok) {
+      responseData = await response.json();
     }
 
     const responseTimeMs = Date.now() - startTime;

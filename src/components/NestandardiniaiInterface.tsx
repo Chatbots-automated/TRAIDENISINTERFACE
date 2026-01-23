@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Coins, Download, Info } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
-import { getWebhookUrl, callWebhookViaProxy } from '../lib/webhooksService';
+import { getWebhookUrl } from '../lib/webhooksService';
 import type { AppUser } from '../types';
 
 interface NestandardiniaiInterfaceProps {
@@ -194,23 +194,29 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error('Webhook "n8n_upload_new" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
-    // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
-    const result = await callWebhookViaProxy(webhookUrl, {
-      action: 'just-upload',
-      filename: selectedFile.name,
-      fileContent: base64Content,
-      mimeType: selectedFile.type || 'message/rfc822',
-      userId: user.id,
-      userEmail: user.email,
-      projectId: projectId,
-      timestamp: new Date().toISOString()
+    // Call webhook directly (HTTP webhooks don't need proxy)
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'just-upload',
+        filename: selectedFile.name,
+        fileContent: base64Content,
+        mimeType: selectedFile.type || 'message/rfc822',
+        userId: user.id,
+        userEmail: user.email,
+        projectId: projectId,
+        timestamp: new Date().toISOString()
+      })
     });
 
-    if (!result.success) {
-      throw new Error(`Webhook užklausa nepavyko: ${result.error || 'Unknown error'}`);
+    if (!response.ok) {
+      throw new Error(`Webhook užklausa nepavyko: ${response.statusText}`);
     }
 
-    const responseData: WebhookResponse = result.data;
+    const responseData: WebhookResponse = await response.json();
 
     await appLogger.logDocument({
       action: 'eml_upload_success',
@@ -247,23 +253,29 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error('Webhook "n8n_find_similar" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
-    // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
-    const result = await callWebhookViaProxy(webhookUrl, {
-      action: 'find-similar',
-      filename: selectedFile.name,
-      fileContent: base64Content,
-      mimeType: selectedFile.type || 'message/rfc822',
-      userId: user.id,
-      userEmail: user.email,
-      projectId: projectId,
-      timestamp: new Date().toISOString()
+    // Call webhook directly (HTTP webhooks don't need proxy)
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'find-similar',
+        filename: selectedFile.name,
+        fileContent: base64Content,
+        mimeType: selectedFile.type || 'message/rfc822',
+        userId: user.id,
+        userEmail: user.email,
+        projectId: projectId,
+        timestamp: new Date().toISOString()
+      })
     });
 
-    if (!result.success) {
-      throw new Error(`Webhook užklausa nepavyko: ${result.error || 'Unknown error'}`);
+    if (!response.ok) {
+      throw new Error(`Webhook užklausa nepavyko: ${response.statusText}`);
     }
 
-    const responseData: WebhookResponse = result.data;
+    const responseData: WebhookResponse = await response.json();
 
     await appLogger.logDocument({
       action: 'eml_search_success',
@@ -305,24 +317,30 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error('Webhook "n8n_upload_solution" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
-    // Use proxy for HTTPS webhooks (bypasses self-signed certificate issues)
-    const result = await callWebhookViaProxy(webhookUrl, {
-      action: 'upload-solution',
-      projectId: selectedProject.id,
-      projectSubjectLine: selectedProject.subject_line,
-      filename: selectedFile.name,
-      fileContent: base64Content,
-      mimeType: selectedFile.type,
-      userId: user.id,
-      userEmail: user.email,
-      timestamp: new Date().toISOString()
+    // Call webhook directly (HTTP webhooks don't need proxy)
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'upload-solution',
+        projectId: selectedProject.id,
+        projectSubjectLine: selectedProject.subject_line,
+        filename: selectedFile.name,
+        fileContent: base64Content,
+        mimeType: selectedFile.type,
+        userId: user.id,
+        userEmail: user.email,
+        timestamp: new Date().toISOString()
+      })
     });
 
-    if (!result.success) {
-      throw new Error(`Webhook užklausa nepavyko: ${result.error || 'Unknown error'}`);
+    if (!response.ok) {
+      throw new Error(`Webhook užklausa nepavyko: ${response.statusText}`);
     }
 
-    const responseData: WebhookResponse = result.data;
+    const responseData: WebhookResponse = await response.json();
 
     await appLogger.logDocument({
       action: 'commercial_offer_upload_success',
