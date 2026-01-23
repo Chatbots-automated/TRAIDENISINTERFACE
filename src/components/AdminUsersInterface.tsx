@@ -19,12 +19,12 @@ interface UserData {
 export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
-  
+
   const [newUserData, setNewUserData] = useState({
     email: '',
     password: '',
@@ -66,11 +66,11 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         newUserData.displayName,
         newUserData.isAdmin
       );
-      
+
       if (error) throw error;
 
       setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
-      setShowCreateForm(false);
+      setShowCreateModal(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
       await loadUsers();
@@ -182,8 +182,16 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 <X className="w-5 h-5" />
               </button>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              {error && (
+                <div className="flex items-center space-x-2 text-macos-red bg-macos-red/10 p-3 rounded-macos border-[0.5px] border-macos-red/20">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{error}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Email *</label>
                 <input
@@ -252,7 +260,18 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               </div>
             </div>
 
-            <div className="flex items-center space-x-3">
+            {/* Modal Footer */}
+            <div className="px-5 py-4 border-t border-black/5 bg-macos-gray-50/50 rounded-b-macos-xl flex items-center justify-end space-x-3">
+              <button
+                onClick={() => {
+                  setShowCreateModal(false);
+                  setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+                  setError(null);
+                }}
+                className="macos-btn px-4 py-2 text-sm text-macos-gray-600 hover:text-macos-gray-800 rounded-macos transition-colors"
+              >
+                Cancel
+              </button>
               <button
                 onClick={handleCreateUser}
                 disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
@@ -266,7 +285,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               >
                 {saving ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
                     <span>Creating...</span>
                   </>
                 ) : (
@@ -290,6 +309,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         }}>
           <AlertCircle className="w-5 h-5" />
           <span className="text-sm">{error}</span>
+          <button onClick={() => setError(null)} className="ml-auto text-macos-red/60 hover:text-macos-red transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -307,7 +329,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       {/* Users List */}
       <div className="flex-1 overflow-y-auto p-6">
         {loading ? (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {[1, 2, 3, 4].map(i => (
               <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: colors.bg.secondary }} />
             ))}
@@ -331,7 +353,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             </button>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="space-y-3">
             {users.map((userData) => (
               <div
                 key={userData.id}
@@ -388,7 +410,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
                       >
                         {saving ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
                         ) : (
                           <Save className="w-4 h-4" />
                         )}
@@ -467,7 +489,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         title="Delete user"
-                        disabled={userData.id === user.id} // Prevent self-deletion
+                        disabled={userData.id === user.id}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
