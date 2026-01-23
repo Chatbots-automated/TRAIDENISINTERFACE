@@ -18,6 +18,7 @@ import {
   LinkedAppUser
 } from '../lib/voiceflow';
 import type { AppUser } from '../types';
+import { colors } from '../lib/designSystem';
 
 interface TranscriptsInterfaceProps {
   user: AppUser;
@@ -167,49 +168,43 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
   return (
     <>
       {/* Main List View */}
-      <div className="h-full flex flex-col bg-vf-background">
+      <div className="h-full flex flex-col" style={{ background: colors.bg.secondary }}>
         {/* Header */}
-        <div className="p-6 border-b border-vf-border bg-white">
+        <div className="p-6" style={{ borderBottom: `1px solid ${colors.border.default}`, background: colors.bg.white }}>
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-2xl font-semibold text-gray-900">Transcripts</h2>
-              <p className="text-sm text-vf-secondary mt-1">
+              <h2 className="text-2xl font-semibold" style={{ color: colors.text.primary }}>Transcripts</h2>
+              <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>
                 View Voiceflow chat conversation history
               </p>
             </div>
             <div className="flex items-center space-x-3">
               {user.is_admin && (
-                <button
+                <FilterButton
+                  showOnlyMine={showOnlyMine}
                   onClick={() => setShowOnlyMine(!showOnlyMine)}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                    showOnlyMine
-                      ? 'bg-indigo-50 text-indigo-700'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <Filter className="w-4 h-4" />
-                  {showOnlyMine ? 'All Transcripts' : 'My Transcripts'}
-                </button>
+                />
               )}
-              <button
+              <RefreshButton
                 onClick={handleRefresh}
                 disabled={refreshing || loading}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
+                refreshing={refreshing}
+              />
             </div>
           </div>
 
-          <div className="text-sm text-gray-500">
+          <div className="text-sm" style={{ color: colors.text.tertiary }}>
             {displayTranscripts.length} conversation{displayTranscripts.length !== 1 ? 's' : ''}
           </div>
         </div>
 
         {/* Error Message */}
         {error && (
-          <div className="mx-6 mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
+          <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
+            color: colors.status.errorText,
+            background: colors.status.error,
+            border: `1px solid ${colors.status.errorBorder}`
+          }}>
             <AlertCircle className="w-5 h-5" />
             <span className="text-sm">{error}</span>
           </div>
@@ -220,21 +215,21 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full">
               <div className="flex items-center gap-1.5 mb-4">
-                <div className="w-3 h-3 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-3 h-3 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                <div className="w-3 h-3 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                <div className="w-3 h-3 rounded-full animate-bounce" style={{ background: colors.border.default, animationDelay: '0ms' }}></div>
+                <div className="w-3 h-3 rounded-full animate-bounce" style={{ background: colors.border.default, animationDelay: '150ms' }}></div>
+                <div className="w-3 h-3 rounded-full animate-bounce" style={{ background: colors.border.default, animationDelay: '300ms' }}></div>
               </div>
               {loadingProgress && (
-                <p className="text-sm text-gray-500">{loadingProgress}</p>
+                <p className="text-sm" style={{ color: colors.text.tertiary }}>{loadingProgress}</p>
               )}
             </div>
           ) : displayTranscripts.length === 0 ? (
             <div className="text-center py-16">
-              <MessageSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              <MessageSquare className="w-16 h-16 mx-auto mb-4" style={{ color: colors.border.default }} />
+              <h3 className="text-lg font-semibold mb-2" style={{ color: colors.text.primary }}>
                 No transcripts found
               </h3>
-              <p className="text-vf-secondary mb-8 text-sm">
+              <p className="mb-8 text-sm" style={{ color: colors.text.secondary }}>
                 {showOnlyMine
                   ? 'Start a conversation to see your transcripts here'
                   : 'No conversations have been recorded yet'}
@@ -243,94 +238,12 @@ export default function TranscriptsInterface({ user }: TranscriptsInterfaceProps
           ) : (
             <div className="space-y-2">
               {displayTranscripts.map((transcript) => (
-                <div
+                <TranscriptCard
                   key={transcript.id}
+                  transcript={transcript}
                   onClick={() => setSelectedTranscript(transcript)}
-                  className="bg-white rounded-lg cursor-pointer transition-all"
-                  style={{
-                    padding: '14px 16px',
-                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
-                    overflow: 'hidden'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f7f7f7';
-                    e.currentTarget.style.boxShadow = '0 3px 6px 0 rgba(0, 0, 0, 0.08)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'white';
-                    e.currentTarget.style.boxShadow = '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)';
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center flex-1" style={{ gap: '14px' }}>
-                      <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center border border-indigo-100">
-                          <MessageSquare className="w-5 h-5 text-indigo-600" />
-                        </div>
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <h3 className="text-sm font-bold text-gray-900">
-                            {transcript.appUser?.display_name || transcript.userName || 'Anonymous User'}
-                          </h3>
-                          {/* Show verified badge if linked to app user */}
-                          {transcript.appUser && (
-                            <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium" title={`Verified: ${transcript.appUser.email}`}>
-                              Verified
-                            </span>
-                          )}
-                          {transcript.unread && (
-                            <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full font-medium">
-                              New
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Show email if linked to app user */}
-                        {transcript.appUser?.email && (
-                          <p className="text-xs text-gray-500 mb-0.5">
-                            {transcript.appUser.email}
-                          </p>
-                        )}
-
-                        {/* Preview message with ellipsis */}
-                        <p
-                          className="text-xs mb-1.5"
-                          style={{
-                            color: '#777',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            maxWidth: '100%'
-                          }}
-                        >
-                          {transcript.preview}
-                        </p>
-
-                        {/* Metadata pills */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className="inline-flex items-center rounded font-medium"
-                            style={{
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              color: '#4a5568',
-                              backgroundColor: '#e2e8f0'
-                            }}
-                          >
-                            <Clock className="w-3 h-3 mr-1" />
-                            {formatTableDate(transcript)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center ml-4">
-                      <ChevronRight className="w-5 h-5 text-gray-400" />
-                    </div>
-                  </div>
-                </div>
+                  formatTableDate={formatTableDate}
+                />
               ))}
             </div>
           )}
@@ -363,41 +276,39 @@ function TranscriptModal({
   calculateDuration: (transcript: ParsedTranscript) => string;
 }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-12">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col min-w-0 overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-12"
+      style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+      onClick={onClose}
+    >
+      <div
+        className="rounded-2xl shadow-xl w-full max-w-7xl h-[85vh] flex flex-col min-w-0 overflow-hidden"
+        style={{ background: colors.bg.white }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="flex-shrink-0 flex">
           {/* Left side header */}
-          <div className="w-80 min-w-[280px] max-w-[320px] px-6 py-4 bg-gray-50">
-            <h3 className="text-sm font-semibold text-gray-700">Details</h3>
+          <div className="w-80 min-w-[280px] max-w-[320px] px-6 py-4" style={{ background: colors.bg.secondary }}>
+            <h3 className="text-sm font-semibold" style={{ color: colors.text.secondary }}>Details</h3>
           </div>
 
           {/* Right side header */}
-          <div className="flex-1 px-6 py-4 border-b border-l border-gray-200 bg-gray-50">
+          <div className="flex-1 px-6 py-4" style={{
+            borderBottom: `1px solid ${colors.border.default}`,
+            borderLeft: `1px solid ${colors.border.default}`,
+            background: colors.bg.secondary
+          }}>
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <h2 className="text-base font-semibold text-gray-900 truncate">
+                <h2 className="text-base font-semibold truncate" style={{ color: colors.text.primary }}>
                   {transcript.appUser?.display_name || transcript.userName || 'Anonymous User'}
                 </h2>
-                <p className="text-sm text-gray-500 mt-0.5 truncate">{transcript.preview}</p>
+                <p className="text-sm mt-0.5 truncate" style={{ color: colors.text.secondary }}>{transcript.preview}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  onClick={() => {
-                    alert('Export functionality coming soon!');
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors p-2"
-                  title="Export transcript"
-                >
-                  <Download className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={onClose}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                  aria-label="Close modal"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <ExportButton onClick={() => alert('Export functionality coming soon!')} />
+                <CloseButton onClick={onClose} />
               </div>
             </div>
           </div>
@@ -406,46 +317,53 @@ function TranscriptModal({
         {/* Two-Panel Layout */}
         <div className="flex-1 flex overflow-hidden min-h-0">
           {/* Left Panel - Metadata */}
-          <div className="w-80 min-w-[280px] max-w-[320px] border-r border-gray-200 overflow-y-auto bg-gray-50 flex-shrink-0" style={{ padding: '24px' }}>
+          <div className="w-80 min-w-[280px] max-w-[320px] overflow-y-auto flex-shrink-0" style={{
+            borderRight: `1px solid ${colors.border.default}`,
+            background: colors.bg.secondary,
+            padding: '24px'
+          }}>
             <div className="space-y-3">
               {/* Interface User (if linked) */}
               {transcript.appUser && (
                 <>
-                  <div className="pb-2 mb-2 border-b border-gray-200">
+                  <div className="pb-2 mb-2" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded" style={{
+                        color: colors.interactive.accent,
+                        background: colors.interactive.accentLight
+                      }}>
                         Verified User
                       </span>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Name</span>
-                    <span className="text-xs text-gray-900 font-medium text-right">
+                    <span className="text-xs" style={{ color: colors.text.tertiary }}>Name</span>
+                    <span className="text-xs font-medium text-right" style={{ color: colors.text.primary }}>
                       {transcript.appUser.display_name || 'N/A'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-500">Email</span>
-                    <span className="text-xs text-gray-900 text-right truncate max-w-[160px]" title={transcript.appUser.email}>
+                    <span className="text-xs" style={{ color: colors.text.tertiary }}>Email</span>
+                    <span className="text-xs text-right truncate max-w-[160px]" style={{ color: colors.text.primary }} title={transcript.appUser.email}>
                       {transcript.appUser.email}
                     </span>
                   </div>
                   {transcript.appUser.is_admin && (
                     <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-500">Role</span>
-                      <span className="text-xs text-purple-700 font-medium text-right">
+                      <span className="text-xs" style={{ color: colors.text.tertiary }}>Role</span>
+                      <span className="text-xs font-medium text-right" style={{ color: colors.interactive.accent }}>
                         Admin
                       </span>
                     </div>
                   )}
-                  <div className="my-2 border-b border-gray-200" />
+                  <div className="my-2" style={{ borderBottom: `1px solid ${colors.border.default}` }} />
                 </>
               )}
 
               {/* Date & Time */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Date & Time</span>
-                <span className="text-xs text-gray-900 font-medium text-right">
+                <span className="text-xs" style={{ color: colors.text.tertiary }}>Date & Time</span>
+                <span className="text-xs font-medium text-right" style={{ color: colors.text.primary }}>
                   {transcript.messages.length > 0
                     ? formatFullDate(transcript.messages[0].timestamp)
                     : formatFullDate(transcript.createdAt)
@@ -459,8 +377,8 @@ function TranscriptModal({
               {/* Voiceflow User ID (if extracted) */}
               {transcript.voiceflowUserId && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">VF User ID</span>
-                  <span className="text-xs text-gray-900 font-mono text-right truncate max-w-[140px]" title={transcript.voiceflowUserId}>
+                  <span className="text-xs" style={{ color: colors.text.tertiary }}>VF User ID</span>
+                  <span className="text-xs font-mono text-right truncate max-w-[140px]" style={{ color: colors.text.primary }} title={transcript.voiceflowUserId}>
                     {transcript.voiceflowUserId.length > 18
                       ? transcript.voiceflowUserId.substring(0, 15) + '...'
                       : transcript.voiceflowUserId}
@@ -470,61 +388,61 @@ function TranscriptModal({
 
               {/* Platform */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Platform</span>
-                <span className="text-xs text-gray-900 text-right">Chat widget</span>
+                <span className="text-xs" style={{ color: colors.text.tertiary }}>Platform</span>
+                <span className="text-xs text-right" style={{ color: colors.text.primary }}>Chat widget</span>
               </div>
 
               {/* Duration */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Duration</span>
-                <span className="text-xs text-gray-900 font-medium text-right">{calculateDuration(transcript)}</span>
+                <span className="text-xs" style={{ color: colors.text.tertiary }}>Duration</span>
+                <span className="text-xs font-medium text-right" style={{ color: colors.text.primary }}>{calculateDuration(transcript)}</span>
               </div>
 
               {/* Messages */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-500">Messages</span>
-                <span className="text-xs text-gray-900 font-medium text-right">{transcript.messageCount}</span>
+                <span className="text-xs" style={{ color: colors.text.tertiary }}>Messages</span>
+                <span className="text-xs font-medium text-right" style={{ color: colors.text.primary }}>{transcript.messageCount}</span>
               </div>
 
               {/* Credits Used */}
               {transcript.credits !== undefined && transcript.credits > 0 && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Credits Used</span>
-                  <span className="text-xs text-gray-900 font-medium text-right">{transcript.credits}</span>
+                  <span className="text-xs" style={{ color: colors.text.tertiary }}>Credits Used</span>
+                  <span className="text-xs font-medium text-right" style={{ color: colors.text.primary }}>{transcript.credits}</span>
                 </div>
               )}
 
               {/* Device Info */}
               {transcript.browser && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Browser</span>
-                  <span className="text-xs text-gray-900 text-right">{transcript.browser}</span>
+                  <span className="text-xs" style={{ color: colors.text.tertiary }}>Browser</span>
+                  <span className="text-xs text-right" style={{ color: colors.text.primary }}>{transcript.browser}</span>
                 </div>
               )}
               {transcript.device && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Device</span>
-                  <span className="text-xs text-gray-900 text-right">{transcript.device}</span>
+                  <span className="text-xs" style={{ color: colors.text.tertiary }}>Device</span>
+                  <span className="text-xs text-right" style={{ color: colors.text.primary }}>{transcript.device}</span>
                 </div>
               )}
               {transcript.os && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-500">OS</span>
-                  <span className="text-xs text-gray-900 text-right">{transcript.os}</span>
+                  <span className="text-xs" style={{ color: colors.text.tertiary }}>OS</span>
+                  <span className="text-xs text-right" style={{ color: colors.text.primary }}>{transcript.os}</span>
                 </div>
               )}
             </div>
           </div>
 
           {/* Right Panel - Transcript */}
-          <div className="flex-1 flex flex-col bg-white min-w-0 overflow-hidden">
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: colors.bg.white }}>
             {/* Messages */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: '24px' }}>
               {transcript.messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center">
-                    <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-sm text-gray-500">No messages available</p>
+                    <MessageSquare className="w-12 h-12 mx-auto mb-3" style={{ color: colors.border.default }} />
+                    <p className="text-sm" style={{ color: colors.text.tertiary }}>No messages available</p>
                   </div>
                 </div>
               ) : (
@@ -562,13 +480,14 @@ function UserIDField({ sessionID }: { sessionID: string }) {
 
   return (
     <div className="flex items-center justify-between group relative">
-      <span className="text-xs text-gray-500">Session ID</span>
+      <span className="text-xs" style={{ color: colors.text.tertiary }}>Session ID</span>
       <div className="relative">
         <button
           onClick={handleCopy}
           onMouseEnter={() => setShowTooltip(true)}
           onMouseLeave={() => setShowTooltip(false)}
-          className="text-xs text-gray-900 font-mono text-right cursor-pointer transition-all duration-200 hover:scale-105"
+          className="text-xs font-mono text-right cursor-pointer transition-all duration-200 hover:scale-105"
+          style={{ color: colors.text.primary }}
           title={sessionID}
         >
           {displayID}
@@ -576,7 +495,10 @@ function UserIDField({ sessionID }: { sessionID: string }) {
 
         {/* Tooltip */}
         {showTooltip && (
-          <div className="absolute right-0 top-full mt-1 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap z-10 pointer-events-none">
+          <div className="absolute right-0 top-full mt-1 px-2 py-1 text-xs rounded whitespace-nowrap z-10 pointer-events-none" style={{
+            background: colors.text.primary,
+            color: colors.bg.white
+          }}>
             {copied ? 'Copied!' : 'Click to copy'}
           </div>
         )}
@@ -595,7 +517,7 @@ function CompactMessageBubble({ message }: { message: ParsedMessage }) {
         {/* Author label - only show for agent */}
         {!isUser && (
           <div className="mb-1.5 px-1">
-            <span className="text-xs font-medium text-gray-500">Traidenis</span>
+            <span className="text-xs font-medium" style={{ color: colors.text.secondary }}>Traidenis</span>
           </div>
         )}
 
@@ -603,10 +525,12 @@ function CompactMessageBubble({ message }: { message: ParsedMessage }) {
         <div
           className={`px-4 py-3 text-sm leading-relaxed overflow-hidden ${
             isUser
-              ? 'bg-blue-500 text-white rounded-2xl rounded-tr-sm'
-              : 'bg-gray-100 text-gray-900 rounded-2xl rounded-tl-sm'
+              ? 'rounded-2xl rounded-tr-sm'
+              : 'rounded-2xl rounded-tl-sm'
           }`}
           style={{
+            background: isUser ? colors.interactive.accent : colors.bg.secondary,
+            color: isUser ? colors.bg.white : colors.text.primary,
             wordBreak: 'break-word',
             overflowWrap: 'break-word',
             hyphens: 'auto'
@@ -619,13 +543,195 @@ function CompactMessageBubble({ message }: { message: ParsedMessage }) {
 
         {/* Timestamp */}
         <div className={`mt-1 px-1 ${isUser ? 'text-right' : 'text-left'}`}>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs" style={{ color: colors.text.tertiary }}>
             {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit'
             })}
           </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Filter Button Component
+function FilterButton({ showOnlyMine, onClick }: { showOnlyMine: boolean; onClick: () => void }) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors"
+      style={{
+        background: showOnlyMine ? colors.interactive.accentLight : (isHovered ? colors.bg.secondary : colors.bg.primary),
+        color: showOnlyMine ? colors.interactive.accent : colors.text.secondary
+      }}
+    >
+      <Filter className="w-4 h-4" />
+      {showOnlyMine ? 'All Transcripts' : 'My Transcripts'}
+    </button>
+  );
+}
+
+// Refresh Button Component
+function RefreshButton({ onClick, disabled, refreshing }: { onClick: () => void; disabled: boolean; refreshing: boolean }) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => !disabled && setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="flex items-center gap-2 px-6 py-3 rounded-xl font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      style={{
+        background: disabled ? colors.interactive.accent : (isHovered ? colors.interactive.accentHover : colors.interactive.accent),
+        color: colors.bg.white
+      }}
+    >
+      <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+      Refresh
+    </button>
+  );
+}
+
+// Export Button Component
+function ExportButton({ onClick }: { onClick: () => void }) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="transition-colors p-2"
+      style={{ color: isHovered ? colors.text.primary : colors.text.tertiary }}
+      title="Export transcript"
+    >
+      <Download className="w-5 h-5" />
+    </button>
+  );
+}
+
+// Close Button Component
+function CloseButton({ onClick }: { onClick: () => void }) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="transition-colors"
+      style={{ color: isHovered ? colors.text.primary : colors.text.tertiary }}
+      aria-label="Close modal"
+    >
+      <X className="w-5 h-5" />
+    </button>
+  );
+}
+
+// Transcript Card Component
+function TranscriptCard({
+  transcript,
+  onClick,
+  formatTableDate
+}: {
+  transcript: ParsedTranscript;
+  onClick: () => void;
+  formatTableDate: (transcript: ParsedTranscript) => string;
+}) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="rounded-lg cursor-pointer transition-all"
+      style={{
+        padding: '14px 16px',
+        background: isHovered ? colors.bg.secondary : colors.bg.white,
+        boxShadow: isHovered ? '0 3px 6px 0 rgba(0, 0, 0, 0.08)' : '0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.02)',
+        overflow: 'hidden'
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center flex-1" style={{ gap: '14px' }}>
+          <div className="flex-shrink-0">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{
+              background: colors.interactive.accentLight,
+              border: `1px solid ${colors.interactive.accent}33`
+            }}>
+              <MessageSquare className="w-5 h-5" style={{ color: colors.interactive.accent }} />
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="text-sm font-bold" style={{ color: colors.text.primary }}>
+                {transcript.appUser?.display_name || transcript.userName || 'Anonymous User'}
+              </h3>
+              {transcript.appUser && (
+                <span className="px-2 py-0.5 text-xs rounded-full font-medium" style={{
+                  background: colors.interactive.accentLight,
+                  color: colors.interactive.accent
+                }} title={`Verified: ${transcript.appUser.email}`}>
+                  Verified
+                </span>
+              )}
+              {transcript.unread && (
+                <span className="px-2 py-0.5 text-xs rounded-full font-medium" style={{
+                  background: '#e0f2fe',
+                  color: '#0369a1'
+                }}>
+                  New
+                </span>
+              )}
+            </div>
+
+            {transcript.appUser?.email && (
+              <p className="text-xs mb-0.5" style={{ color: colors.text.tertiary }}>
+                {transcript.appUser.email}
+              </p>
+            )}
+
+            <p
+              className="text-xs mb-1.5"
+              style={{
+                color: colors.text.tertiary,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '100%'
+              }}
+            >
+              {transcript.preview}
+            </p>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className="inline-flex items-center rounded font-medium"
+                style={{
+                  padding: '2px 8px',
+                  fontSize: '11px',
+                  color: colors.text.secondary,
+                  background: colors.bg.secondary
+                }}
+              >
+                <Clock className="w-3 h-3 mr-1" />
+                {formatTableDate(transcript)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center ml-4">
+          <ChevronRight className="w-5 h-5" style={{ color: colors.text.tertiary }} />
         </div>
       </div>
     </div>
