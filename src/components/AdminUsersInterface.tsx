@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/supabase';
 import type { AppUser } from '../types';
+import { colors } from '../lib/designSystem';
 
 interface AdminUsersInterfaceProps {
   user: AppUser;
@@ -120,15 +121,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
   if (!user.is_admin) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-macos-gray-50">
+      <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.primary }}>
         <div className="text-center">
-          <div className="w-16 h-16 bg-macos-red/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Shield className="w-8 h-8 text-macos-red" />
-          </div>
-          <h3 className="text-lg font-semibold text-macos-gray-900 mb-2 tracking-macos-tight">
+          <Shield className="w-16 h-16 mx-auto mb-4" style={{ color: colors.status.errorText }} />
+          <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
             Access Denied
           </h3>
-          <p className="text-macos-gray-500 text-sm">
+          <p style={{ color: colors.text.secondary }}>
             You need admin privileges to access this page
           </p>
         </div>
@@ -137,17 +136,26 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   }
 
   return (
-    <div className="h-full flex flex-col bg-macos-gray-50">
+    <div className="h-full flex flex-col" style={{ background: colors.bg.primary }}>
       {/* Header */}
-      <div className="p-6 border-b border-black/5 bg-white/80 backdrop-blur-macos">
-        <div className="flex items-center justify-between">
+      <div className="p-6 border-b" style={{
+        borderColor: colors.border.light,
+        background: colors.bg.white + 'CC' // 80% opacity
+      }}>
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-semibold text-macos-gray-900 tracking-macos-tight">User Management</h2>
-            <p className="text-sm text-macos-gray-500 mt-1">Create and manage user accounts</p>
+            <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>User Management</h2>
+            <p className="text-sm" style={{ color: colors.text.secondary }}>Create and manage user accounts</p>
           </div>
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="macos-btn macos-btn-primary px-4 py-2.5 rounded-macos font-medium flex items-center space-x-2 shadow-macos hover:shadow-macos-lg transition-all"
+            onClick={() => setShowCreateForm(true)}
+            className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+            style={{
+              background: colors.interactive.accent,
+              color: '#ffffff'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+            onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
           >
             <Plus className="w-4 h-4" />
             <span>Add User</span>
@@ -155,31 +163,24 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         </div>
       </div>
 
-      {/* Create User Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="macos-animate-spring bg-white/95 backdrop-blur-macos rounded-macos-xl shadow-macos-window w-full max-w-lg border-[0.5px] border-black/10">
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-black/5 bg-macos-gray-50/50 rounded-t-macos-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <button
-                    onClick={() => {
-                      setShowCreateModal(false);
-                      setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
-                      setError(null);
-                    }}
-                    className="w-6 h-6 rounded-full bg-macos-gray-100 hover:bg-macos-gray-200 flex items-center justify-center transition-colors"
-                  >
-                    <X className="w-3.5 h-3.5 text-macos-gray-500" />
-                  </button>
-                </div>
-                <div className="flex items-center space-x-2 absolute left-1/2 transform -translate-x-1/2">
-                  <UserIcon className="w-4 h-4 text-macos-blue" />
-                  <h3 className="text-base font-semibold text-macos-gray-900 tracking-macos-tight">Create New User</h3>
-                </div>
-                <div className="w-6" />
-              </div>
+      {/* Create User Form */}
+      {showCreateForm && (
+        <div className="p-6 border-b" style={{
+          background: colors.interactive.accentLight,
+          borderColor: colors.interactive.accent + '33' // 20% opacity
+        }}>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Create New User</h3>
+              <button
+                onClick={() => setShowCreateForm(false)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: colors.text.tertiary }}
+                onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             {/* Modal Body */}
@@ -192,53 +193,68 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               )}
 
               <div>
-                <label className="block text-sm font-medium text-macos-gray-700 mb-2">Email *</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Email *</label>
                 <input
                   type="email"
                   value={newUserData.email}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="user@example.com"
-                  className="w-full macos-input rounded-macos"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-macos-gray-700 mb-2">Password *</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Password *</label>
                 <input
                   type="password"
                   value={newUserData.password}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
                   placeholder="Enter password"
-                  className="w-full macos-input rounded-macos"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-macos-gray-700 mb-2">Display Name</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
                 <input
                   type="text"
                   value={newUserData.displayName}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
                   placeholder="Full Name"
-                  className="w-full macos-input rounded-macos"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 />
               </div>
 
-              <div className="flex items-center space-x-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setNewUserData(prev => ({ ...prev, isAdmin: !prev.isAdmin }))}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${
-                    newUserData.isAdmin ? 'bg-macos-blue' : 'bg-macos-gray-300'
-                  }`}
-                >
-                  <div
-                    className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-macos transition-transform ${
-                      newUserData.isAdmin ? 'translate-x-[22px]' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-                <label className="text-sm font-medium text-macos-gray-700">
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  id="isAdmin"
+                  checked={newUserData.isAdmin}
+                  onChange={(e) => setNewUserData(prev => ({ ...prev, isAdmin: e.target.checked }))}
+                  className="w-4 h-4 rounded"
+                />
+                <label htmlFor="isAdmin" className="text-sm font-medium" style={{ color: colors.text.secondary }}>
                   Admin privileges
                 </label>
               </div>
@@ -259,7 +275,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <button
                 onClick={handleCreateUser}
                 disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
-                className="macos-btn macos-btn-primary px-5 py-2 text-sm font-medium rounded-macos disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                style={{
+                  background: colors.interactive.accent,
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
               >
                 {saving ? (
                   <>
@@ -279,9 +301,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       )}
 
       {/* Messages */}
-      {error && !showCreateModal && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 text-macos-red bg-macos-red/10 p-3 rounded-macos border-[0.5px] border-macos-red/20">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+      {error && (
+        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
+          background: colors.status.error,
+          color: colors.status.errorText,
+          border: `1px solid ${colors.status.errorBorder}`
+        }}>
+          <AlertCircle className="w-5 h-5" />
           <span className="text-sm">{error}</span>
           <button onClick={() => setError(null)} className="ml-auto text-macos-red/60 hover:text-macos-red transition-colors">
             <X className="w-4 h-4" />
@@ -290,8 +316,12 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       )}
 
       {success && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 text-macos-green bg-macos-green/10 p-3 rounded-macos border-[0.5px] border-macos-green/20">
-          <Check className="w-5 h-5 flex-shrink-0" />
+        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
+          background: colors.status.success,
+          color: colors.status.successText,
+          border: `1px solid ${colors.status.successBorder}`
+        }}>
+          <Check className="w-5 h-5" />
           <span className="text-sm">Operation completed successfully!</span>
         </div>
       )}
@@ -301,19 +331,23 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-20 bg-macos-gray-100 rounded-macos-lg animate-pulse" />
+              <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: colors.bg.secondary }} />
             ))}
           </div>
         ) : users.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 bg-macos-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Users className="w-8 h-8 text-macos-gray-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-macos-gray-900 mb-2 tracking-macos-tight">No users yet</h3>
-            <p className="text-macos-gray-500 mb-6 text-sm">Create your first user to get started</p>
+          <div className="text-center py-12">
+            <Users className="w-16 h-16 mx-auto mb-4" style={{ color: colors.text.tertiary }} />
+            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>No users yet</h3>
+            <p className="mb-6" style={{ color: colors.text.secondary }}>Create your first user to get started</p>
             <button
-              onClick={() => setShowCreateModal(true)}
-              className="macos-btn macos-btn-primary px-6 py-2.5 rounded-macos font-medium shadow-macos hover:shadow-macos-lg transition-all"
+              onClick={() => setShowCreateForm(true)}
+              className="px-6 py-3 rounded-lg transition-colors"
+              style={{
+                background: colors.interactive.accent,
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
             >
               Add User
             </button>
@@ -323,35 +357,42 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             {users.map((userData) => (
               <div
                 key={userData.id}
-                className="bg-white/80 backdrop-blur-sm border-[0.5px] border-black/5 rounded-macos-lg p-4 hover:bg-white transition-colors shadow-macos-sm hover:shadow-macos"
+                className="rounded-lg p-4 border transition-all"
+                style={{
+                  background: colors.bg.white,
+                  borderColor: colors.border.default
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 6px 0 rgba(0, 0, 0, 0.08)'}
+                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
               >
                 {editingUser?.id === userData.id ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-macos-gray-700 mb-2">Display Name</label>
+                        <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
                         <input
                           type="text"
                           value={editingUser.display_name || ''}
                           onChange={(e) => setEditingUser({...editingUser, display_name: e.target.value})}
-                          className="w-full macos-input rounded-macos"
+                          className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                          style={{
+                            borderColor: colors.border.default,
+                            background: colors.bg.white,
+                            color: colors.text.primary
+                          }}
+                          onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                          onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                         />
                       </div>
-                      <div className="flex items-center space-x-3 pt-6">
-                        <button
-                          type="button"
-                          onClick={() => setEditingUser({...editingUser, is_admin: !editingUser.is_admin})}
-                          className={`relative w-11 h-6 rounded-full transition-colors ${
-                            editingUser.is_admin ? 'bg-macos-blue' : 'bg-macos-gray-300'
-                          }`}
-                        >
-                          <div
-                            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-macos transition-transform ${
-                              editingUser.is_admin ? 'translate-x-[22px]' : 'translate-x-0.5'
-                            }`}
-                          />
-                        </button>
-                        <label className="text-sm font-medium text-macos-gray-700">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          id={`editAdmin-${userData.id}`}
+                          checked={editingUser.is_admin}
+                          onChange={(e) => setEditingUser({...editingUser, is_admin: e.target.checked})}
+                          className="w-4 h-4 rounded"
+                        />
+                        <label htmlFor={`editAdmin-${userData.id}`} className="text-sm font-medium" style={{ color: colors.text.secondary }}>
                           Admin privileges
                         </label>
                       </div>
@@ -360,7 +401,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       <button
                         onClick={handleUpdateUser}
                         disabled={saving}
-                        className="macos-btn macos-btn-primary px-4 py-2 rounded-macos text-sm font-medium disabled:opacity-50 flex items-center space-x-2"
+                        className="px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
+                        style={{
+                          background: colors.interactive.accent,
+                          color: '#ffffff'
+                        }}
+                        onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                        onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
                       >
                         {saving ? (
                           <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
@@ -371,7 +418,14 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       </button>
                       <button
                         onClick={() => setEditingUser(null)}
-                        className="macos-btn px-4 py-2 rounded-macos text-sm text-macos-gray-600 hover:text-macos-gray-800 transition-colors"
+                        className="px-4 py-2 border rounded-lg transition-colors"
+                        style={{
+                          borderColor: colors.border.default,
+                          color: colors.text.secondary,
+                          background: 'transparent'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
                         Cancel
                       </button>
@@ -380,47 +434,60 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 ) : (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        userData.is_admin
-                          ? 'bg-gradient-to-br from-macos-purple/20 to-macos-blue/20'
-                          : 'bg-macos-gray-100'
-                      }`}>
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+                        background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
+                      }}>
                         {userData.is_admin ? (
-                          <Shield className="w-6 h-6 text-macos-purple" />
+                          <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
                         ) : (
-                          <UserIcon className="w-6 h-6 text-macos-gray-500" />
+                          <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
                         )}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2">
-                          <h3 className="text-base font-semibold text-macos-gray-900 tracking-macos-tight">
+                          <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
                             {userData.display_name || userData.email}
                           </h3>
                           {userData.is_admin && (
-                            <span className="px-2 py-0.5 text-xs font-medium bg-macos-purple/10 text-macos-purple rounded-full">
+                            <span className="px-2 py-1 text-xs rounded-full" style={{
+                              background: colors.interactive.accentLight,
+                              color: colors.interactive.accent
+                            }}>
                               Admin
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-macos-gray-500">{userData.email}</p>
-                        <p className="text-xs text-macos-gray-400 mt-0.5">
+                        <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
+                        <p className="text-xs" style={{ color: colors.text.tertiary }}>
                           Created: {new Date(userData.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-1">
+                    <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setEditingUser(userData)}
-                        className="p-2.5 text-macos-gray-400 hover:text-macos-gray-600 hover:bg-macos-gray-100 rounded-macos transition-colors"
+                        className="p-2 rounded-lg transition-colors"
+                        style={{ color: colors.text.tertiary }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = colors.text.secondary;
+                          e.currentTarget.style.background = colors.bg.secondary;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = colors.text.tertiary;
+                          e.currentTarget.style.background = 'transparent';
+                        }}
                         title="Edit user"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteUser(userData.id)}
-                        className="p-2.5 text-macos-gray-400 hover:text-macos-red hover:bg-macos-red/10 rounded-macos transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        className="p-2 rounded-lg transition-colors"
+                        style={{ color: colors.status.errorText }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         title="Delete user"
                         disabled={userData.id === user.id}
                       >

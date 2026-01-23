@@ -18,7 +18,8 @@ import {
   Zap,
   BookOpen,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  FlaskConical
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -231,6 +232,21 @@ export default function Layout({
               >
                 <History className="w-4 h-4 flex-shrink-0" />
                 {!sidebarCollapsed && <span>Transcripts</span>}
+              </button>
+
+              <button
+                onClick={() => onViewModeChange?.('nestandartiniai')}
+                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                } ${
+                  viewMode === 'nestandartiniai'
+                    ? 'bg-macos-blue/10 text-macos-blue'
+                    : 'text-macos-gray-600 hover:bg-black/5'
+                }`}
+                title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
+              >
+                <FlaskConical className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Nestandartiniai Projektai</span>}
               </button>
             </div>
           )}

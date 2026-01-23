@@ -6,13 +6,14 @@ import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
 import TranscriptsInterface from './components/TranscriptsInterface';
 import InstructionsInterface from './components/InstructionsInterface';
+import NestandardiniaiInterface from './components/NestandardiniaiInterface';
 import AuthForm from './components/AuthForm';
 import CommercialOfferPanel from './components/CommercialOfferPanel';
 import { hasCommercialOffer } from './lib/commercialOfferStorage';
-import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History } from 'lucide-react';
+import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History, Package } from 'lucide-react';
 import type { AppUser } from './types';
 
-type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos';
+type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai';
 
 interface Thread {
   id: string;
@@ -352,6 +353,8 @@ function App() {
         return <TranscriptsInterface user={user} />;
       case 'instrukcijos':
         return <InstructionsInterface user={user} />;
+      case 'nestandartiniai':
+        return <NestandardiniaiInterface user={user} projectId={projectId} />;
       default:
         return null;
     }
@@ -408,6 +411,14 @@ function App() {
             >
               <History className="w-4 h-4" />
               <span>Transcripts</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('nestandartiniai')}
+              className={`macos-segment flex items-center space-x-2 ${viewMode === 'nestandartiniai' ? 'active' : ''}`}
+            >
+              <Package className="w-4 h-4" />
+              <span>EML Upload</span>
             </button>
 
             {user.is_admin && (
