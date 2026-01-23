@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/supabase';
 import type { AppUser } from '../types';
+import { colors } from '../lib/designSystem';
 
 interface AdminUsersInterfaceProps {
   user: AppUser;
@@ -120,13 +121,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
   if (!user.is_admin) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.primary }}>
         <div className="text-center">
-          <Shield className="w-16 h-16 text-red-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
+          <Shield className="w-16 h-16 mx-auto mb-4" style={{ color: colors.status.errorText }} />
+          <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
             Access Denied
           </h3>
-          <p className="text-gray-500">
+          <p style={{ color: colors.text.secondary }}>
             You need admin privileges to access this page
           </p>
         </div>
@@ -135,17 +136,26 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   }
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col" style={{ background: colors.bg.primary }}>
       {/* Header */}
-      <div className="p-6 border-b border-gray-200">
+      <div className="p-6 border-b" style={{
+        borderColor: colors.border.light,
+        background: colors.bg.white + 'CC' // 80% opacity
+      }}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">User Management</h2>
-            <p className="text-sm text-gray-600">Create and manage user accounts</p>
+            <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>User Management</h2>
+            <p className="text-sm" style={{ color: colors.text.secondary }}>Create and manage user accounts</p>
           </div>
           <button
             onClick={() => setShowCreateForm(true)}
-            className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all flex items-center space-x-2"
+            className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+            style={{
+              background: colors.interactive.accent,
+              color: '#ffffff'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+            onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
           >
             <Plus className="w-4 h-4" />
             <span>Add User</span>
@@ -155,13 +165,19 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
       {/* Create User Form */}
       {showCreateForm && (
-        <div className="p-6 bg-gradient-to-r from-green-50 to-blue-50 border-b border-green-200">
+        <div className="p-6 border-b" style={{
+          background: colors.interactive.accentLight,
+          borderColor: colors.interactive.accent + '33' // 20% opacity
+        }}>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Create New User</h3>
+              <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Create New User</h3>
               <button
                 onClick={() => setShowCreateForm(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: colors.text.tertiary }}
+                onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -169,35 +185,56 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Email *</label>
                 <input
                   type="email"
                   value={newUserData.email}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="user@example.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Password *</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Password *</label>
                 <input
                   type="password"
                   value={newUserData.password}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
                   placeholder="Enter password"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
+                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
                 <input
                   type="text"
                   value={newUserData.displayName}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
                   placeholder="Full Name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 />
               </div>
 
@@ -207,9 +244,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   id="isAdmin"
                   checked={newUserData.isAdmin}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, isAdmin: e.target.checked }))}
-                  className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
+                  className="w-4 h-4 rounded"
                 />
-                <label htmlFor="isAdmin" className="text-sm font-medium text-gray-700">
+                <label htmlFor="isAdmin" className="text-sm font-medium" style={{ color: colors.text.secondary }}>
                   Admin privileges
                 </label>
               </div>
@@ -219,7 +256,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <button
                 onClick={handleCreateUser}
                 disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                style={{
+                  background: colors.interactive.accent,
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
               >
                 {saving ? (
                   <>
@@ -240,14 +283,22 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
       {/* Messages */}
       {error && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
+        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
+          background: colors.status.error,
+          color: colors.status.errorText,
+          border: `1px solid ${colors.status.errorBorder}`
+        }}>
           <AlertCircle className="w-5 h-5" />
           <span className="text-sm">{error}</span>
         </div>
       )}
 
       {success && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 text-green-600 bg-green-50 p-3 rounded-lg">
+        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
+          background: colors.status.success,
+          color: colors.status.successText,
+          border: `1px solid ${colors.status.successBorder}`
+        }}>
           <Check className="w-5 h-5" />
           <span className="text-sm">Operation completed successfully!</span>
         </div>
@@ -258,17 +309,23 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-20 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg animate-pulse" />
+              <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: colors.bg.secondary }} />
             ))}
           </div>
         ) : users.length === 0 ? (
           <div className="text-center py-12">
-            <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No users yet</h3>
-            <p className="text-gray-500 mb-6">Create your first user to get started</p>
+            <Users className="w-16 h-16 mx-auto mb-4" style={{ color: colors.text.tertiary }} />
+            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>No users yet</h3>
+            <p className="mb-6" style={{ color: colors.text.secondary }}>Create your first user to get started</p>
             <button
               onClick={() => setShowCreateForm(true)}
-              className="px-6 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all"
+              className="px-6 py-3 rounded-lg transition-colors"
+              style={{
+                background: colors.interactive.accent,
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
             >
               Add User
             </button>
@@ -278,18 +335,31 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             {users.map((userData) => (
               <div
                 key={userData.id}
-                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                className="rounded-lg p-4 border transition-all"
+                style={{
+                  background: colors.bg.white,
+                  borderColor: colors.border.default
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 6px 0 rgba(0, 0, 0, 0.08)'}
+                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
               >
                 {editingUser?.id === userData.id ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">Display Name</label>
+                        <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
                         <input
                           type="text"
                           value={editingUser.display_name || ''}
                           onChange={(e) => setEditingUser({...editingUser, display_name: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          className="w-full px-3 py-2 border rounded-lg focus:outline-none"
+                          style={{
+                            borderColor: colors.border.default,
+                            background: colors.bg.white,
+                            color: colors.text.primary
+                          }}
+                          onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                          onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                         />
                       </div>
                       <div className="flex items-center space-x-3">
@@ -298,9 +368,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                           id={`editAdmin-${userData.id}`}
                           checked={editingUser.is_admin}
                           onChange={(e) => setEditingUser({...editingUser, is_admin: e.target.checked})}
-                          className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
+                          className="w-4 h-4 rounded"
                         />
-                        <label htmlFor={`editAdmin-${userData.id}`} className="text-sm font-medium text-gray-700">
+                        <label htmlFor={`editAdmin-${userData.id}`} className="text-sm font-medium" style={{ color: colors.text.secondary }}>
                           Admin privileges
                         </label>
                       </div>
@@ -309,7 +379,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       <button
                         onClick={handleUpdateUser}
                         disabled={saving}
-                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-50 flex items-center space-x-2"
+                        className="px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
+                        style={{
+                          background: colors.interactive.accent,
+                          color: '#ffffff'
+                        }}
+                        onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                        onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
                       >
                         {saving ? (
                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
@@ -320,7 +396,14 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       </button>
                       <button
                         onClick={() => setEditingUser(null)}
-                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                        className="px-4 py-2 border rounded-lg transition-colors"
+                        style={{
+                          borderColor: colors.border.default,
+                          color: colors.text.secondary,
+                          background: 'transparent'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
                         Cancel
                       </button>
@@ -329,43 +412,60 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 ) : (
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-gradient-to-r from-green-100 to-blue-100 rounded-full flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+                        background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
+                      }}>
                         {userData.is_admin ? (
-                          <Shield className="w-6 h-6 text-green-600" />
+                          <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
                         ) : (
-                          <UserIcon className="w-6 h-6 text-blue-600" />
+                          <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
                         )}
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2">
-                          <h3 className="text-lg font-semibold text-gray-900">
+                          <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
                             {userData.display_name || userData.email}
                           </h3>
                           {userData.is_admin && (
-                            <span className="px-2 py-1 text-xs bg-gradient-to-r from-green-100 to-blue-100 text-green-700 rounded-full">
+                            <span className="px-2 py-1 text-xs rounded-full" style={{
+                              background: colors.interactive.accentLight,
+                              color: colors.interactive.accent
+                            }}>
                               Admin
                             </span>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600">{userData.email}</p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
+                        <p className="text-xs" style={{ color: colors.text.tertiary }}>
                           Created: {new Date(userData.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>
 
                     <div className="flex items-center space-x-2">
-                      <button 
+                      <button
                         onClick={() => setEditingUser(userData)}
-                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        className="p-2 rounded-lg transition-colors"
+                        style={{ color: colors.text.tertiary }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = colors.text.secondary;
+                          e.currentTarget.style.background = colors.bg.secondary;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = colors.text.tertiary;
+                          e.currentTarget.style.background = 'transparent';
+                        }}
                         title="Edit user"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDeleteUser(userData.id)}
-                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-2 rounded-lg transition-colors"
+                        style={{ color: colors.status.errorText }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                         title="Delete user"
                         disabled={userData.id === user.id} // Prevent self-deletion
                       >
