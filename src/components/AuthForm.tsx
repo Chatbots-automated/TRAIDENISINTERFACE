@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { signIn, signUp } from '../lib/supabase';
 import { Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react';
+import { colors } from '../lib/designSystem';
 
 interface AuthFormProps {
   onSuccess: () => void;
@@ -48,31 +49,27 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
       <div className="geometric-shape shape-square-2" />
       <div className="geometric-shape shape-square-3" />
 
-      {/* Login Card - macOS Style */}
+      {/* Login Card */}
       <div className="relative z-10 w-full max-w-md mx-4">
-        <div className="macos-animate-spring bg-white/90 backdrop-blur-macos rounded-macos-xl p-10 shadow-macos-window border-[0.5px] border-black/10">
-          {/* macOS Window Controls (decorative) */}
-          <div className="absolute top-4 left-4 macos-window-controls">
-            <div className="macos-dot macos-dot-close opacity-60" />
-            <div className="macos-dot macos-dot-minimize opacity-60" />
-            <div className="macos-dot macos-dot-maximize opacity-60" />
-          </div>
-
+        <div className="backdrop-blur-sm p-10 shadow-xl rounded-xl" style={{
+          background: colors.bg.white + 'E6', // 90% opacity
+          border: `1px solid ${colors.border.light}`
+        }}>
           {/* Logo */}
-          <div className="flex justify-center mb-8 mt-4">
+          <div className="flex justify-center mb-8">
             <img
               src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
               alt="Traidenis Logo"
-              className="w-16 h-16 object-contain rounded-macos-lg shadow-macos"
+              className="w-16 h-16 object-contain rounded-lg shadow-md"
             />
           </div>
 
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-semibold text-macos-gray-900 mb-2 tracking-macos-tight">
+            <h1 className="text-2xl font-semibold mb-2" style={{ color: colors.text.primary }}>
               Log into Traidenis
             </h1>
-            <p className="text-macos-gray-500 text-sm">
+            <p className="text-sm" style={{ color: colors.text.secondary }}>
               High-Performance Knowledge Base
             </p>
           </div>
@@ -81,7 +78,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Email Input */}
             <div>
-              <label className="block text-sm font-medium text-macos-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>
                 Email
               </label>
               <input
@@ -89,14 +86,21 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
                 placeholder="email@example.com"
-                className="w-full macos-input rounded-macos text-macos-gray-900"
+                className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
+                style={{
+                  borderColor: colors.border.default,
+                  background: colors.bg.white,
+                  color: colors.text.primary
+                }}
+                onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                 required
               />
             </div>
 
             {/* Password Input */}
             <div>
-              <label className="block text-sm font-medium text-macos-gray-700 mb-2">
+              <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>
                 Password
               </label>
               <div className="relative">
@@ -105,13 +109,23 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full macos-input rounded-macos text-macos-gray-900 pr-12"
+                  className="w-full px-4 py-2.5 rounded-lg border focus:outline-none pr-12"
+                  style={{
+                    borderColor: colors.border.default,
+                    background: colors.bg.white,
+                    color: colors.text.primary
+                  }}
+                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-macos-gray-400 hover:text-macos-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 transition-colors"
+                  style={{ color: colors.text.tertiary }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = colors.text.secondary}
+                  onMouseLeave={(e) => e.currentTarget.style.color = colors.text.tertiary}
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
@@ -120,9 +134,13 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
 
             {/* Error Message */}
             {error && (
-              <div className="flex items-start space-x-2 p-3 rounded-macos bg-macos-red/10 border-[0.5px] border-macos-red/20">
-                <AlertCircle className="w-5 h-5 text-macos-red flex-shrink-0 mt-0.5" />
-                <span className="text-sm text-macos-red">{error}</span>
+              <div className="flex items-start space-x-2 p-3 rounded-lg" style={{
+                background: colors.status.error,
+                color: colors.status.errorText,
+                border: `1px solid ${colors.status.errorBorder}`
+              }}>
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span className="text-sm">{error}</span>
               </div>
             )}
 
@@ -130,7 +148,13 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full macos-btn macos-btn-primary py-3 px-6 rounded-macos text-base font-medium shadow-macos-lg hover:shadow-macos-xl disabled:opacity-50 disabled:cursor-not-allowed mt-6"
+              className="w-full py-3 px-6 rounded-lg text-base font-medium shadow-lg disabled:opacity-50 disabled:cursor-not-allowed mt-6 transition-all"
+              style={{
+                background: colors.interactive.accent,
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => !loading && (e.currentTarget.style.background = colors.interactive.accentHover)}
+              onMouseLeave={(e) => !loading && (e.currentTarget.style.background = colors.interactive.accent)}
             >
               {loading ? (
                 <div className="flex items-center justify-center space-x-2">
