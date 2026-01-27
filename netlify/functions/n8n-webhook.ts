@@ -1,8 +1,8 @@
 import type { Handler, HandlerEvent, HandlerContext } from "@netlify/functions";
 
 /**
- * Netlify function to proxy requests to n8n webhooks
- * This solves CORS issues when calling n8n webhooks from the browser
+ * Netlify function to proxy requests to n8n webhooks.
+ * This solves CORS issues when calling n8n webhooks from the browser.
  */
 const handler: Handler = async (event: HandlerEvent, context: HandlerContext) => {
   const headers = {
@@ -28,9 +28,15 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
 
   try {
     // Parse the incoming request body
-    const body = JSON.parse(event.body || '{}');
+    if (!event.body) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'Request body is required' }),
+      };
+    }
 
-    // Extract the target webhook URL and the payload to forward
+    const body = JSON.parse(event.body);
     const { webhookUrl, ...payload } = body;
 
     if (!webhookUrl) {
@@ -44,10 +50,9 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       };
     }
 
-    // Validate that the URL is a valid URL and contains webhook path
-    let url: URL;
+    // Validate URL format
     try {
-      url = new URL(webhookUrl);
+      new URL(webhookUrl);
     } catch {
       return {
         statusCode: 400,
@@ -60,54 +65,44 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     }
 
     // Forward the request to the n8n webhook
-    let response: Response;
-    try {
-      response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-    } catch (fetchError: any) {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    // Handle non-OK responses
+    if (!response.ok) {
+      const errorText = await response.text();
       return {
-        statusCode: 502,
+        statusCode: response.status,
         headers,
         body: JSON.stringify({
-          error: 'Failed to connect to n8n webhook',
-          details: fetchError.message,
+          error: `n8n webhook error: ${response.status}`,
+          details: errorText,
           webhookUrl: webhookUrl
         }),
       };
     }
 
-    // Get the response
-    const responseText = await response.text();
-
-    // Try to parse as JSON, fallback to text
-    let responseData;
-    try {
-      responseData = JSON.parse(responseText);
-    } catch {
-      responseData = { message: responseText, rawResponse: true };
-    }
-
+    // Get and return the response
+    const data = await response.json();
     return {
-      statusCode: response.status,
+      statusCode: 200,
       headers,
-      body: JSON.stringify(responseData),
+      body: JSON.stringify(data),
     };
 
   } catch (error: any) {
-    console.error('n8n webhook proxy error:', error);
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({
         error: error.message || 'Internal server error',
-        details: 'Unexpected error in proxy function',
-        stack: error.stack
+        type: error.name || 'Error'
       }),
     };
   }
