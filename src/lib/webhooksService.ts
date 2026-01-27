@@ -134,15 +134,13 @@ export async function testWebhook(
 ): Promise<{ success: boolean; status: number; error?: string }> {
   try {
     const testPayload = {
-      webhookUrl: url,
       test: true,
       timestamp: new Date().toISOString(),
       webhook_key: webhookKey,
       message: 'Test request from Traidenis admin panel'
     };
 
-    // Use Netlify function proxy to avoid CORS issues with n8n webhooks
-    const response = await fetch('/.netlify/functions/n8n-webhook', {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
