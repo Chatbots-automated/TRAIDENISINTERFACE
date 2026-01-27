@@ -89,7 +89,16 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     }
 
     // Get and return the response
-    const data = await response.json();
+    const responseText = await response.text();
+
+    // Try to parse as JSON, return raw text if not JSON
+    let data;
+    try {
+      data = responseText ? JSON.parse(responseText) : { success: true };
+    } catch {
+      data = { message: responseText || 'Success', rawResponse: true };
+    }
+
     return {
       statusCode: 200,
       headers,
