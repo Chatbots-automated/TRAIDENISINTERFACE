@@ -194,12 +194,14 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error('Webhook "n8n_upload_new" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
-    const webhookResponse = await fetch(webhookUrl, {
+    // Use Netlify function proxy to avoid CORS issues with n8n webhooks
+    const webhookResponse = await fetch('/.netlify/functions/n8n-webhook', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        webhookUrl: webhookUrl,
         action: 'just-upload',
         filename: selectedFile.name,
         fileContent: base64Content,
@@ -252,12 +254,14 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error('Webhook "n8n_find_similar" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
-    const webhookResponse = await fetch(webhookUrl, {
+    // Use Netlify function proxy to avoid CORS issues with n8n webhooks
+    const webhookResponse = await fetch('/.netlify/functions/n8n-webhook', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        webhookUrl: webhookUrl,
         action: 'find-similar',
         filename: selectedFile.name,
         fileContent: base64Content,
@@ -315,12 +319,14 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error('Webhook "n8n_upload_solution" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
-    const webhookResponse = await fetch(webhookUrl, {
+    // Use Netlify function proxy to avoid CORS issues with n8n webhooks
+    const webhookResponse = await fetch('/.netlify/functions/n8n-webhook', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        webhookUrl: webhookUrl,
         action: 'upload-solution',
         projectId: selectedProject.id,
         projectSubjectLine: selectedProject.subject_line,
