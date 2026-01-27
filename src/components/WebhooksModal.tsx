@@ -305,59 +305,47 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {filteredWebhooks.map((webhook) => (
                 <div
                   key={webhook.id}
-                  className="p-5 rounded-lg transition-all"
+                  className="p-3 rounded-lg transition-all"
                   style={{ background: colors.bg.white, border: `1px solid ${colors.border.default}` }}
                 >
                   {/* Header */}
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-1">
-                        <h3 className="text-sm font-semibold" style={{ color: colors.text.primary }}>
-                          {webhook.webhook_name}
-                        </h3>
-                        {testResults[webhook.id] && (
-                          <span className="px-2 py-0.5 text-xs font-medium rounded" style={getStatusStyles(testResults[webhook.id].status)}>
-                            {getStatusText(testResults[webhook.id].status)}
-                          </span>
-                        )}
-                      </div>
-                      {webhook.description && (
-                        <p className="text-xs" style={{ color: colors.text.secondary }}>
-                          {webhook.description}
-                        </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                      <h3 className="text-sm font-semibold truncate" style={{ color: colors.text.primary }}>
+                        {webhook.webhook_name}
+                      </h3>
+                      {testResults[webhook.id] && (
+                        <span className="px-1.5 py-0.5 text-xs font-medium rounded flex-shrink-0" style={getStatusStyles(testResults[webhook.id].status)}>
+                          {getStatusText(testResults[webhook.id].status)}
+                        </span>
                       )}
                     </div>
                   </div>
 
                   {/* URL Display/Edit */}
                   {editingId === webhook.id ? (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium mb-2" style={{ color: colors.text.secondary }}>
-                          Webhook URL
-                        </label>
-                        <input
-                          type="text"
-                          value={editUrl}
-                          onChange={(e) => setEditUrl(e.target.value)}
-                          className="w-full px-3 py-2.5 text-sm rounded-lg border"
-                          style={{
-                            borderColor: colors.border.default,
-                            background: colors.bg.white,
-                            color: colors.text.primary
-                          }}
-                          placeholder="https://your-n8n-instance.com/webhook/..."
-                          autoFocus
-                        />
-                      </div>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={editUrl}
+                        onChange={(e) => setEditUrl(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs rounded-lg border font-mono"
+                        style={{
+                          borderColor: colors.border.default,
+                          background: colors.bg.white,
+                          color: colors.text.primary
+                        }}
+                        placeholder="https://your-n8n-instance.com/webhook/..."
+                        autoFocus
+                      />
                       <div className="flex items-center justify-end space-x-2">
                         <button
                           onClick={handleCancelEdit}
-                          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
                           style={{
                             background: colors.interactive.buttonInactiveBg,
                             color: colors.interactive.buttonInactiveText
@@ -368,7 +356,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                         <button
                           onClick={() => handleSave(webhook)}
                           disabled={saving || !editUrl.trim() || editUrl === webhook.url}
-                          className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+                          className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1.5 transition-colors"
                           style={{
                             background: colors.interactive.accent,
                             color: '#ffffff'
@@ -376,12 +364,12 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                         >
                           {saving ? (
                             <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
+                              <Loader2 className="w-3 h-3 animate-spin" />
                               <span>Išsaugoma...</span>
                             </>
                           ) : (
                             <>
-                              <Save className="w-4 h-4" />
+                              <Save className="w-3 h-3" />
                               <span>Išsaugoti</span>
                             </>
                           )}
@@ -390,93 +378,74 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                     </div>
                   ) : (
                     <>
-                      <div className="mb-4">
-                        <label className="block text-xs font-medium mb-2" style={{ color: colors.text.secondary }}>
-                          Current URL
-                        </label>
-                        <div className="flex items-center space-x-2">
-                          <code className="flex-1 text-xs px-3 py-2.5 rounded-lg border font-mono truncate" style={{
-                            background: colors.bg.secondary,
-                            color: colors.text.primary,
-                            borderColor: colors.border.light
-                          }}>
-                            {webhook.url}
-                          </code>
-                          <a
-                            href={webhook.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2.5 rounded-lg transition-colors flex-shrink-0"
-                            style={{ color: colors.text.tertiary }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.color = colors.interactive.accent;
-                              e.currentTarget.style.background = colors.interactive.accentLight;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.color = colors.text.tertiary;
-                              e.currentTarget.style.background = 'transparent';
-                            }}
-                            title="Open in browser"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        </div>
+                      <div className="flex items-center space-x-2 mb-2">
+                        <code className="flex-1 text-xs px-2.5 py-1.5 rounded border font-mono truncate" style={{
+                          background: colors.bg.secondary,
+                          color: colors.text.primary,
+                          borderColor: colors.border.light
+                        }}>
+                          {webhook.url || 'Not configured'}
+                        </code>
+                        <a
+                          href={webhook.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded transition-colors flex-shrink-0"
+                          style={{ color: colors.text.tertiary }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = colors.interactive.accent;
+                            e.currentTarget.style.background = colors.interactive.accentLight;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = colors.text.tertiary;
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                          title="Open in browser"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
                       </div>
-
-                      {/* Last Test Info */}
-                      {webhook.last_tested_at && (
-                        <div className="mb-4 pb-4 border-b" style={{ borderColor: colors.border.light }}>
-                          <div className="flex items-center justify-between text-xs">
-                            <span style={{ color: colors.text.secondary }}>Last tested:</span>
-                            <div className="flex items-center space-x-2">
-                              <span style={{ color: colors.text.secondary }}>
-                                {new Date(webhook.last_tested_at).toLocaleString('lt-LT')}
-                              </span>
-                              {webhook.last_test_status && (
-                                <span className="px-2 py-0.5 text-xs font-medium rounded" style={getStatusStyles(webhook.last_test_status)}>
-                                  {getStatusText(webhook.last_test_status)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Action Buttons */}
                       <div className="flex items-center justify-between">
-                        <button
-                          onClick={() => handleEdit(webhook)}
-                          className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                          style={{
-                            background: colors.interactive.buttonInactiveBg,
-                            color: colors.interactive.buttonInactiveText
-                          }}
-                        >
-                          Redaguoti URL
-                        </button>
-                        <button
-                          onClick={() => handleTest(webhook)}
-                          disabled={testing === webhook.id}
-                          className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors flex items-center space-x-2"
-                          style={{
-                            background: colors.interactive.accent,
-                            color: '#ffffff'
-                          }}
-                          onMouseEnter={(e) => !testing && (e.currentTarget.style.background = colors.interactive.accentHover)}
-                          onMouseLeave={(e) => !testing && (e.currentTarget.style.background = colors.interactive.accent)}
-                        >
-                          {testing === webhook.id ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              <span>Testuojama...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Zap className="w-4 h-4" />
-                              <span>Test Endpoint</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => handleEdit(webhook)}
+                            className="px-2.5 py-1 rounded text-xs font-medium transition-colors"
+                            style={{
+                              background: colors.interactive.buttonInactiveBg,
+                              color: colors.interactive.buttonInactiveText
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleTest(webhook)}
+                            disabled={testing === webhook.id}
+                            className="px-2.5 py-1 rounded text-xs font-medium disabled:opacity-50 transition-colors flex items-center space-x-1"
+                            style={{
+                              background: colors.interactive.accent,
+                              color: '#ffffff'
+                            }}
+                          >
+                            {testing === webhook.id ? (
+                              <>
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>Testing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap className="w-3 h-3" />
+                                <span>Test</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        {webhook.last_test_status && (
+                          <span className="px-1.5 py-0.5 text-xs font-medium rounded" style={getStatusStyles(webhook.last_test_status)}>
+                            {getStatusText(webhook.last_test_status)}
+                          </span>
+                        )}
                       </div>
                     </>
                   )}
