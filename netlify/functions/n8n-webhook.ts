@@ -60,14 +60,27 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     }
 
     // Forward the request to the n8n webhook
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    let response: Response;
+    try {
+      response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (fetchError: any) {
+      return {
+        statusCode: 502,
+        headers,
+        body: JSON.stringify({
+          error: 'Failed to connect to n8n webhook',
+          details: fetchError.message,
+          webhookUrl: webhookUrl
+        }),
+      };
+    }
 
     // Get the response
     const responseText = await response.text();
@@ -77,7 +90,7 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
     try {
       responseData = JSON.parse(responseText);
     } catch {
-      responseData = { message: responseText };
+      responseData = { message: responseText, rawResponse: true };
     }
 
     return {
@@ -93,7 +106,8 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       headers,
       body: JSON.stringify({
         error: error.message || 'Internal server error',
-        details: 'Failed to forward request to n8n webhook'
+        details: 'Unexpected error in proxy function',
+        stack: error.stack
       }),
     };
   }
