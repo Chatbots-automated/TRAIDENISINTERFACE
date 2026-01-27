@@ -37,17 +37,25 @@ const handler: Handler = async (event: HandlerEvent, context: HandlerContext) =>
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Missing webhookUrl in request body' }),
+        body: JSON.stringify({
+          error: 'Missing webhookUrl in request body',
+          receivedKeys: Object.keys(body)
+        }),
       };
     }
 
-    // Validate that the URL is an n8n webhook (basic security check)
-    const url = new URL(webhookUrl);
-    if (!url.pathname.includes('webhook')) {
+    // Validate that the URL is a valid URL and contains webhook path
+    let url: URL;
+    try {
+      url = new URL(webhookUrl);
+    } catch {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'Invalid webhook URL' }),
+        body: JSON.stringify({
+          error: 'Invalid URL format',
+          webhookUrl: webhookUrl
+        }),
       };
     }
 
