@@ -44,8 +44,7 @@ const WEBHOOK_GROUPS: WebhookGroup[] = [
     icon: <Package className="w-4 h-4" />,
     description: 'EML upload and project management webhooks',
     webhookKeys: [
-      'n8n_upload_new',
-      'n8n_find_similar',
+      'n8n_eml_upload',
       'n8n_upload_solution'
     ]
   },

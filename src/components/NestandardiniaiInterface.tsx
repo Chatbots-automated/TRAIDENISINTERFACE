@@ -187,10 +187,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: 'just-upload' }
     });
 
-    const webhookUrl = await getWebhookUrl('n8n_upload_new');
+    const webhookUrl = await getWebhookUrl('n8n_eml_upload');
 
     if (!webhookUrl) {
-      throw new Error('Webhook "n8n_upload_new" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
+      throw new Error('Webhook "n8n_eml_upload" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
     // Use FormData for binary file upload
@@ -243,10 +243,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: 'find-similar' }
     });
 
-    const webhookUrl = await getWebhookUrl('n8n_find_similar');
+    const webhookUrl = await getWebhookUrl('n8n_eml_upload');
 
     if (!webhookUrl) {
-      throw new Error('Webhook "n8n_find_similar" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
+      throw new Error('Webhook "n8n_eml_upload" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
     // Use FormData for binary file upload
