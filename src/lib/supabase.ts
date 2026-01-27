@@ -12,8 +12,15 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Admin client with service role key to bypass RLS when needed
-export const supabaseAdmin = supabaseServiceKey 
-  ? createClient(supabaseUrl, supabaseServiceKey)
+// Use a different auth storage key to avoid "Multiple GoTrueClient instances" warning
+export const supabaseAdmin = supabaseServiceKey
+  ? createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        storageKey: 'supabase-admin-auth',
+        autoRefreshToken: false,
+        persistSession: false,
+      }
+    })
   : supabase; // Fallback to regular client if service key not available
 
 // Auth helpers

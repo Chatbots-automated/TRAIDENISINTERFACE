@@ -148,7 +148,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <p className="text-sm" style={{ color: colors.text.secondary }}>Create and manage user accounts</p>
           </div>
           <button
-            onClick={() => setShowCreateForm(true)}
+            onClick={() => setShowCreateModal(true)}
             className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
             style={{
               background: colors.interactive.accent,
@@ -164,7 +164,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       </div>
 
       {/* Create User Form */}
-      {showCreateForm && (
+      {showCreateModal && (
         <div className="p-6 border-b" style={{
           background: colors.interactive.accentLight,
           borderColor: colors.interactive.accent + '33' // 20% opacity
@@ -173,7 +173,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Create New User</h3>
               <button
-                onClick={() => setShowCreateForm(false)}
+                onClick={() => setShowCreateModal(false)}
                 className="p-2 rounded-lg transition-colors"
                 style={{ color: colors.text.tertiary }}
                 onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
@@ -340,7 +340,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>No users yet</h3>
             <p className="mb-6" style={{ color: colors.text.secondary }}>Create your first user to get started</p>
             <button
-              onClick={() => setShowCreateForm(true)}
+              onClick={() => setShowCreateModal(true)}
               className="px-6 py-3 rounded-lg transition-colors"
               style={{
                 background: colors.interactive.accent,

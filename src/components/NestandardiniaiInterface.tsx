@@ -187,35 +187,46 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: 'just-upload' }
     });
 
-    const base64Content = await fileToBase64(selectedFile);
     const webhookUrl = await getWebhookUrl('n8n_upload_new');
 
     if (!webhookUrl) {
       throw new Error('Webhook "n8n_upload_new" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
+    // Use FormData for binary file upload
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('action', 'just-upload');
+    formData.append('filename', selectedFile.name);
+    formData.append('mimeType', selectedFile.type || 'message/rfc822');
+    formData.append('userId', user.id);
+    formData.append('userEmail', user.email);
+    formData.append('projectId', projectId);
+    formData.append('timestamp', new Date().toISOString());
+
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'just-upload',
-        filename: selectedFile.name,
-        fileContent: base64Content,
-        mimeType: selectedFile.type || 'message/rfc822',
-        userId: user.id,
-        userEmail: user.email,
-        projectId: projectId,
-        timestamp: new Date().toISOString()
-      })
+      body: formData
     });
 
     if (!webhookResponse.ok) {
       throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
-    const responseData: WebhookResponse = await webhookResponse.json();
+    // Handle response - can be JSON or plain text "Success"
+    const responseText = await webhookResponse.text();
+    let responseData: WebhookResponse;
+
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Plain text response (e.g., "Success")
+      responseData = {
+        subjectLine: selectedFile.name,
+        description: responseText || 'Failas sėkmingai įkeltas',
+        message: responseText || 'Success'
+      };
+    }
 
     await appLogger.logDocument({
       action: 'eml_upload_success',
@@ -225,7 +236,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine,
+        subject_line: responseData.subjectLine || selectedFile.name,
         upload_action: 'just-upload'
       }
     });
@@ -245,35 +256,46 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: 'find-similar' }
     });
 
-    const base64Content = await fileToBase64(selectedFile);
     const webhookUrl = await getWebhookUrl('n8n_find_similar');
 
     if (!webhookUrl) {
       throw new Error('Webhook "n8n_find_similar" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
+    // Use FormData for binary file upload
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('action', 'find-similar');
+    formData.append('filename', selectedFile.name);
+    formData.append('mimeType', selectedFile.type || 'message/rfc822');
+    formData.append('userId', user.id);
+    formData.append('userEmail', user.email);
+    formData.append('projectId', projectId);
+    formData.append('timestamp', new Date().toISOString());
+
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'find-similar',
-        filename: selectedFile.name,
-        fileContent: base64Content,
-        mimeType: selectedFile.type || 'message/rfc822',
-        userId: user.id,
-        userEmail: user.email,
-        projectId: projectId,
-        timestamp: new Date().toISOString()
-      })
+      body: formData
     });
 
     if (!webhookResponse.ok) {
       throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
-    const responseData: WebhookResponse = await webhookResponse.json();
+    // Handle response - can be JSON or plain text "Success"
+    const responseText = await webhookResponse.text();
+    let responseData: WebhookResponse;
+
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Plain text response (e.g., "Success")
+      responseData = {
+        subjectLine: selectedFile.name,
+        description: responseText || 'Paieška atlikta sėkmingai',
+        message: responseText || 'Success'
+      };
+    }
 
     await appLogger.logDocument({
       action: 'eml_search_success',
@@ -283,7 +305,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine,
+        subject_line: responseData.subjectLine || selectedFile.name,
         upload_action: 'find-similar'
       }
     });
@@ -308,36 +330,47 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       }
     });
 
-    const base64Content = await fileToBase64(selectedFile);
     const webhookUrl = await getWebhookUrl('n8n_upload_solution');
 
     if (!webhookUrl) {
       throw new Error('Webhook "n8n_upload_solution" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.');
     }
 
+    // Use FormData for binary file upload
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('action', 'upload-solution');
+    formData.append('nestandartiniaiProjectId', selectedProject.id);
+    formData.append('projectSubjectLine', selectedProject.subject_line);
+    formData.append('filename', selectedFile.name);
+    formData.append('mimeType', selectedFile.type || 'application/octet-stream');
+    formData.append('userId', user.id);
+    formData.append('userEmail', user.email);
+    formData.append('timestamp', new Date().toISOString());
+
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'upload-solution',
-        projectId: selectedProject.id,
-        projectSubjectLine: selectedProject.subject_line,
-        filename: selectedFile.name,
-        fileContent: base64Content,
-        mimeType: selectedFile.type,
-        userId: user.id,
-        userEmail: user.email,
-        timestamp: new Date().toISOString()
-      })
+      body: formData
     });
 
     if (!webhookResponse.ok) {
       throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
-    const responseData: WebhookResponse = await webhookResponse.json();
+    // Handle response - can be JSON or plain text "Success"
+    const responseText = await webhookResponse.text();
+    let responseData: WebhookResponse;
+
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Plain text response (e.g., "Success")
+      responseData = {
+        subjectLine: selectedProject.subject_line,
+        description: responseText || 'Komercinis pasiūlymas sėkmingai įkeltas',
+        message: responseText || 'Success'
+      };
+    }
 
     await appLogger.logDocument({
       action: 'commercial_offer_upload_success',
@@ -353,19 +386,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     setResponse(responseData);
-  };
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = error => reject(error);
-    });
   };
 
   const downloadFile = (file: ResponseFile) => {
