@@ -213,7 +213,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
-    const responseData: WebhookResponse = await webhookResponse.json();
+    // Handle response - can be JSON or plain text "Success"
+    const responseText = await webhookResponse.text();
+    let responseData: WebhookResponse;
+
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Plain text response (e.g., "Success")
+      responseData = {
+        subjectLine: selectedFile.name,
+        description: responseText || 'Failas sėkmingai įkeltas',
+        message: responseText || 'Success'
+      };
+    }
 
     await appLogger.logDocument({
       action: 'eml_upload_success',
@@ -223,7 +236,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine,
+        subject_line: responseData.subjectLine || selectedFile.name,
         upload_action: 'just-upload'
       }
     });
@@ -269,7 +282,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
-    const responseData: WebhookResponse = await webhookResponse.json();
+    // Handle response - can be JSON or plain text "Success"
+    const responseText = await webhookResponse.text();
+    let responseData: WebhookResponse;
+
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Plain text response (e.g., "Success")
+      responseData = {
+        subjectLine: selectedFile.name,
+        description: responseText || 'Paieška atlikta sėkmingai',
+        message: responseText || 'Success'
+      };
+    }
 
     await appLogger.logDocument({
       action: 'eml_search_success',
@@ -279,7 +305,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine,
+        subject_line: responseData.subjectLine || selectedFile.name,
         upload_action: 'find-similar'
       }
     });
@@ -331,7 +357,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       throw new Error(`Webhook užklausa nepavyko: ${webhookResponse.statusText}`);
     }
 
-    const responseData: WebhookResponse = await webhookResponse.json();
+    // Handle response - can be JSON or plain text "Success"
+    const responseText = await webhookResponse.text();
+    let responseData: WebhookResponse;
+
+    try {
+      responseData = JSON.parse(responseText);
+    } catch {
+      // Plain text response (e.g., "Success")
+      responseData = {
+        subjectLine: selectedProject.subject_line,
+        description: responseText || 'Komercinis pasiūlymas sėkmingai įkeltas',
+        message: responseText || 'Success'
+      };
+    }
 
     await appLogger.logDocument({
       action: 'commercial_offer_upload_success',
