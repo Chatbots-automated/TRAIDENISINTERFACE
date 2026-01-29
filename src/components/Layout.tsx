@@ -19,7 +19,8 @@ import {
   BookOpen,
   PanelLeftClose,
   PanelLeft,
-  FlaskConical
+  FlaskConical,
+  Bot
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -46,11 +47,8 @@ interface LayoutProps {
   onRenameThread?: (threadId: string, newTitle: string) => void;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos';
-  onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos') => void;
-  hasOffer?: boolean;
-  showDocGlow?: boolean;
-  onOpenCommercialPanel?: () => void;
+  viewMode?: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
+  onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
 }
 
 export default function Layout({
@@ -67,10 +65,7 @@ export default function Layout({
   naujokasMode = true,
   onToggleNaujokas,
   viewMode = 'chat',
-  onViewModeChange,
-  hasOffer = false,
-  showDocGlow = false,
-  onOpenCommercialPanel
+  onViewModeChange
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -242,6 +237,21 @@ export default function Layout({
                 <FlaskConical className="w-4 h-4 flex-shrink-0" />
                 {!sidebarCollapsed && <span>Nestandartiniai Projektai</span>}
               </button>
+
+              <button
+                onClick={() => onViewModeChange?.('sdk')}
+                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                } ${
+                  viewMode === 'sdk'
+                    ? 'bg-macos-blue/10 text-macos-blue'
+                    : 'text-macos-gray-600 hover:bg-black/5'
+                }`}
+                title={sidebarCollapsed ? 'SDK' : undefined}
+              >
+                <Bot className="w-4 h-4 flex-shrink-0" />
+                {!sidebarCollapsed && <span>SDK</span>}
+              </button>
             </div>
 
           {/* Spacer to push footer to bottom */}
@@ -329,33 +339,6 @@ export default function Layout({
                 {settingsDropdownOpen && (
                   <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
                     <div className="mx-3 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
-                      {/* Offers */}
-                      <button
-                        onClick={() => {
-                          onOpenCommercialPanel?.();
-                          setSettingsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition-all relative ${
-                          hasOffer
-                            ? 'text-macos-blue hover:bg-macos-blue/10'
-                            : 'text-macos-gray-400 hover:bg-black/5'
-                        }`}
-                        title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <Database className="w-4 h-4" />
-                          <span>Offers</span>
-                        </div>
-                        {showDocGlow && (
-                          <span className="flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-macos-blue opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-macos-blue"></span>
-                          </span>
-                        )}
-                      </button>
-
-                      {/* Divider */}
-                      <div className="my-1 border-t border-black/5" />
 
                       {/* Naujokas Mode Toggle */}
                       <div

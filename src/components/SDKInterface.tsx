@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, AlertCircle, RotateCcw, Eye, X, Sparkles } from 'lucide-react';
+import { Send, Loader2, AlertCircle, RotateCcw, Eye, X } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt } from '../lib/instructionVariablesService';
 import { appLogger } from '../lib/appLogger';
@@ -179,13 +179,13 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
 
   if (loadingPrompt) {
     return (
-      <div className="h-full flex items-center justify-center" style={{ background: '#2d2d2d' }}>
+      <div className="h-full flex items-center justify-center" style={{ background: '#fdfcfb' }}>
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: '#c7a88a' }} />
-          <p className="text-base font-semibold mb-2" style={{ color: '#e5e5e5' }}>
+          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: '#5a5550' }} />
+          <p className="text-base font-semibold mb-2" style={{ color: '#2d2a27' }}>
             Kraunamos sistemos instrukcijos
           </p>
-          <p className="text-sm" style={{ color: '#9ca3af' }}>
+          <p className="text-sm" style={{ color: '#78716c' }}>
             Gaunami kintamieji iš duomenų bazės...
           </p>
         </div>
@@ -194,25 +194,25 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#2d2d2d' }}>
+    <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
       {/* Header with controls - only show when there are messages */}
       {messages.length > 0 && (
-        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: '#3d3d3d' }}>
+        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: '#f0ede8', background: 'white' }}>
           <div>
-            <h2 className="text-sm font-medium" style={{ color: '#e5e5e5' }}>
-              Commercial Offer Assistant
+            <h2 className="text-sm font-medium" style={{ color: '#2d2a27' }}>
+              SDK Chat
             </h2>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowPromptModal(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-xs"
-              style={{ background: '#3d3d3d', color: '#c7a88a' }}
+              style={{ background: '#faf9f7', color: '#5a5550', border: '1px solid #e8e5e0' }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#4a4a4a';
+                e.currentTarget.style.background = '#f0ede8';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#3d3d3d';
+                e.currentTarget.style.background = '#faf9f7';
               }}
             >
               <Eye className="w-4 h-4" />
@@ -221,12 +221,12 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
             <button
               onClick={handleReset}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors text-xs"
-              style={{ background: '#3d3d3d', color: '#9ca3af' }}
+              style={{ background: '#faf9f7', color: '#78716c', border: '1px solid #e8e5e0' }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#4a4a4a';
+                e.currentTarget.style.background = '#f0ede8';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#3d3d3d';
+                e.currentTarget.style.background = '#faf9f7';
               }}
             >
               <RotateCcw className="w-4 h-4" />
@@ -239,7 +239,7 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
       {/* Error Message */}
       {error && (
         <div className="px-6 pt-4 max-w-4xl mx-auto w-full">
-          <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg text-sm" style={{ background: '#3d1f1f', color: '#ff6b6b', border: '1px solid #5a2a2a' }}>
+          <div className="flex items-start gap-2.5 px-4 py-3 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
             <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
             <span className="flex-1">{error}</span>
           </div>
@@ -252,10 +252,7 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
           /* Initial Centered View */
           <div className="h-full flex flex-col items-center justify-center max-w-3xl mx-auto">
             <div className="text-center mb-12">
-              <div className="mb-6">
-                <Sparkles className="w-12 h-12 mx-auto" style={{ color: '#c7a88a' }} />
-              </div>
-              <h1 className="text-3xl font-light mb-2" style={{ color: '#e5e5e5' }}>
+              <h1 className="text-3xl font-light mb-2" style={{ color: '#2d2a27' }}>
                 Labas vakaras, {user.display_name || user.email.split('@')[0]}
               </h1>
             </div>
@@ -272,10 +269,10 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
                   rows={1}
                   className="w-full px-6 py-4 pr-14 text-base rounded-xl resize-none focus:outline-none focus:ring-2"
                   style={{
-                    background: '#3d3d3d',
-                    color: '#e5e5e5',
-                    border: '1px solid #4a4a4a',
-                    focusRing: '#c7a88a'
+                    background: 'white',
+                    color: '#2d2a27',
+                    border: '1px solid #e8e5e0',
+                    focusRing: '#5a5550'
                   }}
                   disabled={loading || !systemPrompt}
                 />
@@ -284,14 +281,14 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
                   disabled={!inputValue.trim() || loading || !systemPrompt}
                   className="absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
-                    background: inputValue.trim() && !loading ? '#c7a88a' : '#4a4a4a',
-                    color: inputValue.trim() && !loading ? '#2d2d2d' : '#6b7280'
+                    background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
+                    color: inputValue.trim() && !loading ? 'white' : '#78716c'
                   }}
                 >
                   <Send className="w-5 h-5" />
                 </button>
               </div>
-              <p className="text-xs mt-3 text-center" style={{ color: '#6b7280' }}>
+              <p className="text-xs mt-3 text-center" style={{ color: '#78716c' }}>
                 Claude Sonnet 4 su prompt caching (1 val.)
               </p>
             </div>
@@ -307,15 +304,15 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
                 <div
                   className="max-w-[85%] px-5 py-3.5 rounded-2xl"
                   style={{
-                    background: message.role === 'user' ? '#c7a88a' : '#3d3d3d',
-                    color: message.role === 'user' ? '#1f1f1f' : '#e5e5e5',
-                    border: message.role === 'assistant' ? '1px solid #4a4a4a' : 'none'
+                    background: message.role === 'user' ? '#5a5550' : 'white',
+                    color: message.role === 'user' ? 'white' : '#2d2a27',
+                    border: message.role === 'assistant' ? '1px solid #e8e5e0' : 'none'
                   }}
                 >
                   <div className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</div>
                   <div
                     className="text-xs mt-2"
-                    style={{ color: message.role === 'user' ? 'rgba(31,31,31,0.6)' : '#6b7280' }}
+                    style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#78716c' }}
                   >
                     {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
                       hour: '2-digit',
@@ -328,8 +325,8 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
 
             {loading && (
               <div className="flex justify-start">
-                <div className="px-5 py-3.5 rounded-2xl" style={{ background: '#3d3d3d', border: '1px solid #4a4a4a' }}>
-                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#c7a88a' }} />
+                <div className="px-5 py-3.5 rounded-2xl" style={{ background: 'white', border: '1px solid #e8e5e0' }}>
+                  <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#5a5550' }} />
                 </div>
               </div>
             )}
@@ -341,7 +338,7 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
 
       {/* Bottom Input - only show after first message */}
       {messages.length > 0 && (
-        <div className="border-t px-6 py-4" style={{ borderColor: '#3d3d3d' }}>
+        <div className="border-t px-6 py-4" style={{ borderColor: '#f0ede8', background: 'white' }}>
           <div className="max-w-4xl mx-auto">
             <div className="relative">
               <textarea
@@ -353,9 +350,9 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
                 rows={1}
                 className="w-full px-5 py-3 pr-14 text-sm rounded-xl resize-none focus:outline-none focus:ring-2"
                 style={{
-                  background: '#3d3d3d',
-                  color: '#e5e5e5',
-                  border: '1px solid #4a4a4a'
+                  background: '#faf9f7',
+                  color: '#2d2a27',
+                  border: '1px solid #e8e5e0'
                 }}
                 disabled={loading || !systemPrompt}
               />
@@ -364,8 +361,8 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
                 disabled={!inputValue.trim() || loading || !systemPrompt}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{
-                  background: inputValue.trim() && !loading ? '#c7a88a' : '#4a4a4a',
-                  color: inputValue.trim() && !loading ? '#2d2d2d' : '#6b7280'
+                  background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
+                  color: inputValue.trim() && !loading ? 'white' : '#78716c'
                 }}
               >
                 <Send className="w-4 h-4" />
@@ -379,25 +376,25 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
       {showPromptModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
-          style={{ background: 'rgba(0,0,0,0.8)' }}
+          style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={() => setShowPromptModal(false)}
         >
           <div
             className="w-full max-w-4xl max-h-[80vh] rounded-xl overflow-hidden"
-            style={{ background: '#2d2d2d', border: '1px solid #4a4a4a' }}
+            style={{ background: 'white', border: '1px solid #e8e5e0' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#3d3d3d' }}>
-              <h3 className="text-lg font-semibold" style={{ color: '#e5e5e5' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
+              <h3 className="text-lg font-semibold" style={{ color: '#2d2a27' }}>
                 Sistema Prompt'as su Kintamaisiais
               </h3>
               <button
                 onClick={() => setShowPromptModal(false)}
                 className="p-2 rounded-lg transition-colors"
-                style={{ color: '#9ca3af' }}
+                style={{ color: '#78716c' }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#3d3d3d';
+                  e.currentTarget.style.background = '#faf9f7';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
@@ -412,7 +409,7 @@ export default function SDKInterface({ user, projectId }: SDKInterfaceProps) {
               <pre
                 className="whitespace-pre-wrap font-mono leading-relaxed"
                 style={{
-                  color: '#d1d5db',
+                  color: '#2d2a27',
                   fontSize: '9px'
                 }}
               >

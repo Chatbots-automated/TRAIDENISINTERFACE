@@ -9,9 +9,6 @@ import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
 import SDKInterface from './components/SDKInterface';
 import AuthForm from './components/AuthForm';
-import CommercialOfferPanel from './components/CommercialOfferPanel';
-import { hasCommercialOffer } from './lib/commercialOfferStorage';
-import { MessageSquare, FileText, Users, History, Package, Bot } from 'lucide-react';
 import type { AppUser } from './types';
 
 type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
@@ -52,20 +49,12 @@ function App() {
     return localStorage.getItem(STORAGE_KEYS.CURRENT_THREAD_ID);
   });
 
-  // Commercial offer panel state
-  const [commercialPanelOpen, setCommercialPanelOpen] = useState(false);
-  const [hasOffer, setHasOffer] = useState(false);
-  const [showDocGlow, setShowDocGlow] = useState(false);
-
   // Naujokas (newbie) mode - shows helpful tooltips and guides
   const [naujokasMode, setNaujokasMode] = useState<boolean>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.NAUJOKAS_MODE);
     // Default to true for new users (no saved preference)
     return saved === null ? true : saved === 'true';
   });
-
-  // Track if doc icon tooltip should be shown (after first commercial accept)
-  const [showDocIconTooltip, setShowDocIconTooltip] = useState(false);
 
   useEffect(() => {
     checkUser();
@@ -270,22 +259,6 @@ function App() {
     }, 5000);
   }, [naujokasMode]);
 
-  // Handle opening commercial offer panel
-  const handleOpenCommercialPanel = () => {
-    if (currentThread) {
-      setCommercialPanelOpen(true);
-    }
-  };
-
-  // Update hasOffer when thread changes
-  useEffect(() => {
-    if (currentThread) {
-      setHasOffer(hasCommercialOffer(currentThread.id));
-    } else {
-      setHasOffer(false);
-    }
-  }, [currentThread]);
-
   if (initialLoading) {
     return (
       <div className="min-h-screen bg-macos-gray-50 flex items-center justify-center">
@@ -361,132 +334,9 @@ function App() {
       onToggleNaujokas={toggleNaujokasMode}
       viewMode={viewMode}
       onViewModeChange={setViewMode}
-      hasOffer={hasOffer}
-      showDocGlow={showDocGlow}
-      onOpenCommercialPanel={handleOpenCommercialPanel}
     >
-      <div className="flex flex-col h-full">
-        {/* Navigation Bar */}
-        <div className="bg-white/80 backdrop-blur-macos border-b border-black/5 flex-shrink-0">
-        <div className="flex items-center justify-between px-6 py-3">
-          {/* Left: macOS Segmented Control */}
-          <div className="macos-segmented-control">
-            <button
-              onClick={() => setViewMode('chat')}
-              className={`macos-segment flex items-center space-x-2 ${viewMode === 'chat' ? 'active' : ''}`}
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>Chat</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('documents')}
-              className={`macos-segment flex items-center space-x-2 ${viewMode === 'documents' ? 'active' : ''}`}
-            >
-              <FileText className="w-4 h-4" />
-              <span>Documents</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('transcripts')}
-              className={`macos-segment flex items-center space-x-2 ${viewMode === 'transcripts' ? 'active' : ''}`}
-            >
-              <History className="w-4 h-4" />
-              <span>Transcripts</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('nestandartiniai')}
-              className={`macos-segment flex items-center space-x-2 ${viewMode === 'nestandartiniai' ? 'active' : ''}`}
-            >
-              <Package className="w-4 h-4" />
-              <span>EML Upload</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('sdk')}
-              className={`macos-segment flex items-center space-x-2 ${viewMode === 'sdk' ? 'active' : ''}`}
-            >
-              <Bot className="w-4 h-4" />
-              <span>SDK</span>
-            </button>
-
-            {user.is_admin && (
-              <button
-                onClick={() => setViewMode('users')}
-                className={`macos-segment flex items-center space-x-2 ${viewMode === 'users' ? 'active' : ''}`}
-              >
-                <Users className="w-4 h-4" />
-                <span>Users</span>
-              </button>
-            )}
-          </div>
-
-          {/* Right: Commercial Offer Icon */}
-          <div className="flex items-center space-x-3 relative">
-            <button
-              onClick={() => {
-                handleOpenCommercialPanel();
-                // Dismiss tooltip when user clicks
-                setShowDocIconTooltip(false);
-              }}
-              className={`p-2 rounded-macos transition-all relative ${
-                hasOffer
-                  ? 'text-macos-blue bg-macos-blue/10'
-                  : 'text-macos-gray-400 bg-macos-gray-100'
-              } ${
-                showDocGlow
-                  ? 'animate-pulse ring-2 ring-macos-purple ring-offset-1 shadow-lg shadow-macos-purple/30'
-                  : 'hover:bg-black/5'
-              }`}
-              title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
-            >
-              <FileText className="w-4 h-4" />
-              {showDocGlow && (
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-macos-purple opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-macos-purple"></span>
-                </span>
-              )}
-            </button>
-            {/* Naujokas tooltip pointing to doc icon */}
-            {showDocIconTooltip && naujokasMode && (
-              <div className="absolute top-full right-0 mt-2 z-50 macos-animate-spring">
-                <div className="bg-macos-gray-900 text-white text-sm px-3 py-2 rounded-macos shadow-macos-lg whitespace-nowrap">
-                  <div className="flex items-center space-x-2">
-                    <span>Pasiūlymas išsaugotas! Spauskite čia peržiūrėti</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDocIconTooltip(false);
-                      }}
-                      className="text-macos-gray-400 hover:text-white ml-1"
-                    >
-                      <span className="text-xs">✕</span>
-                    </button>
-                  </div>
-                  {/* Arrow pointing up */}
-                  <div className="absolute bottom-full right-4 w-0 h-0 border-l-8 border-r-8 border-b-8 border-l-transparent border-r-transparent border-b-macos-gray-900" />
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 overflow-hidden min-h-0">
-          {renderContent()}
-        </div>
-      </div>
+      {renderContent()}
     </Layout>
-
-    {/* Commercial Offer Panel */}
-    <CommercialOfferPanel
-      isOpen={commercialPanelOpen}
-      onClose={() => setCommercialPanelOpen(false)}
-      threadId={currentThread?.id || null}
-    />
     </>
   );
 }
