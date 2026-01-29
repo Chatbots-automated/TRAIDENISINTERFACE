@@ -37,6 +37,12 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   const [response, setResponse] = useState<WebhookResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // New request state
+  const [requestName, setRequestName] = useState('');
+  const [requestText, setRequestText] = useState('');
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([]);
+  const documentsInputRef = useRef<HTMLInputElement>(null);
+
   // Project selection state
   const [projects, setProjects] = useState<NestandardinisProject[]>([]);
   const [selectedProject, setSelectedProject] = useState<NestandardinisProject | null>(null);
@@ -97,7 +103,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (!file) return;
 
     // Check file type based on selected card
-    if (selectedCard === 'new-request' || selectedCard === 'find-similar') {
+    if (selectedCard === 'find-similar') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
         setError('Prašome pasirinkti .eml formato failą');
@@ -110,13 +116,38 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     setResponse(null);
   };
 
+  const handleDocumentsSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const filesArray = Array.from(files);
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.bmp'];
+
+    const invalidFiles = filesArray.filter(file => {
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+      return !allowedExtensions.includes(fileExtension);
+    });
+
+    if (invalidFiles.length > 0) {
+      setError('Prašome pasirinkti tik PDF, DOC, DOCX, JPG, JPEG, PNG, GIF arba BMP failus');
+      return;
+    }
+
+    setSelectedDocuments(prev => [...prev, ...filesArray]);
+    setError(null);
+  };
+
+  const removeDocument = (index: number) => {
+    setSelectedDocuments(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const file = event.dataTransfer.files?.[0];
     if (!file) return;
 
     // Check file type
-    if (selectedCard === 'new-request' || selectedCard === 'find-similar') {
+    if (selectedCard === 'find-similar') {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
       if (fileExtension !== '.eml') {
         setError('Prašome pasirinkti .eml formato failą');
@@ -127,6 +158,28 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     setSelectedFile(file);
     setError(null);
     setResponse(null);
+  };
+
+  const handleDocumentsDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const files = event.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const filesArray = Array.from(files);
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.bmp'];
+
+    const invalidFiles = filesArray.filter(file => {
+      const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+      return !allowedExtensions.includes(fileExtension);
+    });
+
+    if (invalidFiles.length > 0) {
+      setError('Prašome pasirinkti tik PDF, DOC, DOCX, JPG, JPEG, PNG, GIF arba BMP failus');
+      return;
+    }
+
+    setSelectedDocuments(prev => [...prev, ...filesArray]);
+    setError(null);
   };
 
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
@@ -139,7 +192,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
   const handleSubmit = async () => {
     // Validation
-    if (selectedCard === 'new-request' || selectedCard === 'find-similar') {
+    if (selectedCard === 'new-request') {
+      if (!requestName.trim()) {
+        setError('Prašome įvesti užklausos pavadinimą');
+        return;
+      }
+      if (!requestText.trim()) {
+        setError('Prašome įvesti užklausos tekstą');
+        return;
+      }
+      if (selectedDocuments.length === 0) {
+        setError('Prašome įkelti bent vieną dokumentą');
+        return;
+      }
+    } else if (selectedCard === 'find-similar') {
       if (!selectedFile) {
         setError('Prašome pasirinkti failą');
         return;
@@ -176,15 +242,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   };
 
   const handleNewRequest = async () => {
-    if (!selectedFile) return;
+    if (!requestName || !requestText || selectedDocuments.length === 0) return;
 
     await appLogger.logDocument({
-      action: 'eml_upload_started',
+      action: 'new_request_started',
       userId: user.id,
       userEmail: user.email,
-      filename: selectedFile.name,
-      fileSize: selectedFile.size,
-      metadata: { project_id: projectId, file_type: selectedFile.type, upload_action: 'just-upload' }
+      filename: requestName,
+      fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0),
+      metadata: {
+        project_id: projectId,
+        upload_action: 'new-request',
+        document_count: selectedDocuments.length,
+        request_name: requestName
+      }
     });
 
     const webhookUrl = await getWebhookUrl('n8n_upload_new');
@@ -195,14 +266,18 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
     // Use FormData for binary file upload
     const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('action', 'just-upload');
-    formData.append('filename', selectedFile.name);
-    formData.append('mimeType', selectedFile.type || 'message/rfc822');
+    formData.append('action', 'new-request');
+    formData.append('requestName', requestName);
+    formData.append('requestText', requestText);
     formData.append('userId', user.id);
     formData.append('userEmail', user.email);
     formData.append('projectId', projectId);
     formData.append('timestamp', new Date().toISOString());
+
+    // Append all documents
+    selectedDocuments.forEach((doc, index) => {
+      formData.append(`documents`, doc);
+    });
 
     const webhookResponse = await fetch(webhookUrl, {
       method: 'POST',
@@ -222,22 +297,23 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     } catch {
       // Plain text response (e.g., "Success")
       responseData = {
-        subjectLine: selectedFile.name,
-        description: responseText || 'Failas sėkmingai įkeltas',
+        subjectLine: requestName,
+        description: responseText || 'Užklausa sėkmingai pateikta',
         message: responseText || 'Success'
       };
     }
 
     await appLogger.logDocument({
-      action: 'eml_upload_success',
+      action: 'new_request_success',
       userId: user.id,
       userEmail: user.email,
-      filename: selectedFile.name,
-      fileSize: selectedFile.size,
+      filename: requestName,
+      fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0),
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine || selectedFile.name,
-        upload_action: 'just-upload'
+        subject_line: responseData.subjectLine || requestName,
+        upload_action: 'new-request',
+        document_count: selectedDocuments.length
       }
     });
 
@@ -419,7 +495,11 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     setProjectSearchQuery('');
     setError(null);
     setSelectedCard(null);
+    setRequestName('');
+    setRequestText('');
+    setSelectedDocuments([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (documentsInputRef.current) documentsInputRef.current.value = '';
   };
 
   const handleCardSelect = (card: SelectedCard) => {
@@ -429,7 +509,11 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     setProjectSearchQuery('');
     setError(null);
     setResponse(null);
+    setRequestName('');
+    setRequestText('');
+    setSelectedDocuments([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (documentsInputRef.current) documentsInputRef.current.value = '';
 
     setSelectedCard(card);
   };
@@ -492,7 +576,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                     Pateikti naują užklausą
                   </h3>
                   <p className="text-xs leading-relaxed" style={{ color: '#8a857f' }}>
-                    Įkelti naują .eml failą į sistemą
+                    Įveskite užklausos tekstą ir įkelkite dokumentus
                   </p>
                 </button>
 
@@ -575,19 +659,52 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       <div className="flex items-start gap-3 px-4 py-3.5 rounded-lg text-sm" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
                         <Info className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
                         <div style={{ color: '#5a5550' }}>
-                          <strong>Įkelkite naują užklausos failą (.eml formatas)</strong> – failas bus pridėtas į žinių bazę tolimesniam apdorojimui ir analizei.
+                          <strong>Pateikite naują užklausą</strong> – įveskite užklausos pavadinimą, aprašymą ir pridėkite reikalingus dokumentus.
                         </div>
                       </div>
 
-                      {/* Upload Area */}
+                      {/* Request Name Input */}
                       <div>
                         <label className="text-sm font-semibold block mb-2.5" style={{ color: '#5a5550' }}>
-                          Pasirinkite failą
+                          Užklausos pavadinimas
+                        </label>
+                        <input
+                          type="text"
+                          value={requestName}
+                          onChange={(e) => setRequestName(e.target.value)}
+                          placeholder="Pvz.: Įmonės pavadinimas + užklausa + 1"
+                          className="w-full px-4 py-3 text-sm border rounded-lg"
+                          style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
+                        />
+                        <p className="text-xs mt-1.5" style={{ color: '#8a857f' }}>
+                          Rekomenduojama: Įmonės pavadinimas + užklausos aprašymas + indeksas (1, 2, 3...)
+                        </p>
+                      </div>
+
+                      {/* Request Text Input */}
+                      <div>
+                        <label className="text-sm font-semibold block mb-2.5" style={{ color: '#5a5550' }}>
+                          Užklausos tekstas
+                        </label>
+                        <textarea
+                          value={requestText}
+                          onChange={(e) => setRequestText(e.target.value)}
+                          placeholder="Įveskite išsamų užklausos aprašymą..."
+                          rows={6}
+                          className="w-full px-4 py-3 text-sm border rounded-lg resize-none"
+                          style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
+                        />
+                      </div>
+
+                      {/* Document Upload Area */}
+                      <div>
+                        <label className="text-sm font-semibold block mb-2.5" style={{ color: '#5a5550' }}>
+                          Dokumentai {selectedDocuments.length > 0 && `(${selectedDocuments.length})`}
                         </label>
                         <div
-                          onDrop={handleFileDrop}
+                          onDrop={handleDocumentsDrop}
                           onDragOver={handleDragOver}
-                          onClick={triggerFileUpload}
+                          onClick={() => documentsInputRef.current?.click()}
                           className="border-2 border-dashed rounded-lg px-5 py-8 text-center cursor-pointer transition-all"
                           style={{ borderColor: '#e8e5e0', background: 'white' }}
                           onMouseEnter={(e) => {
@@ -599,65 +716,68 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             e.currentTarget.style.background = 'white';
                           }}
                         >
-                          {selectedFile ? (
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded flex items-center justify-center" style={{ background: '#f0ede8' }}>
-                                  <FileArchive className="w-5 h-5" style={{ color: '#5a5550' }} />
-                                </div>
-                                <div className="text-left">
-                                  <p className="text-sm font-medium" style={{ color: '#3d3935' }}>
-                                    {selectedFile.name}
-                                  </p>
-                                  <p className="text-xs" style={{ color: '#8a857f' }}>
-                                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedFile(null);
-                                  if (fileInputRef.current) fileInputRef.current.value = '';
-                                }}
-                                className="p-2 rounded hover:bg-gray-100"
-                              >
-                                <X className="w-5 h-5" style={{ color: '#8a857f' }} />
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <Upload className="w-8 h-8 mx-auto mb-3" style={{ color: '#8a857f' }} />
-                              <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>
-                                Nuvilkite .eml failą arba spustelėkite
-                              </p>
-                              <p className="text-xs" style={{ color: '#8a857f' }}>
-                                Reikalingas .eml formatas
-                              </p>
-                            </>
-                          )}
+                          <Upload className="w-8 h-8 mx-auto mb-3" style={{ color: '#8a857f' }} />
+                          <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>
+                            Nuvilkite dokumentus arba spustelėkite
+                          </p>
+                          <p className="text-xs" style={{ color: '#8a857f' }}>
+                            Priimami: PDF, DOC, DOCX, JPG, PNG, GIF, BMP
+                          </p>
                         </div>
+
+                        {/* Selected Documents List */}
+                        {selectedDocuments.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            {selectedDocuments.map((doc, index) => (
+                              <div key={index} className="flex items-center justify-between p-3 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                  <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
+                                    <FileText className="w-5 h-5" style={{ color: '#5a5550' }} />
+                                  </div>
+                                  <div className="text-left flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate" style={{ color: '#3d3935' }}>
+                                      {doc.name}
+                                    </p>
+                                    <p className="text-xs" style={{ color: '#8a857f' }}>
+                                      {(doc.size / (1024 * 1024)).toFixed(2)} MB
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeDocument(index);
+                                  }}
+                                  className="p-2 rounded hover:bg-gray-100 flex-shrink-0"
+                                >
+                                  <X className="w-5 h-5" style={{ color: '#8a857f' }} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <input
-                        ref={fileInputRef}
+                        ref={documentsInputRef}
                         type="file"
-                        onChange={handleFileSelection}
+                        onChange={handleDocumentsSelection}
                         className="hidden"
-                        accept=".eml"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp"
+                        multiple
                       />
 
                       {/* Submit Button */}
                       <button
                         onClick={handleSubmit}
-                        disabled={!selectedFile}
+                        disabled={!requestName.trim() || !requestText.trim() || selectedDocuments.length === 0}
                         className="w-full py-3 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
-                          background: selectedFile ? '#3d3935' : '#e8e5e0',
-                          color: selectedFile ? 'white' : '#8a857f'
+                          background: (requestName.trim() && requestText.trim() && selectedDocuments.length > 0) ? '#3d3935' : '#e8e5e0',
+                          color: (requestName.trim() && requestText.trim() && selectedDocuments.length > 0) ? 'white' : '#8a857f'
                         }}
                       >
-                        Įkelti Užklausą
+                        Pateikti Užklausą
                       </button>
                     </>
                   )}
