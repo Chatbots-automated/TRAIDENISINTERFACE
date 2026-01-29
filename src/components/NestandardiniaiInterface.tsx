@@ -121,7 +121,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (!files || files.length === 0) return;
 
     const filesArray = Array.from(files);
-    const allowedExtensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.bmp'];
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.bmp'];
 
     const invalidFiles = filesArray.filter(file => {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
@@ -129,7 +129,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     if (invalidFiles.length > 0) {
-      setError('Prašome pasirinkti tik PDF, DOC, DOCX, JPG, JPEG, PNG, GIF arba BMP failus');
+      setError('Prašome pasirinkti tik PDF, DOC, DOCX, JPG, JPEG, PNG arba BMP failus');
       return;
     }
 
@@ -166,7 +166,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     if (!files || files.length === 0) return;
 
     const filesArray = Array.from(files);
-    const allowedExtensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.bmp'];
+    const allowedExtensions = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.bmp'];
 
     const invalidFiles = filesArray.filter(file => {
       const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
@@ -174,7 +174,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     });
 
     if (invalidFiles.length > 0) {
-      setError('Prašome pasirinkti tik PDF, DOC, DOCX, JPG, JPEG, PNG, GIF arba BMP failus');
+      setError('Prašome pasirinkti tik PDF, DOC, DOCX, JPG, JPEG, PNG arba BMP failus');
       return;
     }
 
@@ -198,11 +198,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
         return;
       }
       if (!requestText.trim()) {
-        setError('Prašome įvesti užklausos tekstą');
-        return;
-      }
-      if (selectedDocuments.length === 0) {
-        setError('Prašome įkelti bent vieną dokumentą');
+        setError('Prašome įvesti pokalbį su užsakovu');
         return;
       }
     } else if (selectedCard === 'find-similar') {
@@ -242,7 +238,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   };
 
   const handleNewRequest = async () => {
-    if (!requestName || !requestText || selectedDocuments.length === 0) return;
+    if (!requestName || !requestText) return;
 
     await appLogger.logDocument({
       action: 'new_request_started',
@@ -659,7 +655,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       <div className="flex items-start gap-3 px-4 py-3.5 rounded-lg text-sm" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
                         <Info className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
                         <div style={{ color: '#5a5550' }}>
-                          <strong>Pateikite naują užklausą</strong> – įveskite užklausos pavadinimą, aprašymą ir pridėkite reikalingus dokumentus.
+                          <strong>Pateikite naują užklausą į duombazę</strong> – įveskite užklausos pavadinimą, susirašinėjimą su užsakovu ir, pasirinktinai, priedus.
                         </div>
                       </div>
 
@@ -684,12 +680,12 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       {/* Request Text Input */}
                       <div>
                         <label className="text-sm font-semibold block mb-2.5" style={{ color: '#5a5550' }}>
-                          Užklausos tekstas
+                          Pokalbis su užsakovu
                         </label>
                         <textarea
                           value={requestText}
                           onChange={(e) => setRequestText(e.target.value)}
-                          placeholder="Įveskite išsamų užklausos aprašymą..."
+                          placeholder="Įklijuokite tikslų el. pašto susirašinėjimą su užsakovu..."
                           rows={6}
                           className="w-full px-4 py-3 text-sm border rounded-lg resize-none"
                           style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
@@ -721,7 +717,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             Nuvilkite dokumentus arba spustelėkite
                           </p>
                           <p className="text-xs" style={{ color: '#8a857f' }}>
-                            Priimami: PDF, DOC, DOCX, JPG, PNG, GIF, BMP
+                            Priimami: PDF, DOC, DOCX, ekrano nuotraukos (PNG, JPG, BMP)
                           </p>
                         </div>
 
@@ -763,18 +759,18 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         type="file"
                         onChange={handleDocumentsSelection}
                         className="hidden"
-                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.bmp"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.bmp"
                         multiple
                       />
 
                       {/* Submit Button */}
                       <button
                         onClick={handleSubmit}
-                        disabled={!requestName.trim() || !requestText.trim() || selectedDocuments.length === 0}
+                        disabled={!requestName.trim() || !requestText.trim()}
                         className="w-full py-3 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{
-                          background: (requestName.trim() && requestText.trim() && selectedDocuments.length > 0) ? '#3d3935' : '#e8e5e0',
-                          color: (requestName.trim() && requestText.trim() && selectedDocuments.length > 0) ? 'white' : '#8a857f'
+                          background: (requestName.trim() && requestText.trim()) ? '#3d3935' : '#e8e5e0',
+                          color: (requestName.trim() && requestText.trim()) ? 'white' : '#8a857f'
                         }}
                       >
                         Pateikti Užklausą
