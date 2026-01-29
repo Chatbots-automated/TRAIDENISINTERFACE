@@ -46,11 +46,8 @@ interface LayoutProps {
   onRenameThread?: (threadId: string, newTitle: string) => void;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  // New version mode props
-  isNewVersion?: boolean;
   viewMode?: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos';
   onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos') => void;
-  onToggleNewVersion?: () => void;
   hasOffer?: boolean;
   showDocGlow?: boolean;
   onOpenCommercialPanel?: () => void;
@@ -69,10 +66,8 @@ export default function Layout({
   onRenameThread,
   naujokasMode = true,
   onToggleNaujokas,
-  isNewVersion = false,
   viewMode = 'chat',
   onViewModeChange,
-  onToggleNewVersion,
   hasOffer = false,
   showDocGlow = false,
   onOpenCommercialPanel
@@ -187,7 +182,6 @@ export default function Layout({
           </div>
 
           {/* Primary Navigation - Only Chat and Documents */}
-          {isNewVersion && (
             <div className={`border-b border-black/5 py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
               <button
                 onClick={() => onViewModeChange?.('chat')}
@@ -249,135 +243,6 @@ export default function Layout({
                 {!sidebarCollapsed && <span>Nestandartiniai Projektai</span>}
               </button>
             </div>
-          )}
-
-          {/* Chat History - Hidden when in New Version mode */}
-          {!isNewVersion && (
-          <div className="flex-1 p-4 flex flex-col min-h-0 overflow-hidden">
-            <div className="flex items-center justify-between mb-3 flex-shrink-0">
-              <h2 className="text-sm font-semibold text-macos-gray-900 tracking-macos-tight">Chat History</h2>
-              <button
-                onClick={onCreateThread}
-                disabled={creatingThread}
-                className="p-1.5 macos-btn macos-btn-primary rounded-md disabled:opacity-50"
-                title="New chat"
-              >
-                {creatingThread ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Plus className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-
-            {/* Threads List */}
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-1">
-              {threadsLoading ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="h-12 bg-macos-gray-100 rounded-md animate-pulse" />
-                  ))}
-                </div>
-              ) : threads.length === 0 ? (
-                <div className="text-center py-4">
-                  <MessageSquare className="w-8 h-8 text-macos-gray-300 mx-auto mb-2" />
-                  <p className="text-xs text-macos-gray-500">No chats yet</p>
-                  <button
-                    onClick={onCreateThread}
-                    disabled={creatingThread}
-                    className="text-xs text-macos-blue hover:text-macos-blue-hover mt-1"
-                  >
-                    Start a chat
-                  </button>
-                </div>
-              ) : (
-                threads.map((thread) => (
-                  <div
-                    key={thread.id}
-                    onClick={() => editingThreadId !== thread.id && onSelectThread?.(thread)}
-                    className={`
-                      p-2 rounded-md transition-all duration-150 cursor-pointer group text-left w-full
-                      ${currentThread?.id === thread.id
-                        ? 'bg-macos-blue/10 border-[0.5px] border-macos-blue/20'
-                        : 'hover:bg-black/5'
-                      }
-                    `}
-                  >
-                    {editingThreadId === thread.id ? (
-                      /* Edit mode */
-                      <div className="flex items-center space-x-1">
-                        <input
-                          type="text"
-                          value={editingTitle}
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              handleSaveEdit(thread.id, e as unknown as React.MouseEvent);
-                            } else if (e.key === 'Escape') {
-                              handleCancelEdit(e as unknown as React.MouseEvent);
-                            }
-                          }}
-                          className="flex-1 text-xs px-1.5 py-0.5 macos-input rounded-md"
-                          autoFocus
-                        />
-                        <button
-                          onClick={(e) => handleSaveEdit(thread.id, e)}
-                          className="p-1 rounded-md hover:bg-macos-green/10 text-macos-green transition-all"
-                          title="Save"
-                        >
-                          <Check className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={handleCancelEdit}
-                          className="p-1 rounded-md hover:bg-black/5 text-macos-gray-400 transition-all"
-                          title="Cancel"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ) : (
-                      /* View mode */
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-macos-gray-900 truncate">
-                            {thread.title}
-                          </p>
-                          <p className="text-xs text-macos-gray-500">
-                            {thread.message_count || 0} msgs · {new Date(thread.last_message_at || thread.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        {/* Action buttons */}
-                        <div className="flex items-center space-x-0.5 opacity-0 group-hover:opacity-100 transition-all">
-                          <button
-                            onClick={(e) => handleStartEdit(thread, e)}
-                            className="p-1 rounded-md hover:bg-macos-blue/10 text-macos-gray-400 hover:text-macos-blue transition-all"
-                            title="Rename chat"
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                          {/* Delete button - admin only */}
-                          {user.is_admin && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDeleteThread?.(thread.id);
-                              }}
-                              className="p-1 rounded-md hover:bg-macos-red/10 text-macos-gray-400 hover:text-macos-red transition-all"
-                              title="Delete chat"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          )}
 
           {/* Spacer to push footer to bottom */}
           <div className="flex-1" />
@@ -465,31 +330,29 @@ export default function Layout({
                   <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
                     <div className="mx-3 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
                       {/* Offers */}
-                      {isNewVersion && (
-                        <button
-                          onClick={() => {
-                            onOpenCommercialPanel?.();
-                            setSettingsDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition-all relative ${
-                            hasOffer
-                              ? 'text-macos-blue hover:bg-macos-blue/10'
-                              : 'text-macos-gray-400 hover:bg-black/5'
-                          }`}
-                          title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
-                        >
-                          <div className="flex items-center space-x-3">
-                            <Database className="w-4 h-4" />
-                            <span>Offers</span>
-                          </div>
-                          {showDocGlow && (
-                            <span className="flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-macos-blue opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-macos-blue"></span>
-                            </span>
-                          )}
-                        </button>
-                      )}
+                      <button
+                        onClick={() => {
+                          onOpenCommercialPanel?.();
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium transition-all relative ${
+                          hasOffer
+                            ? 'text-macos-blue hover:bg-macos-blue/10'
+                            : 'text-macos-gray-400 hover:bg-black/5'
+                        }`}
+                        title={hasOffer ? 'View Commercial Offer' : 'No commercial offer available'}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <Database className="w-4 h-4" />
+                          <span>Offers</span>
+                        </div>
+                        {showDocGlow && (
+                          <span className="flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-macos-blue opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-macos-blue"></span>
+                          </span>
+                        )}
+                      </button>
 
                       {/* Divider */}
                       <div className="my-1 border-t border-black/5" />
@@ -517,18 +380,6 @@ export default function Layout({
                           />
                         </div>
                       </div>
-
-                      {/* Nauja Toggle - Locked */}
-                      {isNewVersion && (
-                        <button
-                          disabled
-                          className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium bg-macos-purple/10 text-macos-purple opacity-50 cursor-not-allowed"
-                          title="New version is active"
-                        >
-                          <span className="text-base">✨</span>
-                          <span>Nauja</span>
-                        </button>
-                      )}
 
                       {/* Divider */}
                       <div className="my-1 border-t border-black/5" />

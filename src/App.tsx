@@ -11,7 +11,7 @@ import SDKInterface from './components/SDKInterface';
 import AuthForm from './components/AuthForm';
 import CommercialOfferPanel from './components/CommercialOfferPanel';
 import { hasCommercialOffer } from './lib/commercialOfferStorage';
-import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History, Package, Bot } from 'lucide-react';
+import { MessageSquare, FileText, Users, History, Package, Bot } from 'lucide-react';
 import type { AppUser } from './types';
 
 type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
@@ -29,7 +29,6 @@ const STORAGE_KEYS = {
   VIEW_MODE: 'traidenis_view_mode',
   CURRENT_THREAD_ID: 'traidenis_current_thread_id',
   NAUJOKAS_MODE: 'traidenis_naujokas_mode',
-  NEW_VERSION_MODE: 'traidenis_new_version_mode',
 };
 
 function App() {
@@ -65,13 +64,6 @@ function App() {
     return saved === null ? true : saved === 'true';
   });
 
-  // New Version mode - shows Voiceflow chat by default
-  const [isNewVersion, setIsNewVersion] = useState<boolean>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.NEW_VERSION_MODE);
-    // Default to true (Voiceflow) for new users
-    return saved === null ? true : saved === 'true';
-  });
-
   // Track if doc icon tooltip should be shown (after first commercial accept)
   const [showDocIconTooltip, setShowDocIconTooltip] = useState(false);
 
@@ -96,11 +88,6 @@ function App() {
     localStorage.setItem(STORAGE_KEYS.NAUJOKAS_MODE, String(naujokasMode));
   }, [naujokasMode]);
 
-  // Save new version mode to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.NEW_VERSION_MODE, String(isNewVersion));
-  }, [isNewVersion]);
-
   // Toggle naujokas mode
   const toggleNaujokasMode = useCallback(() => {
     setNaujokasMode(prev => {
@@ -111,11 +98,6 @@ function App() {
       }
       return newValue;
     });
-  }, []);
-
-  // Toggle new version mode
-  const toggleNewVersion = useCallback(() => {
-    setIsNewVersion(prev => !prev);
   }, []);
 
   const checkUser = async () => {
@@ -343,7 +325,7 @@ function App() {
             onThreadsUpdate={loadThreads}
             onCreateThread={handleCreateThread}
             naujokasMode={naujokasMode}
-            isNewVersion={isNewVersion}
+            isNewVersion={true}
           />
         );
       case 'documents':
@@ -377,17 +359,14 @@ function App() {
       onRenameThread={handleRenameThread}
       naujokasMode={naujokasMode}
       onToggleNaujokas={toggleNaujokasMode}
-      isNewVersion={isNewVersion}
       viewMode={viewMode}
       onViewModeChange={setViewMode}
-      onToggleNewVersion={toggleNewVersion}
       hasOffer={hasOffer}
       showDocGlow={showDocGlow}
       onOpenCommercialPanel={handleOpenCommercialPanel}
     >
       <div className="flex flex-col h-full">
-        {/* Navigation Bar - Hidden when in New Version mode */}
-        {!isNewVersion && (
+        {/* Navigation Bar */}
         <div className="bg-white/80 backdrop-blur-macos border-b border-black/5 flex-shrink-0">
         <div className="flex items-center justify-between px-6 py-3">
           {/* Left: macOS Segmented Control */}
@@ -443,33 +422,8 @@ function App() {
             )}
           </div>
 
-          {/* Right: New Version Toggle & Commercial Offer Icon */}
+          {/* Right: Commercial Offer Icon */}
           <div className="flex items-center space-x-3 relative">
-            {/* New Version Toggle */}
-            {viewMode === 'chat' && (
-              <button
-                onClick={toggleNewVersion}
-                className={`macos-btn flex items-center space-x-2 px-3 py-1.5 rounded-macos text-sm transition-all duration-150 ${
-                  isNewVersion
-                    ? 'macos-btn-primary'
-                    : 'macos-btn-secondary'
-                }`}
-                title={isNewVersion ? 'Naujas variantas (Voiceflow)' : 'Standartinis pokalbis'}
-              >
-                {isNewVersion ? (
-                  <>
-                    <ToggleRight className="w-4 h-4" />
-                    <span>Nauja</span>
-                  </>
-                ) : (
-                  <>
-                    <ToggleLeft className="w-4 h-4" />
-                    <span>Nauja</span>
-                  </>
-                )}
-              </button>
-            )}
-
             <button
               onClick={() => {
                 handleOpenCommercialPanel();
@@ -518,8 +472,7 @@ function App() {
             )}
           </div>
         </div>
-      </div>
-        )}
+        </div>
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden min-h-0">
