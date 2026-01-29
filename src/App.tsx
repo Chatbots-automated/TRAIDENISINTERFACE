@@ -7,13 +7,14 @@ import AdminUsersInterface from './components/AdminUsersInterface';
 import TranscriptsInterface from './components/TranscriptsInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
+import SDKInterface from './components/SDKInterface';
 import AuthForm from './components/AuthForm';
 import CommercialOfferPanel from './components/CommercialOfferPanel';
 import { hasCommercialOffer } from './lib/commercialOfferStorage';
-import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History, Package } from 'lucide-react';
+import { MessageSquare, FileText, Users, ToggleLeft, ToggleRight, History, Package, Bot } from 'lucide-react';
 import type { AppUser } from './types';
 
-type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai';
+type ViewMode = 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
 
 interface Thread {
   id: string;
@@ -355,6 +356,8 @@ function App() {
         return <InstructionsInterface user={user} />;
       case 'nestandartiniai':
         return <NestandardiniaiInterface user={user} projectId={projectId} />;
+      case 'sdk':
+        return <SDKInterface user={user} projectId={projectId} />;
       default:
         return null;
     }
@@ -419,6 +422,14 @@ function App() {
             >
               <Package className="w-4 h-4" />
               <span>EML Upload</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('sdk')}
+              className={`macos-segment flex items-center space-x-2 ${viewMode === 'sdk' ? 'active' : ''}`}
+            >
+              <Bot className="w-4 h-4" />
+              <span>SDK</span>
             </button>
 
             {user.is_admin && (
