@@ -196,10 +196,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Chat' : undefined}
               >
-                <div className="flex items-center justify-center w-4">
-                  <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                  <MessageSquare className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3">Chat</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Chat</span>}
               </button>
 
               <button
@@ -213,10 +213,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Documents' : undefined}
               >
-                <div className="flex items-center justify-center w-4">
-                  <Database className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                  <Database className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3">Documents</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Documents</span>}
               </button>
 
               <button
@@ -230,10 +230,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Transcripts' : undefined}
               >
-                <div className="flex items-center justify-center w-4">
-                  <History className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                  <History className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3">Transcripts</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Transcripts</span>}
               </button>
 
               <button
@@ -247,10 +247,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
               >
-                <div className="flex items-center justify-center w-4">
-                  <FlaskConical className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                  <FlaskConical className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3">Nestandartiniai Projektai</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Nestandartiniai Projektai</span>}
               </button>
 
               <button
@@ -264,10 +264,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'SDK' : undefined}
               >
-                <div className="flex items-center justify-center w-4">
-                  <Bot className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                  <Bot className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3">SDK</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">SDK</span>}
               </button>
             </div>
 
@@ -298,10 +298,10 @@ export default function Layout({
                     }`}
                     title={sidebarCollapsed ? 'Settings' : undefined}
                   >
-                    <div className="flex items-center justify-center w-4">
-                      <Settings className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex items-center justify-center w-4 flex-shrink-0">
+                      <Settings className="w-4 h-4" />
                     </div>
-                    {!sidebarCollapsed && <span className="ml-3">Settings</span>}
+                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Settings</span>}
                   </button>
 
                   {/* Webhooks */}
@@ -312,10 +312,10 @@ export default function Layout({
                     }`}
                     title={sidebarCollapsed ? 'Webhooks' : undefined}
                   >
-                    <div className="flex items-center justify-center w-4">
-                      <Zap className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex items-center justify-center w-4 flex-shrink-0">
+                      <Zap className="w-4 h-4" />
                     </div>
-                    {!sidebarCollapsed && <span className="ml-3">Webhooks</span>}
+                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Webhooks</span>}
                   </button>
 
                   {/* Instrukcijos */}
@@ -330,10 +330,10 @@ export default function Layout({
                     }`}
                     title={sidebarCollapsed ? 'Instrukcijos' : undefined}
                   >
-                    <div className="flex items-center justify-center w-4">
-                      <BookOpen className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex items-center justify-center w-4 flex-shrink-0">
+                      <BookOpen className="w-4 h-4" />
                     </div>
-                    {!sidebarCollapsed && <span className="ml-3">Instrukcijos</span>}
+                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Instrukcijos</span>}
                   </button>
 
                   {/* Users */}
@@ -348,10 +348,10 @@ export default function Layout({
                     }`}
                     title={sidebarCollapsed ? 'Users' : undefined}
                   >
-                    <div className="flex items-center justify-center w-4">
-                      <Users className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex items-center justify-center w-4 flex-shrink-0">
+                      <Users className="w-4 h-4" />
                     </div>
-                    {!sidebarCollapsed && <span className="ml-3">Users</span>}
+                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Users</span>}
                   </button>
                 </div>
               </>
@@ -462,10 +462,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Sign Out' : undefined}
               >
-                <div className="flex items-center justify-center w-4">
-                  <LogOut className="w-4 h-4 flex-shrink-0" />
+                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                  <LogOut className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3">Sign Out</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Sign Out</span>}
               </button>
             )}
 

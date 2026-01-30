@@ -334,7 +334,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       <div
         className="flex-shrink-0 border-r transition-all duration-300 flex flex-col"
         style={{
-          width: sidebarCollapsed ? '0px' : '320px',
+          width: sidebarCollapsed ? '0px' : '280px',
           borderColor: '#f0ede8',
           background: 'white',
           overflow: sidebarCollapsed ? 'hidden' : 'visible',
