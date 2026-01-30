@@ -10,8 +10,7 @@ import {
   Trash2,
   X,
   PanelLeftClose,
-  PanelLeft,
-  ChevronDown
+  PanelLeft
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt } from '../lib/instructionVariablesService';
@@ -36,33 +35,22 @@ interface SDKInterfaceNewProps {
 }
 
 export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProps) {
-  // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Conversations state
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [creatingConversation, setCreatingConversation] = useState(false);
-
-  // Chat state
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // System prompt state
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
-
-  // Artifact state
   const [showArtifact, setShowArtifact] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Anthropic API key
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   useEffect(() => {
@@ -79,19 +67,10 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       setLoadingPrompt(true);
       const prompt = await getSystemPrompt();
       setSystemPrompt(prompt);
-
-      await appLogger.logDocument({
-        action: 'sdk_system_prompt_loaded',
-        userId: user.id,
-        userEmail: user.email,
-        metadata: {
-          project_id: projectId,
-          prompt_length: prompt.length
-        }
-      });
+      console.log('System prompt loaded, length:', prompt.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
-      setError('Nepavyko užkrauti sistemos instrukcijų. Patikrinkite instruction_variables lentelę.');
+      setError('Nepavyko užkrauti sistemos instrukcijų');
     } finally {
       setLoadingPrompt(false);
     }
@@ -119,9 +98,7 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         user.email,
         'Naujas pokalbis'
       );
-
       if (createError) throw createError;
-
       await loadConversations();
       const { data: newConversation } = await getSDKConversation(conversationId!);
       setCurrentConversation(newConversation);
@@ -171,21 +148,14 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
     };
 
     await addMessageToConversation(currentConversation.id, userMessage);
-
     const updatedMessages = [...currentConversation.messages, userMessage];
-    setCurrentConversation({
-      ...currentConversation,
-      messages: updatedMessages
-    });
-
+    setCurrentConversation({ ...currentConversation, messages: updatedMessages });
     setInputValue('');
     setLoading(true);
     setError(null);
 
     try {
-      if (!anthropicApiKey) {
-        throw new Error('VITE_ANTHROPIC_API_KEY not found');
-      }
+      if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
 
       const anthropic = new Anthropic({
         apiKey: anthropicApiKey,
@@ -200,17 +170,8 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8000,
-        thinking: {
-          type: 'enabled',
-          budget_tokens: 5000
-        },
-        system: [
-          {
-            type: 'text',
-            text: systemPrompt,
-            cache_control: { type: 'ephemeral' }
-          }
-        ],
+        thinking: { type: 'enabled', budget_tokens: 5000 },
+        system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: anthropicMessages
       });
 
@@ -218,11 +179,8 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       let responseContent = '';
 
       for (const block of response.content) {
-        if (block.type === 'thinking') {
-          thinkingContent = block.thinking;
-        } else if (block.type === 'text') {
-          responseContent += block.text;
-        }
+        if (block.type === 'thinking') thinkingContent = block.thinking;
+        else if (block.type === 'text') responseContent += block.text;
       }
 
       const assistantMessage: SDKMessage = {
@@ -237,22 +195,7 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       }
 
       await addMessageToConversation(currentConversation.id, assistantMessage);
-
-      setCurrentConversation({
-        ...currentConversation,
-        messages: [...updatedMessages, assistantMessage]
-      });
-
-      await appLogger.logDocument({
-        action: 'sdk_message_sent',
-        userId: user.id,
-        userEmail: user.email,
-        metadata: {
-          conversation_id: currentConversation.id,
-          has_thinking: !!thinkingContent,
-          has_artifact: responseContent.includes('<commercial_offer>')
-        }
-      });
+      setCurrentConversation({ ...currentConversation, messages: [...updatedMessages, assistantMessage] });
     } catch (err: any) {
       console.error('Error sending message:', err);
       setError(err.message || 'Įvyko klaida');
@@ -268,26 +211,20 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
       const offerContent = match[1].trim();
       const currentArtifact = conversation.artifact;
-
       let newArtifact: CommercialOfferArtifact;
 
       if (currentArtifact) {
         const diff = calculateDiff(currentArtifact.content, offerContent);
-        const newVersion = currentArtifact.version + 1;
-
         newArtifact = {
           ...currentArtifact,
           content: offerContent,
-          version: newVersion,
+          version: currentArtifact.version + 1,
           updated_at: new Date().toISOString(),
-          diff_history: [
-            ...currentArtifact.diff_history,
-            {
-              version: newVersion,
-              timestamp: new Date().toISOString(),
-              changes: diff
-            }
-          ]
+          diff_history: [...currentArtifact.diff_history, {
+            version: currentArtifact.version + 1,
+            timestamp: new Date().toISOString(),
+            changes: diff
+          }]
         };
       } else {
         newArtifact = {
@@ -303,10 +240,7 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       }
 
       await updateConversationArtifact(conversation.id, newArtifact);
-      setCurrentConversation({
-        ...conversation,
-        artifact: newArtifact
-      });
+      setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
     } catch (err) {
       console.error('Error handling artifact:', err);
@@ -322,13 +256,13 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
   if (loadingPrompt) {
     return (
-      <div className="h-full flex items-center justify-center bg-anthropic-bg">
+      <div className="h-full flex items-center justify-center" style={{ background: '#fdfcfb' }}>
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-anthropic-accent" />
-          <p className="text-base font-semibold mb-2 text-anthropic-text-primary">
+          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: '#5a5550' }} />
+          <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
             Kraunamos sistemos instrukcijos
           </p>
-          <p className="text-sm text-anthropic-text-secondary">
+          <p className="text-sm" style={{ color: '#8a857f' }}>
             Gaunami kintamieji iš duomenų bazės...
           </p>
         </div>
@@ -337,77 +271,103 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
   }
 
   return (
-    <div className="h-full flex bg-anthropic-bg">
-      {/* Secondary Sidebar */}
+    <div className="h-full flex" style={{ background: '#fdfcfb' }}>
+      {/* Reopen Button (when sidebar collapsed) - positioned next to main sidebar */}
+      {sidebarCollapsed && (
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className="fixed top-4 z-50 p-2 rounded-r-lg transition-all"
+          style={{
+            left: '256px', // Position at edge of main sidebar
+            background: 'white',
+            border: '1px solid #e8e5e0',
+            color: '#5a5550',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          }}
+        >
+          <PanelLeft className="w-4 h-4" />
+        </button>
+      )}
+
+      {/* Secondary Sidebar - slides from main sidebar edge */}
       <div
-        className={`anthropic-sidebar flex-shrink-0 transition-all duration-300 flex flex-col ${
-          sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-80'
-        }`}
+        className="flex-shrink-0 border-r transition-all duration-300 flex flex-col"
+        style={{
+          width: sidebarCollapsed ? '0px' : '320px',
+          borderColor: '#f0ede8',
+          background: 'white',
+          overflow: sidebarCollapsed ? 'hidden' : 'visible',
+          opacity: sidebarCollapsed ? 0 : 1
+        }}
       >
         {/* Project Header */}
-        <div className="p-4 border-b border-anthropic-border flex items-center justify-between">
+        <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#f0ede8' }}>
           <div className="flex items-center space-x-3 flex-1 min-w-0">
-            <FileText className="w-5 h-5 flex-shrink-0 text-anthropic-text-secondary" />
-            <span className="font-semibold truncate text-anthropic-text-primary">
+            <FileText className="w-5 h-5 flex-shrink-0" style={{ color: '#5a5550' }} />
+            <span className="font-semibold truncate" style={{ color: '#3d3935' }}>
               Standartinis
             </span>
           </div>
           <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="p-1.5 rounded-md transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
+            onClick={() => setSidebarCollapsed(true)}
+            className="p-1.5 rounded-md transition-colors"
+            style={{ color: '#8a857f' }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
         </div>
 
         {/* Instructions Section */}
-        <div className="p-4 border-b border-anthropic-border">
+        <div className="p-4 border-b" style={{ borderColor: '#f0ede8' }}>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-anthropic-text-primary">
+            <span className="text-sm font-medium" style={{ color: '#3d3935' }}>
               Instrukcijos
             </span>
             <button
               onClick={() => setShowPromptModal(true)}
-              className="p-1 rounded hover:bg-anthropic-bg-hover transition-colors"
-              title="Peržiūrėti prompt'ą"
+              className="p-1 rounded transition-colors"
+              style={{ color: '#8a857f' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
             >
-              <Eye className="w-4 h-4 text-anthropic-text-secondary" />
+              <Eye className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-xs text-anthropic-text-muted">
+          <p className="text-xs" style={{ color: '#8a857f' }}>
             Sistemos instrukcijos komerciniam pasiūlymui
           </p>
         </div>
 
         {/* Conversations Section */}
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 py-3 border-b border-anthropic-border">
-            <h3 className="text-sm font-medium text-anthropic-text-primary">Conversations</h3>
+          <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
+            <h3 className="text-sm font-medium" style={{ color: '#3d3935' }}>Conversations</h3>
           </div>
 
-          {/* New Conversation Button */}
           <div className="p-3">
             <button
               onClick={handleCreateConversation}
               disabled={creatingConversation}
-              className="anthropic-btn anthropic-btn-secondary w-full flex items-center justify-center space-x-2 disabled:opacity-50"
+              className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+              style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}
+              onMouseEnter={(e) => !creatingConversation && (e.currentTarget.style.background = '#e8e5e0')}
+              onMouseLeave={(e) => !creatingConversation && (e.currentTarget.style.background = '#f0ede8')}
             >
               <Plus className="w-4 h-4" />
               <span>Naujas pokalbis</span>
             </button>
           </div>
 
-          {/* Conversations List */}
-          <div className="flex-1 overflow-y-auto anthropic-scrollbar px-2">
+          <div className="flex-1 overflow-y-auto px-2">
             {loadingConversations ? (
               <div className="p-4 text-center">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto text-anthropic-text-secondary" />
+                <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: '#8a857f' }} />
               </div>
             ) : conversations.length === 0 ? (
               <div className="p-4 text-center">
-                <p className="text-sm text-anthropic-text-muted">
-                  Pokalbių nėra
-                </p>
+                <p className="text-sm" style={{ color: '#8a857f' }}>Pokalbių nėra</p>
               </div>
             ) : (
               <div className="space-y-1">
@@ -415,26 +375,32 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                   <div
                     key={conv.id}
                     onClick={() => handleSelectConversation(conv.id)}
-                    className={`anthropic-list-item group flex items-start justify-between ${
-                      currentConversation?.id === conv.id ? 'active' : ''
-                    }`}
+                    className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all"
+                    style={{
+                      background: currentConversation?.id === conv.id ? '#faf9f7' : 'transparent',
+                      border: currentConversation?.id === conv.id ? '1px solid #e8e5e0' : '1px solid transparent'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (currentConversation?.id !== conv.id) e.currentTarget.style.background = '#f9f8f6';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (currentConversation?.id !== conv.id) e.currentTarget.style.background = 'transparent';
+                    }}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate text-anthropic-text-primary">
-                        {conv.title}
-                      </p>
-                      <p className="text-xs text-anthropic-text-muted">
-                        {new Date(conv.last_message_at).toLocaleDateString('lt-LT', {
-                          month: 'short',
-                          day: 'numeric'
-                        })}
+                      <p className="text-sm truncate" style={{ color: '#3d3935' }}>{conv.title}</p>
+                      <p className="text-xs" style={{ color: '#8a857f' }}>
+                        {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
                       </p>
                     </div>
                     <button
                       onClick={(e) => handleDeleteConversation(conv.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-anthropic-bg-hover transition-all"
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all"
+                      style={{ color: '#991b1b' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
-                      <Trash2 className="w-3 h-3 text-macos-red" />
+                      <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
                 ))}
@@ -444,95 +410,64 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         </div>
       </div>
 
-      {/* Reopen Sidebar Button (when collapsed) */}
-      {sidebarCollapsed && (
-        <button
-          onClick={() => setSidebarCollapsed(false)}
-          className="fixed left-0 top-4 z-10 anthropic-btn anthropic-btn-secondary rounded-r-md rounded-l-none"
-        >
-          <PanelLeft className="w-4 h-4" />
-        </button>
-      )}
-
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {!currentConversation ? (
-          /* Empty State */
-          <div className="h-full flex flex-col items-center justify-center px-6">
-            <div className="text-center max-w-md">
-              <h2 className="text-2xl font-semibold mb-2 text-anthropic-text-primary">
-                Start a conversation in this project
-              </h2>
-              <p className="text-sm mb-6 text-anthropic-text-secondary">
-                Use this project to keep your conversations and files in a single place.
-              </p>
-              <button
-                onClick={handleCreateConversation}
-                className="anthropic-btn anthropic-btn-primary"
-              >
-                Pradėti pokalbį
-              </button>
-            </div>
-          </div>
-        ) : (
+        {currentConversation ? (
           <>
-            {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto anthropic-scrollbar px-6 py-4">
+            <div className="flex-1 overflow-y-auto px-6 py-4">
               {currentConversation.messages.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
-                  <p className="text-sm text-anthropic-text-muted">
+                  <p className="text-sm" style={{ color: '#8a857f' }}>
                     Parašykite žinutę, kad pradėtumėte pokalbį
                   </p>
                 </div>
               ) : (
                 <div className="max-w-4xl mx-auto space-y-6">
                   {currentConversation.messages.map((message, index) => (
-                    <div
-                      key={index}
-                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[85%] ${message.role === 'user' ? 'anthropic-message-user' : 'anthropic-message-assistant'}`}>
+                    <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className="max-w-[85%] px-4 py-3 rounded-xl"
+                        style={{
+                          background: message.role === 'user' ? '#5a5550' : 'white',
+                          color: message.role === 'user' ? 'white' : '#3d3935',
+                          border: message.role === 'assistant' ? '1px solid #e8e5e0' : 'none'
+                        }}
+                      >
                         <div className="text-sm leading-relaxed whitespace-pre-wrap">
                           {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')}
                         </div>
                         {message.thinking && (
-                          <details className="mt-2 pt-2 border-t border-anthropic-border">
-                            <summary className="text-xs cursor-pointer text-anthropic-text-secondary">
+                          <details className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                            <summary className="text-xs cursor-pointer" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.8)' : '#8a857f' }}>
                               Rodyti mąstymo procesą
                             </summary>
-                            <div className="mt-2 text-xs text-anthropic-text-muted whitespace-pre-wrap">
+                            <div className="mt-2 text-xs whitespace-pre-wrap" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
                               {message.thinking}
                             </div>
                           </details>
                         )}
-                        <div className="text-xs mt-2 text-anthropic-text-muted">
-                          {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
+                        <div className="text-xs mt-2" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
+                          {new Date(message.timestamp).toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       </div>
                     </div>
                   ))}
-
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="anthropic-message-assistant">
-                        <Loader2 className="w-5 h-5 animate-spin text-anthropic-accent" />
+                      <div className="px-4 py-3 rounded-xl" style={{ background: 'white', border: '1px solid #e8e5e0' }}>
+                        <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#5a5550' }} />
                       </div>
                     </div>
                   )}
-
                   <div ref={messagesEndRef} />
                 </div>
               )}
             </div>
 
-            {/* Error Message */}
             {error && (
               <div className="px-6 pb-2">
                 <div className="max-w-4xl mx-auto">
-                  <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm bg-macos-red bg-opacity-10 text-macos-red border border-macos-red border-opacity-20">
+                  <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <span className="flex-1">{error}</span>
                   </div>
@@ -540,8 +475,7 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
               </div>
             )}
 
-            {/* Input Area */}
-            <div className="border-t border-anthropic-border px-6 py-4">
+            <div className="border-t px-6 py-4" style={{ borderColor: '#f0ede8' }}>
               <div className="max-w-4xl mx-auto">
                 <div className="relative">
                   <textarea
@@ -551,12 +485,16 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                     onKeyDown={handleKeyDown}
                     placeholder="Rašykite žinutę..."
                     rows={1}
-                    className="anthropic-input w-full pr-24 resize-none"
+                    className="w-full px-4 py-3 pr-24 text-sm rounded-lg resize-none transition-all"
+                    style={{ background: 'white', color: '#3d3935', border: '1px solid #e8e5e0' }}
                     disabled={loading || !systemPrompt}
                   />
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                     <button
-                      className="p-2 rounded-md transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
+                      className="p-2 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       disabled={loading}
                     >
                       <Paperclip className="w-4 h-4" />
@@ -564,11 +502,11 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                     <button
                       onClick={handleSend}
                       disabled={!inputValue.trim() || loading || !systemPrompt}
-                      className={`p-2 rounded-md transition-all ${
-                        inputValue.trim() && !loading
-                          ? 'bg-anthropic-accent text-white hover:bg-anthropic-accent-hover'
-                          : 'bg-anthropic-bg-hover text-anthropic-text-muted opacity-40 cursor-not-allowed'
-                      }`}
+                      className="p-2 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                      style={{
+                        background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
+                        color: inputValue.trim() && !loading ? 'white' : '#8a857f'
+                      }}
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -577,72 +515,74 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
               </div>
             </div>
           </>
+        ) : (
+          <div className="h-full flex items-center justify-center px-6">
+            <p className="text-sm" style={{ color: '#8a857f' }}>
+              Pasirinkite pokalbį arba sukurkite naują
+            </p>
+          </div>
         )}
       </div>
 
       {/* Artifact Panel */}
       {currentConversation?.artifact && showArtifact && (
-        <div className="w-[500px] anthropic-sidebar flex-shrink-0 flex flex-col">
-          <div className="p-4 border-b border-anthropic-border flex items-center justify-between">
+        <div className="w-[500px] border-l flex-shrink-0 flex flex-col" style={{ borderColor: '#f0ede8', background: 'white' }}>
+          <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#f0ede8' }}>
             <div>
-              <h3 className="text-sm font-semibold text-anthropic-text-primary">
-                {currentConversation.artifact.title}
-              </h3>
-              <p className="text-xs text-anthropic-text-muted">
-                Versija {currentConversation.artifact.version}
-              </p>
+              <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>{currentConversation.artifact.title}</h3>
+              <p className="text-xs" style={{ color: '#8a857f' }}>Versija {currentConversation.artifact.version}</p>
             </div>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setShowDiff(!showDiff)}
-                className={`anthropic-btn text-xs ${
-                  showDiff ? 'anthropic-btn-primary' : 'anthropic-btn-secondary'
-                }`}
+                className="px-2 py-1 text-xs rounded transition-colors"
+                style={{
+                  background: showDiff ? '#5a5550' : '#f0ede8',
+                  color: showDiff ? 'white' : '#5a5550'
+                }}
               >
                 {showDiff ? 'Rodyti turinį' : 'Rodyti pakeitimus'}
               </button>
               <button
                 onClick={() => setShowArtifact(false)}
-                className="p-1 rounded transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
+                className="p-1 rounded transition-colors"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-
-          <div className="flex-1 overflow-y-auto anthropic-scrollbar p-4">
+          <div className="flex-1 overflow-y-auto p-4">
             {showDiff && currentConversation.artifact.diff_history.length > 0 ? (
               <div className="space-y-4">
                 {currentConversation.artifact.diff_history.map((diff, index) => (
                   <div key={index} className="text-xs font-mono">
-                    <div className="mb-2 font-semibold text-anthropic-text-secondary">
+                    <div className="mb-2 font-semibold" style={{ color: '#8a857f' }}>
                       Versija {diff.version} - {new Date(diff.timestamp).toLocaleString('lt-LT')}
                     </div>
                     {diff.changes.added.map((line, i) => (
-                      <div key={`add-${i}`} className="px-2 py-1 bg-macos-green bg-opacity-10 text-macos-green">
+                      <div key={`add-${i}`} className="px-2 py-1 rounded" style={{ background: '#f0fdf4', color: '#15803d' }}>
                         + {line}
                       </div>
                     ))}
                     {diff.changes.removed.map((line, i) => (
-                      <div key={`rem-${i}`} className="px-2 py-1 bg-macos-red bg-opacity-10 text-macos-red">
+                      <div key={`rem-${i}`} className="px-2 py-1 rounded" style={{ background: '#fef2f2', color: '#991b1b' }}>
                         - {line}
                       </div>
                     ))}
                     {diff.changes.modified.map((change, i) => (
                       <div key={`mod-${i}`} className="space-y-1">
-                        <div className="px-2 py-1 bg-macos-red bg-opacity-10 text-macos-red">
-                          - {change.before}
-                        </div>
-                        <div className="px-2 py-1 bg-macos-green bg-opacity-10 text-macos-green">
-                          + {change.after}
-                        </div>
+                        <div className="px-2 py-1 rounded" style={{ background: '#fef2f2', color: '#991b1b' }}>- {change.before}</div>
+                        <div className="px-2 py-1 rounded" style={{ background: '#f0fdf4', color: '#15803d' }}>+ {change.after}</div>
                       </div>
                     ))}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="prose prose-invert max-w-none text-sm text-anthropic-text-primary whitespace-pre-wrap">
+              <div className="prose max-w-none text-sm whitespace-pre-wrap" style={{ color: '#3d3935' }}>
                 {currentConversation.artifact.content}
               </div>
             )}
@@ -650,29 +590,32 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         </div>
       )}
 
-      {/* Prompt Preview Modal */}
+      {/* Prompt Modal */}
       {showPromptModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black bg-opacity-80"
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={() => setShowPromptModal(false)}
         >
           <div
-            className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden anthropic-panel"
+            className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden"
+            style={{ background: 'white', border: '1px solid #e8e5e0' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-anthropic-border">
-              <h3 className="text-lg font-semibold text-anthropic-text-primary">
-                Sistema Prompt'as
-              </h3>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
+              <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>Sistema Prompt'as</h3>
               <button
                 onClick={() => setShowPromptModal(false)}
-                className="p-2 rounded-lg transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto anthropic-scrollbar max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-anthropic-text-secondary">
+            <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
+              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
                 {systemPrompt}
               </pre>
             </div>
