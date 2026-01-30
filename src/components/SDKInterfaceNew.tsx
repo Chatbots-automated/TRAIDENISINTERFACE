@@ -6,14 +6,12 @@ import {
   Paperclip,
   FileText,
   Eye,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   Trash2,
-  MoreHorizontal,
   X,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  ChevronDown
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt } from '../lib/instructionVariablesService';
@@ -24,7 +22,6 @@ import {
   addMessageToConversation,
   updateConversationArtifact,
   deleteSDKConversation,
-  renameSDKConversation,
   calculateDiff,
   type SDKConversation,
   type SDKMessage,
@@ -41,7 +38,6 @@ interface SDKInterfaceNewProps {
 export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProps) {
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<'conversations' | 'sources'>('conversations');
 
   // Conversations state
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
@@ -62,7 +58,6 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
   // Artifact state
   const [showArtifact, setShowArtifact] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
-  const [selectedVersion, setSelectedVersion] = useState<number>(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -84,9 +79,19 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       setLoadingPrompt(true);
       const prompt = await getSystemPrompt();
       setSystemPrompt(prompt);
+
+      await appLogger.logDocument({
+        action: 'sdk_system_prompt_loaded',
+        userId: user.id,
+        userEmail: user.email,
+        metadata: {
+          project_id: projectId,
+          prompt_length: prompt.length
+        }
+      });
     } catch (err) {
       console.error('Error loading system prompt:', err);
-      setError('Nepavyko užkrauti sistemos nurodymus');
+      setError('Nepavyko užkrauti sistemos instrukcijų. Patikrinkite instruction_variables lentelę.');
     } finally {
       setLoadingPrompt(false);
     }
@@ -117,7 +122,6 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
       if (createError) throw createError;
 
-      // Reload conversations and select the new one
       await loadConversations();
       const { data: newConversation } = await getSDKConversation(conversationId!);
       setCurrentConversation(newConversation);
@@ -140,7 +144,8 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
     }
   };
 
-  const handleDeleteConversation = async (conversationId: string) => {
+  const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
       await deleteSDKConversation(conversationId, user.id, user.email);
       await loadConversations();
@@ -165,13 +170,12 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       timestamp: new Date().toISOString()
     };
 
-    // Add user message to conversation
     await addMessageToConversation(currentConversation.id, userMessage);
 
-    // Update local state
+    const updatedMessages = [...currentConversation.messages, userMessage];
     setCurrentConversation({
       ...currentConversation,
-      messages: [...currentConversation.messages, userMessage]
+      messages: updatedMessages
     });
 
     setInputValue('');
@@ -188,18 +192,11 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         dangerouslyAllowBrowser: true
       });
 
-      // Build messages array
-      const anthropicMessages = currentConversation.messages.map((msg) => ({
+      const anthropicMessages = updatedMessages.map((msg) => ({
         role: msg.role,
         content: msg.content
       }));
 
-      anthropicMessages.push({
-        role: 'user',
-        content: userMessage.content
-      });
-
-      // Make API call with extended thinking
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8000,
@@ -217,7 +214,6 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         messages: anthropicMessages
       });
 
-      // Extract thinking and response
       let thinkingContent = '';
       let responseContent = '';
 
@@ -236,18 +232,15 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         thinking: thinkingContent
       };
 
-      // Check if response contains commercial offer artifact
       if (responseContent.includes('<commercial_offer>') || currentConversation.artifact) {
         await handleArtifactGeneration(responseContent, currentConversation);
       }
 
-      // Add assistant message to conversation
       await addMessageToConversation(currentConversation.id, assistantMessage);
 
-      // Update local state
       setCurrentConversation({
         ...currentConversation,
-        messages: [...currentConversation.messages, userMessage, assistantMessage]
+        messages: [...updatedMessages, assistantMessage]
       });
 
       await appLogger.logDocument({
@@ -270,7 +263,6 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
   const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
     try {
-      // Extract artifact content
       const match = content.match(/<commercial_offer>([\s\S]*?)<\/commercial_offer>/);
       if (!match) return;
 
@@ -280,7 +272,6 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       let newArtifact: CommercialOfferArtifact;
 
       if (currentArtifact) {
-        // Calculate diff
         const diff = calculateDiff(currentArtifact.content, offerContent);
         const newVersion = currentArtifact.version + 1;
 
@@ -299,7 +290,6 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
           ]
         };
       } else {
-        // Create new artifact
         newArtifact = {
           id: crypto.randomUUID(),
           type: 'commercial_offer',
@@ -332,13 +322,13 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
   if (loadingPrompt) {
     return (
-      <div className="h-full flex items-center justify-center" style={{ background: '#1a1a1a' }}>
+      <div className="h-full flex items-center justify-center bg-anthropic-bg">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: '#f97316' }} />
-          <p className="text-base font-semibold mb-2" style={{ color: '#e5e5e5' }}>
+          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4 text-anthropic-accent" />
+          <p className="text-base font-semibold mb-2 text-anthropic-text-primary">
             Kraunamos sistemos instrukcijos
           </p>
-          <p className="text-sm" style={{ color: '#9ca3af' }}>
+          <p className="text-sm text-anthropic-text-secondary">
             Gaunami kintamieji iš duomenų bazės...
           </p>
         </div>
@@ -347,138 +337,118 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
   }
 
   return (
-    <div className="h-full flex" style={{ background: '#1a1a1a' }}>
-      {/* Secondary Sidebar - Conversations */}
+    <div className="h-full flex bg-anthropic-bg">
+      {/* Secondary Sidebar */}
       <div
-        className={`flex-shrink-0 border-r transition-all duration-300 flex flex-col`}
-        style={{
-          width: sidebarCollapsed ? '0px' : '300px',
-          borderColor: '#2a2a2a',
-          background: '#0f0f0f',
-          overflow: sidebarCollapsed ? 'hidden' : 'visible'
-        }}
+        className={`anthropic-sidebar flex-shrink-0 transition-all duration-300 flex flex-col ${
+          sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-80'
+        }`}
       >
         {/* Project Header */}
-        <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#2a2a2a' }}>
+        <div className="p-4 border-b border-anthropic-border flex items-center justify-between">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
-            <FileText className="w-5 h-5 flex-shrink-0" style={{ color: '#9ca3af' }} />
-            <span className="font-semibold truncate" style={{ color: '#e5e5e5' }}>
+            <FileText className="w-5 h-5 flex-shrink-0 text-anthropic-text-secondary" />
+            <span className="font-semibold truncate text-anthropic-text-primary">
               Standartinis
             </span>
           </div>
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="p-1.5 rounded-md transition-colors hover:bg-white/5"
-            style={{ color: '#9ca3af' }}
+            className="p-1.5 rounded-md transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
           >
-            {sidebarCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            <PanelLeftClose className="w-4 h-4" />
           </button>
         </div>
 
         {/* Instructions Section */}
-        <div className="p-4 border-b" style={{ borderColor: '#2a2a2a' }}>
+        <div className="p-4 border-b border-anthropic-border">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium" style={{ color: '#e5e5e5' }}>
+            <span className="text-sm font-medium text-anthropic-text-primary">
               Instrukcijos
             </span>
             <button
               onClick={() => setShowPromptModal(true)}
-              className="p-1 rounded hover:bg-white/5 transition-colors"
+              className="p-1 rounded hover:bg-anthropic-bg-hover transition-colors"
               title="Peržiūrėti prompt'ą"
             >
-              <Eye className="w-4 h-4" style={{ color: '#9ca3af' }} />
+              <Eye className="w-4 h-4 text-anthropic-text-secondary" />
             </button>
           </div>
-          <p className="text-xs" style={{ color: '#6b7280' }}>
+          <p className="text-xs text-anthropic-text-muted">
             Sistemos instrukcijos komerciniam pasiūlymui
           </p>
         </div>
 
-        {/* Conversations Tab */}
-        <div className="border-b" style={{ borderColor: '#2a2a2a' }}>
-          <div className="flex">
-            <button
-              onClick={() => setActiveTab('conversations')}
-              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors ${
-                activeTab === 'conversations' ? 'border-b-2' : ''
-              }`}
-              style={{
-                color: activeTab === 'conversations' ? '#f97316' : '#9ca3af',
-                borderColor: activeTab === 'conversations' ? '#f97316' : 'transparent'
-              }}
-            >
-              Conversations
-            </button>
+        {/* Conversations Section */}
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="px-4 py-3 border-b border-anthropic-border">
+            <h3 className="text-sm font-medium text-anthropic-text-primary">Conversations</h3>
           </div>
-        </div>
 
-        {/* Conversations List */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-2">
+          {/* New Conversation Button */}
+          <div className="p-3">
             <button
               onClick={handleCreateConversation}
               disabled={creatingConversation}
-              className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-white/5 disabled:opacity-50"
-              style={{ color: '#e5e5e5', border: '1px solid #2a2a2a' }}
+              className="anthropic-btn anthropic-btn-secondary w-full flex items-center justify-center space-x-2 disabled:opacity-50"
             >
               <Plus className="w-4 h-4" />
               <span>Naujas pokalbis</span>
             </button>
           </div>
 
-          {loadingConversations ? (
-            <div className="p-4 text-center">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: '#9ca3af' }} />
-            </div>
-          ) : conversations.length === 0 ? (
-            <div className="p-4 text-center">
-              <p className="text-sm" style={{ color: '#6b7280' }}>
-                Pokalbių nėra
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1 p-2">
-              {conversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  onClick={() => handleSelectConversation(conv.id)}
-                  className={`group flex items-start justify-between p-2 rounded-md cursor-pointer transition-colors ${
-                    currentConversation?.id === conv.id ? 'bg-white/10' : 'hover:bg-white/5'
-                  }`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm truncate" style={{ color: '#e5e5e5' }}>
-                      {conv.title}
-                    </p>
-                    <p className="text-xs" style={{ color: '#6b7280' }}>
-                      {new Date(conv.last_message_at).toLocaleDateString('lt-LT', {
-                        month: 'short',
-                        day: 'numeric'
-                      })}
-                    </p>
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteConversation(conv.id);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/10 transition-all"
+          {/* Conversations List */}
+          <div className="flex-1 overflow-y-auto anthropic-scrollbar px-2">
+            {loadingConversations ? (
+              <div className="p-4 text-center">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto text-anthropic-text-secondary" />
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="p-4 text-center">
+                <p className="text-sm text-anthropic-text-muted">
+                  Pokalbių nėra
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    onClick={() => handleSelectConversation(conv.id)}
+                    className={`anthropic-list-item group flex items-start justify-between ${
+                      currentConversation?.id === conv.id ? 'active' : ''
+                    }`}
                   >
-                    <Trash2 className="w-3 h-3" style={{ color: '#ef4444' }} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate text-anthropic-text-primary">
+                        {conv.title}
+                      </p>
+                      <p className="text-xs text-anthropic-text-muted">
+                        {new Date(conv.last_message_at).toLocaleDateString('lt-LT', {
+                          month: 'short',
+                          day: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteConversation(conv.id, e)}
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-anthropic-bg-hover transition-all"
+                    >
+                      <Trash2 className="w-3 h-3 text-macos-red" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Collapse Toggle Button (when sidebar is collapsed) */}
+      {/* Reopen Sidebar Button (when collapsed) */}
       {sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="absolute left-0 top-4 p-2 rounded-r-md transition-colors"
-          style={{ background: '#2a2a2a', color: '#9ca3af' }}
+          className="fixed left-0 top-4 z-10 anthropic-btn anthropic-btn-secondary rounded-r-md rounded-l-none"
         >
           <PanelLeft className="w-4 h-4" />
         </button>
@@ -490,34 +460,27 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
           /* Empty State */
           <div className="h-full flex flex-col items-center justify-center px-6">
             <div className="text-center max-w-md">
-              <h2 className="text-2xl font-semibold mb-2" style={{ color: '#e5e5e5' }}>
+              <h2 className="text-2xl font-semibold mb-2 text-anthropic-text-primary">
                 Start a conversation in this project
               </h2>
-              <p className="text-sm mb-6" style={{ color: '#9ca3af' }}>
+              <p className="text-sm mb-6 text-anthropic-text-secondary">
                 Use this project to keep your conversations and files in a single place.
               </p>
-              <div className="space-y-2">
-                <button
-                  onClick={handleCreateConversation}
-                  className="px-6 py-2 rounded-md text-sm font-medium transition-colors"
-                  style={{
-                    background: '#2a2a2a',
-                    color: '#e5e5e5',
-                    border: '1px solid #3a3a3a'
-                  }}
-                >
-                  Pradėti pokalbį
-                </button>
-              </div>
+              <button
+                onClick={handleCreateConversation}
+                className="anthropic-btn anthropic-btn-primary"
+              >
+                Pradėti pokalbį
+              </button>
             </div>
           </div>
         ) : (
           <>
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="flex-1 overflow-y-auto anthropic-scrollbar px-6 py-4">
               {currentConversation.messages.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
-                  <p className="text-sm" style={{ color: '#6b7280' }}>
+                  <p className="text-sm text-anthropic-text-muted">
                     Parašykite žinutę, kad pradėtumėte pokalbį
                   </p>
                 </div>
@@ -528,27 +491,21 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                       key={index}
                       className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div
-                        className="max-w-[85%] px-4 py-3 rounded-lg"
-                        style={{
-                          background: message.role === 'user' ? '#f97316' : '#2a2a2a',
-                          color: '#e5e5e5'
-                        }}
-                      >
+                      <div className={`max-w-[85%] ${message.role === 'user' ? 'anthropic-message-user' : 'anthropic-message-assistant'}`}>
                         <div className="text-sm leading-relaxed whitespace-pre-wrap">
                           {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')}
                         </div>
                         {message.thinking && (
-                          <details className="mt-2 pt-2 border-t" style={{ borderColor: '#3a3a3a' }}>
-                            <summary className="text-xs cursor-pointer" style={{ color: '#9ca3af' }}>
+                          <details className="mt-2 pt-2 border-t border-anthropic-border">
+                            <summary className="text-xs cursor-pointer text-anthropic-text-secondary">
                               Rodyti mąstymo procesą
                             </summary>
-                            <div className="mt-2 text-xs" style={{ color: '#d1d5db' }}>
+                            <div className="mt-2 text-xs text-anthropic-text-muted whitespace-pre-wrap">
                               {message.thinking}
                             </div>
                           </details>
                         )}
-                        <div className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.6)' }}>
+                        <div className="text-xs mt-2 text-anthropic-text-muted">
                           {new Date(message.timestamp).toLocaleTimeString('lt-LT', {
                             hour: '2-digit',
                             minute: '2-digit'
@@ -560,8 +517,8 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
                   {loading && (
                     <div className="flex justify-start">
-                      <div className="px-4 py-3 rounded-lg" style={{ background: '#2a2a2a' }}>
-                        <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#f97316' }} />
+                      <div className="anthropic-message-assistant">
+                        <Loader2 className="w-5 h-5 animate-spin text-anthropic-accent" />
                       </div>
                     </div>
                   )}
@@ -575,10 +532,7 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
             {error && (
               <div className="px-6 pb-2">
                 <div className="max-w-4xl mx-auto">
-                  <div
-                    className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm"
-                    style={{ background: '#3d1f1f', color: '#ff6b6b', border: '1px solid #5a2a2a' }}
-                  >
+                  <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm bg-macos-red bg-opacity-10 text-macos-red border border-macos-red border-opacity-20">
                     <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <span className="flex-1">{error}</span>
                   </div>
@@ -587,7 +541,7 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
             )}
 
             {/* Input Area */}
-            <div className="border-t px-6 py-4" style={{ borderColor: '#2a2a2a' }}>
+            <div className="border-t border-anthropic-border px-6 py-4">
               <div className="max-w-4xl mx-auto">
                 <div className="relative">
                   <textarea
@@ -597,19 +551,12 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                     onKeyDown={handleKeyDown}
                     placeholder="Rašykite žinutę..."
                     rows={1}
-                    className="w-full px-4 py-3 pr-24 text-sm rounded-lg resize-none focus:outline-none focus:ring-2"
-                    style={{
-                      background: '#2a2a2a',
-                      color: '#e5e5e5',
-                      border: '1px solid #3a3a3a',
-                      focusRing: '#f97316'
-                    }}
+                    className="anthropic-input w-full pr-24 resize-none"
                     disabled={loading || !systemPrompt}
                   />
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
                     <button
-                      className="p-2 rounded-md transition-colors hover:bg-white/5"
-                      style={{ color: '#9ca3af' }}
+                      className="p-2 rounded-md transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
                       disabled={loading}
                     >
                       <Paperclip className="w-4 h-4" />
@@ -617,11 +564,11 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                     <button
                       onClick={handleSend}
                       disabled={!inputValue.trim() || loading || !systemPrompt}
-                      className="p-2 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      style={{
-                        background: inputValue.trim() && !loading ? '#f97316' : '#3a3a3a',
-                        color: inputValue.trim() && !loading ? '#ffffff' : '#6b7280'
-                      }}
+                      className={`p-2 rounded-md transition-all ${
+                        inputValue.trim() && !loading
+                          ? 'bg-anthropic-accent text-white hover:bg-anthropic-accent-hover'
+                          : 'bg-anthropic-bg-hover text-anthropic-text-muted opacity-40 cursor-not-allowed'
+                      }`}
                     >
                       <Send className="w-4 h-4" />
                     </button>
@@ -633,69 +580,60 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
         )}
       </div>
 
-      {/* Artifact Panel (when artifact exists) */}
+      {/* Artifact Panel */}
       {currentConversation?.artifact && showArtifact && (
-        <div
-          className="w-[500px] border-l flex-shrink-0 flex flex-col"
-          style={{ borderColor: '#2a2a2a', background: '#0f0f0f' }}
-        >
-          {/* Artifact Header */}
-          <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#2a2a2a' }}>
+        <div className="w-[500px] anthropic-sidebar flex-shrink-0 flex flex-col">
+          <div className="p-4 border-b border-anthropic-border flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold" style={{ color: '#e5e5e5' }}>
+              <h3 className="text-sm font-semibold text-anthropic-text-primary">
                 {currentConversation.artifact.title}
               </h3>
-              <p className="text-xs" style={{ color: '#6b7280' }}>
+              <p className="text-xs text-anthropic-text-muted">
                 Versija {currentConversation.artifact.version}
               </p>
             </div>
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setShowDiff(!showDiff)}
-                className="px-2 py-1 text-xs rounded transition-colors"
-                style={{
-                  background: showDiff ? '#f97316' : '#2a2a2a',
-                  color: showDiff ? '#ffffff' : '#e5e5e5'
-                }}
+                className={`anthropic-btn text-xs ${
+                  showDiff ? 'anthropic-btn-primary' : 'anthropic-btn-secondary'
+                }`}
               >
                 {showDiff ? 'Rodyti turinį' : 'Rodyti pakeitimus'}
               </button>
               <button
                 onClick={() => setShowArtifact(false)}
-                className="p-1 rounded transition-colors hover:bg-white/5"
-                style={{ color: '#9ca3af' }}
+                className="p-1 rounded transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Artifact Content */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto anthropic-scrollbar p-4">
             {showDiff && currentConversation.artifact.diff_history.length > 0 ? (
-              /* Diff View */
               <div className="space-y-4">
                 {currentConversation.artifact.diff_history.map((diff, index) => (
                   <div key={index} className="text-xs font-mono">
-                    <div className="mb-2 font-semibold" style={{ color: '#9ca3af' }}>
+                    <div className="mb-2 font-semibold text-anthropic-text-secondary">
                       Versija {diff.version} - {new Date(diff.timestamp).toLocaleString('lt-LT')}
                     </div>
                     {diff.changes.added.map((line, i) => (
-                      <div key={`add-${i}`} className="px-2 py-1" style={{ background: '#1f3a1f', color: '#4ade80' }}>
+                      <div key={`add-${i}`} className="px-2 py-1 bg-macos-green bg-opacity-10 text-macos-green">
                         + {line}
                       </div>
                     ))}
                     {diff.changes.removed.map((line, i) => (
-                      <div key={`rem-${i}`} className="px-2 py-1" style={{ background: '#3d1f1f', color: '#ff6b6b' }}>
+                      <div key={`rem-${i}`} className="px-2 py-1 bg-macos-red bg-opacity-10 text-macos-red">
                         - {line}
                       </div>
                     ))}
                     {diff.changes.modified.map((change, i) => (
                       <div key={`mod-${i}`} className="space-y-1">
-                        <div className="px-2 py-1" style={{ background: '#3d1f1f', color: '#ff6b6b' }}>
+                        <div className="px-2 py-1 bg-macos-red bg-opacity-10 text-macos-red">
                           - {change.before}
                         </div>
-                        <div className="px-2 py-1" style={{ background: '#1f3a1f', color: '#4ade80' }}>
+                        <div className="px-2 py-1 bg-macos-green bg-opacity-10 text-macos-green">
                           + {change.after}
                         </div>
                       </div>
@@ -704,12 +642,9 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
                 ))}
               </div>
             ) : (
-              /* Content View */
-              <div
-                className="prose prose-invert max-w-none text-sm"
-                style={{ color: '#e5e5e5' }}
-                dangerouslySetInnerHTML={{ __html: currentConversation.artifact.content }}
-              />
+              <div className="prose prose-invert max-w-none text-sm text-anthropic-text-primary whitespace-pre-wrap">
+                {currentConversation.artifact.content}
+              </div>
             )}
           </div>
         </div>
@@ -718,32 +653,26 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       {/* Prompt Preview Modal */}
       {showPromptModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-6"
-          style={{ background: 'rgba(0,0,0,0.8)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black bg-opacity-80"
           onClick={() => setShowPromptModal(false)}
         >
           <div
-            className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden"
-            style={{ background: '#1a1a1a', border: '1px solid #2a2a2a' }}
+            className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden anthropic-panel"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#2a2a2a' }}>
-              <h3 className="text-lg font-semibold" style={{ color: '#e5e5e5' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-anthropic-border">
+              <h3 className="text-lg font-semibold text-anthropic-text-primary">
                 Sistema Prompt'as
               </h3>
               <button
                 onClick={() => setShowPromptModal(false)}
-                className="p-2 rounded-lg transition-colors hover:bg-white/5"
-                style={{ color: '#9ca3af' }}
+                className="p-2 rounded-lg transition-colors hover:bg-anthropic-bg-hover text-anthropic-text-secondary"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre
-                className="whitespace-pre-wrap font-mono text-xs leading-relaxed"
-                style={{ color: '#d1d5db' }}
-              >
+            <div className="p-6 overflow-y-auto anthropic-scrollbar max-h-[calc(80vh-80px)]">
+              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-anthropic-text-secondary">
                 {systemPrompt}
               </pre>
             </div>

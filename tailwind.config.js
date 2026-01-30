@@ -31,6 +31,20 @@ export default {
           800: '#2C2C2E',
           900: '#1D1D1F',
         },
+        // Anthropic Dark Theme for SDK
+        'anthropic': {
+          bg: '#1a1a1a',
+          'bg-secondary': '#0f0f0f',
+          'bg-tertiary': '#2a2a2a',
+          'bg-hover': '#3a3a3a',
+          'border': '#2a2a2a',
+          'border-light': '#3a3a3a',
+          'text-primary': '#e5e5e5',
+          'text-secondary': '#9ca3af',
+          'text-muted': '#6b7280',
+          'accent': '#f97316',
+          'accent-hover': '#ea580c',
+        },
         // Legacy vf colors (mapped to macOS)
         'vf-primary': '#007AFF',
         'vf-primary-hover': '#0056CC',
