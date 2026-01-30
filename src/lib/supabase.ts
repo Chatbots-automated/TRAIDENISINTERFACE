@@ -23,6 +23,13 @@ export const supabaseAdmin = supabaseServiceKey
     })
   : supabase; // Fallback to regular client if service key not available
 
+// Log warning if service role key is not configured
+if (!supabaseServiceKey) {
+  console.warn('⚠️ VITE_SUPABASE_SERVICE_ROLE_KEY not configured! supabaseAdmin will fallback to anon client with RLS restrictions.');
+} else {
+  console.log('✅ supabaseAdmin configured with service role key');
+}
+
 // Auth helpers
 export const signUp = async (email: string, password: string, fullName?: string) => {
   const { data: authData, error: authError } = await supabase.auth.signUp({

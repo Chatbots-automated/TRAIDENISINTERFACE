@@ -14,6 +14,7 @@ export interface InstructionVariable {
  */
 export const fetchInstructionVariables = async (): Promise<InstructionVariable[]> => {
   try {
+    console.log('[fetchInstructionVariables] Querying instruction_variables table...');
     const { data, error } = await supabaseAdmin
       .from('instruction_variables')
       .select('*')
@@ -75,6 +76,7 @@ export const injectVariablesIntoPrompt = (
  * Get the complete system prompt with all variables injected
  */
 export const getSystemPrompt = async (): Promise<string> => {
+  console.log('[getSystemPrompt] Starting prompt generation...');
   const promptTemplate = `User has just sent you the first message, reply to it.
 
 ## ROLE & IDENTITY
@@ -238,6 +240,13 @@ This agent represents Traidenis to professional clients. Every offer involves si
 
 When in doubt: ASK. When unsure: VERIFY. When calculating: CHECK TWICE.`;
 
+  console.log('[getSystemPrompt] Template length before injection:', promptTemplate.length);
   const variables = await fetchInstructionVariables();
-  return injectVariablesIntoPrompt(promptTemplate, variables);
+  console.log('[getSystemPrompt] Fetched variables count:', variables.length);
+
+  const injectedPrompt = injectVariablesIntoPrompt(promptTemplate, variables);
+  console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
+  console.log('[getSystemPrompt] Length changed by:', injectedPrompt.length - promptTemplate.length, 'characters');
+
+  return injectedPrompt;
 };
