@@ -24,6 +24,11 @@ export const fetchInstructionVariables = async (): Promise<InstructionVariable[]
       throw error;
     }
 
+    console.log('Fetched instruction variables:', {
+      count: data?.length || 0,
+      variables: data?.map(v => ({ name: v.variable_name, valueLength: v.variable_value?.length }))
+    });
+
     return data || [];
   } catch (error) {
     console.error('Error in fetchInstructionVariables:', error);
@@ -40,12 +45,28 @@ export const injectVariablesIntoPrompt = (
   variables: InstructionVariable[]
 ): string => {
   let injectedPrompt = promptTemplate;
+  const replacements: { placeholder: string; found: number }[] = [];
 
   variables.forEach((variable) => {
     const placeholder = `{${variable.variable_name}}`;
-    // Replace all occurrences of the placeholder
+    const beforeLength = injectedPrompt.length;
     injectedPrompt = injectedPrompt.split(placeholder).join(variable.variable_value);
+    const afterLength = injectedPrompt.length;
+    const occurrences = (beforeLength - afterLength + (variable.variable_value.length * (injectedPrompt.split(variable.variable_value).length - 1))) / placeholder.length;
+
+    replacements.push({
+      placeholder: variable.variable_name,
+      found: promptTemplate.split(placeholder).length - 1
+    });
   });
+
+  console.log('Variable injection results:', replacements);
+
+  // Check for unreplaced variables
+  const unreplacedMatches = injectedPrompt.match(/\{[^}]+\}/g);
+  if (unreplacedMatches) {
+    console.warn('Unreplaced variables found in prompt:', unreplacedMatches);
+  }
 
   return injectedPrompt;
 };
