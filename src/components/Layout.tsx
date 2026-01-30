@@ -486,7 +486,7 @@ export default function Layout({
             {/* Collapse Toggle Button - At bottom for all users */}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className={`hidden lg:flex items-center py-3 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-300 ${
+              className={`w-full hidden lg:flex items-center py-3 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-300 ${
                 sidebarCollapsed ? 'justify-center' : 'justify-end pr-6'
               }`}
               title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}

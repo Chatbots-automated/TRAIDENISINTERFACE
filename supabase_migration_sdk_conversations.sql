@@ -33,19 +33,19 @@ CREATE POLICY "Users can view their own SDK conversations"
 CREATE POLICY "Users can create SDK conversations"
   ON sdk_conversations
   FOR INSERT
-  WITH CHECK (author_id = auth.uid());
+  WITH CHECK (author_id = auth.uid() OR author_email = auth.email());
 
 -- Create policy to allow users to update their own conversations
 CREATE POLICY "Users can update their own SDK conversations"
   ON sdk_conversations
   FOR UPDATE
-  USING (author_id = auth.uid());
+  USING (author_id = auth.uid() OR author_email = auth.email());
 
 -- Create policy to allow users to delete their own conversations
 CREATE POLICY "Users can delete their own SDK conversations"
   ON sdk_conversations
   FOR DELETE
-  USING (author_id = auth.uid());
+  USING (author_id = auth.uid() OR author_email = auth.email());
 
 -- Add comment
 COMMENT ON TABLE sdk_conversations IS 'Stores SDK chat conversations with messages and artifacts for commercial offers';
