@@ -17,8 +17,8 @@ import {
   History,
   Zap,
   BookOpen,
-  PanelLeftClose,
-  PanelLeft,
+  ChevronsLeft,
+  ChevronsRight,
   FlaskConical,
   Bot
 } from 'lucide-react';
@@ -49,6 +49,7 @@ interface LayoutProps {
   onToggleNaujokas?: () => void;
   viewMode?: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
   onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
+  onSidebarCollapseChange?: (collapsed: boolean) => void;
 }
 
 export default function Layout({
@@ -65,7 +66,8 @@ export default function Layout({
   naujokasMode = true,
   onToggleNaujokas,
   viewMode = 'chat',
-  onViewModeChange
+  onViewModeChange,
+  onSidebarCollapseChange
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -75,6 +77,11 @@ export default function Layout({
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Notify parent when sidebar collapse state changes
+  useEffect(() => {
+    onSidebarCollapseChange?.(sidebarCollapsed);
+  }, [sidebarCollapsed, onSidebarCollapseChange]);
 
   // Click-outside to close settings dropdown
   useEffect(() => {
@@ -161,9 +168,9 @@ export default function Layout({
                 title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
                 {sidebarCollapsed ? (
-                  <PanelLeft className="w-4 h-4" />
+                  <ChevronsRight className="w-4 h-4" />
                 ) : (
-                  <PanelLeftClose className="w-4 h-4" />
+                  <ChevronsLeft className="w-4 h-4" />
                 )}
               </button>
               {/* Mobile close button */}

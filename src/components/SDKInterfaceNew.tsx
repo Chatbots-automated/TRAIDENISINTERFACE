@@ -32,9 +32,10 @@ import type { AppUser } from '../types';
 interface SDKInterfaceNewProps {
   user: AppUser;
   projectId: string;
+  mainSidebarCollapsed: boolean;
 }
 
-export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProps) {
+export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed }: SDKInterfaceNewProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
@@ -139,7 +140,32 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
   };
 
   const handleSend = async () => {
-    if (!inputValue.trim() || loading || !systemPrompt || !currentConversation) return;
+    if (!inputValue.trim() || loading || !systemPrompt) return;
+
+    // If no conversation exists, create one first
+    let conversation = currentConversation;
+    if (!conversation) {
+      try {
+        setCreatingConversation(true);
+        const { data: conversationId, error: createError } = await createSDKConversation(
+          projectId,
+          user.id,
+          user.email,
+          'Naujas pokalbis'
+        );
+        if (createError) throw createError;
+        await loadConversations();
+        const { data: newConversation } = await getSDKConversation(conversationId!);
+        conversation = newConversation;
+        setCurrentConversation(newConversation);
+      } catch (err) {
+        console.error('Error creating conversation:', err);
+        setError('Nepavyko sukurti pokalbio');
+        return;
+      } finally {
+        setCreatingConversation(false);
+      }
+    }
 
     const userMessage: SDKMessage = {
       role: 'user',
@@ -147,9 +173,9 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       timestamp: new Date().toISOString()
     };
 
-    await addMessageToConversation(currentConversation.id, userMessage);
-    const updatedMessages = [...currentConversation.messages, userMessage];
-    setCurrentConversation({ ...currentConversation, messages: updatedMessages });
+    await addMessageToConversation(conversation.id, userMessage);
+    const updatedMessages = [...conversation.messages, userMessage];
+    setCurrentConversation({ ...conversation, messages: updatedMessages });
     setInputValue('');
     setLoading(true);
     setError(null);
@@ -276,9 +302,9 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
       {sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="fixed top-4 z-50 p-2 rounded-r-lg transition-all"
+          className="fixed top-4 z-50 p-2 rounded-r-lg transition-all duration-300"
           style={{
-            left: '256px', // Position at edge of main sidebar
+            left: mainSidebarCollapsed ? '64px' : '256px', // Position at edge of main sidebar
             background: 'white',
             border: '1px solid #e8e5e0',
             color: '#5a5550',
@@ -412,116 +438,115 @@ export default function SDKInterfaceNew({ user, projectId }: SDKInterfaceNewProp
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {currentConversation ? (
-          <>
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              {currentConversation.messages.length === 0 ? (
-                <div className="h-full flex items-center justify-center">
-                  <p className="text-sm" style={{ color: '#8a857f' }}>
-                    Parašykite žinutę, kad pradėtumėte pokalbį
-                  </p>
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {!currentConversation ? (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-sm" style={{ color: '#8a857f' }}>
+                Parašykite žinutę, kad pradėtumėte pokalbį
+              </p>
+            </div>
+          ) : currentConversation.messages.length === 0 ? (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-sm" style={{ color: '#8a857f' }}>
+                Parašykite žinutę, kad pradėtumėte pokalbį
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto space-y-6">
+              {currentConversation.messages.map((message, index) => (
+                <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className="max-w-[85%] px-4 py-3 rounded-xl"
+                    style={{
+                      background: message.role === 'user' ? '#5a5550' : 'white',
+                      color: message.role === 'user' ? 'white' : '#3d3935',
+                      border: message.role === 'assistant' ? '1px solid #e8e5e0' : 'none'
+                    }}
+                  >
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                      {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')}
+                    </div>
+                    {message.thinking && (
+                      <details className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+                        <summary className="text-xs cursor-pointer" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.8)' : '#8a857f' }}>
+                          Rodyti mąstymo procesą
+                        </summary>
+                        <div className="mt-2 text-xs whitespace-pre-wrap" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
+                          {message.thinking}
+                        </div>
+                      </details>
+                    )}
+                    <div className="text-xs mt-2" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
+                      {new Date(message.timestamp).toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {currentConversation.messages.map((message, index) => (
-                    <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className="max-w-[85%] px-4 py-3 rounded-xl"
-                        style={{
-                          background: message.role === 'user' ? '#5a5550' : 'white',
-                          color: message.role === 'user' ? 'white' : '#3d3935',
-                          border: message.role === 'assistant' ? '1px solid #e8e5e0' : 'none'
-                        }}
-                      >
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                          {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')}
-                        </div>
-                        {message.thinking && (
-                          <details className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                            <summary className="text-xs cursor-pointer" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.8)' : '#8a857f' }}>
-                              Rodyti mąstymo procesą
-                            </summary>
-                            <div className="mt-2 text-xs whitespace-pre-wrap" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
-                              {message.thinking}
-                            </div>
-                          </details>
-                        )}
-                        <div className="text-xs mt-2" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
-                          {new Date(message.timestamp).toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {loading && (
-                    <div className="flex justify-start">
-                      <div className="px-4 py-3 rounded-xl" style={{ background: 'white', border: '1px solid #e8e5e0' }}>
-                        <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#5a5550' }} />
-                      </div>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
+              ))}
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="px-4 py-3 rounded-xl" style={{ background: 'white', border: '1px solid #e8e5e0' }}>
+                    <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#5a5550' }} />
+                  </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
+          )}
+        </div>
 
-            {error && (
-              <div className="px-6 pb-2">
-                <div className="max-w-4xl mx-auto">
-                  <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
-                    <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                    <span className="flex-1">{error}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="border-t px-6 py-4" style={{ borderColor: '#f0ede8' }}>
-              <div className="max-w-4xl mx-auto">
-                <div className="relative">
-                  <textarea
-                    ref={textareaRef}
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Rašykite žinutę..."
-                    rows={1}
-                    className="w-full px-4 py-3 pr-24 text-sm rounded-lg resize-none transition-all"
-                    style={{ background: 'white', color: '#3d3935', border: '1px solid #e8e5e0' }}
-                    disabled={loading || !systemPrompt}
-                  />
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
-                    <button
-                      className="p-2 rounded-md transition-colors"
-                      style={{ color: '#8a857f' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      disabled={loading}
-                    >
-                      <Paperclip className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={handleSend}
-                      disabled={!inputValue.trim() || loading || !systemPrompt}
-                      className="p-2 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      style={{
-                        background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
-                        color: inputValue.trim() && !loading ? 'white' : '#8a857f'
-                      }}
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+        {/* Error Display - Always visible when error exists */}
+        {error && (
+          <div className="px-6 pb-2">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <span className="flex-1">{error}</span>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="h-full flex items-center justify-center px-6">
-            <p className="text-sm" style={{ color: '#8a857f' }}>
-              Pasirinkite pokalbį arba sukurkite naują
-            </p>
           </div>
         )}
+
+        {/* Input Box - Always visible */}
+        <div className="border-t px-6 py-4" style={{ borderColor: '#f0ede8' }}>
+          <div className="max-w-4xl mx-auto">
+            <div className="relative">
+              <textarea
+                ref={textareaRef}
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Rašykite žinutę..."
+                rows={1}
+                className="w-full px-4 py-3 pr-24 text-sm rounded-lg resize-none transition-all"
+                style={{ background: 'white', color: '#3d3935', border: '1px solid #e8e5e0' }}
+                disabled={loading || !systemPrompt}
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center space-x-1">
+                <button
+                  className="p-2 rounded-md transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  disabled={loading}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || loading || !systemPrompt}
+                  className="p-2 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{
+                    background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
+                    color: inputValue.trim() && !loading ? 'white' : '#8a857f'
+                  }}
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Artifact Panel */}

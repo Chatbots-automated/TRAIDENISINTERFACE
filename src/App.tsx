@@ -56,6 +56,9 @@ function App() {
     return saved === null ? true : saved === 'true';
   });
 
+  // Main sidebar collapse state (for SDK interface positioning)
+  const [mainSidebarCollapsed, setMainSidebarCollapsed] = useState(false);
+
   useEffect(() => {
     checkUser();
   }, []);
@@ -312,7 +315,7 @@ function App() {
       case 'nestandartiniai':
         return <NestandardiniaiInterface user={user} projectId={projectId} />;
       case 'sdk':
-        return <SDKInterface user={user} projectId={projectId} />;
+        return <SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />;
       default:
         return null;
     }
@@ -334,6 +337,7 @@ function App() {
       onToggleNaujokas={toggleNaujokasMode}
       viewMode={viewMode}
       onViewModeChange={setViewMode}
+      onSidebarCollapseChange={setMainSidebarCollapsed}
     >
       {renderContent()}
     </Layout>
