@@ -13,7 +13,6 @@ import {
   Loader2,
   Pencil,
   Check,
-  ChevronUp,
   Users,
   History,
   Zap,
@@ -383,13 +382,12 @@ export default function Layout({
                 {/* Settings Button */}
                 <button
                   onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 text-macos-gray-600 transition-colors"
+                  className="w-full flex items-center px-3 py-2 rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150"
                 >
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center justify-center w-4 flex-shrink-0">
                     <Settings className="w-4 h-4" />
-                    <span className="text-sm font-medium">Settings</span>
                   </div>
-                  <ChevronUp className={`w-4 h-4 transition-transform duration-200 ${settingsDropdownOpen ? 'rotate-180' : ''}`} />
+                  <span className="ml-3 whitespace-nowrap">Settings</span>
                 </button>
               </div>
             )}
@@ -459,13 +457,12 @@ export default function Layout({
                 {/* Settings Button */}
                 <button
                   onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 text-macos-gray-600 transition-colors"
+                  className="w-full flex items-center px-3 py-2 rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150"
                 >
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center justify-center w-4 flex-shrink-0">
                     <Settings className="w-4 h-4" />
-                    <span className="text-sm font-medium">Settings</span>
                   </div>
-                  <ChevronUp className={`w-4 h-4 transition-transform duration-200 ${settingsDropdownOpen ? 'rotate-180' : ''}`} />
+                  <span className="ml-3 whitespace-nowrap">Settings</span>
                 </button>
               </div>
             )}
