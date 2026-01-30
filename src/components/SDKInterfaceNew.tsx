@@ -13,7 +13,7 @@ import {
   PanelLeft
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
-import { getSystemPrompt } from '../lib/instructionVariablesService';
+import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
 import {
   createSDKConversation,
   getSDKConversations,
@@ -47,6 +47,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
+  const [showEditPromptModal, setShowEditPromptModal] = useState(false);
+  const [editPassword, setEditPassword] = useState('');
+  const [editPasswordError, setEditPasswordError] = useState(false);
+  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  const [editedPromptTemplate, setEditedPromptTemplate] = useState('');
   const [showArtifact, setShowArtifact] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
 
@@ -378,15 +383,32 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             <span className="text-sm font-medium" style={{ color: '#3d3935' }}>
               Instrukcijos
             </span>
-            <button
-              onClick={() => setShowPromptModal(true)}
-              className="p-1 rounded transition-colors"
-              style={{ color: '#8a857f' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            >
-              <Eye className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setShowPromptModal(true)}
+                className="p-1 rounded transition-colors"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                title="Peržiūrėti prompt"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+              <button
+                onClick={async () => {
+                  const template = await getPromptTemplate();
+                  setEditedPromptTemplate(template);
+                  setShowEditPromptModal(true);
+                }}
+                className="p-1 rounded transition-colors"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                title="Redaguoti prompt šabloną"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            </div>
           </div>
           <p className="text-xs" style={{ color: '#8a857f' }}>
             Sistemos instrukcijos komerciniam pasiūlymui
@@ -637,6 +659,161 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 {currentConversation.artifact.content}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Prompt Modal */}
+      {showEditPromptModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => {
+            setShowEditPromptModal(false);
+            setEditPassword('');
+            setEditPasswordError(false);
+            setIsEditingPrompt(false);
+          }}
+        >
+          <div
+            className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden"
+            style={{ background: 'white', border: '1px solid #e8e5e0' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
+              <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
+                {isEditingPrompt ? 'Redaguoti Prompt Šabloną' : 'Įveskite slaptažodį'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEditPromptModal(false);
+                  setEditPassword('');
+                  setEditPasswordError(false);
+                  setIsEditingPrompt(false);
+                }}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
+              {!isEditingPrompt ? (
+                <div className="max-w-md mx-auto">
+                  <p className="text-sm mb-4" style={{ color: '#8a857f' }}>
+                    Šablonas apsaugotas slaptažodžiu. Įveskite slaptažodį, kad galėtumėte redaguoti.
+                  </p>
+                  <input
+                    type="password"
+                    value={editPassword}
+                    onChange={(e) => {
+                      setEditPassword(e.target.value);
+                      setEditPasswordError(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        if (editPassword === 'ZXCvbn123') {
+                          setIsEditingPrompt(true);
+                          setEditedPromptTemplate(systemPrompt);
+                        } else {
+                          setEditPasswordError(true);
+                        }
+                      }
+                    }}
+                    placeholder="Slaptažodis"
+                    className="w-full px-4 py-2 text-sm rounded-lg border"
+                    style={{
+                      borderColor: editPasswordError ? '#991b1b' : '#e8e5e0',
+                      background: 'white',
+                      color: '#3d3935'
+                    }}
+                  />
+                  {editPasswordError && (
+                    <p className="text-sm mt-2" style={{ color: '#991b1b' }}>
+                      Neteisingas slaptažodis
+                    </p>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (editPassword === 'ZXCvbn123') {
+                        setIsEditingPrompt(true);
+                        setEditedPromptTemplate(systemPrompt);
+                      } else {
+                        setEditPasswordError(true);
+                      }
+                    }}
+                    className="w-full mt-4 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    style={{ background: '#5a5550', color: 'white' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
+                  >
+                    Tęsti
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm" style={{ color: '#8a857f' }}>
+                    Redaguokite prompt šabloną žemiau. Kintamieji {'{variable_key}'} bus pakeisti atitinkamomis reikšmėmis iš duomenų bazės.
+                  </p>
+                  <textarea
+                    value={editedPromptTemplate}
+                    onChange={(e) => setEditedPromptTemplate(e.target.value)}
+                    className="w-full h-96 px-4 py-3 text-xs font-mono rounded-lg border resize-none"
+                    style={{
+                      borderColor: '#e8e5e0',
+                      background: 'white',
+                      color: '#3d3935'
+                    }}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setShowEditPromptModal(false);
+                        setEditPassword('');
+                        setEditPasswordError(false);
+                        setIsEditingPrompt(false);
+                      }}
+                      className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                      style={{ background: '#f0ede8', color: '#5a5550' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
+                    >
+                      Atšaukti
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await savePromptTemplate(editedPromptTemplate);
+                          if (result.success) {
+                            // Reload the system prompt with new template
+                            const newPrompt = await getSystemPrompt();
+                            setSystemPrompt(newPrompt);
+                            setShowEditPromptModal(false);
+                            setEditPassword('');
+                            setEditPasswordError(false);
+                            setIsEditingPrompt(false);
+                          } else {
+                            console.error('Failed to save template:', result.error);
+                            alert('Nepavyko išsaugoti šablono');
+                          }
+                        } catch (err) {
+                          console.error('Error saving template:', err);
+                          alert('Įvyko klaida išsaugant šabloną');
+                        }
+                      }}
+                      className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                      style={{ background: '#5a5550', color: 'white' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
+                    >
+                      Išsaugoti
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

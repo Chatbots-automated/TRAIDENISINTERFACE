@@ -80,11 +80,63 @@ export const injectVariablesIntoPrompt = (
 };
 
 /**
- * Get the complete system prompt with all variables injected
+ * Get the prompt template from database or use default
  */
-export const getSystemPrompt = async (): Promise<string> => {
-  console.log('[getSystemPrompt] Starting prompt generation...');
-  const promptTemplate = `User has just sent you the first message, reply to it.
+export const getPromptTemplate = async (): Promise<string> => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('prompt_template')
+      .select('template_content')
+      .single();
+
+    if (error) {
+      console.log('[getPromptTemplate] No custom template found, using default');
+      return getDefaultPromptTemplate();
+    }
+
+    return data?.template_content || getDefaultPromptTemplate();
+  } catch (error) {
+    console.error('[getPromptTemplate] Error loading template:', error);
+    return getDefaultPromptTemplate();
+  }
+};
+
+/**
+ * Save prompt template to database
+ */
+export const savePromptTemplate = async (template: string): Promise<{ success: boolean; error?: any }> => {
+  try {
+    // First try to update existing template
+    const { error: updateError } = await supabaseAdmin
+      .from('prompt_template')
+      .update({ template_content: template, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+
+    if (updateError) {
+      // If update fails, insert new record
+      const { error: insertError } = await supabaseAdmin
+        .from('prompt_template')
+        .insert({ id: 1, template_content: template });
+
+      if (insertError) {
+        console.error('[savePromptTemplate] Error saving template:', insertError);
+        return { success: false, error: insertError };
+      }
+    }
+
+    console.log('[savePromptTemplate] Template saved successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('[savePromptTemplate] Error:', error);
+    return { success: false, error };
+  }
+};
+
+/**
+ * Get default prompt template
+ */
+const getDefaultPromptTemplate = (): string => {
+  return `User has just sent you the first message, reply to it.
 
 ## ROLE & IDENTITY
 
@@ -246,6 +298,14 @@ This agent represents Traidenis to professional clients. Every offer involves si
 **Important:** This agent handles requirements collection, component selection, arrangement, and pricing ONLY. Technological descriptions are now written in a separate document generation system.
 
 When in doubt: ASK. When unsure: VERIFY. When calculating: CHECK TWICE.`;
+};
+
+/**
+ * Get the complete system prompt with all variables injected
+ */
+export const getSystemPrompt = async (): Promise<string> => {
+  console.log('[getSystemPrompt] Starting prompt generation...');
+  const promptTemplate = await getPromptTemplate();
 
   console.log('[getSystemPrompt] Template length before injection:', promptTemplate.length);
   const variables = await fetchInstructionVariables();
