@@ -7,7 +7,7 @@ import AdminUsersInterface from './components/AdminUsersInterface';
 import TranscriptsInterface from './components/TranscriptsInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
-import SDKInterface from './components/SDKInterface';
+import SDKInterface from './components/SDKInterfaceNew';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
