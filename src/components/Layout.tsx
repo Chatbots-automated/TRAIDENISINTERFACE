@@ -146,21 +146,21 @@ export default function Layout({
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={`flex items-center border-b border-black/5 ${sidebarCollapsed ? 'justify-center p-2' : 'justify-between p-4'}`}>
-            {!sidebarCollapsed && (
-              <div className="flex items-center space-x-3">
+          <div className={`flex items-center justify-between p-4`}>
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-8 h-8 flex-shrink-0">
                 <img
                   src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
                   alt="Traidenis Logo"
-                  className="w-8 h-8 object-contain rounded-macos flex-shrink-0 shadow-macos-sm"
+                  className="w-8 h-8 object-contain rounded-macos shadow-macos-sm"
                 />
-                <div>
-                  <h1 className="text-base font-semibold text-macos-gray-900 tracking-macos-tight">Traidenis</h1>
-                  <p className="text-xs text-macos-gray-500">Knowledge Base</p>
-                </div>
               </div>
-            )}
-            <div className="flex items-center">
+              <div className={`transition-opacity duration-300 ${sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
+                <h1 className="text-base font-semibold text-macos-gray-900 tracking-macos-tight whitespace-nowrap">Traidenis</h1>
+                <p className="text-xs text-macos-gray-500 whitespace-nowrap">Knowledge Base</p>
+              </div>
+            </div>
+            <div className="flex items-center flex-shrink-0">
               {/* Collapse Toggle Button - Desktop only */}
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -184,7 +184,7 @@ export default function Layout({
           </div>
 
           {/* Primary Navigation - Only Chat and Documents */}
-            <div className={`border-b border-black/5 py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
+            <div className={`py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
               <button
                 onClick={() => onViewModeChange?.('chat')}
                 className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
@@ -422,7 +422,7 @@ export default function Layout({
                 {/* Settings Button */}
                 <button
                   onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 text-macos-gray-600 border-b border-black/5 transition-colors"
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 text-macos-gray-600 transition-colors"
                 >
                   <div className="flex items-center space-x-3">
                     <Settings className="w-4 h-4" />

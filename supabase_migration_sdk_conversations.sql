@@ -1,7 +1,9 @@
 -- Create sdk_conversations table
+-- Note: If you have a projects table, you can add the foreign key constraint later:
+-- ALTER TABLE sdk_conversations ADD CONSTRAINT fk_project_id FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
 CREATE TABLE IF NOT EXISTS sdk_conversations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL,
   title TEXT NOT NULL DEFAULT 'Naujas pokalbis',
   author_id UUID NOT NULL,
   author_email TEXT NOT NULL,
