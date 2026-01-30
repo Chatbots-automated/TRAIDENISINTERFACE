@@ -236,7 +236,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       }
 
       await addMessageToConversation(conversation.id, assistantMessage);
-      setCurrentConversation({ ...conversation, messages: [...updatedMessages, assistantMessage] });
+
+      // Reload conversation from database to ensure state is in sync
+      const { data: refreshedConversation } = await getSDKConversation(conversation.id);
+      if (refreshedConversation) {
+        setCurrentConversation(refreshedConversation);
+      }
+
+      // Refresh conversation list to update last_message_at and message_count
+      await loadConversations();
     } catch (err: any) {
       console.error('Error sending message:', err);
       setError(err.message || 'Įvyko klaida');

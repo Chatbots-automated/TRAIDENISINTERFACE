@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 
 export interface InstructionVariable {
   id: string;
@@ -14,7 +14,7 @@ export interface InstructionVariable {
  */
 export const fetchInstructionVariables = async (): Promise<InstructionVariable[]> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('instruction_variables')
       .select('*')
       .order('variable_name', { ascending: true });
