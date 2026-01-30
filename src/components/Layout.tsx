@@ -187,8 +187,8 @@ export default function Layout({
             <div className={`border-b border-black/5 py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
               <button
                 onClick={() => onViewModeChange?.('chat')}
-                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
                   viewMode === 'chat'
                     ? 'bg-macos-blue/10 text-macos-blue'
@@ -196,14 +196,16 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Chat' : undefined}
               >
-                <MessageSquare className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>Chat</span>}
+                <div className="flex items-center justify-center w-4">
+                  <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                </div>
+                {!sidebarCollapsed && <span className="ml-3">Chat</span>}
               </button>
 
               <button
                 onClick={() => onViewModeChange?.('documents')}
-                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
                   viewMode === 'documents'
                     ? 'bg-macos-blue/10 text-macos-blue'
@@ -211,14 +213,16 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Documents' : undefined}
               >
-                <Database className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>Documents</span>}
+                <div className="flex items-center justify-center w-4">
+                  <Database className="w-4 h-4 flex-shrink-0" />
+                </div>
+                {!sidebarCollapsed && <span className="ml-3">Documents</span>}
               </button>
 
               <button
                 onClick={() => onViewModeChange?.('transcripts')}
-                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
                   viewMode === 'transcripts'
                     ? 'bg-macos-blue/10 text-macos-blue'
@@ -226,14 +230,16 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Transcripts' : undefined}
               >
-                <History className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>Transcripts</span>}
+                <div className="flex items-center justify-center w-4">
+                  <History className="w-4 h-4 flex-shrink-0" />
+                </div>
+                {!sidebarCollapsed && <span className="ml-3">Transcripts</span>}
               </button>
 
               <button
                 onClick={() => onViewModeChange?.('nestandartiniai')}
-                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
                   viewMode === 'nestandartiniai'
                     ? 'bg-macos-blue/10 text-macos-blue'
@@ -241,14 +247,16 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
               >
-                <FlaskConical className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>Nestandartiniai Projektai</span>}
+                <div className="flex items-center justify-center w-4">
+                  <FlaskConical className="w-4 h-4 flex-shrink-0" />
+                </div>
+                {!sidebarCollapsed && <span className="ml-3">Nestandartiniai Projektai</span>}
               </button>
 
               <button
                 onClick={() => onViewModeChange?.('sdk')}
-                className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
                   viewMode === 'sdk'
                     ? 'bg-macos-blue/10 text-macos-blue'
@@ -256,8 +264,10 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'SDK' : undefined}
               >
-                <Bot className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>SDK</span>}
+                <div className="flex items-center justify-center w-4">
+                  <Bot className="w-4 h-4 flex-shrink-0" />
+                </div>
+                {!sidebarCollapsed && <span className="ml-3">SDK</span>}
               </button>
             </div>
 
@@ -283,32 +293,36 @@ export default function Layout({
                   {/* Settings */}
                   <button
                     onClick={() => setSettingsOpen(true)}
-                    className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150 ${
-                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    className={`w-full flex items-center rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150 ${
+                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                     }`}
                     title={sidebarCollapsed ? 'Settings' : undefined}
                   >
-                    <Settings className="w-4 h-4 flex-shrink-0" />
-                    {!sidebarCollapsed && <span>Settings</span>}
+                    <div className="flex items-center justify-center w-4">
+                      <Settings className="w-4 h-4 flex-shrink-0" />
+                    </div>
+                    {!sidebarCollapsed && <span className="ml-3">Settings</span>}
                   </button>
 
                   {/* Webhooks */}
                   <button
                     onClick={() => setWebhooksOpen(true)}
-                    className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150 ${
-                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    className={`w-full flex items-center rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150 ${
+                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                     }`}
                     title={sidebarCollapsed ? 'Webhooks' : undefined}
                   >
-                    <Zap className="w-4 h-4 flex-shrink-0" />
-                    {!sidebarCollapsed && <span>Webhooks</span>}
+                    <div className="flex items-center justify-center w-4">
+                      <Zap className="w-4 h-4 flex-shrink-0" />
+                    </div>
+                    {!sidebarCollapsed && <span className="ml-3">Webhooks</span>}
                   </button>
 
                   {/* Instrukcijos */}
                   <button
                     onClick={() => onViewModeChange?.('instrukcijos')}
-                    className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                     } ${
                       viewMode === 'instrukcijos'
                         ? 'bg-macos-blue/10 text-macos-blue'
@@ -316,15 +330,17 @@ export default function Layout({
                     }`}
                     title={sidebarCollapsed ? 'Instrukcijos' : undefined}
                   >
-                    <BookOpen className="w-4 h-4 flex-shrink-0" />
-                    {!sidebarCollapsed && <span>Instrukcijos</span>}
+                    <div className="flex items-center justify-center w-4">
+                      <BookOpen className="w-4 h-4 flex-shrink-0" />
+                    </div>
+                    {!sidebarCollapsed && <span className="ml-3">Instrukcijos</span>}
                   </button>
 
                   {/* Users */}
                   <button
                     onClick={() => onViewModeChange?.('users')}
-                    className={`w-full flex items-center px-3 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                      sidebarCollapsed ? 'justify-center' : 'space-x-3'
+                    className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                     } ${
                       viewMode === 'users'
                         ? 'bg-macos-blue/10 text-macos-blue'
@@ -332,8 +348,10 @@ export default function Layout({
                     }`}
                     title={sidebarCollapsed ? 'Users' : undefined}
                   >
-                    <Users className="w-4 h-4 flex-shrink-0" />
-                    {!sidebarCollapsed && <span>Users</span>}
+                    <div className="flex items-center justify-center w-4">
+                      <Users className="w-4 h-4 flex-shrink-0" />
+                    </div>
+                    {!sidebarCollapsed && <span className="ml-3">Users</span>}
                   </button>
                 </div>
               </>
@@ -440,12 +458,14 @@ export default function Layout({
               <button
                 onClick={handleSignOut}
                 className={`w-full flex items-center py-2 text-sm font-medium text-macos-red hover:bg-macos-red/10 transition-colors border-t border-black/5 ${
-                  sidebarCollapsed ? 'justify-center px-2' : 'space-x-3 px-6'
+                  sidebarCollapsed ? 'justify-center px-2' : 'px-6'
                 }`}
                 title={sidebarCollapsed ? 'Sign Out' : undefined}
               >
-                <LogOut className="w-4 h-4 flex-shrink-0" />
-                {!sidebarCollapsed && <span>Sign Out</span>}
+                <div className="flex items-center justify-center w-4">
+                  <LogOut className="w-4 h-4 flex-shrink-0" />
+                </div>
+                {!sidebarCollapsed && <span className="ml-3">Sign Out</span>}
               </button>
             )}
 

@@ -153,14 +153,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           user.email,
           'Naujas pokalbis'
         );
-        if (createError) throw createError;
-        await loadConversations();
-        const { data: newConversation } = await getSDKConversation(conversationId!);
+        if (createError) {
+          console.error('Error creating conversation:', createError);
+          throw createError;
+        }
+        if (!conversationId) {
+          throw new Error('No conversation ID returned');
+        }
+
+        const { data: newConversation, error: fetchError } = await getSDKConversation(conversationId);
+        if (fetchError) {
+          console.error('Error fetching new conversation:', fetchError);
+          throw fetchError;
+        }
+        if (!newConversation) {
+          throw new Error('Failed to fetch newly created conversation');
+        }
+
         conversation = newConversation;
         setCurrentConversation(newConversation);
-      } catch (err) {
+        await loadConversations();
+      } catch (err: any) {
         console.error('Error creating conversation:', err);
-        setError('Nepavyko sukurti pokalbio');
+        setError(err.message || 'Nepavyko sukurti pokalbio');
         return;
       } finally {
         setCreatingConversation(false);
@@ -327,7 +342,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         }}
       >
         {/* Project Header */}
-        <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#f0ede8' }}>
+        <div className="p-4 flex items-center justify-between">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
             <FileText className="w-5 h-5 flex-shrink-0" style={{ color: '#5a5550' }} />
             <span className="font-semibold truncate" style={{ color: '#3d3935' }}>
@@ -346,7 +361,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         </div>
 
         {/* Instructions Section */}
-        <div className="p-4 border-b" style={{ borderColor: '#f0ede8' }}>
+        <div className="p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium" style={{ color: '#3d3935' }}>
               Instrukcijos
@@ -396,15 +411,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 <p className="text-sm" style={{ color: '#8a857f' }}>Pokalbių nėra</p>
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {conversations.map((conv) => (
                   <div
                     key={conv.id}
                     onClick={() => handleSelectConversation(conv.id)}
-                    className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all"
+                    className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150"
                     style={{
-                      background: currentConversation?.id === conv.id ? '#faf9f7' : 'transparent',
-                      border: currentConversation?.id === conv.id ? '1px solid #e8e5e0' : '1px solid transparent'
+                      background: currentConversation?.id === conv.id ? '#faf9f7' : 'transparent'
                     }}
                     onMouseEnter={(e) => {
                       if (currentConversation?.id !== conv.id) e.currentTarget.style.background = '#f9f8f6';
@@ -508,7 +522,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         )}
 
         {/* Input Box - Always visible */}
-        <div className="border-t px-6 py-4" style={{ borderColor: '#f0ede8' }}>
+        <div className="px-6 py-4">
           <div className="max-w-4xl mx-auto">
             <div className="relative">
               <textarea
