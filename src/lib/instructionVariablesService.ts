@@ -50,14 +50,19 @@ export const injectVariablesIntoPrompt = (
 
   variables.forEach((variable) => {
     const placeholder = `{${variable.variable_name}}`;
-    const beforeLength = injectedPrompt.length;
-    injectedPrompt = injectedPrompt.split(placeholder).join(variable.variable_value);
-    const afterLength = injectedPrompt.length;
-    const occurrences = (beforeLength - afterLength + (variable.variable_value.length * (injectedPrompt.split(variable.variable_value).length - 1))) / placeholder.length;
+    // Handle null/undefined values by using empty string as fallback
+    const variableValue = variable.variable_value || '';
+
+    if (!variableValue) {
+      console.warn(`⚠️ Variable '${variable.variable_name}' has empty/null value`);
+    }
+
+    const occurrences = promptTemplate.split(placeholder).length - 1;
+    injectedPrompt = injectedPrompt.split(placeholder).join(variableValue);
 
     replacements.push({
       placeholder: variable.variable_name,
-      found: promptTemplate.split(placeholder).length - 1
+      found: occurrences
     });
   });
 
