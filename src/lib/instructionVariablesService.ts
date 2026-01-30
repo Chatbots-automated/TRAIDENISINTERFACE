@@ -2,11 +2,13 @@ import { supabase, supabaseAdmin } from './supabase';
 
 export interface InstructionVariable {
   id: string;
+  variable_key: string;
   variable_name: string;
-  variable_value: string;
-  description?: string;
+  content: string;
+  display_order: number;
   created_at: string;
   updated_at: string;
+  updated_by?: string;
 }
 
 /**
@@ -18,7 +20,7 @@ export const fetchInstructionVariables = async (): Promise<InstructionVariable[]
     const { data, error } = await supabaseAdmin
       .from('instruction_variables')
       .select('*')
-      .order('variable_name', { ascending: true });
+      .order('display_order', { ascending: true });
 
     if (error) {
       console.error('Error fetching instruction variables:', error);
@@ -27,7 +29,7 @@ export const fetchInstructionVariables = async (): Promise<InstructionVariable[]
 
     console.log('Fetched instruction variables:', {
       count: data?.length || 0,
-      variables: data?.map(v => ({ name: v.variable_name, valueLength: v.variable_value?.length }))
+      variables: data?.map(v => ({ key: v.variable_key, name: v.variable_name, contentLength: v.content?.length }))
     });
 
     return data || [];
@@ -49,19 +51,19 @@ export const injectVariablesIntoPrompt = (
   const replacements: { placeholder: string; found: number }[] = [];
 
   variables.forEach((variable) => {
-    const placeholder = `{${variable.variable_name}}`;
+    const placeholder = `{${variable.variable_key}}`;
     // Handle null/undefined values by using empty string as fallback
-    const variableValue = variable.variable_value || '';
+    const variableValue = variable.content || '';
 
     if (!variableValue) {
-      console.warn(`⚠️ Variable '${variable.variable_name}' has empty/null value`);
+      console.warn(`⚠️ Variable '${variable.variable_key}' (${variable.variable_name}) has empty/null value`);
     }
 
     const occurrences = promptTemplate.split(placeholder).length - 1;
     injectedPrompt = injectedPrompt.split(placeholder).join(variableValue);
 
     replacements.push({
-      placeholder: variable.variable_name,
+      placeholder: variable.variable_key,
       found: occurrences
     });
   });
