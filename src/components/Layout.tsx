@@ -5,6 +5,7 @@ import {
   X,
   Settings,
   MessageSquare,
+  MessagesSquare,
   Database,
   LogOut,
   Plus,
@@ -160,27 +161,13 @@ export default function Layout({
                 <p className="text-xs text-macos-gray-500 whitespace-nowrap">Knowledge Base</p>
               </div>
             </div>
-            <div className="flex items-center flex-shrink-0">
-              {/* Collapse Toggle Button - Desktop only */}
-              <button
-                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="hidden lg:flex p-1.5 rounded-md hover:bg-black/5 transition-colors text-macos-gray-500"
-                title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                {sidebarCollapsed ? (
-                  <ChevronsRight className="w-4 h-4" />
-                ) : (
-                  <ChevronsLeft className="w-4 h-4" />
-                )}
-              </button>
-              {/* Mobile close button */}
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="lg:hidden p-1.5 rounded-md hover:bg-black/5 transition-colors"
-              >
-                <X className="w-5 h-5 text-macos-gray-500" />
-              </button>
-            </div>
+            {/* Mobile close button */}
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-1.5 rounded-md hover:bg-black/5 transition-colors flex-shrink-0"
+            >
+              <X className="w-5 h-5 text-macos-gray-500" />
+            </button>
           </div>
 
           {/* Primary Navigation - Only Chat and Documents */}
@@ -265,7 +252,7 @@ export default function Layout({
                 title={sidebarCollapsed ? 'SDK' : undefined}
               >
                 <div className="flex items-center justify-center w-4 flex-shrink-0">
-                  <Bot className="w-4 h-4" />
+                  <MessagesSquare className="w-4 h-4" />
                 </div>
                 {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">SDK</span>}
               </button>
@@ -353,6 +340,20 @@ export default function Layout({
                     </div>
                     {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Users</span>}
                   </button>
+
+                  {/* Sign Out */}
+                  <button
+                    onClick={handleSignOut}
+                    className={`w-full flex items-center rounded-md text-sm font-medium text-macos-red hover:bg-macos-red/10 transition-all duration-150 ${
+                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
+                    }`}
+                    title={sidebarCollapsed ? 'Sign Out' : undefined}
+                  >
+                    <div className="flex items-center justify-center w-4 flex-shrink-0">
+                      <LogOut className="w-4 h-4" />
+                    </div>
+                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Sign Out</span>}
+                  </button>
                 </div>
               </>
             )}
@@ -433,9 +434,9 @@ export default function Layout({
               </div>
             )}
 
-            {/* Collapsed non-admin buttons */}
+            {/* Collapsed non-admin settings button */}
             {!user.is_admin && sidebarCollapsed && (
-              <div className="px-2 pb-2 space-y-0.5">
+              <div className="px-2 pb-2">
                 <button
                   onClick={() => setSettingsOpen(true)}
                   className="w-full flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-colors"
@@ -443,31 +444,26 @@ export default function Layout({
                 >
                   <Settings className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium text-macos-red hover:bg-macos-red/10 transition-colors"
-                  title="Sign Out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
               </div>
             )}
 
-            {/* Sign Out Button - For admins (since they don't have the dropdown) */}
-            {user.is_admin && (
-              <button
-                onClick={handleSignOut}
-                className={`w-full flex items-center py-2 text-sm font-medium text-macos-red hover:bg-macos-red/10 transition-colors border-t border-black/5 ${
-                  sidebarCollapsed ? 'justify-center px-2' : 'px-6'
-                }`}
-                title={sidebarCollapsed ? 'Sign Out' : undefined}
-              >
-                <div className="flex items-center justify-center w-4 flex-shrink-0">
-                  <LogOut className="w-4 h-4" />
-                </div>
-                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Sign Out</span>}
-              </button>
-            )}
+            {/* Collapse Toggle Button - At bottom for all users */}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className={`hidden lg:flex items-center py-3 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-colors ${
+                sidebarCollapsed ? 'justify-center px-2' : 'px-6'
+              }`}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <div className="flex items-center justify-center w-4 flex-shrink-0">
+                {sidebarCollapsed ? (
+                  <ChevronsRight className="w-4 h-4" />
+                ) : (
+                  <ChevronsLeft className="w-4 h-4" />
+                )}
+              </div>
+              {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Collapse</span>}
+            </button>
 
             {/* User Info - Absolute Bottom */}
             <div className={`py-3 bg-macos-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
