@@ -261,7 +261,7 @@ export default function Layout({
           <div className="flex-1" />
 
           {/* Footer - Absolute Bottom */}
-          <div className="border-t border-black/5 mt-auto">
+          <div className="mt-auto">
             {/* Admin Section - Only visible to admins */}
             {user.is_admin && (
               <>
@@ -455,15 +455,13 @@ export default function Layout({
 
             {/* Collapsed settings button - for all users */}
             {sidebarCollapsed && (
-              <div className="px-2 pb-2">
-                <button
-                  onClick={() => setSettingsOpen(true)}
-                  className="w-full flex items-center justify-center px-3 py-2 rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-colors"
-                  title="Settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="w-full flex items-center justify-center py-3 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-colors"
+                title="Settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
             )}
 
             {/* Collapse Toggle Button - At bottom for all users */}

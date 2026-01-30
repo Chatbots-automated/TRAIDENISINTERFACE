@@ -231,12 +231,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         thinking: thinkingContent
       };
 
-      if (responseContent.includes('<commercial_offer>') || currentConversation.artifact) {
-        await handleArtifactGeneration(responseContent, currentConversation);
+      if (responseContent.includes('<commercial_offer>') || conversation.artifact) {
+        await handleArtifactGeneration(responseContent, conversation);
       }
 
-      await addMessageToConversation(currentConversation.id, assistantMessage);
-      setCurrentConversation({ ...currentConversation, messages: [...updatedMessages, assistantMessage] });
+      await addMessageToConversation(conversation.id, assistantMessage);
+      setCurrentConversation({ ...conversation, messages: [...updatedMessages, assistantMessage] });
     } catch (err: any) {
       console.error('Error sending message:', err);
       setError(err.message || 'Įvyko klaida');
