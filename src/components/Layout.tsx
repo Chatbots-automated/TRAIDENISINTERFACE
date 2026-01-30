@@ -278,20 +278,6 @@ export default function Layout({
 
                 {/* Admin Buttons */}
                 <div className={`pb-2 space-y-0.5 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-                  {/* Settings */}
-                  <button
-                    onClick={() => setSettingsOpen(true)}
-                    className={`w-full flex items-center rounded-md text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-150 ${
-                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
-                    }`}
-                    title={sidebarCollapsed ? 'Settings' : undefined}
-                  >
-                    <div className="flex items-center justify-center w-4 flex-shrink-0">
-                      <Settings className="w-4 h-4" />
-                    </div>
-                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Settings</span>}
-                  </button>
-
                   {/* Webhooks */}
                   <button
                     onClick={() => setWebhooksOpen(true)}
