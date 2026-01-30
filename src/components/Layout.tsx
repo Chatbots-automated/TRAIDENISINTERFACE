@@ -267,13 +267,15 @@ export default function Layout({
             {user.is_admin && (
               <>
                 {/* Admin Separator */}
-                {!sidebarCollapsed && (
-                  <div className="flex items-center px-4 py-2">
-                    <div className="flex-1 border-t border-macos-gray-200" />
-                    <span className="px-3 text-[10px] text-macos-gray-400 font-semibold uppercase tracking-wider">admin</span>
-                    <div className="flex-1 border-t border-macos-gray-200" />
-                  </div>
-                )}
+                <div className="flex items-center px-4 py-2">
+                  {!sidebarCollapsed && (
+                    <>
+                      <div className="flex-1 border-t border-macos-gray-200" />
+                      <span className="px-3 text-[10px] text-macos-gray-400 font-semibold uppercase tracking-wider">admin</span>
+                      <div className="flex-1 border-t border-macos-gray-200" />
+                    </>
+                  )}
+                </div>
 
                 {/* Admin Buttons */}
                 <div className={`pb-2 space-y-0.5 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
@@ -340,22 +342,56 @@ export default function Layout({
                     </div>
                     {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Users</span>}
                   </button>
-
-                  {/* Sign Out */}
-                  <button
-                    onClick={handleSignOut}
-                    className={`w-full flex items-center rounded-md text-sm font-medium text-macos-red hover:bg-macos-red/10 transition-all duration-150 ${
-                      sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
-                    }`}
-                    title={sidebarCollapsed ? 'Sign Out' : undefined}
-                  >
-                    <div className="flex items-center justify-center w-4 flex-shrink-0">
-                      <LogOut className="w-4 h-4" />
-                    </div>
-                    {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Sign Out</span>}
-                  </button>
                 </div>
               </>
+            )}
+
+            {/* Admin Settings Dropdown - collapsed state */}
+            {user.is_admin && !sidebarCollapsed && (
+              <div className="relative" ref={settingsDropdownRef}>
+                {/* Dropup Menu */}
+                {settingsDropdownOpen && (
+                  <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
+                    <div className="mx-3 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
+                      {/* Settings Modal */}
+                      <button
+                        onClick={() => {
+                          setSettingsOpen(true);
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-colors"
+                      >
+                        <Settings className="w-4 h-4" />
+                        <span>Settings</span>
+                      </button>
+
+                      {/* Sign Out */}
+                      <button
+                        onClick={() => {
+                          handleSignOut();
+                          setSettingsDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center space-x-3 px-3 py-2 text-sm font-medium text-macos-red hover:bg-macos-red/10 transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Settings Button */}
+                <button
+                  onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-black/5 text-macos-gray-600 transition-colors"
+                >
+                  <div className="flex items-center space-x-3">
+                    <Settings className="w-4 h-4" />
+                    <span className="text-sm font-medium">Settings</span>
+                  </div>
+                  <ChevronUp className={`w-4 h-4 transition-transform duration-200 ${settingsDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
             )}
 
             {/* Settings Dropdown Button - Only for non-admins */}
@@ -434,8 +470,8 @@ export default function Layout({
               </div>
             )}
 
-            {/* Collapsed non-admin settings button */}
-            {!user.is_admin && sidebarCollapsed && (
+            {/* Collapsed settings button - for all users */}
+            {sidebarCollapsed && (
               <div className="px-2 pb-2">
                 <button
                   onClick={() => setSettingsOpen(true)}
@@ -450,19 +486,16 @@ export default function Layout({
             {/* Collapse Toggle Button - At bottom for all users */}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className={`hidden lg:flex items-center py-3 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-colors ${
-                sidebarCollapsed ? 'justify-center px-2' : 'px-6'
+              className={`hidden lg:flex items-center py-3 text-sm font-medium text-macos-gray-600 hover:bg-black/5 transition-all duration-300 ${
+                sidebarCollapsed ? 'justify-center' : 'justify-end pr-6'
               }`}
               title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              <div className="flex items-center justify-center w-4 flex-shrink-0">
-                {sidebarCollapsed ? (
-                  <ChevronsRight className="w-4 h-4" />
-                ) : (
-                  <ChevronsLeft className="w-4 h-4" />
-                )}
-              </div>
-              {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Collapse</span>}
+              {sidebarCollapsed ? (
+                <ChevronsRight className="w-4 h-4" />
+              ) : (
+                <ChevronsLeft className="w-4 h-4" />
+              )}
             </button>
 
             {/* User Info - Absolute Bottom */}
