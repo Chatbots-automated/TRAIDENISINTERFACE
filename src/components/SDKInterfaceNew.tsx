@@ -50,8 +50,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [toolUseName, setToolUseName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string>('');
+  const [promptTemplate, setPromptTemplate] = useState<string>('');
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
+  const [showTemplateView, setShowTemplateView] = useState(false);
   const [showEditPromptModal, setShowEditPromptModal] = useState(false);
   const [editPassword, setEditPassword] = useState('');
   const [editPasswordError, setEditPasswordError] = useState(false);
@@ -76,9 +78,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const loadSystemPrompt = async () => {
     try {
       setLoadingPrompt(true);
-      const prompt = await getSystemPrompt();
-      setSystemPrompt(prompt);
-      console.log('System prompt loaded, length:', prompt.length);
+      const [fullPrompt, template] = await Promise.all([
+        getSystemPrompt(),
+        getPromptTemplate()
+      ]);
+      setSystemPrompt(fullPrompt);
+      setPromptTemplate(template);
+      console.log('System prompt loaded, length:', fullPrompt.length);
+      console.log('Template loaded, length:', template.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
       setError('Nepavyko užkrauti sistemos instrukcijų');
@@ -847,9 +854,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                         try {
                           const result = await savePromptTemplate(editedPromptTemplate);
                           if (result.success) {
-                            // Reload the system prompt with new template
-                            const newPrompt = await getSystemPrompt();
+                            // Reload both template and full prompt
+                            const [newPrompt, newTemplate] = await Promise.all([
+                              getSystemPrompt(),
+                              getPromptTemplate()
+                            ]);
                             setSystemPrompt(newPrompt);
+                            setPromptTemplate(newTemplate);
                             setShowEditPromptModal(false);
                             setEditPassword('');
                             setEditPasswordError(false);
@@ -883,7 +894,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-6"
           style={{ background: 'rgba(0,0,0,0.5)' }}
-          onClick={() => setShowPromptModal(false)}
+          onClick={() => {
+            setShowPromptModal(false);
+            setShowTemplateView(false);
+          }}
         >
           <div
             className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden"
@@ -891,9 +905,41 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
-              <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>Sistema Prompt'as</h3>
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
+                  {showTemplateView ? 'Prompt Šablonas' : 'Pilnas Prompt'}
+                </h3>
+                <button
+                  onClick={() => setShowTemplateView(!showTemplateView)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                  style={{
+                    background: showTemplateView ? '#f0ede8' : '#5a5550',
+                    color: showTemplateView ? '#5a5550' : 'white',
+                    border: showTemplateView ? '1px solid #e8e5e0' : 'none'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (showTemplateView) {
+                      e.currentTarget.style.background = '#e8e5e0';
+                    } else {
+                      e.currentTarget.style.background = '#3d3935';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (showTemplateView) {
+                      e.currentTarget.style.background = '#f0ede8';
+                    } else {
+                      e.currentTarget.style.background = '#5a5550';
+                    }
+                  }}
+                >
+                  {showTemplateView ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
+                </button>
+              </div>
               <button
-                onClick={() => setShowPromptModal(false)}
+                onClick={() => {
+                  setShowPromptModal(false);
+                  setShowTemplateView(false);
+                }}
                 className="p-2 rounded-lg transition-colors"
                 style={{ color: '#8a857f' }}
                 onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
@@ -903,9 +949,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
-                {systemPrompt}
-              </pre>
+              {showTemplateView ? (
+                <div>
+                  <div className="mb-4 p-3 rounded-lg" style={{ background: '#fef3c7', border: '1px solid #fcd34d' }}>
+                    <p className="text-xs" style={{ color: '#92400e' }}>
+                      <strong>Šablonas:</strong> Kintamieji {'{variable_key}'} rodomi kaip placeholders. Šie bus pakeisti tikromis reikšmėmis iš duomenų bazės.
+                    </p>
+                  </div>
+                  <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
+                    {promptTemplate}
+                  </pre>
+                </div>
+              ) : (
+                <div>
+                  <div className="mb-4 p-3 rounded-lg" style={{ background: '#dbeafe', border: '1px solid #93c5fd' }}>
+                    <p className="text-xs" style={{ color: '#1e3a8a' }}>
+                      <strong>Pilnas prompt:</strong> Visi kintamieji pakeisti tikromis reikšmėmis. Tai yra tiksliai tai, ką mato Claude AI.
+                    </p>
+                  </div>
+                  <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
+                    {systemPrompt}
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         </div>
