@@ -815,7 +815,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                       if (e.key === 'Enter') {
                         if (editPassword === 'ZXCvbn123') {
                           setIsEditingPrompt(true);
-                          setEditedPromptTemplate(systemPrompt);
+                          // Keep the template that was loaded, don't overwrite
                         } else {
                           setEditPasswordError(true);
                         }
@@ -838,7 +838,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                     onClick={() => {
                       if (editPassword === 'ZXCvbn123') {
                         setIsEditingPrompt(true);
-                        setEditedPromptTemplate(systemPrompt);
+                        // Keep the template that was loaded, don't overwrite
                       } else {
                         setEditPasswordError(true);
                       }
