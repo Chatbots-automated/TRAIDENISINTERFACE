@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
+import MessageContent from './MessageContent';
 import {
   createSDKConversation,
   getSDKConversations,
@@ -549,9 +550,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   ) : (
                     // Assistant message - plain text, no bubble
                     <div className="mb-6">
-                      <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935' }}>
-                        {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '').replace(/<tool_use>[\s\S]*?<\/tool_use>/g, '').replace(/<tool_function_result>[\s\S]*?<\/tool_function_result>/g, '')}
-                      </div>
+                      <MessageContent content={message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')} />
                       {message.thinking && (
                         <details className="mt-3">
                           <summary className="text-xs cursor-pointer" style={{ color: '#8a857f' }}>
@@ -573,9 +572,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               {/* Streaming content */}
               {loading && streamingContent && (
                 <div className="mb-6">
-                  <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935' }}>
-                    {streamingContent}
-                  </div>
+                  <MessageContent content={streamingContent} />
                   <div className="mt-2 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#5a5550' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Rašo...</span>
