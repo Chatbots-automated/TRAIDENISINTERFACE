@@ -59,6 +59,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [editPasswordError, setEditPasswordError] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPromptTemplate, setEditedPromptTemplate] = useState('');
+  const [showTemplateInEdit, setShowTemplateInEdit] = useState(true);
   const [showArtifact, setShowArtifact] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
 
@@ -740,6 +741,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             setEditPassword('');
             setEditPasswordError(false);
             setIsEditingPrompt(false);
+            setShowTemplateInEdit(true);
           }}
         >
           <div
@@ -748,15 +750,45 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
-              <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
-                {isEditingPrompt ? 'Redaguoti Prompt Šabloną' : 'Įveskite slaptažodį'}
-              </h3>
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
+                  {isEditingPrompt ? (showTemplateInEdit ? 'Šablonas' : 'Pilnas Prompt') : 'Įveskite slaptažodį'}
+                </h3>
+                {isEditingPrompt && (
+                  <button
+                    onClick={() => setShowTemplateInEdit(!showTemplateInEdit)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                    style={{
+                      background: showTemplateInEdit ? '#f0ede8' : '#5a5550',
+                      color: showTemplateInEdit ? '#5a5550' : 'white',
+                      border: showTemplateInEdit ? '1px solid #e8e5e0' : 'none'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (showTemplateInEdit) {
+                        e.currentTarget.style.background = '#e8e5e0';
+                      } else {
+                        e.currentTarget.style.background = '#3d3935';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (showTemplateInEdit) {
+                        e.currentTarget.style.background = '#f0ede8';
+                      } else {
+                        e.currentTarget.style.background = '#5a5550';
+                      }
+                    }}
+                  >
+                    {showTemplateInEdit ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => {
                   setShowEditPromptModal(false);
                   setEditPassword('');
                   setEditPasswordError(false);
                   setIsEditingPrompt(false);
+                  setShowTemplateInEdit(true);
                 }}
                 className="p-2 rounded-lg transition-colors"
                 style={{ color: '#8a857f' }}
@@ -821,19 +853,38 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <p className="text-sm" style={{ color: '#8a857f' }}>
-                    Redaguokite prompt šabloną žemiau. Kintamieji {'{variable_key}'} bus pakeisti atitinkamomis reikšmėmis iš duomenų bazės.
-                  </p>
-                  <textarea
-                    value={editedPromptTemplate}
-                    onChange={(e) => setEditedPromptTemplate(e.target.value)}
-                    className="w-full h-96 px-4 py-3 text-xs font-mono rounded-lg border resize-none"
-                    style={{
-                      borderColor: '#e8e5e0',
-                      background: 'white',
-                      color: '#3d3935'
-                    }}
-                  />
+                  {showTemplateInEdit ? (
+                    <>
+                      <p className="text-sm" style={{ color: '#8a857f' }}>
+                        Redaguokite prompt šabloną žemiau. Kintamieji {'{variable_key}'} bus pakeisti atitinkamomis reikšmėmis iš duomenų bazės.
+                      </p>
+                      <textarea
+                        value={editedPromptTemplate}
+                        onChange={(e) => setEditedPromptTemplate(e.target.value)}
+                        className="w-full h-96 px-4 py-3 text-xs font-mono rounded-lg border resize-none"
+                        style={{
+                          borderColor: '#e8e5e0',
+                          background: 'white',
+                          color: '#3d3935'
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm" style={{ color: '#8a857f' }}>
+                        Peržiūra: pilnas prompt su įkeltais kintamaisiais (tik skaitymas)
+                      </p>
+                      <div className="w-full h-96 px-4 py-3 text-xs font-mono rounded-lg border overflow-y-auto"
+                        style={{
+                          borderColor: '#e8e5e0',
+                          background: '#f9f8f6',
+                          color: '#3d3935'
+                        }}
+                      >
+                        <pre className="whitespace-pre-wrap">{systemPrompt}</pre>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={() => {
@@ -841,6 +892,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                         setEditPassword('');
                         setEditPasswordError(false);
                         setIsEditingPrompt(false);
+                        setShowTemplateInEdit(true);
                       }}
                       className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
                       style={{ background: '#f0ede8', color: '#5a5550' }}
@@ -865,6 +917,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                             setEditPassword('');
                             setEditPasswordError(false);
                             setIsEditingPrompt(false);
+                            setShowTemplateInEdit(true);
                           } else {
                             console.error('Failed to save template:', result.error);
                             alert('Nepavyko išsaugoti šablono');
@@ -949,29 +1002,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              {showTemplateView ? (
-                <div>
-                  <div className="mb-4 p-3 rounded-lg" style={{ background: '#fef3c7', border: '1px solid #fcd34d' }}>
-                    <p className="text-xs" style={{ color: '#92400e' }}>
-                      <strong>Šablonas:</strong> Kintamieji {'{variable_key}'} rodomi kaip placeholders. Šie bus pakeisti tikromis reikšmėmis iš duomenų bazės.
-                    </p>
-                  </div>
-                  <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
-                    {promptTemplate}
-                  </pre>
-                </div>
-              ) : (
-                <div>
-                  <div className="mb-4 p-3 rounded-lg" style={{ background: '#dbeafe', border: '1px solid #93c5fd' }}>
-                    <p className="text-xs" style={{ color: '#1e3a8a' }}>
-                      <strong>Pilnas prompt:</strong> Visi kintamieji pakeisti tikromis reikšmėmis. Tai yra tiksliai tai, ką mato Claude AI.
-                    </p>
-                  </div>
-                  <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
-                    {systemPrompt}
-                  </pre>
-                </div>
-              )}
+              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
+                {showTemplateView ? promptTemplate : systemPrompt}
+              </pre>
             </div>
           </div>
         </div>
