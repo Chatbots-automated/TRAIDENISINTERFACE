@@ -10,7 +10,8 @@ import {
   Trash2,
   X,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Pencil
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
