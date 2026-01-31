@@ -44,6 +44,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [isToolUse, setIsToolUse] = useState(false);
+  const [toolUseName, setToolUseName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [loadingPrompt, setLoadingPrompt] = useState(true);
@@ -199,6 +202,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     setCurrentConversation({ ...conversation, messages: updatedMessages });
     setInputValue('');
     setLoading(true);
+    setStreamingContent('');
     setError(null);
 
     try {
@@ -214,7 +218,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         content: msg.content
       }));
 
-      const response = await anthropic.messages.create({
+      const stream = await anthropic.messages.stream({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
@@ -224,10 +228,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
       let thinkingContent = '';
       let responseContent = '';
+      let fullResponseText = '';
 
-      for (const block of response.content) {
-        if (block.type === 'thinking') thinkingContent = block.thinking;
-        else if (block.type === 'text') responseContent += block.text;
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'thinking') {
+            setIsToolUse(false);
+          } else if (event.content_block.type === 'tool_use') {
+            setIsToolUse(true);
+            setToolUseName(event.content_block.name || 'tool');
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'thinking_delta') {
+            thinkingContent += event.delta.thinking;
+          } else if (event.delta.type === 'text_delta') {
+            responseContent += event.delta.text;
+            fullResponseText += event.delta.text;
+            setStreamingContent(fullResponseText);
+          }
+        } else if (event.type === 'content_block_stop') {
+          setIsToolUse(false);
+        }
       }
 
       const assistantMessage: SDKMessage = {
@@ -253,13 +274,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       };
       setCurrentConversation(updatedConversation);
 
+      // Clear streaming content
+      setStreamingContent('');
+
       // Refresh conversation list in background to update sidebar (without visual jarring)
       loadConversations();
     } catch (err: any) {
       console.error('Error sending message:', err);
       setError(err.message || 'Įvyko klaida');
+      setStreamingContent('');
     } finally {
       setLoading(false);
+      setIsToolUse(false);
     }
   };
 
@@ -502,43 +528,79 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               </p>
             </div>
           ) : (
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="max-w-4xl mx-auto space-y-4">
               {currentConversation.messages.map((message, index) => (
-                <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className="max-w-[85%] px-4 py-3 rounded-xl"
-                    style={{
-                      background: message.role === 'user' ? '#5a5550' : 'white',
-                      color: message.role === 'user' ? 'white' : '#3d3935',
-                      border: message.role === 'assistant' ? '1px solid #e8e5e0' : 'none'
-                    }}
-                  >
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')}
-                    </div>
-                    {message.thinking && (
-                      <details className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-                        <summary className="text-xs cursor-pointer" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.8)' : '#8a857f' }}>
-                          Rodyti mąstymo procesą
-                        </summary>
-                        <div className="mt-2 text-xs whitespace-pre-wrap" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
-                          {message.thinking}
+                <div key={index}>
+                  {message.role === 'user' ? (
+                    // User message - condensed bubble on right
+                    <div className="flex justify-end mb-4">
+                      <div
+                        className="max-w-[85%] px-3 py-1.5 rounded-lg"
+                        style={{
+                          background: '#5a5550',
+                          color: 'white'
+                        }}
+                      >
+                        <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                          {message.content}
                         </div>
-                      </details>
-                    )}
-                    <div className="text-xs mt-2" style={{ color: message.role === 'user' ? 'rgba(255,255,255,0.7)' : '#8a857f' }}>
-                      {new Date(message.timestamp).toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    // Assistant message - plain text, no bubble
+                    <div className="mb-6">
+                      <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935' }}>
+                        {message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '').replace(/<tool_use>[\s\S]*?<\/tool_use>/g, '').replace(/<tool_function_result>[\s\S]*?<\/tool_function_result>/g, '')}
+                      </div>
+                      {message.thinking && (
+                        <details className="mt-3">
+                          <summary className="text-xs cursor-pointer" style={{ color: '#8a857f' }}>
+                            Rodyti mąstymo procesą
+                          </summary>
+                          <div className="mt-2 text-xs whitespace-pre-wrap px-3 py-2 rounded" style={{ color: '#8a857f', background: '#f9f8f6' }}>
+                            {message.thinking}
+                          </div>
+                        </details>
+                      )}
+                      <div className="text-xs mt-2" style={{ color: '#8a857f' }}>
+                        {new Date(message.timestamp).toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="px-4 py-3 rounded-xl" style={{ background: 'white', border: '1px solid #e8e5e0' }}>
-                    <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#5a5550' }} />
+
+              {/* Streaming content */}
+              {loading && streamingContent && (
+                <div className="mb-6">
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935' }}>
+                    {streamingContent}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#5a5550' }} />
+                    <span className="text-xs" style={{ color: '#8a857f' }}>Rašo...</span>
                   </div>
                 </div>
               )}
+
+              {/* Tool usage indicator */}
+              {loading && isToolUse && (
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 text-sm" style={{ color: '#8a857f' }}>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Vykdoma: {toolUseName}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Initial loading indicator */}
+              {loading && !streamingContent && !isToolUse && (
+                <div className="flex items-center gap-2 text-sm" style={{ color: '#8a857f' }}>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Kraunama...</span>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
           )}
