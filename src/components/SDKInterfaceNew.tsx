@@ -752,10 +752,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                         className="max-w-[75%] px-4 py-2.5 rounded-2xl"
                         style={{
                           background: '#f3f4f6',
-                          color: '#111827'
+                          color: '#111827',
+                          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
                         }}
                       >
-                        <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                        <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                           {message.content}
                         </div>
                       </div>
@@ -953,7 +954,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+              <div className="text-[15px] leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
                 {currentConversation.artifact.content}
               </div>
             </div>
