@@ -608,7 +608,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               {/* Streaming content */}
               {loading && streamingContent && (
                 <div className="mb-6">
-                  <MessageContent content={streamingContent} />
+                  <MessageContent content={streamingContent.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
                   <div className="mt-2 flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#5a5550' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Rašo...</span>
@@ -676,6 +676,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
+                {currentConversation?.artifact && (
+                  <button
+                    onClick={() => setShowArtifact(!showArtifact)}
+                    className="p-2 rounded-md transition-colors"
+                    style={{
+                      color: showArtifact ? '#5a5550' : '#8a857f',
+                      background: showArtifact ? '#f0ede8' : 'transparent'
+                    }}
+                    onMouseEnter={(e) => !showArtifact && (e.currentTarget.style.background = '#f0ede8')}
+                    onMouseLeave={(e) => !showArtifact && (e.currentTarget.style.background = 'transparent')}
+                    title={showArtifact ? 'Slėpti pasiūlymą' : 'Rodyti pasiūlymą'}
+                  >
+                    <FileText className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim() || loading || !systemPrompt}
