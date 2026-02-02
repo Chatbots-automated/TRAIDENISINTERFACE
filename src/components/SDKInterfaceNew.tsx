@@ -267,37 +267,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         }
       }
 
-      // Build assistant message content
-      const assistantMessageContent: string = responseContent;
-
-      const assistantMessage: SDKMessage = {
-        role: 'assistant',
-        content: assistantMessageContent,
-        timestamp: new Date().toISOString(),
-        thinking: thinkingContent
-      };
-
       // Check for artifacts
       if (responseContent.includes('<commercial_offer') || conversation.artifact) {
         await handleArtifactGeneration(responseContent, conversation);
       }
 
-      // Save assistant message
-      await addMessageToConversation(conversation.id, assistantMessage);
-      const messagesAfterAssistant = [...currentMessages, assistantMessage];
-
-      // Update UI
-      setCurrentConversation({
-        ...conversation,
-        messages: messagesAfterAssistant,
-        message_count: messagesAfterAssistant.length,
-        last_message_at: assistantMessage.timestamp,
-        updated_at: new Date().toISOString()
-      });
-
       setStreamingContent('');
 
-      // If there are tool uses, execute them and continue
+      // If there are tool uses, execute them and continue (don't save intermediate message)
       if (toolUses.length > 0) {
         console.log(`[Tool Loop] Executing ${toolUses.length} tools...`);
 
@@ -313,7 +290,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           })
         );
 
-        // Build messages for next round
+        // Build messages for next round (with tool_use and tool_result blocks)
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
           ...messages,
           {
@@ -334,34 +311,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           }
         ];
 
-        // Create a synthetic user message for our database (for display purposes)
-        const toolResultMessage: SDKMessage = {
-          role: 'user',
-          content: `[Tool results: ${toolUses.map(t => t.name).join(', ')}]`,
-          timestamp: new Date().toISOString()
-        };
-
-        await addMessageToConversation(conversation.id, toolResultMessage);
-        const messagesAfterToolResults = [...messagesAfterAssistant, toolResultMessage];
-
-        setCurrentConversation({
-          ...conversation,
-          messages: messagesAfterToolResults,
-          message_count: messagesAfterToolResults.length,
-          last_message_at: toolResultMessage.timestamp,
-          updated_at: new Date().toISOString()
-        });
-
-        // Recursively process next response with tool results
+        // Recursively process next response with tool results (don't save intermediate messages)
         await processAIResponse(
           anthropic,
           anthropicMessagesWithToolResults,
           systemPrompt,
           conversation,
-          messagesAfterToolResults
+          currentMessages // Keep same currentMessages, not adding anything yet
         );
       } else {
-        // No more tool uses, conversation is complete
+        // No more tool uses, save final assistant message
+        const assistantMessage: SDKMessage = {
+          role: 'assistant',
+          content: responseContent,
+          timestamp: new Date().toISOString(),
+          thinking: thinkingContent
+        };
+
+        await addMessageToConversation(conversation.id, assistantMessage);
+        const finalMessages = [...currentMessages, assistantMessage];
+
+        setCurrentConversation({
+          ...conversation,
+          messages: finalMessages,
+          message_count: finalMessages.length,
+          last_message_at: assistantMessage.timestamp,
+          updated_at: new Date().toISOString()
+        });
+
         loadConversations();
       }
     } catch (err: any) {
@@ -435,10 +412,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         dangerouslyAllowBrowser: true
       });
 
-      const anthropicMessages = updatedMessages.map((msg) => ({
-        role: msg.role,
-        content: msg.content
-      }));
+      const anthropicMessages = updatedMessages
+        .filter(msg => !msg.content.startsWith('[Tool results:')) // Filter out synthetic tool result messages
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.content
+        }));
 
       // Build system prompt with artifact context if exists
       let contextualSystemPrompt = systemPrompt;
@@ -874,7 +853,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         )}
 
         {/* Input Box - Always visible */}
-        <div className="px-6 py-4">
+        <div className="px-6 py-4" style={{ background: '#ffffff' }}>
           <div className="max-w-4xl mx-auto">
             <div className="relative">
               <textarea
@@ -884,8 +863,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 onKeyDown={handleKeyDown}
                 placeholder="Parašykite žinutę..."
                 rows={1}
-                className="w-full px-4 py-3.5 pr-80 text-base rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                style={{ background: 'white', color: '#111827', border: '1px solid #d1d5db' }}
+                className="w-full px-4 py-3.5 pr-80 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                style={{ background: 'white', color: '#111827', border: '1px solid #d1d5db', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
                 disabled={loading || !systemPrompt}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
