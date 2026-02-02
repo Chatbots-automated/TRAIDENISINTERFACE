@@ -106,22 +106,24 @@ export const getPromptTemplate = async (): Promise<string> => {
  */
 export const savePromptTemplate = async (template: string): Promise<{ success: boolean; error?: any }> => {
   try {
-    // First try to update existing template
-    const { error: updateError } = await supabaseAdmin
+    // Use upsert to insert or update in one operation
+    const { error } = await supabaseAdmin
       .from('prompt_template')
-      .update({ template_content: template, updated_at: new Date().toISOString() })
-      .eq('id', 1);
+      .upsert(
+        {
+          id: 1,
+          template_content: template,
+          updated_at: new Date().toISOString()
+        },
+        {
+          onConflict: 'id',
+          ignoreDuplicates: false
+        }
+      );
 
-    if (updateError) {
-      // If update fails, insert new record
-      const { error: insertError } = await supabaseAdmin
-        .from('prompt_template')
-        .insert({ id: 1, template_content: template });
-
-      if (insertError) {
-        console.error('[savePromptTemplate] Error saving template:', insertError);
-        return { success: false, error: insertError };
-      }
+    if (error) {
+      console.error('[savePromptTemplate] Error saving template:', error);
+      return { success: false, error };
     }
 
     console.log('[savePromptTemplate] Template saved successfully');
