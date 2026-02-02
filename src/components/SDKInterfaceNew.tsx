@@ -227,11 +227,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         content: msg.content
       }));
 
+      // Build system prompt with artifact context if exists
+      let contextualSystemPrompt = systemPrompt;
+      if (conversation.artifact) {
+        contextualSystemPrompt += `\n\n---\n\n**CURRENT ARTIFACT CONTEXT:**\nAn active commercial offer artifact exists in this conversation with ID: \`${conversation.artifact.id}\`\n\n**CRITICAL:** When updating or modifying the commercial offer, you MUST reuse this artifact_id:\n\`\`\`xml\n<commercial_offer artifact_id="${conversation.artifact.id}">\n[updated content]\n</commercial_offer>\n\`\`\`\n\nDO NOT create a new artifact. Always use artifact_id="${conversation.artifact.id}" for updates.`;
+      }
+
       const stream = await anthropic.messages.stream({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
-        system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+        system: [{ type: 'text', text: contextualSystemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: anthropicMessages
       });
 
@@ -267,7 +273,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         thinking: thinkingContent
       };
 
-      if (responseContent.includes('<commercial_offer>') || conversation.artifact) {
+      if (responseContent.includes('<commercial_offer') || conversation.artifact) {
         await handleArtifactGeneration(responseContent, conversation);
       }
 
@@ -300,18 +306,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
   const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
     try {
-      const match = content.match(/<commercial_offer>([\s\S]*?)<\/commercial_offer>/);
+      // Match with optional artifact_id attribute
+      const match = content.match(/<commercial_offer(?:\s+artifact_id="([^"]*)")?\s*>([\s\S]*?)<\/commercial_offer>/);
       if (!match) return;
 
-      const offerContent = match[1].trim();
+      const [_, artifactIdFromAI, offerContent] = match;
+      const trimmedContent = offerContent.trim();
       const currentArtifact = conversation.artifact;
       let newArtifact: CommercialOfferArtifact;
 
-      if (currentArtifact) {
-        const diff = calculateDiff(currentArtifact.content, offerContent);
+      console.log('[Artifact] Detected artifact_id from AI:', artifactIdFromAI);
+      console.log('[Artifact] Current artifact exists:', !!currentArtifact);
+
+      // Determine if this is a new artifact or an update
+      const isNewArtifact = artifactIdFromAI === 'new' || !currentArtifact;
+
+      if (isNewArtifact) {
+        // Create new artifact
+        const generatedId = `offer_${crypto.randomUUID().split('-')[0]}`;
+        console.log('[Artifact] Creating NEW artifact with ID:', generatedId);
+
+        newArtifact = {
+          id: generatedId,
+          type: 'commercial_offer',
+          title: 'Komercinis pasiūlymas',
+          content: trimmedContent,
+          version: 1,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          diff_history: []
+        };
+      } else {
+        // Update existing artifact
+        console.log('[Artifact] UPDATING existing artifact:', currentArtifact.id);
+
+        // Validate artifact_id matches (if provided and not "new")
+        if (artifactIdFromAI && artifactIdFromAI !== currentArtifact.id) {
+          console.warn(`[Artifact] Warning: AI provided artifact_id "${artifactIdFromAI}" doesn't match current "${currentArtifact.id}". Using current.`);
+        }
+
+        const diff = calculateDiff(currentArtifact.content, trimmedContent);
         newArtifact = {
           ...currentArtifact,
-          content: offerContent,
+          content: trimmedContent,
           version: currentArtifact.version + 1,
           updated_at: new Date().toISOString(),
           diff_history: [...currentArtifact.diff_history, {
@@ -320,22 +357,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             changes: diff
           }]
         };
-      } else {
-        newArtifact = {
-          id: crypto.randomUUID(),
-          type: 'commercial_offer',
-          title: 'Komercinis pasiūlymas',
-          content: offerContent,
-          version: 1,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          diff_history: []
-        };
       }
 
+      console.log('[Artifact] Saving artifact to database...');
       await updateConversationArtifact(conversation.id, newArtifact);
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
+      console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
     } catch (err) {
       console.error('Error handling artifact:', err);
     }
@@ -558,7 +586,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   ) : (
                     // Assistant message - plain text, no bubble
                     <div className="mb-6">
-                      <MessageContent content={message.content.replace(/<commercial_offer>[\s\S]*?<\/commercial_offer>/g, '')} />
+                      <MessageContent content={message.content.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
                       {message.thinking && (
                         <details className="mt-3">
                           <summary className="text-xs cursor-pointer" style={{ color: '#8a857f' }}>
