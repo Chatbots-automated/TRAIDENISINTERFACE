@@ -69,8 +69,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [showTemplateInEdit, setShowTemplateInEdit] = useState(true);
   const [showArtifact, setShowArtifact] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [userScrolledUp, setUserScrolledUp] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
@@ -80,8 +83,26 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [currentConversation?.messages]);
+    // Auto-scroll on new messages only if user hasn't scrolled up
+    if (!userScrolledUp) {
+      scrollToBottom();
+    }
+  }, [currentConversation?.messages, userScrolledUp]);
+
+  useEffect(() => {
+    // Auto-scroll during streaming if user hasn't scrolled up
+    if (streamingContent && !userScrolledUp) {
+      scrollToBottom();
+    }
+  }, [streamingContent, userScrolledUp]);
+
+  useEffect(() => {
+    // Reset scroll state when new response starts
+    if (loading) {
+      setUserScrolledUp(false);
+      setShowScrollButton(false);
+    }
+  }, [loading]);
 
   const loadSystemPrompt = async () => {
     try {
@@ -162,6 +183,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowScrollButton(false);
+  };
+
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+    if (!isNearBottom && loading) {
+      setUserScrolledUp(true);
+      setShowScrollButton(true);
+    } else if (isNearBottom) {
+      setUserScrolledUp(false);
+      setShowScrollButton(false);
+    }
   };
 
   /**
@@ -673,9 +710,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             onClick={() => setShowArtifact(!showArtifact)}
             className="fixed top-6 right-6 z-50 px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
             style={{
-              background: showArtifact ? '#2563eb' : 'white',
-              color: showArtifact ? 'white' : '#374151',
-              border: showArtifact ? 'none' : '1px solid #e5e7eb'
+              background: showArtifact ? '#5a5550' : 'white',
+              color: showArtifact ? 'white' : '#5a5550',
+              border: '1px solid #e8e5e0'
             }}
           >
             <div className="flex items-center gap-2">
@@ -686,7 +723,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         )}
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto px-6 py-8" style={{ background: '#ffffff' }}>
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto px-6 py-8"
+          style={{ background: '#ffffff' }}
+        >
           {!currentConversation ? (
             <div className="h-full flex items-center justify-center">
               <p className="text-sm" style={{ color: '#9ca3af' }}>
@@ -804,6 +846,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           )}
         </div>
 
+        {/* Scroll to Bottom Button */}
+        {showScrollButton && (
+          <button
+            onClick={scrollToBottom}
+            className="fixed bottom-24 left-1/2 transform -translate-x-1/2 p-3 rounded-full shadow-lg transition-all hover:shadow-xl z-40"
+            style={{
+              background: '#5a5550',
+              color: 'white'
+            }}
+          >
+            <ChevronDown className="w-5 h-5" />
+          </button>
+        )}
+
         {/* Error Display - Always visible when error exists */}
         {error && (
           <div className="px-6 pb-2">
@@ -817,7 +873,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         )}
 
         {/* Input Box - Always visible */}
-        <div className="px-6 py-4 border-t" style={{ borderColor: '#e5e7eb' }}>
+        <div className="px-6 py-4">
           <div className="max-w-4xl mx-auto">
             <div className="relative">
               <textarea
@@ -833,23 +889,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
                 <button
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                  style={{ color: '#6b7280' }}
+                  className="p-2 rounded-lg transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   disabled={loading}
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm" style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
-                  <span style={{ color: '#374151' }}>Sonnet 4.5</span>
-                  <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />
-                </div>
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim() || loading || !systemPrompt}
                   className="p-2.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
-                    background: inputValue.trim() && !loading ? '#2563eb' : '#e5e7eb',
-                    color: inputValue.trim() && !loading ? 'white' : '#9ca3af'
+                    background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
+                    color: inputValue.trim() && !loading ? 'white' : '#8a857f'
                   }}
                 >
                   <Send className="w-4 h-4" />
@@ -860,42 +914,48 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         </div>
       </div>
 
-      {/* Artifact Panel - Clean Design */}
+      {/* Artifact Panel - Floating Design */}
       {currentConversation?.artifact && showArtifact && (
-        <div className="w-[480px] border-l flex-shrink-0 flex flex-col bg-white" style={{ borderColor: '#e5e7eb' }}>
-          {/* Header */}
-          <div className="px-6 py-4 border-b" style={{ borderColor: '#e5e7eb' }}>
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold" style={{ color: '#111827' }}>
-                Komercinis pasiūlymas
-              </h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => navigator.clipboard.writeText(currentConversation.artifact.content)}
-                  className="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 transition-colors flex items-center gap-2"
-                  style={{ color: '#374151' }}
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  Copy
-                </button>
-                <button
-                  onClick={() => setShowArtifact(false)}
-                  className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                  style={{ color: '#6b7280' }}
-                >
-                  <X className="w-4 h-4" />
-                </button>
+        <div className="p-4 flex-shrink-0">
+          <div className="w-[460px] bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b" style={{ borderColor: '#e8e5e0' }}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold" style={{ color: '#3d3935' }}>
+                  Komercinis pasiūlymas
+                </h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => navigator.clipboard.writeText(currentConversation.artifact.content)}
+                    className="px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2"
+                    style={{ background: '#5a5550', color: 'white' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copy
+                  </button>
+                  <button
+                    onClick={() => setShowArtifact(false)}
+                    className="p-1.5 rounded-lg transition-colors"
+                    style={{ color: '#8a857f' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
+              <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
+                Versija {currentConversation.artifact.version}
+              </p>
             </div>
-            <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
-              Versija {currentConversation.artifact.version}
-            </p>
-          </div>
 
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
-            <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#374151', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-              {currentConversation.artifact.content}
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+                {currentConversation.artifact.content}
+              </div>
             </div>
           </div>
         </div>
