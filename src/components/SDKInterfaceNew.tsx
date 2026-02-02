@@ -30,6 +30,8 @@ import {
 } from '../lib/sdkConversationService';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
+import { tools } from '../lib/toolDefinitions';
+import { executeTool } from '../lib/toolExecutors';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -157,6 +159,175 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  /**
+   * Process AI response with tool use support (recursive)
+   */
+  const processAIResponse = async (
+    anthropic: Anthropic,
+    messages: Anthropic.MessageParam[],
+    systemPrompt: string,
+    conversation: SDKConversation,
+    currentMessages: SDKMessage[]
+  ): Promise<void> => {
+    try {
+      const stream = await anthropic.messages.stream({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 8000,
+        thinking: { type: 'enabled', budget_tokens: 5000 },
+        system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+        messages: messages,
+        tools: tools
+      });
+
+      let thinkingContent = '';
+      let responseContent = '';
+      let fullResponseText = '';
+      const toolUses: Array<{ id: string; name: string; input: any }> = [];
+      let currentToolUse: { id: string; name: string; input: string } | null = null;
+
+      for await (const event of stream) {
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'thinking') {
+            setIsToolUse(false);
+          } else if (event.content_block.type === 'tool_use') {
+            setIsToolUse(true);
+            currentToolUse = {
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: ''
+            };
+            setToolUseName(event.content_block.name || 'tool');
+          }
+        } else if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'thinking_delta') {
+            thinkingContent += event.delta.thinking;
+          } else if (event.delta.type === 'text_delta') {
+            responseContent += event.delta.text;
+            fullResponseText += event.delta.text;
+            setStreamingContent(fullResponseText);
+          } else if (event.delta.type === 'input_json_delta' && currentToolUse) {
+            currentToolUse.input += event.delta.partial_json;
+          }
+        } else if (event.type === 'content_block_stop') {
+          if (currentToolUse) {
+            try {
+              toolUses.push({
+                id: currentToolUse.id,
+                name: currentToolUse.name,
+                input: JSON.parse(currentToolUse.input)
+              });
+            } catch (e) {
+              console.error('[Tool] Failed to parse tool input:', currentToolUse.input);
+            }
+            currentToolUse = null;
+          }
+          setIsToolUse(false);
+        }
+      }
+
+      // Build assistant message content
+      const assistantMessageContent: string = responseContent;
+
+      const assistantMessage: SDKMessage = {
+        role: 'assistant',
+        content: assistantMessageContent,
+        timestamp: new Date().toISOString(),
+        thinking: thinkingContent
+      };
+
+      // Check for artifacts
+      if (responseContent.includes('<commercial_offer') || conversation.artifact) {
+        await handleArtifactGeneration(responseContent, conversation);
+      }
+
+      // Save assistant message
+      await addMessageToConversation(conversation.id, assistantMessage);
+      const messagesAfterAssistant = [...currentMessages, assistantMessage];
+
+      // Update UI
+      setCurrentConversation({
+        ...conversation,
+        messages: messagesAfterAssistant,
+        message_count: messagesAfterAssistant.length,
+        last_message_at: assistantMessage.timestamp,
+        updated_at: new Date().toISOString()
+      });
+
+      setStreamingContent('');
+
+      // If there are tool uses, execute them and continue
+      if (toolUses.length > 0) {
+        console.log(`[Tool Loop] Executing ${toolUses.length} tools...`);
+
+        // Execute all tools
+        const toolResults = await Promise.all(
+          toolUses.map(async (toolUse) => {
+            const result = await executeTool(toolUse.name, toolUse.input);
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: toolUse.id,
+              content: result
+            };
+          })
+        );
+
+        // Build messages for next round
+        const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
+          ...messages,
+          {
+            role: 'assistant',
+            content: [
+              ...toolUses.map(tu => ({
+                type: 'tool_use' as const,
+                id: tu.id,
+                name: tu.name,
+                input: tu.input
+              })),
+              ...(responseContent ? [{ type: 'text' as const, text: responseContent }] : [])
+            ]
+          },
+          {
+            role: 'user',
+            content: toolResults
+          }
+        ];
+
+        // Create a synthetic user message for our database (for display purposes)
+        const toolResultMessage: SDKMessage = {
+          role: 'user',
+          content: `[Tool results: ${toolUses.map(t => t.name).join(', ')}]`,
+          timestamp: new Date().toISOString()
+        };
+
+        await addMessageToConversation(conversation.id, toolResultMessage);
+        const messagesAfterToolResults = [...messagesAfterAssistant, toolResultMessage];
+
+        setCurrentConversation({
+          ...conversation,
+          messages: messagesAfterToolResults,
+          message_count: messagesAfterToolResults.length,
+          last_message_at: toolResultMessage.timestamp,
+          updated_at: new Date().toISOString()
+        });
+
+        // Recursively process next response with tool results
+        await processAIResponse(
+          anthropic,
+          anthropicMessagesWithToolResults,
+          systemPrompt,
+          conversation,
+          messagesAfterToolResults
+        );
+      } else {
+        // No more tool uses, conversation is complete
+        loadConversations();
+      }
+    } catch (err: any) {
+      console.error('[processAIResponse] Error:', err);
+      throw err;
+    }
+  };
+
   const handleSend = async () => {
     if (!inputValue.trim() || loading || !systemPrompt) return;
 
@@ -233,67 +404,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         contextualSystemPrompt += `\n\n---\n\n**CURRENT ARTIFACT CONTEXT:**\nAn active commercial offer artifact exists in this conversation with ID: \`${conversation.artifact.id}\`\n\n**CRITICAL:** When updating or modifying the commercial offer, you MUST reuse this artifact_id:\n\`\`\`xml\n<commercial_offer artifact_id="${conversation.artifact.id}">\n[updated content]\n</commercial_offer>\n\`\`\`\n\nDO NOT create a new artifact. Always use artifact_id="${conversation.artifact.id}" for updates.`;
       }
 
-      const stream = await anthropic.messages.stream({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
-        thinking: { type: 'enabled', budget_tokens: 5000 },
-        system: [{ type: 'text', text: contextualSystemPrompt, cache_control: { type: 'ephemeral' } }],
-        messages: anthropicMessages
-      });
-
-      let thinkingContent = '';
-      let responseContent = '';
-      let fullResponseText = '';
-
-      for await (const event of stream) {
-        if (event.type === 'content_block_start') {
-          if (event.content_block.type === 'thinking') {
-            setIsToolUse(false);
-          } else if (event.content_block.type === 'tool_use') {
-            setIsToolUse(true);
-            setToolUseName(event.content_block.name || 'tool');
-          }
-        } else if (event.type === 'content_block_delta') {
-          if (event.delta.type === 'thinking_delta') {
-            thinkingContent += event.delta.thinking;
-          } else if (event.delta.type === 'text_delta') {
-            responseContent += event.delta.text;
-            fullResponseText += event.delta.text;
-            setStreamingContent(fullResponseText);
-          }
-        } else if (event.type === 'content_block_stop') {
-          setIsToolUse(false);
-        }
-      }
-
-      const assistantMessage: SDKMessage = {
-        role: 'assistant',
-        content: responseContent,
-        timestamp: new Date().toISOString(),
-        thinking: thinkingContent
-      };
-
-      if (responseContent.includes('<commercial_offer') || conversation.artifact) {
-        await handleArtifactGeneration(responseContent, conversation);
-      }
-
-      await addMessageToConversation(conversation.id, assistantMessage);
-
-      // Update local state with the new message
-      const updatedConversation = {
-        ...conversation,
-        messages: [...updatedMessages, assistantMessage],
-        message_count: updatedMessages.length + 1,
-        last_message_at: assistantMessage.timestamp,
-        updated_at: new Date().toISOString()
-      };
-      setCurrentConversation(updatedConversation);
-
-      // Clear streaming content
-      setStreamingContent('');
-
-      // Refresh conversation list in background to update sidebar (without visual jarring)
-      loadConversations();
+      // Start recursive tool use loop
+      await processAIResponse(anthropic, anthropicMessages, contextualSystemPrompt, conversation, updatedMessages);
     } catch (err: any) {
       console.error('Error sending message:', err);
       setError(err.message || 'Įvyko klaida');
