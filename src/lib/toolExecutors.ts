@@ -1,10 +1,12 @@
 import { N8N_MCP_SERVER_URL } from './toolDefinitions';
+import { supabaseAdmin } from './supabase';
 
 /**
- * Execute tools via n8n MCP Server and local tools
+ * Execute tools locally via Supabase
  *
- * - n8n tools: get_products, get_prices, get_multiplier (via MCP server)
+ * - Database tools: get_products, get_prices, get_multiplier (via Supabase)
  * - Local tools: edit_commercial_offer (direct artifact editing)
+ * - n8n MCP integration available but using local execution for now
  */
 
 // Note: You need to install js-yaml: npm install js-yaml @types/js-yaml
@@ -80,27 +82,104 @@ async function callN8nMCPServer(toolName: string, toolInput: any): Promise<strin
 }
 
 /**
- * Execute get_products tool via n8n MCP Server
+ * Execute get_products tool (local Supabase query)
  */
 export async function executeGetProductsTool(input: { product_code: string }): Promise<string> {
-  console.log('[Tool: get_products] Searching for product code:', input.product_code);
-  return await callN8nMCPServer('get_products', input);
+  try {
+    console.log('[Tool: get_products] Searching for product code:', input.product_code);
+
+    const { data, error } = await supabaseAdmin
+      .from('products')
+      .select('*')
+      .eq('productCode', input.product_code)
+      .single();
+
+    if (error) {
+      return JSON.stringify({
+        success: false,
+        error: error.message,
+        product_code: input.product_code
+      });
+    }
+
+    return JSON.stringify({
+      success: true,
+      data: data
+    }, null, 2);
+  } catch (error: any) {
+    return JSON.stringify({
+      success: false,
+      error: error.message || 'Unknown error'
+    });
+  }
 }
 
 /**
- * Execute get_prices tool via n8n MCP Server
+ * Execute get_prices tool (local Supabase query)
  */
 export async function executeGetPricesTool(input: { id: number }): Promise<string> {
-  console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
-  return await callN8nMCPServer('get_prices', input);
+  try {
+    console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
+
+    const { data, error } = await supabaseAdmin
+      .from('pricing')
+      .select('*')
+      .eq('productid', input.id)
+      .order('created', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      return JSON.stringify({
+        success: false,
+        error: error.message,
+        product_id: input.id
+      });
+    }
+
+    return JSON.stringify({
+      success: true,
+      data: data
+    }, null, 2);
+  } catch (error: any) {
+    return JSON.stringify({
+      success: false,
+      error: error.message || 'Unknown error'
+    });
+  }
 }
 
 /**
- * Execute get_multiplier tool via n8n MCP Server
+ * Execute get_multiplier tool (local Supabase query)
  */
 export async function executeGetMultiplierTool(): Promise<string> {
-  console.log('[Tool: get_multiplier] Fetching latest price multiplier');
-  return await callN8nMCPServer('get_multiplier', {});
+  try {
+    console.log('[Tool: get_multiplier] Fetching latest price multiplier');
+
+    const { data, error } = await supabaseAdmin
+      .from('price_multiplier')
+      .select('*')
+      .order('created', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      return JSON.stringify({
+        success: false,
+        error: error.message
+      });
+    }
+
+    return JSON.stringify({
+      success: true,
+      data: data
+    }, null, 2);
+  } catch (error: any) {
+    return JSON.stringify({
+      success: false,
+      error: error.message || 'Unknown error'
+    });
+  }
 }
 
 /**
