@@ -212,6 +212,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     currentMessages: SDKMessage[]
   ): Promise<void> => {
     try {
+      // Debug: Log incoming messages structure
+      console.log('[processAIResponse] Starting with', messages.length, 'messages');
+      messages.forEach((msg, idx) => {
+        const contentType = Array.isArray(msg.content)
+          ? `[${msg.content.map((c: any) => c.type || 'text').join(', ')}]`
+          : 'string';
+        console.log(`  [${idx}] ${msg.role}: ${contentType}`);
+      });
+
       const stream = await anthropic.messages.stream({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 8000,
@@ -278,15 +287,30 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       if (toolUses.length > 0) {
         console.log(`[Tool Loop] Executing ${toolUses.length} tools...`);
 
-        // Execute all tools
+        // Execute all tools with error handling
         const toolResults = await Promise.all(
           toolUses.map(async (toolUse) => {
-            const result = await executeTool(toolUse.name, toolUse.input);
-            return {
-              type: 'tool_result' as const,
-              tool_use_id: toolUse.id,
-              content: result
-            };
+            try {
+              const result = await executeTool(toolUse.name, toolUse.input);
+              console.log(`[Tool Loop] Tool ${toolUse.name} completed. Result length:`, result.length);
+              return {
+                type: 'tool_result' as const,
+                tool_use_id: toolUse.id,
+                content: result
+              };
+            } catch (error: any) {
+              console.error(`[Tool Loop] Tool ${toolUse.name} threw exception:`, error);
+              // Return error as tool_result so the conversation can continue
+              return {
+                type: 'tool_result' as const,
+                tool_use_id: toolUse.id,
+                content: JSON.stringify({
+                  success: false,
+                  error: error.message || 'Unknown error executing tool',
+                  tool_name: toolUse.name
+                })
+              };
+            }
           })
         );
 
@@ -310,6 +334,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             content: toolResults
           }
         ];
+
+        // Debug: Log exact message structure being sent
+        console.log('[Tool Loop] Message structure for next API call:');
+        anthropicMessagesWithToolResults.forEach((msg, idx) => {
+          console.log(`  [${idx}] ${msg.role}:`,
+            Array.isArray(msg.content)
+              ? msg.content.map((c: any) => c.type || typeof c).join(', ')
+              : typeof msg.content
+          );
+        });
 
         // Recursively process next response with tool results (don't save intermediate messages)
         await processAIResponse(
@@ -417,17 +451,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       let lastRole: 'user' | 'assistant' | null = null;
 
       for (const msg of updatedMessages) {
+        // Check if content is a string or array
+        const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+
         // Skip synthetic tool messages and malformed messages
-        if (msg.content.startsWith('[Tool results:') ||
-            msg.content.includes('toolu_') ||
-            msg.content.trim().length === 0) {
-          console.log('[SKIPPING MALFORMED MESSAGE]:', msg.content.substring(0, 50));
+        if (contentStr.startsWith('[Tool results:') ||
+            contentStr.includes('toolu_') ||
+            contentStr.trim().length === 0 ||
+            contentStr === '{}' ||
+            contentStr === '[]') {
+          console.log('[SKIPPING MALFORMED MESSAGE]:', contentStr.substring(0, 100));
           continue;
         }
 
         // Skip if same role as previous (prevents consecutive assistant/user messages)
         if (msg.role === lastRole) {
-          console.log('[SKIPPING DUPLICATE ROLE]:', msg.role, msg.content.substring(0, 50));
+          console.log('[SKIPPING DUPLICATE ROLE]:', msg.role, contentStr.substring(0, 100));
+          continue;
+        }
+
+        // Only include messages with valid string content
+        // Do NOT include messages with tool_use blocks from old conversations
+        if (typeof msg.content !== 'string') {
+          console.log('[SKIPPING NON-STRING CONTENT]:', msg.role, contentStr.substring(0, 100));
           continue;
         }
 

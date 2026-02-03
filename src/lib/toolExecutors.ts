@@ -11,9 +11,35 @@ export async function executeGoogleSheetTool(input: { description: string }): Pr
     // Use Google Sheets public CSV export API
     const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=0`;
 
-    const response = await fetch(csvUrl);
+    console.log('[Tool: get_google_sheet] Fetching from:', csvUrl);
+
+    const response = await fetch(csvUrl, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        'Accept': 'text/csv'
+      }
+    });
+
+    console.log('[Tool: get_google_sheet] Response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      throw new Error(`Failed to fetch Google Sheet: ${response.status} ${response.statusText}`);
+      // Provide more helpful error message
+      const errorDetails = {
+        status: response.status,
+        statusText: response.statusText,
+        url: csvUrl
+      };
+      console.error('[Tool: get_google_sheet] Fetch failed:', errorDetails);
+
+      if (response.status === 400) {
+        throw new Error(`Google Sheets returned 400. The sheet might not be publicly accessible or there's a CORS issue. Please verify the sheet is set to "Anyone with the link can view" and try again.`);
+      } else if (response.status === 403) {
+        throw new Error(`Google Sheets returned 403 Forbidden. The sheet is not publicly accessible. Please set sharing to "Anyone with the link can view".`);
+      } else {
+        throw new Error(`Failed to fetch Google Sheet: ${response.status} ${response.statusText}`);
+      }
     }
 
     const csvText = await response.text();
