@@ -345,21 +345,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         );
 
         // Build messages for next round (with tool_use and tool_result blocks)
-        // CRITICAL: Filter out any messages from previous iterations that might have array content
-        const cleanedMessages = messages.filter((msg, idx) => {
-          const hasArrayContent = Array.isArray(msg.content);
-          if (hasArrayContent) {
-            console.warn(`[Tool Loop] ⚠️  Filtering out message [${idx}] with array content from previous iteration`);
-            console.warn(`[Tool Loop]     This message should not be in the messages array!`);
-            return false;
-          }
-          return true;
-        });
+        // CRITICAL: The 'messages' parameter here should ONLY contain properly formatted messages
+        // from the previous API call. They can have array content if they contain valid
+        // tool_use + tool_result pairs that were already processed by the API.
+        // We should NOT filter them out - they are part of the conversation history!
 
-        console.log(`[Tool Loop] Cleaned ${messages.length} messages → ${cleanedMessages.length} (removed ${messages.length - cleanedMessages.length} with array content)`);
+        console.log(`[Tool Loop] Using ${messages.length} messages from previous API call as conversation history`);
 
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
-          ...cleanedMessages,
+          ...messages, // Keep ALL messages from previous API call - they're part of conversation history
           {
             role: 'assistant',
             content: [
@@ -415,6 +409,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         const missingResults = allToolUseIds.filter(id => !allToolResultIds.includes(id));
         if (missingResults.length > 0) {
           console.error('[CRITICAL] ❌ MISSING TOOL RESULTS FOR:', missingResults);
+          console.error('');
+          console.error('🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨');
+          console.error('FATAL: About to send malformed messages to API!');
+          console.error('Missing tool_result blocks for tool_use IDs:', missingResults);
+          console.error('This WILL cause a 400 error. ABORTING recursive call.');
+          console.error('🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨');
+          console.error('');
+          throw new Error(`Internal error: Constructed message array has tool_use without tool_result. Tool use IDs missing results: ${missingResults.join(', ')}`);
         } else {
           console.log('[CRITICAL] ✅ All tool_use blocks have matching tool_result blocks');
         }
