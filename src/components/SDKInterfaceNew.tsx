@@ -352,6 +352,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         }
       }
 
+      // Get the complete final message to ensure we have all tool_use blocks correctly
+      const finalMessage = await stream.finalMessage();
+      console.log('[Stream] Final message role:', finalMessage.role);
+      console.log('[Stream] Final message content blocks:', finalMessage.content.length);
+      console.log('[Stream] Final message stop_reason:', finalMessage.stop_reason);
+
+      // Re-extract tool uses from final message (more authoritative than manual reconstruction)
+      const authoritative_toolUses: Array<{ id: string; name: string; input: any }> = [];
+      for (const block of finalMessage.content) {
+        if (block.type === 'tool_use') {
+          authoritative_toolUses.push({
+            id: block.id,
+            name: block.name,
+            input: block.input
+          });
+          console.log(`[Stream] Authoritative tool_use: ${block.name} (ID: ${block.id})`);
+        }
+      }
+
+      // Compare with manually reconstructed toolUses
+      if (toolUses.length !== authoritative_toolUses.length) {
+        console.warn(`[Stream] ⚠️  Tool count mismatch! Manual: ${toolUses.length}, Authoritative: ${authoritative_toolUses.length}`);
+        console.warn('[Stream] Using authoritative tool uses from finalMessage');
+      }
+
+      // Use authoritative tool uses
+      const finalToolUses = authoritative_toolUses;
+
       // Check for artifacts
       if (responseContent.includes('<commercial_offer') || conversation.artifact) {
         await handleArtifactGeneration(responseContent, conversation);
@@ -360,12 +388,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       setStreamingContent('');
 
       // If there are tool uses, execute them and continue (don't save intermediate message)
-      if (toolUses.length > 0) {
-        console.log(`[Tool Loop] Executing ${toolUses.length} tools...`);
+      if (finalToolUses.length > 0) {
+        console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
 
         // Execute all tools with error handling
         const toolResults = await Promise.all(
-          toolUses.map(async (toolUse) => {
+          finalToolUses.map(async (toolUse) => {
             try {
               const result = await executeTool(toolUse.name, toolUse.input);
               console.log(`[Tool Loop] Tool ${toolUse.name} completed. Result length:`, result.length);
@@ -403,7 +431,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           {
             role: 'assistant',
             content: [
-              ...toolUses.map(tu => ({
+              ...finalToolUses.map(tu => ({
                 type: 'tool_use' as const,
                 id: tu.id,
                 name: tu.name,
