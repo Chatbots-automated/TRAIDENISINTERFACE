@@ -412,12 +412,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         dangerouslyAllowBrowser: true
       });
 
-      const anthropicMessages = updatedMessages
-        .filter(msg => !msg.content.startsWith('[Tool results:')) // Filter out synthetic tool result messages
-        .map((msg) => ({
+      // Clean message history: remove tool artifacts and ensure alternating roles
+      const anthropicMessages: Anthropic.MessageParam[] = [];
+      let lastRole: 'user' | 'assistant' | null = null;
+
+      for (const msg of updatedMessages) {
+        // Skip synthetic tool messages and malformed messages
+        if (msg.content.startsWith('[Tool results:') ||
+            msg.content.includes('toolu_') ||
+            msg.content.trim().length === 0) {
+          console.log('[SKIPPING MALFORMED MESSAGE]:', msg.content.substring(0, 50));
+          continue;
+        }
+
+        // Skip if same role as previous (prevents consecutive assistant/user messages)
+        if (msg.role === lastRole) {
+          console.log('[SKIPPING DUPLICATE ROLE]:', msg.role, msg.content.substring(0, 50));
+          continue;
+        }
+
+        anthropicMessages.push({
           role: msg.role,
           content: msg.content
-        }));
+        });
+        lastRole = msg.role;
+      }
+
+      console.log('[API REQUEST] Clean message count:', anthropicMessages.length);
+      console.log('[API REQUEST] Message roles:', anthropicMessages.map(m => m.role).join(' -> '));
 
       // Build system prompt with artifact context if exists
       let contextualSystemPrompt = systemPrompt;
@@ -806,7 +828,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               {/* Tool usage indicator */}
               {loading && isToolUse && (
                 <div className="mb-6">
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span className="text-sm">Vykdoma: {toolUseName}</span>
                   </div>

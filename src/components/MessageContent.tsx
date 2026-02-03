@@ -346,9 +346,9 @@ function CalculationBadge({ calculation }: { calculation: CalculationBlock }) {
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors w-full text-left"
-        style={{ background: '#f0f9ff', color: '#0c4a6e', border: '1px solid #bae6fd' }}
-        onMouseEnter={(e) => e.currentTarget.style.background = '#e0f2fe'}
-        onMouseLeave={(e) => e.currentTarget.style.background = '#f0f9ff'}
+        style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}
+        onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
+        onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
       >
         <Calculator className="w-3.5 h-3.5 flex-shrink-0" />
         <span className="text-xs font-medium flex-1">
@@ -362,8 +362,8 @@ function CalculationBadge({ calculation }: { calculation: CalculationBlock }) {
       </button>
 
       {expanded && (
-        <div className="mt-1 ml-6 px-3 py-2 rounded text-sm" style={{ background: '#f0f9ff', border: '1px solid #bae6fd' }}>
-          <div className="whitespace-pre-wrap" style={{ color: '#0c4a6e' }}>
+        <div className="mt-1 ml-6 px-3 py-2 rounded text-sm" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
+          <div className="whitespace-pre-wrap" style={{ color: '#5a5550' }}>
             {calculation.content}
           </div>
         </div>
