@@ -345,8 +345,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         );
 
         // Build messages for next round (with tool_use and tool_result blocks)
+        // CRITICAL: Filter out any messages from previous iterations that might have array content
+        const cleanedMessages = messages.filter((msg, idx) => {
+          const hasArrayContent = Array.isArray(msg.content);
+          if (hasArrayContent) {
+            console.warn(`[Tool Loop] ⚠️  Filtering out message [${idx}] with array content from previous iteration`);
+            console.warn(`[Tool Loop]     This message should not be in the messages array!`);
+            return false;
+          }
+          return true;
+        });
+
+        console.log(`[Tool Loop] Cleaned ${messages.length} messages → ${cleanedMessages.length} (removed ${messages.length - cleanedMessages.length} with array content)`);
+
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
-          ...messages,
+          ...cleanedMessages,
           {
             role: 'assistant',
             content: [
@@ -508,13 +521,71 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         dangerouslyAllowBrowser: true
       });
 
+      // ╔═══════════════════════════════════════════════════════════════╗
+      // ║  PHASE 1: ANALYZE RAW MESSAGES FROM DATABASE                  ║
+      // ╚═══════════════════════════════════════════════════════════════╝
+      console.log('╔═══════════════════════════════════════════════════════════════╗');
+      console.log('║  HANDLESEND: Analyzing messages BEFORE filtering             ║');
+      console.log('╚═══════════════════════════════════════════════════════════════╝');
+      console.log('[PHASE 1] Total messages from database:', updatedMessages.length);
+
+      updatedMessages.forEach((msg, idx) => {
+        const contentType = typeof msg.content;
+        const isArray = Array.isArray(msg.content);
+        let preview = '';
+
+        if (contentType === 'string') {
+          preview = msg.content.substring(0, 80);
+        } else if (isArray) {
+          preview = `ARRAY with ${msg.content.length} blocks: ${JSON.stringify(msg.content).substring(0, 80)}`;
+        } else {
+          preview = `OBJECT: ${JSON.stringify(msg.content).substring(0, 80)}`;
+        }
+
+        console.log(`[PHASE 1][${idx}] ${msg.role} | type: ${contentType} | isArray: ${isArray} | preview: "${preview}"`);
+
+        // If non-string content, log full structure
+        if (contentType !== 'string') {
+          console.warn(`[PHASE 1][${idx}] ⚠️  NON-STRING CONTENT DETECTED:`, JSON.stringify(msg.content, null, 2));
+        }
+      });
+      console.log('');
+
       // Clean message history: remove tool artifacts and ensure alternating roles
+      console.log('╔═══════════════════════════════════════════════════════════════╗');
+      console.log('║  PHASE 2: FILTERING MESSAGES                                  ║');
+      console.log('╚═══════════════════════════════════════════════════════════════╝');
+
       const anthropicMessages: Anthropic.MessageParam[] = [];
       let lastRole: 'user' | 'assistant' | null = null;
 
+      let skippedCount = 0;
+      let malformedCount = 0;
+      let nonStringCount = 0;
+      let duplicateRoleCount = 0;
+
       for (const msg of updatedMessages) {
-        // Check if content is a string or array
-        const contentStr = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        const idx = updatedMessages.indexOf(msg);
+
+        // FIRST: Check content type (most important check)
+        const contentType = typeof msg.content;
+        const isArray = Array.isArray(msg.content);
+        const isString = contentType === 'string';
+
+        console.log(`[PHASE 2][${idx}] Checking message: role=${msg.role}, contentType=${contentType}, isArray=${isArray}`);
+
+        // Skip if content is not a string (tool_use blocks, malformed data)
+        if (!isString || isArray) {
+          console.log(`[PHASE 2][${idx}] ❌ SKIPPING: Content is not a string (type=${contentType}, isArray=${isArray})`);
+          const preview = isArray ? JSON.stringify(msg.content).substring(0, 150) : String(msg.content).substring(0, 150);
+          console.log(`[PHASE 2][${idx}]    Content preview:`, preview);
+          skippedCount++;
+          nonStringCount++;
+          continue;
+        }
+
+        // Now we know content is definitely a string, create safe string representation
+        const contentStr = msg.content as string;
 
         // Skip synthetic tool messages and malformed messages
         if (contentStr.startsWith('[Tool results:') ||
@@ -522,23 +593,31 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             contentStr.trim().length === 0 ||
             contentStr === '{}' ||
             contentStr === '[]') {
-          console.log('[SKIPPING MALFORMED MESSAGE]:', contentStr.substring(0, 100));
+          console.log(`[PHASE 2][${idx}] ❌ SKIPPING: Malformed/synthetic message:`, contentStr.substring(0, 100));
+          skippedCount++;
+          malformedCount++;
           continue;
         }
 
         // Skip if same role as previous (prevents consecutive assistant/user messages)
         if (msg.role === lastRole) {
-          console.log('[SKIPPING DUPLICATE ROLE]:', msg.role, contentStr.substring(0, 100));
+          console.log(`[PHASE 2][${idx}] ❌ SKIPPING: Duplicate role (${msg.role} after ${lastRole})`);
+          skippedCount++;
+          duplicateRoleCount++;
           continue;
         }
 
-        // Only include messages with valid string content
-        // Do NOT include messages with tool_use blocks from old conversations
+        // DOUBLE CHECK before adding (paranoid validation)
         if (typeof msg.content !== 'string') {
-          console.log('[SKIPPING NON-STRING CONTENT]:', msg.role, contentStr.substring(0, 100));
+          console.error(`[PHASE 2][${idx}] ⚠️  CRITICAL: Message passed checks but content is not string! Type:`, typeof msg.content);
+          console.error(`[PHASE 2][${idx}]    This should NEVER happen. Skipping for safety.`);
+          skippedCount++;
+          nonStringCount++;
           continue;
         }
 
+        // Safe to add
+        console.log(`[PHASE 2][${idx}] ✅ KEEPING: Valid string message, length=${contentStr.length}`);
         anthropicMessages.push({
           role: msg.role,
           content: msg.content
@@ -546,8 +625,77 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         lastRole = msg.role;
       }
 
-      console.log('[API REQUEST] Clean message count:', anthropicMessages.length);
-      console.log('[API REQUEST] Message roles:', anthropicMessages.map(m => m.role).join(' -> '));
+      console.log('');
+      console.log(`[PHASE 2] Filtering complete:`);
+      console.log(`[PHASE 2]   - Total processed: ${updatedMessages.length}`);
+      console.log(`[PHASE 2]   - Kept: ${anthropicMessages.length}`);
+      console.log(`[PHASE 2]   - Skipped: ${skippedCount} (non-string: ${nonStringCount}, malformed: ${malformedCount}, duplicate role: ${duplicateRoleCount})`);
+      console.log('');
+
+      console.log('');
+      console.log('╔═══════════════════════════════════════════════════════════════╗');
+      console.log('║  PHASE 3: FILTERED MESSAGES (GOING TO API)                   ║');
+      console.log('╚═══════════════════════════════════════════════════════════════╝');
+      console.log('[PHASE 3] Clean message count:', anthropicMessages.length);
+      console.log('[PHASE 3] Message roles:', anthropicMessages.map(m => m.role).join(' -> '));
+
+      anthropicMessages.forEach((msg, idx) => {
+        const contentType = typeof msg.content;
+        const isArray = Array.isArray(msg.content);
+        let preview = '';
+
+        if (contentType === 'string') {
+          preview = msg.content.substring(0, 80);
+        } else if (isArray) {
+          preview = `ARRAY[${msg.content.length}]: ${(msg.content as any[]).map((c: any) => c.type || 'unknown').join(', ')}`;
+        } else {
+          preview = JSON.stringify(msg.content).substring(0, 80);
+        }
+
+        console.log(`[PHASE 3][${idx}] ${msg.role} | type: ${contentType} | isArray: ${isArray} | preview: "${preview}"`);
+
+        // If array content, show details
+        if (isArray) {
+          console.warn(`[PHASE 3][${idx}] ⚠️  ARRAY CONTENT IN FILTERED MESSAGES:`, JSON.stringify(msg.content, null, 2));
+        }
+      });
+
+      // CRITICAL: Final validation before API call
+      console.log('');
+      console.log('╔═══════════════════════════════════════════════════════════════╗');
+      console.log('║  PHASE 4: FINAL VALIDATION BEFORE API CALL                   ║');
+      console.log('╚═══════════════════════════════════════════════════════════════╝');
+
+      // Check for tool_use blocks without corresponding tool_result blocks
+      for (let i = 0; i < anthropicMessages.length; i++) {
+        const msg = anthropicMessages[i];
+        if (Array.isArray(msg.content)) {
+          const hasToolUse = (msg.content as any[]).some((block: any) => block.type === 'tool_use');
+          if (hasToolUse) {
+            console.error(`[PHASE 4] ❌ ERROR: Message [${i}] has tool_use blocks but content is array!`);
+            console.error(`[PHASE 4] ❌ This message should have been filtered out!`);
+            console.error(`[PHASE 4] ❌ Message:`, JSON.stringify(msg, null, 2));
+
+            // Check if next message has tool_result
+            if (i + 1 < anthropicMessages.length) {
+              const nextMsg = anthropicMessages[i + 1];
+              const hasToolResult = Array.isArray(nextMsg.content) &&
+                (nextMsg.content as any[]).some((block: any) => block.type === 'tool_result');
+              if (!hasToolResult) {
+                console.error(`[PHASE 4] ❌ CRITICAL: Next message [${i + 1}] does NOT have tool_result!`);
+                console.error(`[PHASE 4] ❌ This WILL cause 400 error from Anthropic!`);
+              }
+            } else {
+              console.error(`[PHASE 4] ❌ CRITICAL: No next message after tool_use!`);
+              console.error(`[PHASE 4] ❌ This WILL cause 400 error from Anthropic!`);
+            }
+          }
+        }
+      }
+
+      console.log('[PHASE 4] ✅ Validation complete. Proceeding to API call...');
+      console.log('═══════════════════════════════════════════════════════════════');
+      console.log('');
 
       // Build system prompt with artifact context if exists
       let contextualSystemPrompt = systemPrompt;
