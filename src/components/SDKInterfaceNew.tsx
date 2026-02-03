@@ -239,16 +239,62 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         console.log(`  [${idx}] ${msg.role}: ${contentInfo}`);
       });
 
-      // Validate tool_use/tool_result matching
-      const missingToolResults = toolUseIds.filter(id => !toolResultIds.includes(id));
-      if (missingToolResults.length > 0) {
-        console.error('❌❌❌ [processAIResponse] CRITICAL ERROR: Missing tool_results for:', missingToolResults);
-        console.error('❌❌❌ This WILL cause a 400 error from Anthropic API!');
-        console.error('❌❌❌ Tool use IDs present:', toolUseIds);
-        console.error('❌❌❌ Tool result IDs present:', toolResultIds);
-      } else if (toolUseIds.length > 0) {
-        console.log('✅ [processAIResponse] All tool_use blocks have matching tool_results');
+      // CRITICAL: Validate tool_use/tool_result ADJACENCY (not just ID matching)
+      // Anthropic API requires: if message N has tool_use, message N+1 MUST have tool_result
+      let validationErrors: string[] = [];
+
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        if (!Array.isArray(msg.content)) continue;
+
+        const hasToolUse = msg.content.some((block: any) => block.type === 'tool_use');
+        if (hasToolUse && msg.role === 'assistant') {
+          // This message has tool_use blocks, next message MUST be user with tool_results
+          const toolUseIdsInMsg = msg.content
+            .filter((block: any) => block.type === 'tool_use')
+            .map((block: any) => block.id);
+
+          if (i + 1 >= messages.length) {
+            validationErrors.push(`Message ${i} has tool_use but no following message`);
+            continue;
+          }
+
+          const nextMsg = messages[i + 1];
+          if (nextMsg.role !== 'user') {
+            validationErrors.push(`Message ${i} has tool_use but next message ${i + 1} is not user (role=${nextMsg.role})`);
+            continue;
+          }
+
+          if (!Array.isArray(nextMsg.content)) {
+            validationErrors.push(`Message ${i} has tool_use but next message ${i + 1} has non-array content`);
+            continue;
+          }
+
+          const toolResultIdsInNextMsg = nextMsg.content
+            .filter((block: any) => block.type === 'tool_result')
+            .map((block: any) => block.tool_use_id);
+
+          const missingInNext = toolUseIdsInMsg.filter(id => !toolResultIdsInNextMsg.includes(id));
+          if (missingInNext.length > 0) {
+            validationErrors.push(`Message ${i} tool_use IDs [${missingInNext.join(', ')}] not found in next message ${i + 1}`);
+          }
+        }
       }
+
+      if (validationErrors.length > 0) {
+        console.error('❌❌❌ [processAIResponse] STRUCTURAL VALIDATION FAILED:');
+        validationErrors.forEach(err => console.error(`  ❌ ${err}`));
+        console.error('❌❌❌ This WILL cause a 400 error from Anthropic API!');
+        throw new Error(`Message structure validation failed: ${validationErrors.join('; ')}`);
+      } else if (toolUseIds.length > 0) {
+        console.log('✅ [processAIResponse] All tool_use blocks properly paired with adjacent tool_results');
+      }
+      console.log('───────────────────────────────────────────────────');
+
+      // FINAL: Log exact message structure being sent to API
+      console.log('[API CALL] Sending to Anthropic API:');
+      console.log('[API CALL] Total messages:', messages.length);
+      console.log('[API CALL] Serialized messages:', JSON.stringify(messages, null, 2));
       console.log('───────────────────────────────────────────────────');
 
       const stream = await anthropic.messages.stream({
