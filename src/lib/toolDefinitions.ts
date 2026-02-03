@@ -8,14 +8,15 @@ export const N8N_MCP_SERVER_URL = 'https://n8n.traidenis.org/mcp/9396f434-1906-4
 export const GOOGLE_SHEETS_URL_PLACEHOLDER = '{google_sheets_url}';
 
 /**
- * Tool definitions for Claude to use via n8n MCP Server
+ * Tool definitions for Claude to use
  *
- * These tools connect to MySQL database tables via n8n workflow:
+ * Tools via n8n MCP Server:
  * - get_products: Searches products table by product code
  * - get_prices: Retrieves pricing by product ID
  * - get_multiplier: Gets latest price multiplier
  *
- * The n8n workflow acts as an MCP server, executing these tools and returning results.
+ * Local tools:
+ * - edit_commercial_offer: Makes targeted edits to commercial offer YAML
  */
 export const tools: Anthropic.Tool[] = [
   {
@@ -53,6 +54,24 @@ export const tools: Anthropic.Tool[] = [
       type: 'object',
       properties: {},
       required: []
+    }
+  },
+  {
+    name: 'edit_commercial_offer',
+    description: 'Makes a targeted edit to a specific field in the commercial offer YAML without regenerating the entire document. Use this for surgical edits when the user wants to change one or a few specific values. This is more efficient than regenerating the entire offer.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        field_path: {
+          type: 'string',
+          description: 'The YAML path to the field to edit. Use dot notation for nested fields (e.g., "midi.SIR", "economy.HNV_price", "customer_name", "maxi.component4_price"). For array items in components_bulletlist, use array index (e.g., "components_bulletlist.0" for first item).'
+        },
+        new_value: {
+          type: 'string',
+          description: 'The new value to set for this field. Will be automatically converted to the appropriate type (number, string, etc.).'
+        }
+      },
+      required: ['field_path', 'new_value']
     }
   }
 ];
