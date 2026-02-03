@@ -17,35 +17,57 @@ async function callN8nMCPServer(toolName: string, toolInput: any): Promise<strin
   try {
     console.log(`[n8n MCP] Calling tool: ${toolName}`, toolInput);
 
+    // Use JSON-RPC 2.0 format as expected by MCP servers
+    const requestBody = {
+      jsonrpc: '2.0',
+      method: 'tools/call',
+      id: Date.now(), // Use timestamp as unique request ID
+      params: {
+        name: toolName,
+        arguments: toolInput
+      }
+    };
+
+    console.log(`[n8n MCP] Request body:`, JSON.stringify(requestBody, null, 2));
+
     const response = await fetch(N8N_MCP_SERVER_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json, text/event-stream'
       },
-      body: JSON.stringify({
-        tool: toolName,
-        input: toolInput
-      })
+      body: JSON.stringify(requestBody)
     });
 
     console.log(`[n8n MCP] Response status:`, response.status, response.statusText);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[n8n MCP] Error response:`, errorText);
+      console.error(`[n8n MCP] Error response (first 500 chars):`, errorText.substring(0, 500));
 
+      // Return concise error (don't include massive error details that break JSON encoding)
       return JSON.stringify({
         success: false,
         error: `n8n MCP Server returned ${response.status}: ${response.statusText}`,
-        details: errorText
+        message: 'Check n8n workflow logs for details'
       });
     }
 
     const result = await response.json();
     console.log(`[n8n MCP] Tool ${toolName} result:`, result);
 
-    // Return the result as JSON string
+    // Extract the actual result from JSON-RPC response
+    if (result.result) {
+      return JSON.stringify(result.result, null, 2);
+    } else if (result.error) {
+      return JSON.stringify({
+        success: false,
+        error: result.error.message || 'n8n MCP error',
+        code: result.error.code
+      });
+    }
+
+    // Fallback: return the entire response
     return JSON.stringify(result, null, 2);
   } catch (error: any) {
     console.error(`[n8n MCP] Exception calling ${toolName}:`, error);
