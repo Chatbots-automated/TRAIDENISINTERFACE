@@ -1,201 +1,102 @@
-import { supabaseAdmin } from './supabase';
-import { SPREADSHEET_ID } from './toolDefinitions';
+import { N8N_MCP_SERVER_URL } from './toolDefinitions';
 
 /**
- * Fetch Google Sheets data as CSV and parse to JSON
+ * Execute tools via n8n MCP Server
+ *
+ * The n8n workflow receives tool calls and executes them against MySQL database tables.
+ * It returns results in a structured format that we pass back to Claude.
  */
-export async function executeGoogleSheetTool(input: { description: string }): Promise<string> {
+
+/**
+ * Call n8n MCP Server to execute a tool
+ */
+async function callN8nMCPServer(toolName: string, toolInput: any): Promise<string> {
   try {
-    console.log('[Tool: get_google_sheet] Fetching sheet data:', input.description);
+    console.log(`[n8n MCP] Calling tool: ${toolName}`, toolInput);
 
-    // Use Google Sheets public CSV export API
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/export?format=csv&gid=0`;
-
-    console.log('[Tool: get_google_sheet] Fetching from:', csvUrl);
-
-    const response = await fetch(csvUrl, {
-      method: 'GET',
-      mode: 'cors',
-      credentials: 'omit',
+    const response = await fetch(N8N_MCP_SERVER_URL, {
+      method: 'POST',
       headers: {
-        'Accept': 'text/csv'
-      }
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        tool: toolName,
+        input: toolInput
+      })
     });
 
-    console.log('[Tool: get_google_sheet] Response status:', response.status, response.statusText);
+    console.log(`[n8n MCP] Response status:`, response.status, response.statusText);
 
     if (!response.ok) {
-      // Provide more helpful error message
-      const errorDetails = {
-        status: response.status,
-        statusText: response.statusText,
-        url: csvUrl
-      };
-      console.error('[Tool: get_google_sheet] Fetch failed:', errorDetails);
+      const errorText = await response.text();
+      console.error(`[n8n MCP] Error response:`, errorText);
 
-      if (response.status === 400) {
-        throw new Error(`Google Sheets returned 400. The sheet might not be publicly accessible or there's a CORS issue. Please verify the sheet is set to "Anyone with the link can view" and try again.`);
-      } else if (response.status === 403) {
-        throw new Error(`Google Sheets returned 403 Forbidden. The sheet is not publicly accessible. Please set sharing to "Anyone with the link can view".`);
-      } else {
-        throw new Error(`Failed to fetch Google Sheet: ${response.status} ${response.statusText}`);
-      }
-    }
-
-    const csvText = await response.text();
-
-    // Parse CSV to JSON
-    const lines = csvText.split('\n').filter(line => line.trim());
-    if (lines.length === 0) {
-      return JSON.stringify({ error: 'Sheet is empty' });
-    }
-
-    // First line is headers
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-
-    // Parse data rows
-    const data = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-      const row: Record<string, string> = {};
-      headers.forEach((header, index) => {
-        row[header] = values[index] || '';
-      });
-      data.push(row);
-    }
-
-    console.log(`[Tool: get_google_sheet] Successfully fetched ${data.length} rows with columns:`, headers);
-
-    return JSON.stringify({
-      success: true,
-      columns: headers,
-      row_count: data.length,
-      data: data
-    }, null, 2);
-  } catch (error: any) {
-    console.error('[Tool: get_google_sheet] Error:', error);
-    return JSON.stringify({
-      success: false,
-      error: error.message || 'Unknown error fetching Google Sheet'
-    });
-  }
-}
-
-/**
- * Query Supabase tables with flexible filtering
- */
-export async function executeSupabaseQueryTool(input: {
-  table: 'products' | 'pricing' | 'price_multiplier';
-  select?: string;
-  filter?: string;
-  order?: string;
-  limit?: number;
-}): Promise<string> {
-  try {
-    const { table, select = '*', filter, order, limit = 100 } = input;
-
-    console.log('[Tool: query_supabase] Querying table:', table, 'with params:', { select, filter, order, limit });
-
-    // Start building query
-    let query = supabaseAdmin.from(table).select(select);
-
-    // Apply filter if provided (PostgREST format: "column=eq.value")
-    if (filter) {
-      const filterParts = filter.split('=');
-      if (filterParts.length >= 2) {
-        const column = filterParts[0];
-        const operatorAndValue = filterParts.slice(1).join('='); // In case value contains '='
-        const [operator, ...valueParts] = operatorAndValue.split('.');
-        const value = valueParts.join('.'); // In case value contains '.'
-
-        // Map PostgREST operators to Supabase query methods
-        switch (operator) {
-          case 'eq':
-            query = query.eq(column, value);
-            break;
-          case 'neq':
-            query = query.neq(column, value);
-            break;
-          case 'gt':
-            query = query.gt(column, value);
-            break;
-          case 'gte':
-            query = query.gte(column, value);
-            break;
-          case 'lt':
-            query = query.lt(column, value);
-            break;
-          case 'lte':
-            query = query.lte(column, value);
-            break;
-          case 'like':
-            query = query.like(column, value);
-            break;
-          case 'ilike':
-            query = query.ilike(column, value);
-            break;
-          default:
-            console.warn('[Tool: query_supabase] Unknown operator:', operator);
-        }
-      }
-    }
-
-    // Apply ordering if provided (format: "column.direction")
-    if (order) {
-      const [column, direction] = order.split('.');
-      const ascending = direction !== 'desc';
-      query = query.order(column, { ascending });
-    }
-
-    // Apply limit
-    query = query.limit(limit);
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('[Tool: query_supabase] Error:', error);
       return JSON.stringify({
         success: false,
-        error: error.message,
-        hint: error.hint || 'Check table name, column names, and filter syntax'
+        error: `n8n MCP Server returned ${response.status}: ${response.statusText}`,
+        details: errorText
       });
     }
 
-    console.log(`[Tool: query_supabase] Successfully queried ${table}, returned ${data?.length || 0} rows`);
+    const result = await response.json();
+    console.log(`[n8n MCP] Tool ${toolName} result:`, result);
 
-    // Return results with metadata
-    return JSON.stringify({
-      success: true,
-      table: table,
-      row_count: data?.length || 0,
-      data: data || []
-    }, null, 2);
+    // Return the result as JSON string
+    return JSON.stringify(result, null, 2);
   } catch (error: any) {
-    console.error('[Tool: query_supabase] Error:', error);
+    console.error(`[n8n MCP] Exception calling ${toolName}:`, error);
     return JSON.stringify({
       success: false,
-      error: error.message || 'Unknown error querying Supabase'
+      error: error.message || 'Unknown error calling n8n MCP server',
+      tool_name: toolName
     });
   }
 }
 
 /**
- * Execute any tool by name
+ * Execute get_products tool via n8n MCP Server
+ */
+export async function executeGetProductsTool(input: { product_code: string }): Promise<string> {
+  console.log('[Tool: get_products] Searching for product code:', input.product_code);
+  return await callN8nMCPServer('get_products', input);
+}
+
+/**
+ * Execute get_prices tool via n8n MCP Server
+ */
+export async function executeGetPricesTool(input: { id: number }): Promise<string> {
+  console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
+  return await callN8nMCPServer('get_prices', input);
+}
+
+/**
+ * Execute get_multiplier tool via n8n MCP Server
+ */
+export async function executeGetMultiplierTool(): Promise<string> {
+  console.log('[Tool: get_multiplier] Fetching latest price multiplier');
+  return await callN8nMCPServer('get_multiplier', {});
+}
+
+/**
+ * Main tool executor - routes tool calls to appropriate executor
  */
 export async function executeTool(toolName: string, toolInput: any): Promise<string> {
   console.log(`[executeTool] Executing: ${toolName}`);
 
   switch (toolName) {
-    case 'get_google_sheet':
-      return await executeGoogleSheetTool(toolInput);
+    case 'get_products':
+      return await executeGetProductsTool(toolInput);
 
-    case 'query_supabase':
-      return await executeSupabaseQueryTool(toolInput);
+    case 'get_prices':
+      return await executeGetPricesTool(toolInput);
+
+    case 'get_multiplier':
+      return await executeGetMultiplierTool();
 
     default:
       return JSON.stringify({
         success: false,
-        error: `Unknown tool: ${toolName}`
+        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier`
       });
   }
 }
