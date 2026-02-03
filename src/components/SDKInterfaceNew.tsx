@@ -212,14 +212,44 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     currentMessages: SDKMessage[]
   ): Promise<void> => {
     try {
-      // Debug: Log incoming messages structure
-      console.log('[processAIResponse] Starting with', messages.length, 'messages');
+      // CRITICAL: Validate messages before API call
+      console.log('───────────────────────────────────────────────────');
+      console.log('[processAIResponse] ENTRY POINT - Validating messages');
+      console.log('[processAIResponse] Total messages:', messages.length);
+
+      const toolUseIds: string[] = [];
+      const toolResultIds: string[] = [];
+
       messages.forEach((msg, idx) => {
-        const contentType = Array.isArray(msg.content)
-          ? `[${msg.content.map((c: any) => c.type || 'text').join(', ')}]`
-          : 'string';
-        console.log(`  [${idx}] ${msg.role}: ${contentType}`);
+        const contentInfo = Array.isArray(msg.content)
+          ? `[${msg.content.map((c: any) => {
+              if (c.type === 'tool_use') {
+                toolUseIds.push(c.id);
+                return `tool_use(${c.name}, id:${c.id.substring(0, 12)}...)`;
+              }
+              if (c.type === 'tool_result') {
+                toolResultIds.push(c.tool_use_id);
+                return `tool_result(for:${c.tool_use_id.substring(0, 12)}...)`;
+              }
+              if (c.type === 'text') return `text(${c.text?.length || 0} chars)`;
+              return c.type || 'unknown';
+            }).join(', ')}]`
+          : `"${typeof msg.content === 'string' ? msg.content.substring(0, 60) + '...' : msg.content}"`;
+
+        console.log(`  [${idx}] ${msg.role}: ${contentInfo}`);
       });
+
+      // Validate tool_use/tool_result matching
+      const missingToolResults = toolUseIds.filter(id => !toolResultIds.includes(id));
+      if (missingToolResults.length > 0) {
+        console.error('❌❌❌ [processAIResponse] CRITICAL ERROR: Missing tool_results for:', missingToolResults);
+        console.error('❌❌❌ This WILL cause a 400 error from Anthropic API!');
+        console.error('❌❌❌ Tool use IDs present:', toolUseIds);
+        console.error('❌❌❌ Tool result IDs present:', toolResultIds);
+      } else if (toolUseIds.length > 0) {
+        console.log('✅ [processAIResponse] All tool_use blocks have matching tool_results');
+      }
+      console.log('───────────────────────────────────────────────────');
 
       const stream = await anthropic.messages.stream({
         model: 'claude-sonnet-4-20250514',
@@ -335,15 +365,47 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           }
         ];
 
-        // Debug: Log exact message structure being sent
-        console.log('[Tool Loop] Message structure for next API call:');
+        // CRITICAL VALIDATION: Verify the messages array structure
+        console.log('═══════════════════════════════════════════════════');
+        console.log('[CRITICAL] Tool Loop - Constructed messages array:');
+        console.log('[CRITICAL] Total messages:', anthropicMessagesWithToolResults.length);
+
         anthropicMessagesWithToolResults.forEach((msg, idx) => {
-          console.log(`  [${idx}] ${msg.role}:`,
-            Array.isArray(msg.content)
-              ? msg.content.map((c: any) => c.type || typeof c).join(', ')
-              : typeof msg.content
-          );
+          const contentInfo = Array.isArray(msg.content)
+            ? `[${msg.content.map((c: any) => {
+                if (c.type === 'tool_use') return `tool_use(id:${c.id.substring(0, 12)}...)`;
+                if (c.type === 'tool_result') return `tool_result(for:${c.tool_use_id.substring(0, 12)}...)`;
+                if (c.type === 'text') return 'text';
+                return c.type || 'unknown';
+              }).join(', ')}]`
+            : `"${typeof msg.content === 'string' ? msg.content.substring(0, 50) : msg.content}"`;
+
+          console.log(`[CRITICAL] [${idx}] ${msg.role}: ${contentInfo}`);
         });
+
+        // Validate that every tool_use has a matching tool_result
+        const allToolUseIds: string[] = [];
+        const allToolResultIds: string[] = [];
+
+        anthropicMessagesWithToolResults.forEach((msg) => {
+          if (Array.isArray(msg.content)) {
+            msg.content.forEach((block: any) => {
+              if (block.type === 'tool_use') allToolUseIds.push(block.id);
+              if (block.type === 'tool_result') allToolResultIds.push(block.tool_use_id);
+            });
+          }
+        });
+
+        console.log('[CRITICAL] Tool use IDs:', allToolUseIds);
+        console.log('[CRITICAL] Tool result IDs:', allToolResultIds);
+
+        const missingResults = allToolUseIds.filter(id => !allToolResultIds.includes(id));
+        if (missingResults.length > 0) {
+          console.error('[CRITICAL] ❌ MISSING TOOL RESULTS FOR:', missingResults);
+        } else {
+          console.log('[CRITICAL] ✅ All tool_use blocks have matching tool_result blocks');
+        }
+        console.log('═══════════════════════════════════════════════════');
 
         // Recursively process next response with tool results (don't save intermediate messages)
         await processAIResponse(
