@@ -4,7 +4,6 @@
  * - get_products: Query products table by product_code
  * - get_prices: Query pricing table by product id
  * - get_multiplier: Get latest price multiplier
- * - edit_commercial_offer: Local artifact editing
  */
 
 const N8N_WEBHOOKS = {
@@ -144,43 +143,6 @@ export async function executeGetMultiplierTool(): Promise<string> {
 }
 
 /**
- * Execute edit_commercial_offer tool (local)
- * This returns edit instructions that will be applied by the component layer
- */
-export async function executeEditCommercialOfferTool(input: {
-  field_path: string;
-  new_value: string;
-}): Promise<string> {
-  console.log('[Tool: edit_commercial_offer] Editing field:', input.field_path, '→', input.new_value);
-
-  try {
-    // Validate field path format
-    if (!input.field_path || input.field_path.trim() === '') {
-      return JSON.stringify({
-        success: false,
-        error: 'field_path is required and cannot be empty'
-      });
-    }
-
-    // Return edit instructions - the actual update will be handled by SDKInterfaceNew.tsx
-    // which has access to the conversation state and database
-    return JSON.stringify({
-      success: true,
-      action: 'edit_artifact_field',
-      field_path: input.field_path,
-      new_value: input.new_value,
-      message: `Will update ${input.field_path} to "${input.new_value}"`
-    });
-  } catch (error: any) {
-    console.error('[Tool: edit_commercial_offer] Error:', error);
-    return JSON.stringify({
-      success: false,
-      error: error.message || 'Unknown error executing edit_commercial_offer'
-    });
-  }
-}
-
-/**
  * Main tool executor - routes tool calls to appropriate executor
  */
 export async function executeTool(toolName: string, toolInput: any): Promise<string> {
@@ -196,13 +158,10 @@ export async function executeTool(toolName: string, toolInput: any): Promise<str
     case 'get_multiplier':
       return await executeGetMultiplierTool();
 
-    case 'edit_commercial_offer':
-      return await executeEditCommercialOfferTool(toolInput);
-
     default:
       return JSON.stringify({
         success: false,
-        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier, edit_commercial_offer`
+        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier`
       });
   }
 }
