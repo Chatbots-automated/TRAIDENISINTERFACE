@@ -1,112 +1,55 @@
-import { N8N_MCP_SERVER_URL } from './toolDefinitions';
-import { supabaseAdmin } from './supabase';
-
 /**
- * Execute tools locally via Supabase
+ * Execute tools via n8n webhooks
  *
- * - Database tools: get_products, get_prices, get_multiplier (via Supabase)
- * - Local tools: edit_commercial_offer (direct artifact editing)
- * - n8n MCP integration available but using local execution for now
+ * - get_products: Query products table by product_code
+ * - get_prices: Query pricing table by product id
+ * - get_multiplier: Get latest price multiplier
+ * - edit_commercial_offer: Local artifact editing
  */
 
-// Note: You need to install js-yaml: npm install js-yaml @types/js-yaml
-// For now, we'll use a simplified YAML parser for our specific format
+const N8N_WEBHOOKS = {
+  get_products: 'https://n8n.traidenis.org/webhook/91307d0b-16c6-4de5-b349-ea274dd9259d',
+  get_prices: 'https://n8n.traidenis.org/webhook/60d19a37-65b1-492f-ad35-3bbb474f3cd9',
+  get_multiplier: 'https://n8n.traidenis.org/webhook/77887f94-dfa2-48fe-8b13-8798b693a55a'
+};
 
 /**
- * Call n8n MCP Server to execute a tool
- */
-async function callN8nMCPServer(toolName: string, toolInput: any): Promise<string> {
-  try {
-    console.log(`[n8n MCP] Calling tool: ${toolName}`, toolInput);
-
-    // Use JSON-RPC 2.0 format as expected by MCP servers
-    const requestBody = {
-      jsonrpc: '2.0',
-      method: 'tools/call',
-      id: Date.now(), // Use timestamp as unique request ID
-      params: {
-        name: toolName,
-        arguments: toolInput
-      }
-    };
-
-    console.log(`[n8n MCP] Request body:`, JSON.stringify(requestBody, null, 2));
-
-    const response = await fetch(N8N_MCP_SERVER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json, text/event-stream'
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    console.log(`[n8n MCP] Response status:`, response.status, response.statusText);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[n8n MCP] Error response (first 500 chars):`, errorText.substring(0, 500));
-
-      // Return concise error (don't include massive error details that break JSON encoding)
-      return JSON.stringify({
-        success: false,
-        error: `n8n MCP Server returned ${response.status}: ${response.statusText}`,
-        message: 'Check n8n workflow logs for details'
-      });
-    }
-
-    const result = await response.json();
-    console.log(`[n8n MCP] Tool ${toolName} result:`, result);
-
-    // Extract the actual result from JSON-RPC response
-    if (result.result) {
-      return JSON.stringify(result.result, null, 2);
-    } else if (result.error) {
-      return JSON.stringify({
-        success: false,
-        error: result.error.message || 'n8n MCP error',
-        code: result.error.code
-      });
-    }
-
-    // Fallback: return the entire response
-    return JSON.stringify(result, null, 2);
-  } catch (error: any) {
-    console.error(`[n8n MCP] Exception calling ${toolName}:`, error);
-    return JSON.stringify({
-      success: false,
-      error: error.message || 'Unknown error calling n8n MCP server',
-      tool_name: toolName
-    });
-  }
-}
-
-/**
- * Execute get_products tool (local Supabase query)
+ * Execute get_products tool (via n8n webhook)
  */
 export async function executeGetProductsTool(input: { product_code: string }): Promise<string> {
   try {
     console.log('[Tool: get_products] Searching for product code:', input.product_code);
+    console.log('[Tool: get_products] Calling webhook:', N8N_WEBHOOKS.get_products);
 
-    const { data, error } = await supabaseAdmin
-      .from('products')
-      .select('*')
-      .eq('productCode', input.product_code)
-      .single();
+    const response = await fetch(N8N_WEBHOOKS.get_products, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        product_code: input.product_code
+      })
+    });
 
-    if (error) {
+    console.log('[Tool: get_products] Response status:', response.status);
+
+    if (!response.ok) {
       return JSON.stringify({
         success: false,
-        error: error.message,
-        product_code: input.product_code
+        error: `Webhook returned ${response.status}: ${response.statusText}`
       });
     }
 
+    const data = await response.json();
+    console.log('[Tool: get_products] Response data:', data);
+
+    // Return the webhook response as-is wrapped in success
     return JSON.stringify({
       success: true,
       data: data
     }, null, 2);
   } catch (error: any) {
+    console.error('[Tool: get_products] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error'
@@ -115,33 +58,42 @@ export async function executeGetProductsTool(input: { product_code: string }): P
 }
 
 /**
- * Execute get_prices tool (local Supabase query)
+ * Execute get_prices tool (via n8n webhook)
  */
 export async function executeGetPricesTool(input: { id: number }): Promise<string> {
   try {
     console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
+    console.log('[Tool: get_prices] Calling webhook:', N8N_WEBHOOKS.get_prices);
 
-    const { data, error } = await supabaseAdmin
-      .from('pricing')
-      .select('*')
-      .eq('productid', input.id)
-      .order('created', { ascending: false })
-      .limit(1)
-      .single();
+    const response = await fetch(N8N_WEBHOOKS.get_prices, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: input.id
+      })
+    });
 
-    if (error) {
+    console.log('[Tool: get_prices] Response status:', response.status);
+
+    if (!response.ok) {
       return JSON.stringify({
         success: false,
-        error: error.message,
-        product_id: input.id
+        error: `Webhook returned ${response.status}: ${response.statusText}`
       });
     }
 
+    const data = await response.json();
+    console.log('[Tool: get_prices] Response data:', data);
+
+    // Return the webhook response as-is wrapped in success
     return JSON.stringify({
       success: true,
       data: data
     }, null, 2);
   } catch (error: any) {
+    console.error('[Tool: get_prices] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error'
@@ -150,31 +102,40 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
 }
 
 /**
- * Execute get_multiplier tool (local Supabase query)
+ * Execute get_multiplier tool (via n8n webhook)
  */
 export async function executeGetMultiplierTool(): Promise<string> {
   try {
     console.log('[Tool: get_multiplier] Fetching latest price multiplier');
+    console.log('[Tool: get_multiplier] Calling webhook:', N8N_WEBHOOKS.get_multiplier);
 
-    const { data, error } = await supabaseAdmin
-      .from('price_multiplier')
-      .select('*')
-      .order('created', { ascending: false })
-      .limit(1)
-      .single();
+    const response = await fetch(N8N_WEBHOOKS.get_multiplier, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
 
-    if (error) {
+    console.log('[Tool: get_multiplier] Response status:', response.status);
+
+    if (!response.ok) {
       return JSON.stringify({
         success: false,
-        error: error.message
+        error: `Webhook returned ${response.status}: ${response.statusText}`
       });
     }
 
+    const data = await response.json();
+    console.log('[Tool: get_multiplier] Response data:', data);
+
+    // Return the webhook response as-is wrapped in success
     return JSON.stringify({
       success: true,
       data: data
     }, null, 2);
   } catch (error: any) {
+    console.error('[Tool: get_multiplier] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error'
