@@ -20,7 +20,8 @@ async function callN8nMCPServer(toolName: string, toolInput: any): Promise<strin
     const response = await fetch(N8N_MCP_SERVER_URL, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, text/event-stream'
       },
       body: JSON.stringify({
         tool: toolName,
