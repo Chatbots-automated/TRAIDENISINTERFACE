@@ -421,15 +421,30 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         // Build messages for next round (with tool_use and tool_result blocks)
         // CRITICAL: Use the ACTUAL content from finalMessage, not reconstructed tool_use blocks!
         // This ensures the tool_use blocks match exactly what Claude sent us.
+        // BUT: Filter out empty thinking blocks (API rejects them in recursive calls)
 
         console.log(`[Tool Loop] Using ${messages.length} messages from previous API call as conversation history`);
         console.log(`[Tool Loop] Using finalMessage.content with ${finalMessage.content.length} blocks`);
+
+        // Filter out empty thinking blocks (they cause 400 errors)
+        const filteredContent = finalMessage.content.filter((block: any) => {
+          if (block.type === 'thinking') {
+            const hasContent = block.thinking && block.thinking.trim().length > 0;
+            if (!hasContent) {
+              console.log('[Tool Loop] Filtering out empty thinking block');
+              return false;
+            }
+          }
+          return true;
+        });
+
+        console.log(`[Tool Loop] Filtered content blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
 
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
           ...messages, // Keep ALL messages from previous API call - they're part of conversation history
           {
             role: 'assistant',
-            content: finalMessage.content  // Use ACTUAL content from Claude's response!
+            content: filteredContent  // Use filtered content (no empty thinking blocks)
           },
           {
             role: 'user',
