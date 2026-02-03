@@ -419,26 +419,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         );
 
         // Build messages for next round (with tool_use and tool_result blocks)
-        // CRITICAL: The 'messages' parameter here should ONLY contain properly formatted messages
-        // from the previous API call. They can have array content if they contain valid
-        // tool_use + tool_result pairs that were already processed by the API.
-        // We should NOT filter them out - they are part of the conversation history!
+        // CRITICAL: Use the ACTUAL content from finalMessage, not reconstructed tool_use blocks!
+        // This ensures the tool_use blocks match exactly what Claude sent us.
 
         console.log(`[Tool Loop] Using ${messages.length} messages from previous API call as conversation history`);
+        console.log(`[Tool Loop] Using finalMessage.content with ${finalMessage.content.length} blocks`);
 
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
           ...messages, // Keep ALL messages from previous API call - they're part of conversation history
           {
             role: 'assistant',
-            content: [
-              ...finalToolUses.map(tu => ({
-                type: 'tool_use' as const,
-                id: tu.id,
-                name: tu.name,
-                input: tu.input
-              })),
-              ...(responseContent ? [{ type: 'text' as const, text: responseContent }] : [])
-            ]
+            content: finalMessage.content  // Use ACTUAL content from Claude's response!
           },
           {
             role: 'user',
