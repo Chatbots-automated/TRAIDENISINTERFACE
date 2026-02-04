@@ -22,6 +22,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
 import BanterLoader from './BanterLoader';
+import { colors } from '../lib/designSystem';
 import {
   createSDKConversation,
   getSDKConversations,
@@ -1442,7 +1443,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 placeholder="Parašykite žinutę..."
                 rows={1}
                 className="w-full px-4 py-3.5 pr-80 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                style={{ background: 'white', color: '#111827', border: '1px solid #d1d5db', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
+                style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}`, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
                 disabled={loading || !systemPrompt}
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
