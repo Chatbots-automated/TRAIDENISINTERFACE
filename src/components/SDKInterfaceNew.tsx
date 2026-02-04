@@ -58,6 +58,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [error, setError] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [promptTemplate, setPromptTemplate] = useState<string>('');
+  const [templateFromDB, setTemplateFromDB] = useState<string>(''); // Template variable from instruction_variables
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showTemplateView, setShowTemplateView] = useState(false);
@@ -107,19 +108,70 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const loadSystemPrompt = async () => {
     try {
       setLoadingPrompt(true);
-      const [fullPrompt, template] = await Promise.all([
+      const [fullPrompt, template, templateVar] = await Promise.all([
         getSystemPrompt(),
-        getPromptTemplate()
+        getPromptTemplate(),
+        fetchTemplateVariable() // Fetch template variable from instruction_variables
       ]);
       setSystemPrompt(fullPrompt);
       setPromptTemplate(template);
+      setTemplateFromDB(templateVar);
       console.log('System prompt loaded, length:', fullPrompt.length);
       console.log('Template loaded, length:', template.length);
+      console.log('Template variable from DB loaded, length:', templateVar.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
       setError('Nepavyko užkrauti sistemos instrukcijų');
     } finally {
       setLoadingPrompt(false);
+    }
+  };
+
+  const fetchTemplateVariable = async (): Promise<string> => {
+    try {
+      const { supabaseAdmin } = await import('../lib/supabase');
+      const { data, error } = await supabaseAdmin
+        .from('instruction_variables')
+        .select('content')
+        .eq('variable_key', 'template')
+        .single();
+
+      if (error) {
+        console.warn('[fetchTemplateVariable] No template variable found:', error);
+        return promptTemplate; // Fallback to code template
+      }
+
+      return data?.content || promptTemplate;
+    } catch (error) {
+      console.error('[fetchTemplateVariable] Error:', error);
+      return promptTemplate; // Fallback to code template
+    }
+  };
+
+  const saveTemplateVariable = async (content: string): Promise<{ success: boolean; error?: any }> => {
+    try {
+      const { supabaseAdmin } = await import('../lib/supabase');
+
+      // Update the template variable in instruction_variables table
+      const { error } = await supabaseAdmin
+        .from('instruction_variables')
+        .update({
+          content: content,
+          updated_at: new Date().toISOString(),
+          updated_by: user.email
+        })
+        .eq('variable_key', 'template');
+
+      if (error) {
+        console.error('[saveTemplateVariable] Error:', error);
+        return { success: false, error };
+      }
+
+      console.log('[saveTemplateVariable] Template saved successfully');
+      return { success: true };
+    } catch (error) {
+      console.error('[saveTemplateVariable] Exception:', error);
+      return { success: false, error };
     }
   };
 
@@ -1024,7 +1076,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               </button>
               <button
                 onClick={async () => {
-                  const template = await getPromptTemplate();
+                  const template = await fetchTemplateVariable();
                   setEditedPromptTemplate(template);
                   setShowEditPromptModal(true);
                 }}
@@ -1550,15 +1602,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                     <button
                       onClick={async () => {
                         try {
-                          const result = await savePromptTemplate(editedPromptTemplate);
+                          const result = await saveTemplateVariable(editedPromptTemplate);
                           if (result.success) {
-                            // Reload both template and full prompt
+                            // Reload template from DB and full prompt
                             const [newPrompt, newTemplate] = await Promise.all([
                               getSystemPrompt(),
-                              getPromptTemplate()
+                              fetchTemplateVariable()
                             ]);
                             setSystemPrompt(newPrompt);
-                            setPromptTemplate(newTemplate);
+                            setTemplateFromDB(newTemplate);
                             setShowEditPromptModal(false);
                             setEditPassword('');
                             setEditPasswordError(false);
@@ -1649,7 +1701,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
               <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
-                {showTemplateView ? promptTemplate : systemPrompt}
+                {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
               </pre>
             </div>
           </div>
