@@ -1,9 +1,10 @@
 /**
- * Execute tools via n8n webhooks
+ * Execute tools via n8n webhooks + UI interactions
  *
  * - get_products: Query products table by product_code
  * - get_prices: Query pricing table by product id
  * - get_multiplier: Get latest price multiplier
+ * - display_buttons: Display interactive buttons in UI (special handling)
  */
 
 const N8N_WEBHOOKS = {
@@ -143,6 +144,26 @@ export async function executeGetMultiplierTool(): Promise<string> {
 }
 
 /**
+ * Execute display_buttons tool (UI interaction - no webhook)
+ * Returns special marker that UI will detect to pause conversation and display buttons
+ */
+export async function executeDisplayButtonsTool(input: { message?: string; buttons: Array<{id: string, label: string, value: string}> }): Promise<string> {
+  console.log('[Tool: display_buttons] Displaying buttons in UI');
+  console.log('[Tool: display_buttons] Buttons:', input.buttons);
+
+  // Return special JSON marker that indicates buttons should be displayed
+  // The UI will detect this and handle it specially
+  return JSON.stringify({
+    success: true,
+    display_buttons: true,  // Special marker for UI detection
+    message: input.message || null,
+    buttons: input.buttons,
+    // This tells the system to PAUSE the conversation and wait for user interaction
+    pause_conversation: true
+  }, null, 2);
+}
+
+/**
  * Main tool executor - routes tool calls to appropriate executor
  */
 export async function executeTool(toolName: string, toolInput: any): Promise<string> {
@@ -158,10 +179,13 @@ export async function executeTool(toolName: string, toolInput: any): Promise<str
     case 'get_multiplier':
       return await executeGetMultiplierTool();
 
+    case 'display_buttons':
+      return await executeDisplayButtonsTool(toolInput);
+
     default:
       return JSON.stringify({
         success: false,
-        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier`
+        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier, display_buttons`
       });
   }
 }

@@ -72,6 +72,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [showDiff, setShowDiff] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  const [displayButtons, setDisplayButtons] = useState<{ message?: string; buttons: Array<{id: string, label: string, value: string}> } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -261,6 +262,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       setUserScrolledUp(false);
       setShowScrollButton(false);
     }
+  };
+
+  /**
+   * Handle button click from display_buttons tool
+   */
+  const handleButtonClick = (value: string) => {
+    console.log('[Buttons] User clicked button with value:', value);
+    setDisplayButtons(null);
+    setInputValue(value);
+    // Automatically send the value after a brief delay
+    setTimeout(() => {
+      handleSend();
+    }, 100);
   };
 
   /**
@@ -479,6 +493,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             }
           })
         );
+
+        // Check if any tool result contains display_buttons marker (should pause conversation)
+        const buttonResult = toolResults.find(result => {
+          try {
+            const parsed = JSON.parse(result.content);
+            return parsed.display_buttons === true;
+          } catch {
+            return false;
+          }
+        });
+
+        if (buttonResult) {
+          console.log('[Tool Loop] Detected display_buttons - pausing conversation');
+          const parsed = JSON.parse(buttonResult.content);
+          setDisplayButtons({
+            message: parsed.message,
+            buttons: parsed.buttons
+          });
+
+          // Save conversation with assistant's response (but pause here)
+          const finalMessages: Anthropic.MessageParam[] = [
+            ...messages,
+            {
+              role: 'assistant',
+              content: filteredContent
+            },
+            {
+              role: 'user',
+              content: toolResults
+            }
+          ];
+
+          const updatedConversation = {
+            ...conversation,
+            messages: finalMessages,
+            lastActivity: new Date().toISOString()
+          };
+
+          setCurrentConversation(updatedConversation);
+          await updateSDKConversation(updatedConversation);
+          setLoading(false);
+          return; // PAUSE - don't continue with recursive loop
+        }
 
         // Build messages for next round (with tool_use and tool_result blocks)
         // CRITICAL: Use the ACTUAL content from finalMessage, not reconstructed tool_use blocks!
@@ -1182,6 +1239,44 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               <span className="text-sm font-medium">Pasiūlymas</span>
             </div>
           </button>
+        )}
+
+        {/* Interactive Buttons (from display_buttons tool) */}
+        {displayButtons && !loading && (
+          <div className="px-6 pt-4">
+            <div className="max-w-4xl mx-auto">
+              <div
+                className="p-4 rounded-lg border"
+                style={{
+                  background: '#fafaf9',
+                  borderColor: '#e8e5e0'
+                }}
+              >
+                {displayButtons.message && (
+                  <p className="text-sm mb-3" style={{ color: '#6b7280' }}>
+                    {displayButtons.message}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {displayButtons.buttons.map(button => (
+                    <button
+                      key={button.id}
+                      onClick={() => handleButtonClick(button.value)}
+                      className="px-4 py-2 rounded-lg transition-all hover:shadow-md"
+                      style={{
+                        background: '#5a5550',
+                        color: 'white',
+                        fontSize: '14px',
+                        fontWeight: '500'
+                      }}
+                    >
+                      {button.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Messages Area */}
