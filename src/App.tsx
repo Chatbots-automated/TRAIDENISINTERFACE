@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { getCurrentUser, getOrCreateDefaultProject, getChatThreads, createChatThread, deleteChatThread, updateChatThreadTitle } from './lib/supabase';
 import Layout from './components/Layout';
 import ChatInterface from './components/ChatInterface';
@@ -23,22 +24,33 @@ interface Thread {
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
-  VIEW_MODE: 'traidenis_view_mode',
   CURRENT_THREAD_ID: 'traidenis_current_thread_id',
   NAUJOKAS_MODE: 'traidenis_naujokas_mode',
 };
 
-function App() {
+// Map routes to view modes
+const routeToViewMode: Record<string, ViewMode> = {
+  '/': 'chat',
+  '/chat': 'chat',
+  '/documents': 'documents',
+  '/users': 'users',
+  '/transcripts': 'transcripts',
+  '/instrukcijos': 'instrukcijos',
+  '/nestandartiniai': 'nestandartiniai',
+  '/sdk': 'sdk',
+};
+
+function AppContent() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   const [user, setUser] = useState<AppUser | null>(null);
   const [projectId, setProjectId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  // Initialize viewMode from localStorage
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.VIEW_MODE);
-    return (saved as ViewMode) || 'chat';
-  });
+  // Derive viewMode from current route
+  const viewMode: ViewMode = routeToViewMode[location.pathname] || 'chat';
 
   // Thread management state (moved from ChatInterface)
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -59,14 +71,14 @@ function App() {
   // Main sidebar collapse state (for SDK interface positioning)
   const [mainSidebarCollapsed, setMainSidebarCollapsed] = useState(false);
 
+  // Commercial offer state
+  const [hasOffer, setHasOffer] = useState(false);
+  const [showDocGlow, setShowDocGlow] = useState(false);
+  const [showDocIconTooltip, setShowDocIconTooltip] = useState(false);
+
   useEffect(() => {
     checkUser();
   }, []);
-
-  // Save viewMode to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.VIEW_MODE, viewMode);
-  }, [viewMode]);
 
   // Save currentThread ID to localStorage when it changes
   useEffect(() => {
@@ -96,7 +108,7 @@ function App() {
     try {
       setInitialLoading(true);
       const { user: currentUser, error } = await getCurrentUser();
-      
+
       if (error || !currentUser) {
         setUser(null);
         setProjectId('');
@@ -104,7 +116,7 @@ function App() {
       }
 
       setUser(currentUser);
-      
+
       // Get or create default project
       const defaultProjectId = await getOrCreateDefaultProject(currentUser.id, currentUser.email);
       setProjectId(defaultProjectId);
@@ -221,8 +233,6 @@ function App() {
   // Handle thread selection
   const handleSelectThread = (thread: Thread) => {
     setCurrentThread(thread);
-    // Check if this thread has a commercial offer
-    setHasOffer(hasCommercialOffer(thread.id));
   };
 
   // Handle renaming a thread
@@ -262,12 +272,24 @@ function App() {
     }, 5000);
   }, [naujokasMode]);
 
+  // Handle view mode change (navigation)
+  const handleViewModeChange = (newViewMode: ViewMode) => {
+    const route = Object.keys(routeToViewMode).find(
+      key => routeToViewMode[key] === newViewMode
+    );
+    if (route && route !== '/') {
+      navigate(route);
+    } else if (newViewMode === 'chat') {
+      navigate('/chat');
+    }
+  };
+
   if (initialLoading) {
     return (
-      <div className="min-h-screen bg-macos-gray-50 flex items-center justify-center">
-        <div className="text-center macos-animate-fade">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-macos-gray-200 border-t-macos-blue mx-auto mb-4"></div>
-          <p className="text-macos-gray-500 text-sm">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+          <p className="text-sm" style={{ color: '#8a857f' }}>Loading...</p>
         </div>
       </div>
     );
@@ -279,50 +301,16 @@ function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-macos-gray-50 flex items-center justify-center">
-        <div className="text-center macos-animate-fade">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-macos-gray-200 border-t-macos-blue mx-auto mb-4"></div>
-          <p className="text-macos-gray-500 text-sm">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+          <p className="text-sm" style={{ color: '#8a857f' }}>Loading...</p>
         </div>
       </div>
     );
   }
 
-  const renderContent = () => {
-    switch (viewMode) {
-      case 'chat':
-        return (
-          <ChatInterface
-            user={user}
-            projectId={projectId}
-            currentThread={currentThread}
-            onCommercialOfferUpdate={handleCommercialOfferUpdate}
-            onFirstCommercialAccept={handleFirstCommercialAccept}
-            onThreadsUpdate={loadThreads}
-            onCreateThread={handleCreateThread}
-            naujokasMode={naujokasMode}
-            isNewVersion={true}
-          />
-        );
-      case 'documents':
-        return <DocumentsInterface user={user} projectId={projectId} />;
-      case 'users':
-        return <AdminUsersInterface user={user} />;
-      case 'transcripts':
-        return <TranscriptsInterface user={user} />;
-      case 'instrukcijos':
-        return <InstructionsInterface user={user} />;
-      case 'nestandartiniai':
-        return <NestandardiniaiInterface user={user} projectId={projectId} />;
-      case 'sdk':
-        return <SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />;
-      default:
-        return null;
-    }
-  };
-
   return (
-    <>
     <Layout
       user={user}
       threads={threads}
@@ -336,12 +324,63 @@ function App() {
       naujokasMode={naujokasMode}
       onToggleNaujokas={toggleNaujokasMode}
       viewMode={viewMode}
-      onViewModeChange={setViewMode}
+      onViewModeChange={handleViewModeChange}
       onSidebarCollapseChange={setMainSidebarCollapsed}
     >
-      {renderContent()}
+      <Routes>
+        <Route path="/" element={<Navigate to="/chat" replace />} />
+        <Route
+          path="/chat"
+          element={
+            <ChatInterface
+              user={user}
+              projectId={projectId}
+              currentThread={currentThread}
+              onCommercialOfferUpdate={handleCommercialOfferUpdate}
+              onFirstCommercialAccept={handleFirstCommercialAccept}
+              onThreadsUpdate={loadThreads}
+              onCreateThread={handleCreateThread}
+              naujokasMode={naujokasMode}
+              isNewVersion={true}
+            />
+          }
+        />
+        <Route
+          path="/documents"
+          element={<DocumentsInterface user={user} projectId={projectId} />}
+        />
+        <Route
+          path="/users"
+          element={<AdminUsersInterface user={user} />}
+        />
+        <Route
+          path="/transcripts"
+          element={<TranscriptsInterface user={user} />}
+        />
+        <Route
+          path="/instrukcijos"
+          element={<InstructionsInterface user={user} />}
+        />
+        <Route
+          path="/nestandartiniai"
+          element={<NestandardiniaiInterface user={user} projectId={projectId} />}
+        />
+        <Route
+          path="/sdk"
+          element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />}
+        />
+        {/* Catch-all redirect to chat */}
+        <Route path="*" element={<Navigate to="/chat" replace />} />
+      </Routes>
     </Layout>
-    </>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   );
 }
 
