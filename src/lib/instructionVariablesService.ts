@@ -513,5 +513,17 @@ export const getSystemPrompt = async (): Promise<string> => {
   console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
   console.log('[getSystemPrompt] Length changed by:', injectedPrompt.length - promptTemplate.length, 'characters');
 
+  // Verify PHASE 5 is present
+  if (injectedPrompt.includes('PHASE 5: COMMERCIAL OFFER GENERATION')) {
+    console.log('[getSystemPrompt] ✅ PHASE 5 is present in system prompt');
+    if (injectedPrompt.includes('WRONG FORMAT - DO NOT USE THIS')) {
+      console.log('[getSystemPrompt] ✅ WRONG vs RIGHT comparison is present');
+    } else {
+      console.warn('[getSystemPrompt] ⚠️ WRONG vs RIGHT comparison NOT found!');
+    }
+  } else {
+    console.error('[getSystemPrompt] ❌ PHASE 5 NOT FOUND in system prompt!');
+  }
+
   return injectedPrompt;
 };
