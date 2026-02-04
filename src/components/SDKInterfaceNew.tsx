@@ -171,13 +171,23 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await deleteSDKConversation(conversationId, user.id, user.email);
+      console.log('[Delete] Attempting to delete conversation:', conversationId);
+      const { data, error: deleteError } = await deleteSDKConversation(conversationId, user.id, user.email);
+
+      if (deleteError || !data) {
+        console.error('[Delete] Error:', deleteError);
+        setError(`Nepavyko ištrinti pokalbio: ${deleteError?.message || 'nežinoma klaida'}`);
+        return;
+      }
+
+      console.log('[Delete] Successfully deleted conversation');
       await loadConversations();
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
       }
-    } catch (err) {
-      console.error('Error deleting conversation:', err);
+    } catch (err: any) {
+      console.error('[Delete] Exception:', err);
+      setError(`Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
     }
   };
 
@@ -522,13 +532,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         await addMessageToConversation(conversation.id, assistantMessage);
         const finalMessages = [...currentMessages, assistantMessage];
 
-        setCurrentConversation({
+        const updatedConversation = {
           ...conversation,
           messages: finalMessages,
           message_count: finalMessages.length,
           last_message_at: assistantMessage.timestamp,
           updated_at: new Date().toISOString()
-        });
+        };
+
+        setCurrentConversation(updatedConversation);
+
+        // CRITICAL: Check for artifacts in final response
+        if (responseContent.includes('<commercial_offer')) {
+          console.log('[Artifact] Detected commercial_offer in final response');
+          await handleArtifactGeneration(responseContent, updatedConversation);
+        }
 
         loadConversations();
       }
