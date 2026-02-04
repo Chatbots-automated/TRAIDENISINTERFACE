@@ -80,20 +80,40 @@ export const injectVariablesIntoPrompt = (
 };
 
 /**
- * Get the prompt template from database or use default
+ * Get the prompt template from database (priority order):
+ * 1. instruction_variables table (variable_key='template') - NEW SYSTEM
+ * 2. prompt_template table - OLD SYSTEM (legacy fallback)
+ * 3. Code default - HARDCODED FALLBACK
  */
 export const getPromptTemplate = async (): Promise<string> => {
   try {
+    // Try NEW system first: instruction_variables table
+    console.log('[getPromptTemplate] Checking instruction_variables for template...');
+    const { data: templateVar, error: varError } = await supabaseAdmin
+      .from('instruction_variables')
+      .select('content')
+      .eq('variable_key', 'template')
+      .single();
+
+    if (!varError && templateVar?.content) {
+      console.log('[getPromptTemplate] ✅ Found template in instruction_variables (NEW system)');
+      return templateVar.content;
+    }
+
+    console.log('[getPromptTemplate] Template not in instruction_variables, checking prompt_template (OLD system)...');
+
+    // Fallback to OLD system: prompt_template table
     const { data, error } = await supabaseAdmin
       .from('prompt_template')
       .select('template_content')
       .single();
 
     if (error) {
-      console.log('[getPromptTemplate] No custom template found, using default');
+      console.log('[getPromptTemplate] No custom template found, using code default');
       return getDefaultPromptTemplate();
     }
 
+    console.log('[getPromptTemplate] ✅ Found template in prompt_template (OLD system)');
     return data?.template_content || getDefaultPromptTemplate();
   } catch (error) {
     console.error('[getPromptTemplate] Error loading template:', error);
@@ -502,12 +522,21 @@ When in doubt: ASK. When unsure: VERIFY. When calculating: CHECK TWICE.`;
  * Get the complete system prompt with all variables injected
  */
 export const getSystemPrompt = async (): Promise<string> => {
+  console.log('═══════════════════════════════════════════════════');
   console.log('[getSystemPrompt] Starting prompt generation...');
-  const promptTemplate = await getPromptTemplate();
+  console.log('═══════════════════════════════════════════════════');
 
-  console.log('[getSystemPrompt] Template length before injection:', promptTemplate.length);
+  const promptTemplate = await getPromptTemplate();
+  console.log('[getSystemPrompt] Template loaded, length:', promptTemplate.length);
+  console.log('[getSystemPrompt] Template source:',
+    promptTemplate.includes('{role_and_identity}') ? 'instruction_variables (NEW)' :
+    promptTemplate.includes('ROLE & IDENTITY') ? 'prompt_template or code (OLD)' :
+    'UNKNOWN'
+  );
+
   const variables = await fetchInstructionVariables();
   console.log('[getSystemPrompt] Fetched variables count:', variables.length);
+  console.log('[getSystemPrompt] Variables:', variables.map(v => v.variable_key).join(', '));
 
   const injectedPrompt = injectVariablesIntoPrompt(promptTemplate, variables);
   console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
@@ -525,5 +554,6 @@ export const getSystemPrompt = async (): Promise<string> => {
     console.error('[getSystemPrompt] ❌ PHASE 5 NOT FOUND in system prompt!');
   }
 
+  console.log('═══════════════════════════════════════════════════');
   return injectedPrompt;
 };
