@@ -1054,8 +1054,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     return (
       <div className="h-full flex items-center justify-center" style={{ background: '#fdfcfb' }}>
         <div className="text-center">
-          <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: '#5a5550' }} />
-          <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
+          <BanterLoader size="large" />
+          <p className="text-base font-semibold mb-2 mt-6" style={{ color: '#3d3935' }}>
             Kraunamos sistemos instrukcijos
           </p>
           <p className="text-sm" style={{ color: '#8a857f' }}>
@@ -1176,7 +1176,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           <div className="flex-1 overflow-y-auto px-2">
             {loadingConversations ? (
               <div className="p-4 text-center">
-                <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: '#8a857f' }} />
+                <BanterLoader size="small" />
               </div>
             ) : conversations.length === 0 ? (
               <div className="p-4 text-center">

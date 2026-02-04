@@ -547,24 +547,43 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
         <div className="max-w-6xl mx-auto">
           {!response && !uploading && (
             <>
+              {/* Card hover styles */}
+              <style>{`
+                .card-wrapper:not(.selected):not(.dimmed):hover {
+                  box-shadow: 0 0 20px 2px rgba(81, 228, 220, 0.2) !important;
+                }
+              `}</style>
+
               {/* Three Cards */}
               <div className="grid grid-cols-3 gap-4 mb-6">
                 {/* Card 1: New Request */}
-                <button
-                  onClick={() => handleCardSelect('new-request')}
-                  className={`p-5 rounded-xl border-2 text-left transition-all duration-300 ${
+                <div
+                  className={`card-wrapper rounded-xl p-[2px] transition-all duration-300 ${
                     selectedCard === 'new-request'
-                      ? 'shadow-lg scale-105 z-10'
+                      ? 'selected scale-105 z-10'
                       : selectedCard
-                        ? 'opacity-50 scale-95'
-                        : 'hover:shadow-md'
+                        ? 'dimmed opacity-50 scale-95'
+                        : ''
                   }`}
                   style={{
-                    borderColor: selectedCard === 'new-request' ? '#5a5550' : '#e8e5e0',
-                    background: selectedCard === 'new-request' ? '#faf9f7' : 'white',
-                    transform: selectedCard === 'new-request' ? 'translateY(-4px)' : undefined
+                    background: selectedCard === 'new-request'
+                      ? 'linear-gradient(135deg, rgb(81, 228, 220) 0%, rgba(81, 228, 220, 0.3) 100%)'
+                      : 'linear-gradient(135deg, #f0ede8 0%, rgba(81, 228, 220, 0.15) 100%)',
+                    transform: selectedCard === 'new-request' ? 'translateY(-4px)' : undefined,
+                    boxShadow: selectedCard === 'new-request'
+                      ? '0 8px 24px rgba(81, 228, 220, 0.25)'
+                      : 'none'
                   }}
                 >
+                  <button
+                    onClick={() => handleCardSelect('new-request')}
+                    className={`w-full p-5 rounded-[10px] text-left transition-all duration-200 ${
+                      !selectedCard ? 'hover:scale-[0.98]' : ''
+                    }`}
+                    style={{
+                      background: selectedCard === 'new-request' ? '#faf9f7' : 'white'
+                    }}
+                  >
                   <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-3"
                        style={{ background: selectedCard === 'new-request' ? '#5a5550' : '#f0ede8' }}>
                     <Upload className="w-6 h-6" style={{ color: selectedCard === 'new-request' ? 'white' : '#5a5550' }} />
@@ -575,24 +594,37 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   <p className="text-xs leading-relaxed" style={{ color: '#8a857f' }}>
                     Įveskite užklausos tekstą ir įkelkite dokumentus
                   </p>
-                </button>
+                  </button>
+                </div>
 
                 {/* Card 2: Upload Solution */}
-                <button
-                  onClick={() => handleCardSelect('upload-solution')}
-                  className={`p-5 rounded-xl border-2 text-left transition-all duration-300 ${
+                <div
+                  className={`card-wrapper rounded-xl p-[2px] transition-all duration-300 ${
                     selectedCard === 'upload-solution'
-                      ? 'shadow-lg scale-105 z-10'
+                      ? 'selected scale-105 z-10'
                       : selectedCard
-                        ? 'opacity-50 scale-95'
-                        : 'hover:shadow-md'
+                        ? 'dimmed opacity-50 scale-95'
+                        : ''
                   }`}
                   style={{
-                    borderColor: selectedCard === 'upload-solution' ? '#5a5550' : '#e8e5e0',
-                    background: selectedCard === 'upload-solution' ? '#faf9f7' : 'white',
-                    transform: selectedCard === 'upload-solution' ? 'translateY(-4px)' : undefined
+                    background: selectedCard === 'upload-solution'
+                      ? 'linear-gradient(135deg, rgb(81, 228, 220) 0%, rgba(81, 228, 220, 0.3) 100%)'
+                      : 'linear-gradient(135deg, #f0ede8 0%, rgba(81, 228, 220, 0.15) 100%)',
+                    transform: selectedCard === 'upload-solution' ? 'translateY(-4px)' : undefined,
+                    boxShadow: selectedCard === 'upload-solution'
+                      ? '0 8px 24px rgba(81, 228, 220, 0.25)'
+                      : 'none'
                   }}
                 >
+                  <button
+                    onClick={() => handleCardSelect('upload-solution')}
+                    className={`w-full p-5 rounded-[10px] text-left transition-all duration-200 ${
+                      !selectedCard ? 'hover:scale-[0.98]' : ''
+                    }`}
+                    style={{
+                      background: selectedCard === 'upload-solution' ? '#faf9f7' : 'white'
+                    }}
+                  >
                   <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-3"
                        style={{ background: selectedCard === 'upload-solution' ? '#5a5550' : '#f0ede8' }}>
                     <Coins className="w-6 h-6" style={{ color: selectedCard === 'upload-solution' ? 'white' : '#5a5550' }} />
@@ -603,24 +635,37 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   <p className="text-xs leading-relaxed" style={{ color: '#8a857f' }}>
                     Įkelti komercinį pasiūlymą projektui
                   </p>
-                </button>
+                  </button>
+                </div>
 
                 {/* Card 3: Find Similar */}
-                <button
-                  onClick={() => handleCardSelect('find-similar')}
-                  className={`p-5 rounded-xl border-2 text-left transition-all duration-300 ${
+                <div
+                  className={`card-wrapper rounded-xl p-[2px] transition-all duration-300 ${
                     selectedCard === 'find-similar'
-                      ? 'shadow-lg scale-105 z-10'
+                      ? 'selected scale-105 z-10'
                       : selectedCard
-                        ? 'opacity-50 scale-95'
-                        : 'hover:shadow-md'
+                        ? 'dimmed opacity-50 scale-95'
+                        : ''
                   }`}
                   style={{
-                    borderColor: selectedCard === 'find-similar' ? '#5a5550' : '#e8e5e0',
-                    background: selectedCard === 'find-similar' ? '#faf9f7' : 'white',
-                    transform: selectedCard === 'find-similar' ? 'translateY(-4px)' : undefined
+                    background: selectedCard === 'find-similar'
+                      ? 'linear-gradient(135deg, rgb(81, 228, 220) 0%, rgba(81, 228, 220, 0.3) 100%)'
+                      : 'linear-gradient(135deg, #f0ede8 0%, rgba(81, 228, 220, 0.15) 100%)',
+                    transform: selectedCard === 'find-similar' ? 'translateY(-4px)' : undefined,
+                    boxShadow: selectedCard === 'find-similar'
+                      ? '0 8px 24px rgba(81, 228, 220, 0.25)'
+                      : 'none'
                   }}
                 >
+                  <button
+                    onClick={() => handleCardSelect('find-similar')}
+                    className={`w-full p-5 rounded-[10px] text-left transition-all duration-200 ${
+                      !selectedCard ? 'hover:scale-[0.98]' : ''
+                    }`}
+                    style={{
+                      background: selectedCard === 'find-similar' ? '#faf9f7' : 'white'
+                    }}
+                  >
                   <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-3"
                        style={{ background: selectedCard === 'find-similar' ? '#5a5550' : '#f0ede8' }}>
                     <Search className="w-6 h-6" style={{ color: selectedCard === 'find-similar' ? 'white' : '#5a5550' }} />
@@ -631,7 +676,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   <p className="text-xs leading-relaxed" style={{ color: '#8a857f' }}>
                     Ieškoti panašių gaminių ir dokumentų
                   </p>
-                </button>
+                  </button>
+                </div>
               </div>
 
               {/* Loader when waiting for card selection */}
@@ -854,7 +900,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
                               {loadingProjects ? (
                                 <div className="p-4 text-center">
-                                  <Loader2 className="w-6 h-6 animate-spin mx-auto" style={{ color: '#5a5550' }} />
+                                  <BanterLoader size="small" />
                                 </div>
                               ) : projects.length === 0 ? (
                                 <div className="p-4 text-center text-sm" style={{ color: '#8a857f' }}>
@@ -1069,8 +1115,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
           {/* Loading State */}
           {uploading && (
             <div className="py-20 text-center max-w-3xl mx-auto">
-              <Loader2 className="w-10 h-10 animate-spin mx-auto mb-4" style={{ color: '#5a5550' }} />
-              <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
+              <BanterLoader size="large" />
+              <p className="text-base font-semibold mb-2 mt-6" style={{ color: '#3d3935' }}>
                 Apdorojama jūsų užklausa
               </p>
               <p className="text-sm" style={{ color: '#8a857f' }}>
