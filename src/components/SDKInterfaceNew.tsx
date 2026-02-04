@@ -815,6 +815,59 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     }
   };
 
+  /**
+   * Render YAML content with interactive variables
+   */
+  const renderInteractiveYAML = (yamlContent: string) => {
+    const lines = yamlContent.split('\n');
+    // Pattern: variable_key: "value" or variable_key: |
+    const variablePattern = /^([a-z_]+[a-z0-9_]*)\s*:\s*(.+)$/;
+
+    return lines.map((line, index) => {
+      const match = line.match(variablePattern);
+
+      if (match && !line.startsWith('#') && !line.startsWith(' ')) {
+        const [, varKey, value] = match;
+        const isMultiline = value.trim() === '|';
+
+        return (
+          <div key={index} className="group hover:bg-gray-50 px-2 py-1 -mx-2 rounded transition-colors">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  // Insert variable reference into chat input
+                  setInputValue(`Pakeisk {{${varKey}}} į: `);
+                  textareaRef.current?.focus();
+                }}
+                className="text-left flex-1 font-mono text-xs"
+                title="Spustelėkite, kad įterptumėte nuorodą į pokalbį"
+              >
+                <span style={{ color: '#0066cc', fontWeight: 600 }}>{varKey}</span>
+                <span style={{ color: '#666' }}>: </span>
+                {!isMultiline && <span style={{ color: '#059669' }}>{value}</span>}
+              </button>
+              <Copy
+                className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                style={{ color: '#8a857f' }}
+                onClick={() => {
+                  navigator.clipboard.writeText(`{{${varKey}}}`);
+                }}
+                title="Kopijuoti kintamojo nuorodą"
+              />
+            </div>
+          </div>
+        );
+      }
+
+      // Regular line (comment, multiline content, etc.)
+      return (
+        <div key={index} className="font-mono text-xs" style={{ color: line.startsWith('#') ? '#888' : '#3d3935' }}>
+          {line || '\u00A0'}
+        </div>
+      );
+    });
+  };
+
   const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
     try {
       // Match with optional artifact_id attribute
@@ -1311,8 +1364,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              <div className="text-[15px] leading-relaxed whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                {currentConversation.artifact.content}
+              <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                {renderInteractiveYAML(currentConversation.artifact.content)}
+              </div>
+              <div className="mt-6 p-3 rounded-lg" style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+                <p className="text-xs" style={{ color: '#6b7280' }}>
+                  <strong>Patarimas:</strong> Spustelėkite ant kintamojo, kad įterptumėte nuorodą į pokalbį. Tada galite paprašyti Claude pakeisti tik tą reikšmę.
+                </p>
               </div>
             </div>
           </div>
