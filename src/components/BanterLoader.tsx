@@ -153,7 +153,7 @@ export default function BanterLoader({ size = 'medium' }: BanterLoaderProps) {
             height: `${d.box}px`,
             marginRight: num % 3 === 0 ? '0' : `${d.gap}px`,
             marginBottom: num % 3 === 0 ? `${d.gap}px` : '0',
-            animation: `banterMoveBox-${num} 4s infinite`
+            animation: `banterMoveBox-${num} 6s infinite`
           }}
         >
           <div
@@ -164,7 +164,7 @@ export default function BanterLoader({ size = 'medium' }: BanterLoaderProps) {
               top: num === 3 ? `${moveDistance * 2}px` : '0',
               width: '100%',
               height: '100%',
-              background: '#5a5550',
+              background: 'rgb(81, 228, 220)',
               borderRadius: `${d.borderRadius}px`,
               transform: 'rotate(45deg)',
               opacity: 0.7
