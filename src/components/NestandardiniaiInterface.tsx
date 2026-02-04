@@ -3,6 +3,7 @@ import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Se
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
+import BanterLoader from './BanterLoader';
 import type { AppUser } from '../types';
 
 interface NestandardiniaiInterfaceProps {
@@ -632,6 +633,16 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   </p>
                 </button>
               </div>
+
+              {/* Loader when waiting for card selection */}
+              {!selectedCard && (
+                <div className="py-12 text-center">
+                  <BanterLoader size="medium" />
+                  <p className="text-sm mt-6" style={{ color: '#8a857f' }}>
+                    Pasirinkite operaciją
+                  </p>
+                </div>
+              )}
 
               {/* Options Area - Appears with fade-in animation */}
               {selectedCard && (

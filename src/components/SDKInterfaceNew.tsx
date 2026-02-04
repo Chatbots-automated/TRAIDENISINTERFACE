@@ -21,6 +21,7 @@ import {
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
+import BanterLoader from './BanterLoader';
 import {
   createSDKConversation,
   getSDKConversations,
@@ -1393,9 +1394,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
               {/* Initial loading indicator */}
               {loading && !streamingContent && !isToolUse && (
-                <div className="flex items-center gap-2 text-sm" style={{ color: '#6b7280' }}>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Kraunama...</span>
+                <div className="py-4">
+                  <BanterLoader size="small" />
                 </div>
               )}
 
