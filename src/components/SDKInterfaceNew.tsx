@@ -517,26 +517,36 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             .map((block: any) => block.text)
             .join('\n\n');
 
-          // Save conversation with assistant's text response (convert array to string)
-          const finalMessages: SDKMessage[] = [
-            ...currentMessages,
-            {
-              role: 'assistant',
-              content: textContent || 'Displaying options...',
-              timestamp: new Date().toISOString(),
-              buttons: parsed.buttons, // Store buttons with the message
-              buttonsMessage: parsed.message
-            }
-          ];
+          // Create assistant message with buttons (ensure content is string)
+          const assistantMessage: SDKMessage = {
+            role: 'assistant',
+            content: textContent || 'Displaying options...',
+            timestamp: new Date().toISOString(),
+            buttons: parsed.buttons, // Store buttons with the message
+            buttonsMessage: parsed.message
+          };
+
+          // Save the message to the conversation
+          await addMessageToConversation(conversation.id, assistantMessage);
+          const finalMessages = [...currentMessages, assistantMessage];
 
           const updatedConversation = {
             ...conversation,
             messages: finalMessages,
-            lastActivity: new Date().toISOString()
+            message_count: finalMessages.length,
+            last_message_at: assistantMessage.timestamp,
+            updated_at: new Date().toISOString()
           };
 
           setCurrentConversation(updatedConversation);
-          await updateSDKConversation(updatedConversation);
+
+          // Optimistically update conversations list
+          setConversations(prev => prev.map(conv =>
+            conv.id === updatedConversation.id
+              ? { ...conv, last_message_at: updatedConversation.last_message_at, message_count: updatedConversation.messages.length }
+              : conv
+          ));
+
           setLoading(false);
           setDisplayButtons(null); // Don't use separate state
           return; // PAUSE - don't continue with recursive loop
@@ -659,7 +669,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         // Optimistically update conversations list with new last_message_at
         setConversations(prev => prev.map(conv =>
           conv.id === updatedConversation.id
-            ? { ...conv, last_message_at: updatedConversation.lastActivity, message_count: updatedConversation.messages.length }
+            ? { ...conv, last_message_at: updatedConversation.last_message_at, message_count: updatedConversation.messages.length }
             : conv
         ));
 
@@ -1294,7 +1304,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   ) : (
                     // Assistant message - plain text with reaction buttons
                     <div className="mb-8 group">
-                      <MessageContent content={typeof message.content === 'string' ? message.content.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '') : message.content} />
+                      <MessageContent content={
+                        typeof message.content === 'string'
+                          ? message.content.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')
+                          : '[Content error: message content is not a string]'
+                      } />
 
                       {/* Interactive Buttons (inline with message) */}
                       {message.buttons && message.buttons.length > 0 && (
@@ -1329,7 +1343,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
                           style={{ color: '#6b7280' }}
                           title="Copy"
-                          onClick={() => navigator.clipboard.writeText(message.content)}
+                          onClick={() => navigator.clipboard.writeText(
+                            typeof message.content === 'string' ? message.content : String(message.content)
+                          )}
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
