@@ -13,8 +13,6 @@ import {
   PanelLeft,
   Pencil,
   Copy,
-  ThumbsUp,
-  ThumbsDown,
   RotateCcw,
   ChevronDown,
   User,
@@ -31,6 +29,8 @@ import {
   addMessageToConversation,
   updateConversationArtifact,
   deleteSDKConversation,
+  renameSDKConversation,
+  updateMessageButtonSelection,
   calculateDiff,
   type SDKConversation,
   type SDKMessage,
@@ -40,7 +40,7 @@ import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
-import { getEconomists, type AppUserData } from '../lib/userService';
+import { getEconomists, getManagers, type AppUserData } from '../lib/userService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -71,12 +71,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [displayButtons, setDisplayButtons] = useState<{ message?: string; buttons: Array<{id: string, label: string, value: string}> } | null>(null);
-  const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null);
   const [isStreamingArtifact, setIsStreamingArtifact] = useState(false);
   const [artifactStreamContent, setArtifactStreamContent] = useState('');
   const [economists, setEconomists] = useState<AppUserData[]>([]);
   const [selectedEconomist, setSelectedEconomist] = useState<AppUserData | null>(null);
   const [showEconomistDropdown, setShowEconomistDropdown] = useState(false);
+  const [managers, setManagers] = useState<AppUserData[]>([]);
+  const [selectedManager, setSelectedManager] = useState<AppUserData | null>(null);
+  const [showManagerDropdown, setShowManagerDropdown] = useState(false);
   const [sendingWebhook, setSendingWebhook] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -88,6 +90,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     loadSystemPrompt();
     loadConversations();
     loadEconomists();
+    loadManagers();
   }, []);
 
   const loadEconomists = async () => {
@@ -97,6 +100,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       console.log('[Economists] Loaded', economistsList.length, 'economists');
     } catch (error) {
       console.error('[Economists] Error loading:', error);
+    }
+  };
+
+  const loadManagers = async () => {
+    try {
+      const managersList = await getManagers();
+      setManagers(managersList);
+      console.log('[Managers] Loaded', managersList.length, 'managers');
+    } catch (error) {
+      console.error('[Managers] Error loading:', error);
     }
   };
 
@@ -302,11 +315,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   /**
    * Handle button click from display_buttons tool - sends silently to API
    */
-  const handleButtonClick = async (buttonId: string, value: string) => {
+  const handleButtonClick = async (buttonId: string, value: string, messageIndex: number) => {
     console.log('[Buttons] User clicked button:', buttonId, 'with value:', value);
-
-    // Mark button as selected for visual feedback
-    setSelectedButtonId(buttonId);
 
     // Get current conversation or create one
     let conversation = currentConversation;
@@ -342,6 +352,39 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         setCreatingConversation(false);
       }
     }
+
+    // Save button selection to database
+    await updateMessageButtonSelection(conversation.id, messageIndex, buttonId);
+
+    // Update local state to reflect button selection
+    setCurrentConversation(prev => {
+      if (!prev) return prev;
+      const updatedMessages = [...prev.messages];
+      if (updatedMessages[messageIndex]) {
+        updatedMessages[messageIndex] = {
+          ...updatedMessages[messageIndex],
+          selectedButtonId: buttonId
+        };
+      }
+      return { ...prev, messages: updatedMessages };
+    });
+
+    // Also update conversations list
+    setConversations(prevConvs =>
+      prevConvs.map(conv => {
+        if (conv.id === conversation.id) {
+          const updatedMessages = [...conv.messages];
+          if (updatedMessages[messageIndex]) {
+            updatedMessages[messageIndex] = {
+              ...updatedMessages[messageIndex],
+              selectedButtonId: buttonId
+            };
+          }
+          return { ...conv, messages: updatedMessages };
+        }
+        return conv;
+      })
+    );
 
     // Send button value silently (without displaying in chat)
     const silentUserMessage: SDKMessage = {
@@ -1225,6 +1268,26 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     }
   };
 
+  const parseYAMLContent = (yamlContent: string): Record<string, any> => {
+    const lines = yamlContent.split('\n');
+    const parsed: Record<string, any> = {};
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const colonIndex = trimmed.indexOf(':');
+        if (colonIndex > 0) {
+          const key = trimmed.substring(0, colonIndex).trim();
+          const value = trimmed.substring(colonIndex + 1).trim();
+          // Remove quotes if present
+          parsed[key] = value.replace(/^["']|["']$/g, '');
+        }
+      }
+    }
+
+    return parsed;
+  };
+
   const handleSendToWebhook = async () => {
     if (!currentConversation?.artifact) {
       setError('No artifact to send');
@@ -1236,22 +1299,66 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       return;
     }
 
+    if (!selectedManager) {
+      setError('Please select a manager first');
+      return;
+    }
+
     try {
       setSendingWebhook(true);
       console.log('[Webhook] Sending to n8n...');
 
-      // Construct payload with user data
+      // Generate project name: U+[manager code]+[tech code]+[date YY-MM-DD]
+      const now = new Date();
+      const year = String(now.getFullYear()).substring(2); // Last 2 digits of year
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+
+      const managerCode = selectedManager.kodas || 'XX';
+      const techCode = user.kodas || 'YY';
+      const projectName = `U${managerCode}${techCode}${dateStr}`;
+
+      console.log('[Webhook] Generated project name:', projectName);
+
+      // Rename conversation to project name
+      await renameSDKConversation(currentConversation.id, projectName);
+
+      // Update local state
+      setCurrentConversation(prev => prev ? { ...prev, title: projectName } : prev);
+      setConversations(prevConvs =>
+        prevConvs.map(conv =>
+          conv.id === currentConversation.id ? { ...conv, title: projectName } : conv
+        )
+      );
+
+      // Parse YAML content into separate fields
+      const parsedYAML = parseYAMLContent(currentConversation.artifact.content);
+
+      // Construct payload with parsed fields
       const payload = {
-        yaml_content: currentConversation.artifact.content,
-        technologist: user.full_name || user.display_name || user.email,
-        technologist_code: user.kodas || '',
-        technologist_phone: user.phone || '',
-        technologist_email: user.email,
-        ekonomistas: selectedEconomist.kodas || '',
+        // Parsed YAML fields as separate properties
+        ...parsedYAML,
+
+        // Project and metadata
+        project_name: projectName,
         project_id: projectId,
         conversation_id: currentConversation.id,
         artifact_id: currentConversation.artifact.id,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+
+        // Team members
+        technologist: user.full_name || user.display_name || user.email,
+        technologist_code: techCode,
+        technologist_phone: user.phone || '',
+        technologist_email: user.email,
+        ekonomistas_code: selectedEconomist.kodas || '',
+        ekonomistas_name: selectedEconomist.full_name || selectedEconomist.display_name || selectedEconomist.email,
+        manager_code: managerCode,
+        manager_name: selectedManager.full_name || selectedManager.display_name || selectedManager.email,
+
+        // Original YAML for reference (in case n8n needs it)
+        original_yaml: currentConversation.artifact.content
       };
 
       console.log('[Webhook] Payload:', payload);
@@ -1272,13 +1379,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       const result = await response.json();
       console.log('[Webhook] Success:', result);
 
-      // TODO: Log to webhooks table when implemented
-      console.log('[Webhook] Logged to application_logs via console');
-
       // Show success message
       setError(null);
-      alert('Commercial offer sent successfully to n8n!');
+      alert(`Commercial offer sent successfully to n8n!\nProject: ${projectName}`);
       setShowEconomistDropdown(false);
+      setShowManagerDropdown(false);
 
     } catch (err: any) {
       console.error('[Webhook] Error:', err);
@@ -1547,20 +1652,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                           )}
                           <div className="flex flex-wrap gap-2">
                             {message.buttons.map(button => {
-                              const isSelected = selectedButtonId === button.id;
+                              const isSelected = message.selectedButtonId === button.id;
+                              const hasSelection = message.selectedButtonId !== undefined && message.selectedButtonId !== null;
                               return (
                                 <button
                                   key={button.id}
-                                  onClick={() => handleButtonClick(button.id, button.value)}
+                                  onClick={() => handleButtonClick(button.id, button.value, index)}
                                   className="px-3 py-1.5 rounded-lg transition-all hover:shadow-md text-sm"
-                                  disabled={selectedButtonId !== null}
+                                  disabled={hasSelection}
                                   style={{
                                     background: isSelected ? 'transparent' : colors.border.dark,
                                     color: isSelected ? colors.border.dark : 'white',
                                     border: isSelected ? `2px solid ${colors.border.dark}` : 'none',
                                     fontWeight: '500',
-                                    opacity: selectedButtonId && !isSelected ? 0.4 : 1,
-                                    cursor: selectedButtonId ? 'not-allowed' : 'pointer'
+                                    opacity: hasSelection && !isSelected ? 0.4 : 1,
+                                    cursor: hasSelection ? 'not-allowed' : 'pointer'
                                   }}
                                 >
                                   {button.label}
@@ -1580,20 +1686,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                           onClick={() => navigator.clipboard.writeText(contentString)}
                         >
                           <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                          style={{ color: '#6b7280' }}
-                          title="Good response"
-                        >
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                          style={{ color: '#6b7280' }}
-                          title="Bad response"
-                        >
-                          <ThumbsDown className="w-3.5 h-3.5" />
                         </button>
                         <button
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
@@ -1857,10 +1949,71 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                     </div>
                   </div>
 
+                  {/* Manager Selection */}
+                  <div>
+                    <label className="text-xs font-medium mb-2 block" style={{ color: '#6b7280' }}>
+                      Select Manager (Vadybininkas)
+                    </label>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowManagerDropdown(!showManagerDropdown)}
+                        className="w-full px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-between"
+                        style={{
+                          borderColor: '#e8e5e0',
+                          background: 'white',
+                          color: selectedManager ? '#3d3935' : '#8a857f'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#5a5550'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8e5e0'}
+                      >
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4" />
+                          <span>{selectedManager ? (selectedManager.full_name || selectedManager.email) : 'Select manager...'}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+
+                      {/* Dropdown */}
+                      {showManagerDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                          {managers.length === 0 ? (
+                            <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
+                              No managers found
+                            </div>
+                          ) : (
+                            managers.map((manager) => (
+                              <button
+                                key={manager.id}
+                                onClick={() => {
+                                  setSelectedManager(manager);
+                                  setShowManagerDropdown(false);
+                                }}
+                                className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                                style={{ color: '#3d3935' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                              >
+                                <div>
+                                  <div className="font-medium">{manager.full_name || manager.display_name || manager.email}</div>
+                                  {manager.kodas && (
+                                    <div className="text-xs" style={{ color: '#8a857f' }}>Code: {manager.kodas}</div>
+                                  )}
+                                </div>
+                                {selectedManager?.id === manager.id && (
+                                  <Check className="w-4 h-4" style={{ color: '#10b981' }} />
+                                )}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Send Button */}
                   <button
                     onClick={handleSendToWebhook}
-                    disabled={!selectedEconomist || sendingWebhook}
+                    disabled={!selectedEconomist || !selectedManager || sendingWebhook}
                     className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     style={{
                       background: selectedEconomist && !sendingWebhook ? '#5a5550' : '#d4cfc8',

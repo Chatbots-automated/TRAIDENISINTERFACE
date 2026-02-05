@@ -58,6 +58,29 @@ export const getEconomists = async (): Promise<AppUserData[]> => {
 };
 
 /**
+ * Get only users with role = 'vadybininkas' (case insensitive)
+ */
+export const getManagers = async (): Promise<AppUserData[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
+      .ilike('role', 'vadybininkas')
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.error('[UserService] Error getting managers:', error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('[UserService] Exception in getManagers:', error);
+    return [];
+  }
+};
+
+/**
  * Get current user's complete data by ID
  */
 export const getCurrentUserData = (userId: string, users: AppUserData[]): AppUserData | null => {

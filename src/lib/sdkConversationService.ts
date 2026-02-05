@@ -22,6 +22,7 @@ export interface SDKMessage {
   thinking?: string; // Extended thinking content
   buttons?: Array<{id: string, label: string, value: string}>; // Interactive buttons
   buttonsMessage?: string; // Message to display with buttons
+  selectedButtonId?: string; // ID of the button that was selected by the user
   isSilent?: boolean; // Flag for silent messages (button clicks that shouldn't be displayed)
 }
 
@@ -262,6 +263,49 @@ export const renameSDKConversation = async (
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in renameSDKConversation:', error);
+    return { data: false, error };
+  }
+};
+
+/**
+ * Update a specific message's selected button
+ */
+export const updateMessageButtonSelection = async (
+  conversationId: string,
+  messageIndex: number,
+  selectedButtonId: string
+): Promise<{ data: boolean; error: any }> => {
+  try {
+    // Fetch current conversation
+    const { data: conversation, error: fetchError } = await supabaseAdmin
+      .from('sdk_conversations')
+      .select('messages')
+      .eq('id', conversationId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const currentMessages = conversation.messages || [];
+
+    // Update the specific message's selectedButtonId
+    if (messageIndex >= 0 && messageIndex < currentMessages.length) {
+      currentMessages[messageIndex].selectedButtonId = selectedButtonId;
+
+      // Update conversation with modified messages
+      const { error: updateError } = await supabaseAdmin
+        .from('sdk_conversations')
+        .update({
+          messages: currentMessages,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', conversationId);
+
+      if (updateError) throw updateError;
+    }
+
+    return { data: true, error: null };
+  } catch (error) {
+    console.error('Error in updateMessageButtonSelection:', error);
     return { data: false, error };
   }
 };
