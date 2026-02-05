@@ -483,6 +483,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
       setStreamingContent('');
 
+      // Filter out empty thinking blocks early (declare before any usage to avoid TDZ error)
+      const filteredContent = finalMessage.content.filter((block: any) => {
+        if (block.type === 'thinking') {
+          const hasContent = block.thinking && block.thinking.trim().length > 0;
+          if (!hasContent) {
+            console.log('[Content Filter] Filtering out empty thinking block');
+            return false;
+          }
+        }
+        return true;
+      });
+      console.log(`[Content Filter] Filtered blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
+
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
         console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
@@ -575,21 +588,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         // BUT: Filter out empty thinking blocks (API rejects them in recursive calls)
 
         console.log(`[Tool Loop] Using ${messages.length} messages from previous API call as conversation history`);
-        console.log(`[Tool Loop] Using finalMessage.content with ${finalMessage.content.length} blocks`);
-
-        // Filter out empty thinking blocks (they cause 400 errors)
-        const filteredContent = finalMessage.content.filter((block: any) => {
-          if (block.type === 'thinking') {
-            const hasContent = block.thinking && block.thinking.trim().length > 0;
-            if (!hasContent) {
-              console.log('[Tool Loop] Filtering out empty thinking block');
-              return false;
-            }
-          }
-          return true;
-        });
-
-        console.log(`[Tool Loop] Filtered content blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
+        console.log(`[Tool Loop] Using filteredContent with ${filteredContent.length} blocks (already filtered above)`);
 
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
           ...messages, // Keep ALL messages from previous API call - they're part of conversation history
