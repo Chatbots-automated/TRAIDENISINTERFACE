@@ -74,6 +74,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [displayButtons, setDisplayButtons] = useState<{ message?: string; buttons: Array<{id: string, label: string, value: string}> } | null>(null);
+  const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null);
+  const [isStreamingArtifact, setIsStreamingArtifact] = useState(false);
+  const [artifactStreamContent, setArtifactStreamContent] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -285,16 +288,102 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   };
 
   /**
-   * Handle button click from display_buttons tool
+   * Handle button click from display_buttons tool - sends silently to API
    */
-  const handleButtonClick = (value: string) => {
-    console.log('[Buttons] User clicked button with value:', value);
-    setDisplayButtons(null);
-    setInputValue(value);
-    // Automatically send the value after a brief delay
-    setTimeout(() => {
-      handleSend();
-    }, 100);
+  const handleButtonClick = async (buttonId: string, value: string) => {
+    console.log('[Buttons] User clicked button:', buttonId, 'with value:', value);
+
+    // Mark button as selected for visual feedback
+    setSelectedButtonId(buttonId);
+
+    // Get current conversation or create one
+    let conversation = currentConversation;
+    if (!conversation) {
+      try {
+        setCreatingConversation(true);
+        const { data: conversationId, error: createError } = await createSDKConversation(
+          projectId,
+          user.id,
+          user.email,
+          'Naujas pokalbis'
+        );
+        if (createError || !conversationId) {
+          console.error('Error creating conversation:', createError);
+          setError('Nepavyko sukurti pokalbio');
+          return;
+        }
+
+        const { data: newConversation } = await getSDKConversation(conversationId);
+        if (!newConversation) {
+          setError('Nepavyko sukurti pokalbio');
+          return;
+        }
+
+        conversation = newConversation;
+        setCurrentConversation(newConversation);
+        setConversations(prev => [newConversation, ...prev]);
+      } catch (err: any) {
+        console.error('Error creating conversation:', err);
+        setError(err.message || 'Nepavyko sukurti pokalbio');
+        return;
+      } finally {
+        setCreatingConversation(false);
+      }
+    }
+
+    // Send button value silently (without displaying in chat)
+    const silentUserMessage: SDKMessage = {
+      role: 'user',
+      content: value,
+      timestamp: new Date().toISOString()
+    };
+
+    // Save to database but don't show in UI immediately
+    await addMessageToConversation(conversation.id, silentUserMessage);
+
+    // Start loading
+    setLoading(true);
+    setStreamingContent('');
+    setError(null);
+
+    try {
+      if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
+
+      const anthropic = new Anthropic({
+        apiKey: anthropicApiKey,
+        dangerouslyAllowBrowser: true
+      });
+
+      // Build messages array with the silent message
+      const messagesWithSilentMessage = [...conversation.messages, silentUserMessage];
+
+      const anthropicMessages: Anthropic.MessageParam[] = [];
+
+      for (const msg of messagesWithSilentMessage) {
+        if (typeof msg.content !== 'string') {
+          console.warn('[Silent Button] Skipping non-string message');
+          continue;
+        }
+
+        anthropicMessages.push({
+          role: msg.role,
+          content: msg.content
+        });
+      }
+
+      const contextualSystemPrompt = systemPrompt + (promptTemplate ? `\n\n${promptTemplate}` : '');
+
+      console.log('[Silent Button] Sending button value to API silently');
+      await processAIResponse(anthropic, anthropicMessages, contextualSystemPrompt, conversation, messagesWithSilentMessage);
+
+      // After response, update conversation with both silent message and AI response
+      setLoading(false);
+
+    } catch (err: any) {
+      console.error('[Silent Button] Error:', err);
+      setError(`Klaida: ${err.message || 'Nežinoma klaida'}`);
+      setLoading(false);
+    }
   };
 
   /**
@@ -407,6 +496,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       let fullResponseText = '';
       const toolUses: Array<{ id: string; name: string; input: any }> = [];
       let currentToolUse: { id: string; name: string; input: string } | null = null;
+      let artifactDetected = false;
+      let isInsideArtifact = false;
+      let artifactContent = '';
+      let chatContent = '';
 
       for await (const event of stream) {
         if (event.type === 'content_block_start') {
@@ -427,7 +520,41 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           } else if (event.delta.type === 'text_delta') {
             responseContent += event.delta.text;
             fullResponseText += event.delta.text;
-            setStreamingContent(fullResponseText);
+
+            // Check if we're entering or inside a commercial_offer artifact
+            if (fullResponseText.includes('<commercial_offer')) {
+              if (!artifactDetected) {
+                console.log('[Artifact Streaming] Detected <commercial_offer> tag');
+                artifactDetected = true;
+                setIsStreamingArtifact(true);
+                setShowArtifact(true); // Show artifact panel immediately
+              }
+              isInsideArtifact = true;
+            }
+
+            if (fullResponseText.includes('</commercial_offer>')) {
+              isInsideArtifact = false;
+            }
+
+            // Route content appropriately
+            if (isInsideArtifact) {
+              // Extract YAML content (everything between tags)
+              const artifactMatch = fullResponseText.match(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>([\s\S]*?)(?:<\/commercial_offer>|$)/);
+              if (artifactMatch) {
+                artifactContent = artifactMatch[1].trim();
+                setArtifactStreamContent(artifactContent);
+              }
+
+              // Chat content is everything before the opening tag
+              const beforeArtifact = fullResponseText.split('<commercial_offer')[0];
+              chatContent = beforeArtifact;
+              setStreamingContent(chatContent);
+            } else {
+              // Normal chat content
+              chatContent = fullResponseText;
+              setStreamingContent(chatContent);
+            }
+
           } else if (event.delta.type === 'input_json_delta' && currentToolUse) {
             currentToolUse.input += event.delta.partial_json;
           }
@@ -447,6 +574,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           setIsToolUse(false);
         }
       }
+
+      // Reset artifact streaming state
+      setIsStreamingArtifact(false);
+      setArtifactStreamContent('');
 
       // Get the complete final message to ensure we have all tool_use blocks correctly
       const finalMessage = await stream.finalMessage();
@@ -1261,19 +1392,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Floating Artifact Toggle Button */}
-        {currentConversation?.artifact && (
+        {(currentConversation?.artifact || isStreamingArtifact) && (
           <button
             onClick={() => setShowArtifact(!showArtifact)}
             className="fixed top-6 right-6 z-50 px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
             style={{
-              background: showArtifact ? '#5a5550' : 'white',
-              color: showArtifact ? 'white' : '#5a5550',
+              background: showArtifact || isStreamingArtifact ? '#5a5550' : 'white',
+              color: showArtifact || isStreamingArtifact ? 'white' : '#5a5550',
               border: '1px solid #e8e5e0'
             }}
           >
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
-              <span className="text-sm font-medium">Pasiūlymas</span>
+              <span className="text-sm font-medium">
+                Pasiūlymas
+                {isStreamingArtifact && <span className="ml-1">●</span>}
+              </span>
             </div>
           </button>
         )}
@@ -1343,20 +1477,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                             </p>
                           )}
                           <div className="flex flex-wrap gap-2">
-                            {message.buttons.map(button => (
-                              <button
-                                key={button.id}
-                                onClick={() => handleButtonClick(button.value)}
-                                className="px-3 py-1.5 rounded-lg transition-all hover:shadow-md text-sm"
-                                style={{
-                                  background: colors.border.dark,
-                                  color: 'white',
-                                  fontWeight: '500'
-                                }}
-                              >
-                                {button.label}
-                              </button>
-                            ))}
+                            {message.buttons.map(button => {
+                              const isSelected = selectedButtonId === button.id;
+                              return (
+                                <button
+                                  key={button.id}
+                                  onClick={() => handleButtonClick(button.id, button.value)}
+                                  className="px-3 py-1.5 rounded-lg transition-all hover:shadow-md text-sm"
+                                  disabled={selectedButtonId !== null}
+                                  style={{
+                                    background: isSelected ? 'transparent' : colors.border.dark,
+                                    color: isSelected ? colors.border.dark : 'white',
+                                    border: isSelected ? `2px solid ${colors.border.dark}` : 'none',
+                                    fontWeight: '500',
+                                    opacity: selectedButtonId && !isSelected ? 0.4 : 1,
+                                    cursor: selectedButtonId ? 'not-allowed' : 'pointer'
+                                  }}
+                                >
+                                  {button.label}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -1511,7 +1652,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       </div>
 
       {/* Artifact Panel - Floating Design */}
-      {currentConversation?.artifact && showArtifact && (
+      {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
         <div className="p-4 flex-shrink-0">
           <div className="w-[460px] bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
             {/* Header */}
@@ -1519,18 +1660,25 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold" style={{ color: '#3d3935' }}>
                   Komercinis pasiūlymas
+                  {isStreamingArtifact && (
+                    <span className="ml-2 text-xs" style={{ color: '#3b82f6' }}>
+                      Generuojama...
+                    </span>
+                  )}
                 </h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => navigator.clipboard.writeText(currentConversation.artifact.content)}
-                    className="px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2"
-                    style={{ background: '#5a5550', color: 'white' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                    Copy
-                  </button>
+                  {!isStreamingArtifact && currentConversation?.artifact && (
+                    <button
+                      onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
+                      className="px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2"
+                      style={{ background: '#5a5550', color: 'white' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy
+                    </button>
+                  )}
                   <button
                     onClick={() => setShowArtifact(false)}
                     className="p-1.5 rounded-lg transition-colors"
@@ -1542,21 +1690,37 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   </button>
                 </div>
               </div>
-              <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
-                Versija {currentConversation.artifact.version}
-              </p>
+              {currentConversation?.artifact && !isStreamingArtifact && (
+                <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
+                  Versija {currentConversation.artifact.version}
+                </p>
+              )}
             </div>
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                {renderInteractiveYAML(currentConversation.artifact.content)}
-              </div>
-              <div className="mt-6 p-3 rounded-lg" style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
-                <p className="text-xs" style={{ color: '#6b7280' }}>
-                  <strong>Patarimas:</strong> Spustelėkite ant kintamojo, kad įterptumėte nuorodą į pokalbį. Tada galite paprašyti Claude pakeisti tik tą reikšmę.
-                </p>
-              </div>
+              {isStreamingArtifact ? (
+                <div>
+                  <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                    {renderInteractiveYAML(artifactStreamContent)}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
+                    <span className="text-xs" style={{ color: '#6b7280' }}>Generuojamas pasiūlymas...</span>
+                  </div>
+                </div>
+              ) : currentConversation?.artifact ? (
+                <div>
+                  <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                    {renderInteractiveYAML(currentConversation.artifact.content)}
+                  </div>
+                  <div className="mt-6 p-3 rounded-lg" style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+                    <p className="text-xs" style={{ color: '#6b7280' }}>
+                      <strong>Patarimas:</strong> Spustelėkite ant kintamojo, kad įterptumėte nuorodą į pokalbį. Tada galite paprašyti Claude pakeisti tik tą reikšmę.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
