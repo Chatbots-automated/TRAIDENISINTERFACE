@@ -319,8 +319,9 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
                     )}
                   </div>
                 ))}
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
