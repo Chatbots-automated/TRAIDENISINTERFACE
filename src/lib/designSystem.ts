@@ -86,10 +86,49 @@ export const colors = {
     link: '#3b82f6',
     linkHover: '#2563eb',
 
+    // Accent color for highlights
+    accent: '#3b82f6',
+    accentHover: '#2563eb',
+    accentLight: '#eff6ff',
+
     // Icon backgrounds
     iconBg: '#f0ede8',
     iconBgHover: '#e8e5e0',
     iconBgActive: '#5a5550',
+  },
+
+  // Status colors for alerts and messages
+  status: {
+    // Success states
+    success: '#10b981',
+    successText: '#065f46',
+    successBg: '#f0fdf4',
+    successBorder: '#bbf7d0',
+
+    // Error states
+    error: '#fef2f2',
+    errorText: '#991b1b',
+    errorBg: '#fef2f2',
+    errorBorder: '#fecaca',
+
+    // Warning states
+    warning: '#f59e0b',
+    warningText: '#92400e',
+    warningBg: '#fffbeb',
+    warningBorder: '#fde68a',
+
+    // Info states
+    info: '#3b82f6',
+    infoText: '#1e40af',
+    infoBg: '#eff6ff',
+    infoBorder: '#bfdbfe',
+  },
+
+  // Icon colors
+  icon: {
+    default: '#f0ede8',
+    hover: '#e8e5e0',
+    active: '#5a5550',
   },
 
   // Shadows - neutral only, no color tints
