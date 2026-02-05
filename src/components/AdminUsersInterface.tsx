@@ -14,6 +14,10 @@ interface UserData {
   display_name?: string;
   is_admin: boolean;
   created_at: string;
+  phone?: string;
+  kodas?: string;
+  full_name?: string;
+  role?: string;
 }
 
 export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) {
@@ -24,6 +28,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
@@ -432,68 +437,120 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
-                        background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
-                      }}>
-                        {userData.is_admin ? (
-                          <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
-                        ) : (
-                          <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
-                            {userData.display_name || userData.email}
-                          </h3>
-                          {userData.is_admin && (
-                            <span className="px-2 py-1 text-xs rounded-full" style={{
-                              background: colors.interactive.accentLight,
-                              color: colors.interactive.accent
-                            }}>
-                              Admin
-                            </span>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+                          background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
+                        }}>
+                          {userData.is_admin ? (
+                            <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
+                          ) : (
+                            <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
                           )}
                         </div>
-                        <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
-                        <p className="text-xs" style={{ color: colors.text.tertiary }}>
-                          Created: {new Date(userData.created_at).toLocaleDateString()}
-                        </p>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
+                              {userData.display_name || userData.full_name || userData.email}
+                            </h3>
+                            {userData.is_admin && (
+                              <span className="px-2 py-1 text-xs rounded-full" style={{
+                                background: colors.interactive.accentLight,
+                                color: colors.interactive.accent
+                              }}>
+                                Admin
+                              </span>
+                            )}
+                            {userData.role && (
+                              <span className="px-2 py-1 text-xs rounded-full" style={{
+                                background: colors.bg.tertiary,
+                                color: colors.text.secondary
+                              }}>
+                                {userData.role}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
+                          <p className="text-xs" style={{ color: colors.text.tertiary }}>
+                            Created: {new Date(userData.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setExpandedUserId(expandedUserId === userData.id ? null : userData.id)}
+                          className="p-2 rounded-lg transition-colors"
+                          style={{ color: colors.text.tertiary }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = colors.interactive.accent;
+                            e.currentTarget.style.background = colors.interactive.accentLight;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = colors.text.tertiary;
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                          title="View details"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(userData)}
+                          className="p-2 rounded-lg transition-colors"
+                          style={{ color: colors.text.tertiary }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = colors.text.secondary;
+                            e.currentTarget.style.background = colors.bg.secondary;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = colors.text.tertiary;
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                          title="Edit user"
+                        >
+                          <UserIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(userData.id)}
+                          className="p-2 rounded-lg transition-colors"
+                          style={{ color: colors.status.errorText }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          title="Delete user"
+                          disabled={userData.id === user.id}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setEditingUser(userData)}
-                        className="p-2 rounded-lg transition-colors"
-                        style={{ color: colors.text.tertiary }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = colors.text.secondary;
-                          e.currentTarget.style.background = colors.bg.secondary;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = colors.text.tertiary;
-                          e.currentTarget.style.background = 'transparent';
-                        }}
-                        title="Edit user"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(userData.id)}
-                        className="p-2 rounded-lg transition-colors"
-                        style={{ color: colors.status.errorText }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        title="Delete user"
-                        disabled={userData.id === user.id}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {/* Expandable Details */}
+                    {expandedUserId === userData.id && (
+                      <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4" style={{ borderColor: colors.border.light }}>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Full Name</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.full_name || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Email</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.email}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Phone</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.phone || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Code (Kodas)</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.kodas || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Role</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.role || '-'}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

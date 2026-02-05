@@ -224,7 +224,7 @@ export const getAllUsers = async () => {
   try {
     const { data, error } = await supabase
       .from('app_users')
-      .select('id, email, display_name, is_admin, created_at')
+      .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .order('created_at', { ascending: false });
 
     if (error) {
