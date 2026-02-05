@@ -5,15 +5,8 @@ import {
   Menu,
   X,
   Settings,
-  MessageSquare,
-  MessagesSquare,
   Database,
   LogOut,
-  Plus,
-  Trash2,
-  Loader2,
-  Pencil,
-  Check,
   Users,
   History,
   Zap,
@@ -27,46 +20,22 @@ import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
 import WebhooksModal from './WebhooksModal';
 
-interface Thread {
-  id: string;
-  title: string;
-  message_count: number;
-  last_message_at: string;
-  created_at: string;
-}
-
 interface LayoutProps {
   user: AppUser;
   children: React.ReactNode;
-  threads?: Thread[];
-  currentThread?: Thread | null;
-  threadsLoading?: boolean;
-  creatingThread?: boolean;
-  onSelectThread?: (thread: Thread) => void;
-  onCreateThread?: () => void;
-  onDeleteThread?: (threadId: string) => void;
-  onRenameThread?: (threadId: string, newTitle: string) => void;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
-  onViewModeChange?: (mode: 'chat' | 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
+  viewMode?: 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
 }
 
 export default function Layout({
   user,
   children,
-  threads = [],
-  currentThread = null,
-  threadsLoading = false,
-  creatingThread = false,
-  onSelectThread,
-  onCreateThread,
-  onDeleteThread,
-  onRenameThread,
   naujokasMode = true,
   onToggleNaujokas,
-  viewMode = 'chat',
+  viewMode = 'sdk',
   onViewModeChange,
   onSidebarCollapseChange
 }: LayoutProps) {
@@ -170,23 +139,23 @@ export default function Layout({
             </button>
           </div>
 
-          {/* Primary Navigation - Only Chat and Documents */}
+          {/* Primary Navigation */}
             <div className={`py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
               <button
-                onClick={() => onViewModeChange?.('chat')}
+                onClick={() => onViewModeChange?.('sdk')}
                 className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
                   sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
-                  viewMode === 'chat'
+                  viewMode === 'sdk'
                     ? 'bg-macos-blue/10 text-macos-blue'
                     : 'text-macos-gray-600 hover:bg-black/5'
                 }`}
-                title={sidebarCollapsed ? 'Chat' : undefined}
+                title={sidebarCollapsed ? 'Komercinis Pasiūlymas' : undefined}
               >
                 <div className="flex items-center justify-center w-4 flex-shrink-0">
-                  <MessageSquare className="w-4 h-4" />
+                  <Bot className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Chat</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Komercinis Pasiūlymas</span>}
               </button>
 
               <button
@@ -238,23 +207,6 @@ export default function Layout({
                   <FlaskConical className="w-4 h-4" />
                 </div>
                 {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Nestandartiniai Projektai</span>}
-              </button>
-
-              <button
-                onClick={() => onViewModeChange?.('sdk')}
-                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
-                } ${
-                  viewMode === 'sdk'
-                    ? 'bg-macos-blue/10 text-macos-blue'
-                    : 'text-macos-gray-600 hover:bg-black/5'
-                }`}
-                title={sidebarCollapsed ? 'SDK' : undefined}
-              >
-                <div className="flex items-center justify-center w-4 flex-shrink-0">
-                  <MessagesSquare className="w-4 h-4" />
-                </div>
-                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">SDK</span>}
               </button>
             </div>
 
