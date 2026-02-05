@@ -199,7 +199,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-12 overflow-y-auto"
+      className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-12 overflow-y-auto"
       style={{ background: 'rgba(0, 0, 0, 0.3)' }}
       onClick={onClose}
     >

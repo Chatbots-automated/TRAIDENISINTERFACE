@@ -43,8 +43,6 @@ export default function Layout({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
-  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState('');
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
 
   // Notify parent when sidebar collapse state changes
@@ -65,27 +63,6 @@ export default function Layout({
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [settingsDropdownOpen]);
-
-  const handleStartEdit = (thread: Thread, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingThreadId(thread.id);
-    setEditingTitle(thread.title);
-  };
-
-  const handleSaveEdit = (threadId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (editingTitle.trim() && onRenameThread) {
-      onRenameThread(threadId, editingTitle.trim());
-    }
-    setEditingThreadId(null);
-    setEditingTitle('');
-  };
-
-  const handleCancelEdit = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingThreadId(null);
-    setEditingTitle('');
-  };
 
   const handleSignOut = async () => {
     try {
