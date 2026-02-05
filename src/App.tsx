@@ -4,14 +4,13 @@ import { getCurrentUser, getOrCreateDefaultProject } from './lib/supabase';
 import Layout from './components/Layout';
 import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
-import TranscriptsInterface from './components/TranscriptsInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
 import SDKInterface from './components/SDKInterfaceNew';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
-type ViewMode = 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
+type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
@@ -23,7 +22,6 @@ const routeToViewMode: Record<string, ViewMode> = {
   '/': 'sdk',
   '/documents': 'documents',
   '/users': 'users',
-  '/transcripts': 'transcripts',
   '/instrukcijos': 'instrukcijos',
   '/nestandartiniai': 'nestandartiniai',
   '/sdk': 'sdk',
@@ -155,10 +153,6 @@ function AppContent() {
         <Route
           path="/users"
           element={<AdminUsersInterface user={user} />}
-        />
-        <Route
-          path="/transcripts"
-          element={<TranscriptsInterface user={user} />}
         />
         <Route
           path="/instrukcijos"

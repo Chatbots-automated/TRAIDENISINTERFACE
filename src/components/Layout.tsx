@@ -8,13 +8,12 @@ import {
   Database,
   LogOut,
   Users,
-  History,
+  MessageSquare,
   Zap,
   BookOpen,
   ChevronsLeft,
   ChevronsRight,
-  FlaskConical,
-  Bot
+  FlaskConical
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -25,8 +24,8 @@ interface LayoutProps {
   children: React.ReactNode;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
-  onViewModeChange?: (mode: 'documents' | 'users' | 'transcripts' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
+  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
 }
 
@@ -150,12 +149,12 @@ export default function Layout({
                     ? 'bg-macos-blue/10 text-macos-blue'
                     : 'text-macos-gray-600 hover:bg-black/5'
                 }`}
-                title={sidebarCollapsed ? 'Komercinis Pasiūlymas' : undefined}
+                title={sidebarCollapsed ? 'SDK' : undefined}
               >
                 <div className="flex items-center justify-center w-4 flex-shrink-0">
-                  <Bot className="w-4 h-4" />
+                  <MessageSquare className="w-4 h-4" />
                 </div>
-                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Komercinis Pasiūlymas</span>}
+                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">SDK</span>}
               </button>
 
               <button
@@ -173,23 +172,6 @@ export default function Layout({
                   <Database className="w-4 h-4" />
                 </div>
                 {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Documents</span>}
-              </button>
-
-              <button
-                onClick={() => onViewModeChange?.('transcripts')}
-                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
-                  sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
-                } ${
-                  viewMode === 'transcripts'
-                    ? 'bg-macos-blue/10 text-macos-blue'
-                    : 'text-macos-gray-600 hover:bg-black/5'
-                }`}
-                title={sidebarCollapsed ? 'Transcripts' : undefined}
-              >
-                <div className="flex items-center justify-center w-4 flex-shrink-0">
-                  <History className="w-4 h-4" />
-                </div>
-                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">Transcripts</span>}
               </button>
 
               <button
