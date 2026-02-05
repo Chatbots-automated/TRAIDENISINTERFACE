@@ -216,6 +216,23 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     try {
       const { data, error: fetchError } = await getSDKConversation(conversationId);
       if (fetchError) throw fetchError;
+
+      // Clean up any messages with array content (migration)
+      if (data && data.messages) {
+        data.messages = data.messages.map(msg => {
+          if (typeof msg.content !== 'string') {
+            console.warn('[Migration] Converting non-string message content to string', msg);
+            const newContent = Array.isArray(msg.content)
+              ? msg.content.map((block: any) =>
+                  block.type === 'text' ? block.text : ''
+                ).filter(Boolean).join('\n\n')
+              : '[Content format error]';
+            return { ...msg, content: newContent };
+          }
+          return msg;
+        });
+      }
+
       setCurrentConversation(data);
       setError(null);
     } catch (err) {
@@ -1283,32 +1300,40 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             </div>
           ) : (
             <div className="max-w-4xl mx-auto space-y-4">
-              {currentConversation.messages.map((message, index) => (
-                <div key={`${message.timestamp}-${index}`}>
-                  {message.role === 'user' ? (
-                    // User message - clean bubble on right
-                    <div className="flex justify-end mb-6">
-                      <div
-                        className="max-w-[75%] px-4 py-2.5 rounded-2xl"
-                        style={{
-                          background: '#f3f4f6',
-                          color: '#111827',
-                          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
-                        }}
-                      >
-                        <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                          {message.content}
+              {currentConversation.messages.map((message, index) => {
+                // Ensure content is always a string before rendering
+                const contentString = typeof message.content === 'string'
+                  ? message.content
+                  : (Array.isArray(message.content)
+                    ? message.content.map((block: any) =>
+                        block.type === 'text' ? block.text : ''
+                      ).join('\n\n')
+                    : '[Content format error]');
+
+                return (
+                  <div key={`${message.timestamp}-${index}`}>
+                    {message.role === 'user' ? (
+                      // User message - clean bubble on right
+                      <div className="flex justify-end mb-6">
+                        <div
+                          className="max-w-[75%] px-4 py-2.5 rounded-2xl"
+                          style={{
+                            background: '#f3f4f6',
+                            color: '#111827',
+                            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
+                          }}
+                        >
+                          <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                            {contentString}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    // Assistant message - plain text with reaction buttons
-                    <div className="mb-8 group">
-                      <MessageContent content={
-                        typeof message.content === 'string'
-                          ? message.content.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')
-                          : '[Content error: message content is not a string]'
-                      } />
+                    ) : (
+                      // Assistant message - plain text with reaction buttons
+                      <div className="mb-8 group">
+                        <MessageContent content={
+                          contentString.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')
+                        } />
 
                       {/* Interactive Buttons (inline with message) */}
                       {message.buttons && message.buttons.length > 0 && (
@@ -1343,9 +1368,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
                           style={{ color: '#6b7280' }}
                           title="Copy"
-                          onClick={() => navigator.clipboard.writeText(
-                            typeof message.content === 'string' ? message.content : String(message.content)
-                          )}
+                          onClick={() => navigator.clipboard.writeText(contentString)}
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -1383,8 +1406,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                       </div>
                     </div>
                   )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
 
               {/* Streaming content */}
               {loading && streamingContent && (
