@@ -16,7 +16,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
-  ChevronDown
+  ChevronDown,
+  User,
+  Check
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -38,6 +40,7 @@ import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
+import { getEconomists, type AppUserData } from '../lib/userService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -77,6 +80,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null);
   const [isStreamingArtifact, setIsStreamingArtifact] = useState(false);
   const [artifactStreamContent, setArtifactStreamContent] = useState('');
+  const [economists, setEconomists] = useState<AppUserData[]>([]);
+  const [selectedEconomist, setSelectedEconomist] = useState<AppUserData | null>(null);
+  const [showEconomistDropdown, setShowEconomistDropdown] = useState(false);
+  const [sendingWebhook, setSendingWebhook] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -86,7 +93,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   useEffect(() => {
     loadSystemPrompt();
     loadConversations();
+    loadEconomists();
   }, []);
+
+  const loadEconomists = async () => {
+    try {
+      const economistsList = await getEconomists();
+      setEconomists(economistsList);
+      console.log('[Economists] Loaded', economistsList.length, 'economists');
+    } catch (error) {
+      console.error('[Economists] Error loading:', error);
+    }
+  };
 
   useEffect(() => {
     // Auto-scroll on new messages only if user hasn't scrolled up
@@ -1210,6 +1228,69 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     }
   };
 
+  const handleSendToWebhook = async () => {
+    if (!currentConversation?.artifact) {
+      setError('No artifact to send');
+      return;
+    }
+
+    if (!selectedEconomist) {
+      setError('Please select an economist first');
+      return;
+    }
+
+    try {
+      setSendingWebhook(true);
+      console.log('[Webhook] Sending to n8n...');
+
+      // Construct payload with user data
+      const payload = {
+        yaml_content: currentConversation.artifact.content,
+        technologist: user.full_name || user.display_name || user.email,
+        technologist_code: user.kodas || '',
+        technologist_phone: user.phone || '',
+        technologist_email: user.email,
+        ekonomistas: selectedEconomist.kodas || '',
+        project_id: projectId,
+        conversation_id: currentConversation.id,
+        artifact_id: currentConversation.artifact.id,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('[Webhook] Payload:', payload);
+
+      // Send to n8n webhook
+      const response = await fetch('https://n8n.traidenis.org/webhook/a80582f0-d42b-4490-b142-0494f0afff89', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Webhook returned ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      console.log('[Webhook] Success:', result);
+
+      // TODO: Log to webhooks table when implemented
+      console.log('[Webhook] Logged to application_logs via console');
+
+      // Show success message
+      setError(null);
+      alert('Commercial offer sent successfully to n8n!');
+      setShowEconomistDropdown(false);
+
+    } catch (err: any) {
+      console.error('[Webhook] Error:', err);
+      setError(`Failed to send webhook: ${err.message}`);
+    } finally {
+      setSendingWebhook(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1722,6 +1803,107 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 </div>
               ) : null}
             </div>
+
+            {/* Footer - Economist Selection & Send Button */}
+            {!isStreamingArtifact && currentConversation?.artifact && (
+              <div className="px-6 py-4 border-t" style={{ borderColor: '#e8e5e0' }}>
+                <div className="space-y-3">
+                  {/* Economist Selection */}
+                  <div>
+                    <label className="text-xs font-medium mb-2 block" style={{ color: '#6b7280' }}>
+                      Select Economist
+                    </label>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowEconomistDropdown(!showEconomistDropdown)}
+                        className="w-full px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-between"
+                        style={{
+                          borderColor: '#e8e5e0',
+                          background: 'white',
+                          color: selectedEconomist ? '#3d3935' : '#8a857f'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#5a5550'}
+                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8e5e0'}
+                      >
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4" />
+                          <span>{selectedEconomist ? (selectedEconomist.full_name || selectedEconomist.email) : 'Select economist...'}</span>
+                        </div>
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
+
+                      {/* Dropdown */}
+                      {showEconomistDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                          {economists.length === 0 ? (
+                            <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
+                              No economists found
+                            </div>
+                          ) : (
+                            economists.map((economist) => (
+                              <button
+                                key={economist.id}
+                                onClick={() => {
+                                  setSelectedEconomist(economist);
+                                  setShowEconomistDropdown(false);
+                                }}
+                                className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                                style={{ color: '#3d3935' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                              >
+                                <div>
+                                  <div className="font-medium">{economist.full_name || economist.display_name || economist.email}</div>
+                                  {economist.kodas && (
+                                    <div className="text-xs" style={{ color: '#8a857f' }}>Code: {economist.kodas}</div>
+                                  )}
+                                </div>
+                                {selectedEconomist?.id === economist.id && (
+                                  <Check className="w-4 h-4" style={{ color: '#10b981' }} />
+                                )}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Send Button */}
+                  <button
+                    onClick={handleSendToWebhook}
+                    disabled={!selectedEconomist || sendingWebhook}
+                    className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    style={{
+                      background: selectedEconomist && !sendingWebhook ? '#5a5550' : '#d4cfc8',
+                      color: 'white'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (selectedEconomist && !sendingWebhook) {
+                        e.currentTarget.style.background = '#3d3935';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (selectedEconomist && !sendingWebhook) {
+                        e.currentTarget.style.background = '#5a5550';
+                      }
+                    }}
+                  >
+                    {sendingWebhook ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Send to n8n</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
