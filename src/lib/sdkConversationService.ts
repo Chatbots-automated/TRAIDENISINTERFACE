@@ -20,6 +20,8 @@ export interface SDKMessage {
   content: string;
   timestamp: string;
   thinking?: string; // Extended thinking content
+  buttons?: Array<{id: string, label: string, value: string}>; // Interactive buttons
+  buttonsMessage?: string; // Message to display with buttons
 }
 
 export interface CommercialOfferArtifact {

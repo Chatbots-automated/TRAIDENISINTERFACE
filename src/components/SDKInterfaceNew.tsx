@@ -200,9 +200,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         'Naujas pokalbis'
       );
       if (createError) throw createError;
-      await loadConversations();
       const { data: newConversation } = await getSDKConversation(conversationId!);
       setCurrentConversation(newConversation);
+      // Optimistically add to conversations list to avoid flicker
+      setConversations(prev => [newConversation!, ...prev]);
     } catch (err) {
       console.error('Error creating conversation:', err);
       setError('Nepavyko sukurti pokalbio');
@@ -235,7 +236,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       }
 
       console.log('[Delete] Successfully deleted conversation');
-      await loadConversations();
+      // Optimistically remove from list to avoid flicker
+      setConversations(prev => prev.filter(conv => conv.id !== conversationId));
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
       }
@@ -508,21 +510,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         if (buttonResult) {
           console.log('[Tool Loop] Detected display_buttons - pausing conversation');
           const parsed = JSON.parse(buttonResult.content);
-          setDisplayButtons({
-            message: parsed.message,
-            buttons: parsed.buttons
-          });
 
-          // Save conversation with assistant's response (but pause here)
-          const finalMessages: Anthropic.MessageParam[] = [
-            ...messages,
+          // Extract text content from filteredContent array
+          const textContent = filteredContent
+            .filter((block: any) => block.type === 'text')
+            .map((block: any) => block.text)
+            .join('\n\n');
+
+          // Save conversation with assistant's text response (convert array to string)
+          const finalMessages: SDKMessage[] = [
+            ...currentMessages,
             {
               role: 'assistant',
-              content: filteredContent
-            },
-            {
-              role: 'user',
-              content: toolResults
+              content: textContent || 'Displaying options...',
+              timestamp: new Date().toISOString(),
+              buttons: parsed.buttons, // Store buttons with the message
+              buttonsMessage: parsed.message
             }
           ];
 
@@ -535,6 +538,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           setCurrentConversation(updatedConversation);
           await updateSDKConversation(updatedConversation);
           setLoading(false);
+          setDisplayButtons(null); // Don't use separate state
           return; // PAUSE - don't continue with recursive loop
         }
 
@@ -652,13 +656,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
         setCurrentConversation(updatedConversation);
 
+        // Optimistically update conversations list with new last_message_at
+        setConversations(prev => prev.map(conv =>
+          conv.id === updatedConversation.id
+            ? { ...conv, last_message_at: updatedConversation.lastActivity, message_count: updatedConversation.messages.length }
+            : conv
+        ));
+
         // CRITICAL: Check for artifacts in final response
         if (responseContent.includes('<commercial_offer')) {
           console.log('[Artifact] Detected commercial_offer in final response');
           await handleArtifactGeneration(responseContent, updatedConversation);
         }
-
-        loadConversations();
       }
     } catch (err: any) {
       console.error('[processAIResponse] Error:', err);
@@ -699,7 +708,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
         conversation = newConversation;
         setCurrentConversation(newConversation);
-        await loadConversations();
+        // Optimistically add to conversations list to avoid flicker
+        setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
         console.error('Error creating conversation:', err);
         setError(err.message || 'Nepavyko sukurti pokalbio');
@@ -1242,44 +1252,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           </button>
         )}
 
-        {/* Interactive Buttons (from display_buttons tool) */}
-        {displayButtons && !loading && (
-          <div className="px-6 pt-4">
-            <div className="max-w-4xl mx-auto">
-              <div
-                className="p-4 rounded-lg border"
-                style={{
-                  background: '#fafaf9',
-                  borderColor: '#e8e5e0'
-                }}
-              >
-                {displayButtons.message && (
-                  <p className="text-sm mb-3" style={{ color: '#6b7280' }}>
-                    {displayButtons.message}
-                  </p>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  {displayButtons.buttons.map(button => (
-                    <button
-                      key={button.id}
-                      onClick={() => handleButtonClick(button.value)}
-                      className="px-4 py-2 rounded-lg transition-all hover:shadow-md"
-                      style={{
-                        background: '#5a5550',
-                        color: 'white',
-                        fontSize: '14px',
-                        fontWeight: '500'
-                      }}
-                    >
-                      {button.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Messages Area */}
         <div
           ref={messagesContainerRef}
@@ -1302,7 +1274,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           ) : (
             <div className="max-w-4xl mx-auto space-y-4">
               {currentConversation.messages.map((message, index) => (
-                <div key={index}>
+                <div key={`${message.timestamp}-${index}`}>
                   {message.role === 'user' ? (
                     // User message - clean bubble on right
                     <div className="flex justify-end mb-6">
@@ -1322,7 +1294,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   ) : (
                     // Assistant message - plain text with reaction buttons
                     <div className="mb-8 group">
-                      <MessageContent content={message.content.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
+                      <MessageContent content={typeof message.content === 'string' ? message.content.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '') : message.content} />
+
+                      {/* Interactive Buttons (inline with message) */}
+                      {message.buttons && message.buttons.length > 0 && (
+                        <div className="mt-4">
+                          {message.buttonsMessage && (
+                            <p className="text-sm mb-2" style={{ color: '#6b7280' }}>
+                              {message.buttonsMessage}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            {message.buttons.map(button => (
+                              <button
+                                key={button.id}
+                                onClick={() => handleButtonClick(button.value)}
+                                className="px-3 py-1.5 rounded-lg transition-all hover:shadow-md text-sm"
+                                style={{
+                                  background: colors.border.dark,
+                                  color: 'white',
+                                  fontWeight: '500'
+                                }}
+                              >
+                                {button.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Reaction buttons */}
                       <div className="flex items-center gap-1 mt-3">
