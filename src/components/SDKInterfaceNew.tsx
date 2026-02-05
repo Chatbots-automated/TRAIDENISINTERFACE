@@ -21,7 +21,6 @@ import {
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
-import BanterLoader from './BanterLoader';
 import { colors } from '../lib/designSystem';
 import {
   createSDKConversation,
@@ -1055,8 +1054,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     return (
       <div className="h-full flex items-center justify-center" style={{ background: '#fdfcfb' }}>
         <div className="text-center">
-          <BanterLoader size="large" />
-          <p className="text-base font-semibold mb-2 mt-6" style={{ color: '#3d3935' }}>
+          <div className="animate-spin rounded-full h-12 w-12 border-3 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+          <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
             Kraunamos sistemos instrukcijos
           </p>
           <p className="text-sm" style={{ color: '#8a857f' }}>
@@ -1177,7 +1176,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           <div className="flex-1 overflow-y-auto px-2">
             {loadingConversations ? (
               <div className="p-4 text-center">
-                <BanterLoader size="small" />
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-200 border-t-blue-500 mx-auto"></div>
               </div>
             ) : conversations.length === 0 ? (
               <div className="p-4 text-center">
@@ -1395,8 +1394,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
               {/* Initial loading indicator */}
               {loading && !streamingContent && !isToolUse && (
-                <div className="py-4">
-                  <BanterLoader size="small" />
+                <div className="py-4 flex justify-center">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-200 border-t-blue-500"></div>
                 </div>
               )}
 

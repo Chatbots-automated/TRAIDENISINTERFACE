@@ -3,7 +3,6 @@ import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Se
 import { appLogger } from '../lib/appLogger';
 import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
-import BanterLoader from './BanterLoader';
 import { colors } from '../lib/designSystem';
 import type { AppUser } from '../types';
 
@@ -688,8 +687,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
               {/* Loader when waiting for card selection */}
               {!selectedCard && (
                 <div className="py-12 text-center">
-                  <BanterLoader size="medium" />
-                  <p className="text-sm mt-6" style={{ color: '#8a857f' }}>
+                  <div className="animate-spin rounded-full h-10 w-10 border-3 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+                  <p className="text-sm" style={{ color: '#8a857f' }}>
                     Pasirinkite operaciją
                   </p>
                 </div>
@@ -905,7 +904,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
                               {loadingProjects ? (
                                 <div className="p-4 text-center">
-                                  <BanterLoader size="small" />
+                                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200 border-t-blue-500 mx-auto"></div>
                                 </div>
                               ) : projects.length === 0 ? (
                                 <div className="p-4 text-center text-sm" style={{ color: '#8a857f' }}>
@@ -1120,8 +1119,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
           {/* Loading State */}
           {uploading && (
             <div className="py-20 text-center max-w-3xl mx-auto">
-              <BanterLoader size="large" />
-              <p className="text-base font-semibold mb-2 mt-6" style={{ color: '#3d3935' }}>
+              <div className="animate-spin rounded-full h-12 w-12 border-3 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+              <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
                 Apdorojama jūsų užklausa
               </p>
               <p className="text-sm" style={{ color: '#8a857f' }}>
