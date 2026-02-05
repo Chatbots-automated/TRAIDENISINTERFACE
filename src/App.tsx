@@ -101,6 +101,12 @@ function AppContent() {
 
   // Handle view mode change (navigation)
   const handleViewModeChange = (newViewMode: ViewMode) => {
+    // Special case for SDK - navigate to /sdk explicitly
+    if (newViewMode === 'sdk') {
+      navigate('/sdk');
+      return;
+    }
+
     const route = Object.keys(routeToViewMode).find(
       key => routeToViewMode[key] === newViewMode
     );
