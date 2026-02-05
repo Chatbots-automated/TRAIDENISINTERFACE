@@ -353,7 +353,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     const silentUserMessage: SDKMessage = {
       role: 'user',
       content: value,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      isSilent: true // Mark as silent so it won't be displayed in UI
     };
 
     // Save to database but don't show in UI immediately
@@ -726,6 +727,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               : conv
           ));
 
+          // Reset button selection state for new response
+          setSelectedButtonId(null);
           setLoading(false);
           setDisplayButtons(null); // Don't use separate state
           return; // PAUSE - don't continue with recursive loop
@@ -1472,14 +1475,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Floating Artifact Toggle Button */}
-        {(currentConversation?.artifact || isStreamingArtifact) && (
+        {/* Floating Artifact Toggle Button - Only show when panel is closed */}
+        {(currentConversation?.artifact || isStreamingArtifact) && !showArtifact && (
           <button
-            onClick={() => setShowArtifact(!showArtifact)}
+            onClick={() => setShowArtifact(true)}
             className="fixed top-6 right-6 z-50 px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
             style={{
-              background: showArtifact || isStreamingArtifact ? '#5a5550' : 'white',
-              color: showArtifact || isStreamingArtifact ? 'white' : '#5a5550',
+              background: isStreamingArtifact ? '#5a5550' : 'white',
+              color: isStreamingArtifact ? 'white' : '#5a5550',
               border: '1px solid #e8e5e0'
             }}
           >
@@ -1515,6 +1518,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           ) : (
             <div className="max-w-4xl mx-auto space-y-4">
               {currentConversation.messages.map((message, index) => {
+                // Skip silent messages (button clicks)
+                if (message.isSilent) {
+                  return null;
+                }
+
                 // Ensure content is always a string before rendering
                 const contentString = typeof message.content === 'string'
                   ? message.content

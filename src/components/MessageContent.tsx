@@ -227,6 +227,8 @@ export default function MessageContent({ content }: MessageContentProps) {
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [showAllRecords, setShowAllRecords] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
 
   // Group by tool name
   const groupedTools = toolCalls.reduce((acc, call) => {
@@ -239,6 +241,12 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
 
   const toolCount = toolCalls.length;
   const uniqueToolCount = Object.keys(groupedTools).length;
+  const toolEntries = Object.entries(groupedTools);
+
+  // Limit to 3 records unless showAllRecords is true
+  const displayLimit = 3;
+  const hasMoreRecords = toolEntries.length > displayLimit;
+  const displayedTools = showAllRecords ? toolEntries : toolEntries.slice(0, displayLimit);
 
   // Format tool name for display
   const formatToolName = (name: string): string => {
@@ -272,22 +280,45 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       </button>
 
       {expanded && (
-        <div className="mt-1 ml-6 space-y-2">
-          {Object.entries(groupedTools).map(([toolName, calls], idx) => (
-            <div key={idx} className="px-3 py-2 rounded text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-              <div className="font-semibold mb-2" style={{ color: '#3d3935' }}>
-                {formatToolName(toolName)} ({calls.length}×)
-              </div>
-              {calls.map((call, callIdx) => (
-                <div key={callIdx} className="mb-2 last:mb-0">
-                  <div className="font-mono text-[11px]" style={{ color: '#5a5550' }}>
-                    <pre className="whitespace-pre-wrap break-words">{call.parameters}</pre>
+        <div
+          className="mt-1 ml-6 space-y-2"
+          onMouseEnter={() => setIsHovering(true)}
+          onMouseLeave={() => setIsHovering(false)}
+        >
+          {displayedTools.map(([toolName, calls], idx) => {
+            // Show "Show more" button in place of 3rd record when hovering and there are more records
+            if (idx === displayLimit - 1 && hasMoreRecords && isHovering && !showAllRecords) {
+              return (
+                <button
+                  key="show-more"
+                  onClick={() => setShowAllRecords(true)}
+                  className="w-full px-3 py-2 rounded text-xs transition-colors"
+                  style={{ background: '#e8e5e0', border: '1px solid #d4d1cc', color: '#5a5550' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#dddad5'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#e8e5e0'}
+                >
+                  <div className="font-semibold">
+                    Show {toolEntries.length - displayLimit + 1} more...
                   </div>
-                  {callIdx < calls.length - 1 && (
-                    <div className="border-t my-2" style={{ borderColor: '#e8e5e0' }} />
-                  )}
+                </button>
+              );
+            }
+
+            return (
+              <div key={idx} className="px-3 py-2 rounded text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
+                <div className="font-semibold mb-2" style={{ color: '#3d3935' }}>
+                  {formatToolName(toolName)} ({calls.length}×)
                 </div>
-              ))}
+                {calls.map((call, callIdx) => (
+                  <div key={callIdx} className="mb-2 last:mb-0">
+                    <div className="font-mono text-[11px]" style={{ color: '#5a5550' }}>
+                      <pre className="whitespace-pre-wrap break-words">{call.parameters}</pre>
+                    </div>
+                    {callIdx < calls.length - 1 && (
+                      <div className="border-t my-2" style={{ borderColor: '#e8e5e0' }} />
+                    )}
+                  </div>
+                ))}
             </div>
           ))}
         </div>

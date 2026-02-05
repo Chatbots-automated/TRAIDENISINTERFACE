@@ -22,6 +22,7 @@ export interface SDKMessage {
   thinking?: string; // Extended thinking content
   buttons?: Array<{id: string, label: string, value: string}>; // Interactive buttons
   buttonsMessage?: string; // Message to display with buttons
+  isSilent?: boolean; // Flag for silent messages (button clicks that shouldn't be displayed)
 }
 
 export interface CommercialOfferArtifact {
