@@ -1379,9 +1379,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       const result = await response.json();
       console.log('[Webhook] Success:', result);
 
+      // Extract URL from response
+      const generatedUrl = result.standartinis_generatedUrl;
+
+      if (generatedUrl) {
+        // Create a fake assistant message with the URL (not sent to API)
+        const urlMessage: SDKMessage = {
+          role: 'assistant',
+          content: `Komercinis pasiūlymas sėkmingai sugeneruotas! Jūsų dokumentas pasiekiamas čia:\n\n${generatedUrl}`,
+          timestamp: new Date().toISOString(),
+          isSilent: false
+        };
+
+        // Add to database
+        await addMessageToConversation(currentConversation.id, urlMessage);
+
+        // Update local state immediately
+        setCurrentConversation(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            messages: [...prev.messages, urlMessage]
+          };
+        });
+
+        // Update conversations list
+        setConversations(prevConvs =>
+          prevConvs.map(conv => {
+            if (conv.id === currentConversation.id) {
+              return {
+                ...conv,
+                messages: [...conv.messages, urlMessage],
+                last_message_at: urlMessage.timestamp
+              };
+            }
+            return conv;
+          })
+        );
+
+        console.log('[Webhook] URL message added to chat:', generatedUrl);
+      }
+
       // Show success message
       setError(null);
-      alert(`Commercial offer sent successfully to n8n!\nProject: ${projectName}`);
       setShowEconomistDropdown(false);
       setShowManagerDropdown(false);
 
@@ -1574,7 +1614,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
               <span className="text-sm font-medium">
-                Pasiūlymas
+                Generuoti
                 {isStreamingArtifact && <span className="ml-1">●</span>}
               </span>
             </div>
@@ -1817,7 +1857,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         <div className="p-4 flex-shrink-0">
           <div className="w-[460px] bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
             {/* Header */}
-            <div className="px-6 py-4 border-b" style={{ borderColor: '#e8e5e0' }}>
+            <div className="px-6 py-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold" style={{ color: '#3d3935' }}>
                   Komercinis pasiūlymas
@@ -1859,7 +1899,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div
+              className="flex-1 overflow-y-auto px-6 py-6 relative"
+              style={{
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)'
+              }}
+            >
               {isStreamingArtifact ? (
                 <div>
                   <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
@@ -1886,7 +1932,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
             {/* Footer - Economist Selection & Send Button */}
             {!isStreamingArtifact && currentConversation?.artifact && (
-              <div className="px-6 py-4 border-t" style={{ borderColor: '#e8e5e0' }}>
+              <div className="px-6 py-4">
                 <div className="space-y-3">
                   {/* Economist Selection */}
                   <div>
@@ -1914,7 +1960,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
                       {/* Dropdown */}
                       {showEconomistDropdown && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                        <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
                           {economists.length === 0 ? (
                             <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
                               No economists found
@@ -1975,7 +2021,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
                       {/* Dropdown */}
                       {showManagerDropdown && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                        <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
                           {managers.length === 0 ? (
                             <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
                               No managers found
@@ -2033,12 +2079,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                     {sendingWebhook ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                        <span>Sending...</span>
+                        <span>Generuojama...</span>
                       </>
                     ) : (
                       <>
                         <Send className="w-4 h-4" />
-                        <span>Send to n8n</span>
+                        <span>Generuoti</span>
                       </>
                     )}
                   </button>

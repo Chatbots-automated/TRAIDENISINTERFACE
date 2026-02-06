@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/supabase';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
@@ -29,6 +29,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<string | null>(null); // null = exclude vadybininkas, 'all' = show all, or specific role
+  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
@@ -124,6 +126,20 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
     }
   };
 
+  // Get unique roles from users
+  const availableRoles = Array.from(new Set(users.map(u => u.role).filter(Boolean))) as string[];
+
+  // Filter users based on role filter
+  const filteredUsers = users.filter(u => {
+    if (roleFilter === 'all') return true;
+    if (roleFilter === null) {
+      // Default: exclude vadybininkas
+      return u.role?.toLowerCase() !== 'vadybininkas';
+    }
+    // Specific role selected
+    return u.role?.toLowerCase() === roleFilter.toLowerCase();
+  });
+
   if (!user.is_admin) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.primary }}>
@@ -152,19 +168,104 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>User Management</h2>
             <p className="text-sm" style={{ color: colors.text.secondary }}>Create and manage user accounts</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
-            style={{
-              background: colors.interactive.accent,
-              color: '#ffffff'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
-            onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add User</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Role Filter */}
+            <div className="relative">
+              <button
+                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border"
+                style={{
+                  background: colors.bg.white,
+                  color: colors.text.primary,
+                  borderColor: colors.border.default
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = colors.border.default}
+              >
+                <Filter className="w-4 h-4" />
+                <span className="text-sm">
+                  {roleFilter === 'all' ? 'All Roles' : roleFilter === null ? 'Default Filter' : roleFilter}
+                </span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {/* Dropdown */}
+              {showRoleDropdown && (
+                <div
+                  className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto"
+                  style={{ borderColor: colors.border.default }}
+                >
+                  <button
+                    onClick={() => {
+                      setRoleFilter(null);
+                      setShowRoleDropdown(false);
+                    }}
+                    className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                    style={{ color: colors.text.primary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    <span>Default (hide managers)</span>
+                    {roleFilter === null && (
+                      <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRoleFilter('all');
+                      setShowRoleDropdown(false);
+                    }}
+                    className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                    style={{ color: colors.text.primary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    <span>All Roles</span>
+                    {roleFilter === 'all' && (
+                      <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
+                    )}
+                  </button>
+                  {availableRoles.length > 0 && (
+                    <>
+                      <div className="border-t my-1" style={{ borderColor: colors.border.light }} />
+                      {availableRoles.map((role) => (
+                        <button
+                          key={role}
+                          onClick={() => {
+                            setRoleFilter(role);
+                            setShowRoleDropdown(false);
+                          }}
+                          className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                          style={{ color: colors.text.primary }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                        >
+                          <span className="capitalize">{role}</span>
+                          {roleFilter === role && (
+                            <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+              style={{
+                background: colors.interactive.accent,
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add User</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -339,27 +440,33 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: colors.bg.secondary }} />
             ))}
           </div>
-        ) : users.length === 0 ? (
+        ) : filteredUsers.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-16 h-16 mx-auto mb-4" style={{ color: colors.text.tertiary }} />
-            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>No users yet</h3>
-            <p className="mb-6" style={{ color: colors.text.secondary }}>Create your first user to get started</p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-6 py-3 rounded-lg transition-colors"
-              style={{
-                background: colors.interactive.accent,
-                color: '#ffffff'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
-              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
-            >
-              Add User
-            </button>
+            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
+              {users.length === 0 ? 'No users yet' : 'No users match the filter'}
+            </h3>
+            <p className="mb-6" style={{ color: colors.text.secondary }}>
+              {users.length === 0 ? 'Create your first user to get started' : 'Try changing the filter to see users'}
+            </p>
+            {users.length === 0 && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-6 py-3 rounded-lg transition-colors"
+                style={{
+                  background: colors.interactive.accent,
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+                onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
+              >
+                Add User
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
-            {users.map((userData) => (
+            {filteredUsers.map((userData) => (
               <div
                 key={userData.id}
                 className="rounded-lg p-4 border transition-all"
