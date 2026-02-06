@@ -764,8 +764,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               : conv
           ));
 
-          // Reset button selection state for new response
-          setSelectedButtonId(null);
           setLoading(false);
           setDisplayButtons(null); // Don't use separate state
           return; // PAUSE - don't continue with recursive loop
@@ -1480,8 +1478,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
         className="flex-shrink-0 border-r transition-all duration-300 flex flex-col"
         style={{
           width: sidebarCollapsed ? '0px' : '260px',
-          borderColor: '#f0ede8',
-          background: 'white',
+          borderColor: '#e8e5e0',
+          background: '#fafaf9',
           overflow: sidebarCollapsed ? 'hidden' : 'visible',
           opacity: sidebarCollapsed ? 0 : 1
         }}
@@ -1566,7 +1564,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                     onClick={() => handleSelectConversation(conv.id)}
                     className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150"
                     style={{
-                      background: currentConversation?.id === conv.id ? '#faf9f7' : 'transparent'
+                      background: currentConversation?.id === conv.id ? '#f0ede8' : 'transparent'
                     }}
                     onMouseEnter={(e) => {
                       if (currentConversation?.id !== conv.id) e.currentTarget.style.background = '#f9f8f6';

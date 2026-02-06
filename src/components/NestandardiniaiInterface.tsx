@@ -42,7 +42,9 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   const [requestName, setRequestName] = useState('');
   const [requestText, setRequestText] = useState('');
   const [selectedDocuments, setSelectedDocuments] = useState<File[]>([]);
+  const [selectedEmlFile, setSelectedEmlFile] = useState<File | null>(null);
   const documentsInputRef = useRef<HTMLInputElement>(null);
+  const emlInputRef = useRef<HTMLInputElement>(null);
 
   // Project selection state
   const [projects, setProjects] = useState<NestandardinisProject[]>([]);
@@ -140,6 +142,37 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
   const removeDocument = (index: number) => {
     setSelectedDocuments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleEmlFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (fileExtension !== '.eml') {
+      setError('Prašome pasirinkti .eml formato failą');
+      return;
+    }
+
+    setSelectedEmlFile(file);
+
+    // Read the .eml file content and set it as the request text
+    try {
+      const text = await file.text();
+      setRequestText(text);
+      setError(null);
+    } catch (err) {
+      console.error('Error reading .eml file:', err);
+      setError('Nepavyko perskaityti .eml failo');
+    }
+  };
+
+  const removeEmlFile = () => {
+    setSelectedEmlFile(null);
+    setRequestText('');
+    if (emlInputRef.current) {
+      emlInputRef.current.value = '';
+    }
   };
 
   const handleFileDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -738,14 +771,95 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         </p>
                       </div>
 
-                      {/* Request Text Input */}
+                      {/* EML File Upload */}
                       <div>
                         <label className="text-sm font-semibold block mb-2.5" style={{ color: '#5a5550' }}>
-                          Pokalbis su užsakovu
+                          Pokalbis su užsakovu (.eml failas)
+                        </label>
+
+                        {!selectedEmlFile ? (
+                          <button
+                            onClick={() => emlInputRef.current?.click()}
+                            className="w-full px-4 py-6 text-sm border-2 border-dashed rounded-lg transition-all hover:border-solid"
+                            style={{
+                              borderColor: '#e8e5e0',
+                              background: '#fafaf9',
+                              color: '#5a5550'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = '#5a5550';
+                              e.currentTarget.style.background = '#f5f4f2';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = '#e8e5e0';
+                              e.currentTarget.style.background = '#fafaf9';
+                            }}
+                          >
+                            <div className="flex flex-col items-center gap-2">
+                              <Upload className="w-6 h-6" style={{ color: '#8a857f' }} />
+                              <span className="font-medium">Pasirinkite .eml failą</span>
+                              <span className="text-xs" style={{ color: '#8a857f' }}>
+                                El. pašto susirašinėjimo failas
+                              </span>
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="border rounded-lg p-4" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 rounded" style={{ background: '#f0ede8' }}>
+                                  <FileText className="w-5 h-5" style={{ color: '#5a5550' }} />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium" style={{ color: '#3d3935' }}>
+                                    {selectedEmlFile.name}
+                                  </p>
+                                  <p className="text-xs" style={{ color: '#8a857f' }}>
+                                    {(selectedEmlFile.size / 1024).toFixed(2)} KB
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={removeEmlFile}
+                                className="p-2 rounded hover:bg-gray-100"
+                              >
+                                <X className="w-5 h-5" style={{ color: '#8a857f' }} />
+                              </button>
+                            </div>
+                            {requestText && (
+                              <div className="mt-3 p-3 rounded text-xs max-h-32 overflow-y-auto" style={{ background: '#fafaf9', color: '#5a5550' }}>
+                                <pre className="whitespace-pre-wrap font-mono">{requestText.substring(0, 500)}{requestText.length > 500 ? '...' : ''}</pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <input
+                          ref={emlInputRef}
+                          type="file"
+                          onChange={handleEmlFileSelection}
+                          className="hidden"
+                          accept=".eml"
+                        />
+
+                        <p className="text-xs mt-1.5" style={{ color: '#8a857f' }}>
+                          Įkelkite .eml formatą el. pašto failą su pilnu susirašinėjimu
+                        </p>
+                      </div>
+
+                      {/* Optional: Manual text input fallback */}
+                      <div>
+                        <label className="text-sm font-semibold block mb-2.5" style={{ color: '#5a5550' }}>
+                          Arba įveskite tekstą rankiniu būdu
                         </label>
                         <textarea
-                          value={requestText}
-                          onChange={(e) => setRequestText(e.target.value)}
+                          value={selectedEmlFile ? '' : requestText}
+                          onChange={(e) => {
+                            if (!selectedEmlFile) {
+                              setRequestText(e.target.value);
+                            }
+                          }}
+                          disabled={!!selectedEmlFile}
                           placeholder="Įklijuokite tikslų el. pašto susirašinėjimą su užsakovu..."
                           rows={6}
                           className="w-full px-4 py-3 text-sm border rounded-lg resize-none"
