@@ -34,8 +34,10 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<WebhookResponse | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New request state
@@ -252,20 +254,31 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     }
 
     setUploading(true);
+    setUploadSuccess(false);
     setError(null);
-    setResponse(null);
+    setSuccessMessage(null);
 
     try {
       if (selectedCard === 'new-request') {
         await handleNewRequest();
+        setSuccessMessage('Užklausa sėkmingai pateikta!');
       } else if (selectedCard === 'find-similar') {
         await handleFindSimilar();
+        setSuccessMessage('Paieška sėkmingai įvykdyta!');
       } else if (selectedCard === 'upload-solution') {
         await handleUploadSolution();
+        setSuccessMessage('Sprendimas sėkmingai įkeltas!');
       }
+      setUploadSuccess(true);
+
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 5000);
     } catch (error: any) {
       console.error('Upload error:', error);
       setError(`Operacija nepavyko: ${error.message}`);
+      setUploadSuccess(false);
     } finally {
       setUploading(false);
     }
@@ -279,12 +292,13 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       userId: user.id,
       userEmail: user.email,
       filename: requestName,
-      fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0),
+      fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0) + (selectedEmlFile?.size || 0),
       metadata: {
         project_id: projectId,
         upload_action: 'new-request',
         document_count: selectedDocuments.length,
-        request_name: requestName
+        request_name: requestName,
+        has_eml_file: !!selectedEmlFile
       }
     });
 
@@ -303,6 +317,11 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     formData.append('userEmail', user.email);
     formData.append('projectId', projectId);
     formData.append('timestamp', new Date().toISOString());
+
+    // Append the .eml file if it exists
+    if (selectedEmlFile) {
+      formData.append('emlFile', selectedEmlFile, selectedEmlFile.name);
+    }
 
     // Append all documents
     selectedDocuments.forEach((doc, index) => {
@@ -338,16 +357,15 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       userId: user.id,
       userEmail: user.email,
       filename: requestName,
-      fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0),
+      fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0) + (selectedEmlFile?.size || 0),
       metadata: {
         project_id: projectId,
         subject_line: responseData.subjectLine || requestName,
         upload_action: 'new-request',
-        document_count: selectedDocuments.length
+        document_count: selectedDocuments.length,
+        has_eml_file: !!selectedEmlFile
       }
     });
-
-    setResponse(responseData);
   };
 
   const handleFindSimilar = async () => {
@@ -415,8 +433,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
         upload_action: 'find-similar'
       }
     });
-
-    setResponse(responseData);
   };
 
   const handleUploadSolution = async () => {
@@ -490,8 +506,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
         project_subject: selectedProject.subject_line
       }
     });
-
-    setResponse(responseData);
   };
 
   const downloadFile = (file: ResponseFile) => {
@@ -524,12 +538,16 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     setSelectedProject(null);
     setProjectSearchQuery('');
     setError(null);
+    setSuccessMessage(null);
+    setUploadSuccess(false);
     setSelectedCard(null);
     setRequestName('');
     setRequestText('');
     setSelectedDocuments([]);
+    setSelectedEmlFile(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (documentsInputRef.current) documentsInputRef.current.value = '';
+    if (emlInputRef.current) emlInputRef.current.value = '';
   };
 
   const handleCardSelect = (card: SelectedCard) => {
@@ -578,8 +596,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-6xl mx-auto">
-          {!response && !uploading && (
-            <>
               {/* Card hover styles */}
               <style>{`
                 .card-wrapper:not(.selected):not(.dimmed):hover {
@@ -938,18 +954,52 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         multiple
                       />
 
-                      {/* Submit Button */}
+                      {/* Submit Button with animated states */}
                       <button
                         onClick={handleSubmit}
-                        disabled={!requestName.trim() || !requestText.trim()}
-                        className="w-full py-3 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        disabled={!requestName.trim() || !requestText.trim() || uploading || uploadSuccess}
+                        className="w-full py-3 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
                         style={{
-                          background: (requestName.trim() && requestText.trim()) ? '#3d3935' : '#e8e5e0',
-                          color: (requestName.trim() && requestText.trim()) ? 'white' : '#8a857f'
+                          background: uploadSuccess ? '#10b981' : (requestName.trim() && requestText.trim() && !uploading) ? '#3d3935' : '#e8e5e0',
+                          color: (requestName.trim() && requestText.trim()) || uploading || uploadSuccess ? 'white' : '#8a857f'
                         }}
                       >
-                        Pateikti Užklausą
+                        <span className={`flex items-center justify-center gap-2 transition-opacity duration-300 ${uploading || uploadSuccess ? 'opacity-0' : 'opacity-100'}`}>
+                          Pateikti Užklausą
+                        </span>
+
+                        {/* Loader state */}
+                        {uploading && (
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          </span>
+                        )}
+
+                        {/* Success state */}
+                        {uploadSuccess && !uploading && (
+                          <span className="absolute inset-0 flex items-center justify-center animate-fade-in">
+                            <Check className="w-5 h-5" />
+                          </span>
+                        )}
                       </button>
+
+                      {/* Success/Error messages */}
+                      {successMessage && !uploading && (
+                        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg animate-fade-in" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                          <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#16a34a' }} />
+                          <span className="text-sm" style={{ color: '#166534' }}>{successMessage}</span>
+                        </div>
+                      )}
+
+                      <style>{`
+                        @keyframes fade-in {
+                          from { opacity: 0; transform: scale(0.95); }
+                          to { opacity: 1; transform: scale(1); }
+                        }
+                        .animate-fade-in {
+                          animation: fade-in 0.3s ease-out;
+                        }
+                      `}</style>
                     </>
                   )}
 
@@ -1227,115 +1277,6 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   )}
                 </div>
               )}
-            </>
-          )}
-
-          {/* Loading State */}
-          {uploading && (
-            <div className="py-20 text-center max-w-3xl mx-auto">
-              <div className="animate-spin rounded-full h-12 w-12 border-3 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
-              <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
-                Apdorojama jūsų užklausa
-              </p>
-              <p className="text-sm" style={{ color: '#8a857f' }}>
-                Palaukite, kol apdorosime jūsų failą...
-              </p>
-            </div>
-          )}
-
-          {/* Response Display */}
-          {response && !uploading && (
-            <div className="space-y-5 max-w-3xl mx-auto">
-              {/* Success Message */}
-              <div className="flex items-center gap-3 px-4 py-3.5 rounded-lg" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
-                <Check className="w-5 h-5" style={{ color: '#16a34a' }} />
-                <span className="text-sm font-semibold" style={{ color: '#166534' }}>
-                  {response.message || 'Operacija sėkmingai užbaigta'}
-                </span>
-              </div>
-
-              {/* Subject Line & Description */}
-              {response.subjectLine && (
-                <div className="p-5 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
-                  <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
-                    {response.subjectLine}
-                  </p>
-                  {response.description && (
-                    <p className="text-sm leading-relaxed" style={{ color: '#5a5550' }}>
-                      {response.description}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Files */}
-              {(response.emlFile || response.attachmentFile) && (
-                <div className="space-y-3">
-                  {response.emlFile && (
-                    <div className="flex items-center justify-between p-4 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
-                          <FileText className="w-5 h-5" style={{ color: '#5a5550' }} />
-                        </div>
-                        <span className="text-sm truncate font-medium" style={{ color: '#3d3935' }}>
-                          {response.emlFile.filename}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => downloadFile(response.emlFile!)}
-                        className="px-4 py-2 rounded-lg text-sm font-medium border"
-                        style={{ background: 'white', color: '#3d3935', borderColor: '#e8e5e0' }}
-                      >
-                        Atsisiųsti
-                      </button>
-                    </div>
-                  )}
-
-                  {response.attachmentFile && (
-                    <div className="flex items-center justify-between p-4 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
-                          <FileText className="w-5 h-5" style={{ color: '#5a5550' }} />
-                        </div>
-                        <span className="text-sm truncate font-medium" style={{ color: '#3d3935' }}>
-                          {response.attachmentFile.filename}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => downloadFile(response.attachmentFile!)}
-                        className="px-4 py-2 rounded-lg text-sm font-medium border"
-                        style={{ background: 'white', color: '#3d3935', borderColor: '#e8e5e0' }}
-                      >
-                        Atsisiųsti
-                      </button>
-                    </div>
-                  )}
-
-                  {response.emlFile && response.attachmentFile && (
-                    <button
-                      onClick={() => {
-                        if (response.emlFile) downloadFile(response.emlFile);
-                        if (response.attachmentFile) downloadFile(response.attachmentFile);
-                      }}
-                      className="w-full py-2.5 rounded-lg text-sm font-medium border"
-                      style={{ borderColor: '#e8e5e0', color: '#3d3935', background: 'white' }}
-                    >
-                      Atsisiųsti visus failus
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* New Operation */}
-              <button
-                onClick={resetForm}
-                className="w-full py-2.5 rounded-lg text-sm font-medium border"
-                style={{ borderColor: '#e8e5e0', color: '#5a5550', background: 'white' }}
-              >
-                Pradėti naują operaciją
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>
