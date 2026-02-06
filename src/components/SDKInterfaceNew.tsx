@@ -21,6 +21,7 @@ import {
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
+import RoboticArmLoader from './RoboticArmLoader';
 import { colors } from '../lib/designSystem';
 import {
   createSDKConversation,
@@ -1754,8 +1755,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 <div className="mb-8">
                   <MessageContent content={streamingContent.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
                   <div className="mt-3 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
-                    <span className="text-xs" style={{ color: '#6b7280' }}>Rašo...</span>
+                    <RoboticArmLoader isAnimated={true} size={24} />
                   </div>
                 </div>
               )}
@@ -1846,6 +1846,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 </button>
               </div>
             </div>
+            {/* Static loader when waiting for user input */}
+            {!loading && currentConversation && currentConversation.messages.length > 0 && (
+              <div className="mt-3 flex items-center gap-2 px-1">
+                <RoboticArmLoader isAnimated={false} size={20} />
+              </div>
+            )}
           </div>
         </div>
       </div>
