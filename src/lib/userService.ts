@@ -93,3 +93,27 @@ export const getCurrentUserData = (userId: string, users: AppUserData[]): AppUse
 export const getUserByKodas = (kodas: string, users: AppUserData[]): AppUserData | null => {
   return users.find(u => u.kodas === kodas) || null;
 };
+
+/**
+ * Get users that can be shared with (excludes managers and self)
+ */
+export const getShareableUsers = async (excludeUserId: string): Promise<AppUserData[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
+      .not('role', 'ilike', 'vadybininkas')
+      .neq('id', excludeUserId)
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.error('[UserService] Error getting shareable users:', error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('[UserService] Exception in getShareableUsers:', error);
+    return [];
+  }
+};

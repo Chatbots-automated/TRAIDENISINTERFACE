@@ -16,7 +16,9 @@ import {
   RotateCcw,
   ChevronDown,
   User,
-  Check
+  Check,
+  Share2,
+  Users
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -41,7 +43,18 @@ import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
-import { getEconomists, getManagers, type AppUserData } from '../lib/userService';
+import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
+import {
+  shareConversation,
+  getSharedConversations,
+  getSharedConversationDetails,
+  markSharedAsRead,
+  checkConversationAccess,
+  getUnreadSharedCount,
+  type SharedConversation,
+  type SharedConversationDetails
+} from '../lib/sharedConversationService';
+import { useNotification } from '../contexts/NotificationContext';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -82,6 +95,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
   const [sendingWebhook, setSendingWebhook] = useState(false);
 
+  // Sharing states
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareableUsers, setShareableUsers] = useState<AppUserData[]>([]);
+  const [selectedShareUsers, setSelectedShareUsers] = useState<string[]>([]);
+  const [sharingConversation, setSharingConversation] = useState(false);
+  const [sharedConversations, setSharedConversations] = useState<SharedConversation[]>([]);
+  const [unreadSharedCount, setUnreadSharedCount] = useState(0);
+  const [sidebarView, setSidebarView] = useState<'conversations' | 'shared'>('conversations');
+  const [conversationDetails, setConversationDetails] = useState<SharedConversationDetails | null>(null);
+  const [isReadOnly, setIsReadOnly] = useState(false);
+
+  const { addNotification } = useNotification();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -92,6 +117,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     loadConversations();
     loadEconomists();
     loadManagers();
+    loadSharedConversations();
+    loadShareableUsers();
   }, []);
 
   const loadEconomists = async () => {
@@ -219,6 +246,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     }
   };
 
+  const loadSharedConversations = async () => {
+    try {
+      const { data, error } = await getSharedConversations(user.id);
+      if (error) throw error;
+      setSharedConversations(data || []);
+
+      // Update unread count
+      const { data: count } = await getUnreadSharedCount(user.id);
+      setUnreadSharedCount(count);
+    } catch (err) {
+      console.error('Error loading shared conversations:', err);
+    }
+  };
+
+  const loadShareableUsers = async () => {
+    try {
+      const users = await getShareableUsers(user.id);
+      setShareableUsers(users);
+    } catch (err) {
+      console.error('Error loading shareable users:', err);
+    }
+  };
+
   const handleCreateConversation = async () => {
     try {
       setCreatingConversation(true);
@@ -311,6 +361,106 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       setUserScrolledUp(false);
       setShowScrollButton(false);
     }
+  };
+
+  /**
+   * Handle opening share modal
+   */
+  const handleOpenShareModal = () => {
+    setSelectedShareUsers([]);
+    setShowShareModal(true);
+  };
+
+  /**
+   * Handle sharing conversation
+   */
+  const handleShareConversation = async () => {
+    if (!currentConversation || selectedShareUsers.length === 0) return;
+
+    try {
+      setSharingConversation(true);
+      const { error } = await shareConversation(
+        currentConversation.id,
+        selectedShareUsers,
+        user.id,
+        user.email
+      );
+
+      if (error) throw error;
+
+      addNotification('success', 'Sėkmė', `Pokalbis pasidalintas su ${selectedShareUsers.length} vartotojais`);
+      setShowShareModal(false);
+      setSelectedShareUsers([]);
+
+      // Reload conversation details to show updated share list
+      loadConversationDetails(currentConversation.id);
+    } catch (err) {
+      console.error('Error sharing conversation:', err);
+      addNotification('error', 'Klaida', 'Nepavyko pasidalinti pokalbiu');
+    } finally {
+      setSharingConversation(false);
+    }
+  };
+
+  /**
+   * Toggle user selection for sharing
+   */
+  const toggleUserSelection = (userId: string) => {
+    setSelectedShareUsers(prev =>
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  /**
+   * Load detailed information about current conversation (for read-only mode)
+   */
+  const loadConversationDetails = async (conversationId: string) => {
+    try {
+      const { data, error } = await getSharedConversationDetails(conversationId, user.id);
+      if (error) throw error;
+      setConversationDetails(data);
+    } catch (err) {
+      console.error('Error loading conversation details:', err);
+    }
+  };
+
+  /**
+   * Handle selecting a shared conversation
+   */
+  const handleSelectSharedConversation = async (sharedConv: SharedConversation) => {
+    try {
+      if (!sharedConv.conversation) return;
+
+      // Mark as read
+      await markSharedAsRead(sharedConv.conversation_id, user.id);
+
+      // Load full details
+      await loadConversationDetails(sharedConv.conversation_id);
+
+      // Set as current conversation with read-only flag
+      setCurrentConversation(sharedConv.conversation);
+      setIsReadOnly(true);
+      setError(null);
+
+      // Reload shared conversations to update unread count
+      loadSharedConversations();
+    } catch (err) {
+      console.error('Error selecting shared conversation:', err);
+    }
+  };
+
+  /**
+   * Handle selecting an owned conversation
+   */
+  const handleSelectOwnedConversation = async (conversationId: string) => {
+    await handleSelectConversation(conversationId);
+    setIsReadOnly(false);
+    setConversationDetails(null);
+
+    // Load details to show who it's shared with
+    await loadConversationDetails(conversationId);
   };
 
   /**
@@ -1528,97 +1678,194 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           </p>
         </div>
 
-        {/* Conversations Section */}
+        {/* Conversations Section with Tabs */}
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
-            <h3 className="text-sm font-medium" style={{ color: '#3d3935' }}>Conversations</h3>
-          </div>
-
-          <div className="p-3">
+          {/* Tabs */}
+          <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: '#f0ede8' }}>
             <button
-              onClick={handleCreateConversation}
-              disabled={creatingConversation}
-              className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-              style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}
-              onMouseEnter={(e) => !creatingConversation && (e.currentTarget.style.background = '#e8e5e0')}
-              onMouseLeave={(e) => !creatingConversation && (e.currentTarget.style.background = '#f0ede8')}
+              onClick={() => setSidebarView('conversations')}
+              className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{
+                background: sidebarView === 'conversations' ? '#5a5550' : 'transparent',
+                color: sidebarView === 'conversations' ? 'white' : '#8a857f'
+              }}
             >
-              <Plus className="w-4 h-4" />
-              <span>Naujas pokalbis</span>
+              Pokalbiai
+            </button>
+            <button
+              onClick={() => setSidebarView('shared')}
+              className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative"
+              style={{
+                background: sidebarView === 'shared' ? '#5a5550' : 'transparent',
+                color: sidebarView === 'shared' ? 'white' : '#8a857f'
+              }}
+            >
+              Pasidalinti
+              {unreadSharedCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center" style={{ background: '#f97316', color: 'white' }}>
+                  {unreadSharedCount}
+                </span>
+              )}
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2">
-            {loadingConversations ? (
-              <div className="p-4 text-center">
-                <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-200 border-t-blue-500 mx-auto"></div>
-              </div>
-            ) : conversations.length === 0 ? (
-              <div className="p-4 text-center">
-                <p className="text-sm" style={{ color: '#8a857f' }}>Pokalbių nėra</p>
-              </div>
-            ) : (
-              <div className="space-y-0.5">
-                {conversations.map((conv) => (
-                  <div
-                    key={conv.id}
-                    onClick={() => handleSelectConversation(conv.id)}
-                    className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150"
-                    style={{
-                      background: currentConversation?.id === conv.id ? '#f0ede8' : 'transparent'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentConversation?.id !== conv.id) e.currentTarget.style.background = '#f9f8f6';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentConversation?.id !== conv.id) e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: '#3d3935' }}>{conv.title}</p>
-                      <p className="text-xs" style={{ color: '#8a857f' }}>
-                        {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
-                      </p>
-                    </div>
-                    <button
-                      onClick={(e) => handleDeleteConversation(conv.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all"
-                      style={{ color: '#991b1b' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          {/* New Conversation Button - Only show in conversations view */}
+          {sidebarView === 'conversations' && (
+            <div className="p-3">
+              <button
+                onClick={handleCreateConversation}
+                disabled={creatingConversation}
+                className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}
+                onMouseEnter={(e) => !creatingConversation && (e.currentTarget.style.background = '#e8e5e0')}
+                onMouseLeave={(e) => !creatingConversation && (e.currentTarget.style.background = '#f0ede8')}
+              >
+                <Plus className="w-4 h-4" />
+                <span>Naujas pokalbis</span>
+              </button>
+            </div>
+          )}
+
+          {/* Conversations List */}
+          {sidebarView === 'conversations' && (
+            <div className="flex-1 overflow-y-auto px-2">
+              {loadingConversations ? (
+                <div className="p-4 text-center">
+                  <RoboticArmLoader isAnimated={true} size={40} />
+                </div>
+              ) : conversations.length === 0 ? (
+                <div className="p-4 text-center">
+                  <p className="text-sm" style={{ color: '#8a857f' }}>Pokalbių nėra</p>
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {conversations.map((conv) => (
+                    <div
+                      key={conv.id}
+                      onClick={() => handleSelectOwnedConversation(conv.id)}
+                      className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150"
+                      style={{
+                        background: currentConversation?.id === conv.id && !isReadOnly ? '#f0ede8' : 'transparent'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (currentConversation?.id !== conv.id || isReadOnly) e.currentTarget.style.background = '#f9f8f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentConversation?.id !== conv.id || isReadOnly) e.currentTarget.style.background = 'transparent';
+                      }}
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate" style={{ color: '#3d3935' }}>{conv.title}</p>
+                        <p className="text-xs" style={{ color: '#8a857f' }}>
+                          {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => handleDeleteConversation(conv.id, e)}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all"
+                        style={{ color: '#991b1b' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Shared Conversations List */}
+          {sidebarView === 'shared' && (
+            <div className="flex-1 overflow-y-auto px-2 py-2">
+              {sharedConversations.length === 0 ? (
+                <div className="p-4 text-center">
+                  <Users className="w-8 h-8 mx-auto mb-2" style={{ color: '#d1d5db' }} />
+                  <p className="text-sm" style={{ color: '#8a857f' }}>Nėra bendrų pokalbių</p>
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {sharedConversations.map((sharedConv) => (
+                    <div
+                      key={sharedConv.id}
+                      onClick={() => handleSelectSharedConversation(sharedConv)}
+                      className="group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all duration-150"
+                      style={{
+                        background: currentConversation?.id === sharedConv.conversation_id && isReadOnly ? '#f0ede8' : 'transparent',
+                        border: !sharedConv.is_read ? '1px solid #f97316' : '1px solid transparent'
+                      }}
+                      onMouseEnter={(e) => {
+                        if (currentConversation?.id !== sharedConv.conversation_id || !isReadOnly) e.currentTarget.style.background = '#f9f8f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentConversation?.id !== sharedConv.conversation_id || !isReadOnly) e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      {!sharedConv.is_read && (
+                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: '#f97316' }} />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate" style={{ color: '#3d3935' }}>{sharedConv.conversation?.title}</p>
+                        <p className="text-xs truncate" style={{ color: '#8a857f' }}>
+                          Bendrino: {sharedConv.shared_by_name || sharedConv.shared_by_email}
+                        </p>
+                        <p className="text-xs" style={{ color: '#9ca3af' }}>
+                          {new Date(sharedConv.shared_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Floating Artifact Toggle Button - Only show when panel is closed */}
-        {(currentConversation?.artifact || isStreamingArtifact) && !showArtifact && (
-          <button
-            onClick={() => setShowArtifact(true)}
-            className="fixed top-6 right-6 z-50 px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
-            style={{
-              background: isStreamingArtifact ? '#5a5550' : 'white',
-              color: isStreamingArtifact ? 'white' : '#5a5550',
-              border: '1px solid #e8e5e0'
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                Generuoti
-                {isStreamingArtifact && <span className="ml-1">●</span>}
-              </span>
-            </div>
-          </button>
-        )}
+        {/* Floating Action Buttons */}
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
+          {/* Share Button - Show when conversation exists and user is owner */}
+          {currentConversation && !isReadOnly && (
+            <button
+              onClick={handleOpenShareModal}
+              className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
+              style={{
+                background: 'white',
+                color: '#5a5550',
+                border: '1px solid #e8e5e0'
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <Share2 className="w-4 h-4" />
+                <span className="text-sm font-medium">Dalintis</span>
+              </div>
+            </button>
+          )}
+
+          {/* Floating Artifact Toggle Button - Only show when panel is closed */}
+          {(currentConversation?.artifact || isStreamingArtifact) && !showArtifact && (
+            <button
+              onClick={() => setShowArtifact(true)}
+              className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
+              style={{
+                background: isStreamingArtifact ? '#5a5550' : 'white',
+                color: isStreamingArtifact ? 'white' : '#5a5550',
+                border: '1px solid #e8e5e0'
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                <span className="text-sm font-medium">
+                  Generuoti
+                  {isStreamingArtifact && <span className="ml-1">●</span>}
+                </span>
+              </div>
+            </button>
+          )}
+        </div>
 
         {/* Messages Area */}
         <div
@@ -1754,8 +2001,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               {loading && streamingContent && (
                 <div className="mb-8">
                   <MessageContent content={streamingContent.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
-                  <div className="mt-3 flex items-center gap-2">
-                    <RoboticArmLoader isAnimated={true} size={24} />
+                  <div className="mt-3 flex items-start gap-2">
+                    <RoboticArmLoader isAnimated={true} size={48} />
                   </div>
                 </div>
               )}
@@ -1763,8 +2010,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               {/* Tool usage indicator */}
               {loading && isToolUse && (
                 <div className="mb-6">
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}>
+                    <RoboticArmLoader isAnimated={true} size={32} />
                     <span className="text-sm">Vykdoma: {toolUseName}</span>
                   </div>
                 </div>
@@ -1772,8 +2019,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
               {/* Initial loading indicator */}
               {loading && !streamingContent && !isToolUse && (
-                <div className="py-4 flex justify-center">
-                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-gray-200 border-t-blue-500"></div>
+                <div className="py-4 flex justify-start">
+                  <RoboticArmLoader isAnimated={true} size={48} />
                 </div>
               )}
 
@@ -1808,52 +2055,79 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           </div>
         )}
 
-        {/* Input Box - Always visible */}
-        <div className="px-6 py-4" style={{ background: '#ffffff' }}>
-          <div className="max-w-4xl mx-auto">
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Parašykite žinutę..."
-                rows={1}
-                className="w-full px-4 py-3.5 pr-80 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}`, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
-                disabled={loading || !systemPrompt}
-              />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                <button
-                  className="p-2 rounded-lg transition-colors"
-                  style={{ color: '#8a857f' }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  disabled={loading}
-                >
-                  <Paperclip className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={handleSend}
-                  disabled={!inputValue.trim() || loading || !systemPrompt}
-                  className="p-2.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{
-                    background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
-                    color: inputValue.trim() && !loading ? 'white' : '#8a857f'
-                  }}
-                >
-                  <Send className="w-4 h-4" />
-                </button>
+        {/* Input Box or Read-Only Banner */}
+        {isReadOnly && conversationDetails ? (
+          /* Read-Only Mode Banner */
+          <div className="px-6 py-4 border-t" style={{ background: '#fef3c7', borderColor: '#fde68a' }}>
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-start gap-3 mb-3">
+                <AlertCircle className="w-5 h-5 mt-0.5" style={{ color: '#f59e0b' }} />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold mb-1" style={{ color: '#92400e' }}>
+                    Bendrinamas pokalbis. Tik skaityti.
+                  </p>
+                  <p className="text-xs" style={{ color: '#92400e' }}>
+                    <strong>Bendrino:</strong> {conversationDetails.shared_by.display_name || conversationDetails.shared_by.email}
+                  </p>
+                  {conversationDetails.shared_with.length > 0 && (
+                    <p className="text-xs mt-1" style={{ color: '#92400e' }}>
+                      <strong>Pasidalinta su:</strong> {conversationDetails.shared_with.map(u => u.display_name || u.email).join(', ')}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
-            {/* Static loader when waiting for user input */}
+          </div>
+        ) : (
+          /* Regular Input Box */
+          <div className="px-6 py-4" style={{ background: '#ffffff' }}>
+            <div className="max-w-4xl mx-auto">
+              <div className="relative">
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Parašykite žinutę..."
+                  rows={1}
+                  className="w-full px-4 py-3.5 pr-80 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}`, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
+                  disabled={loading || !systemPrompt}
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <button
+                    className="p-2 rounded-lg transition-colors"
+                    style={{ color: '#8a857f' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    disabled={loading}
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={handleSend}
+                    disabled={!inputValue.trim() || loading || !systemPrompt}
+                    className="p-2.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{
+                      background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
+                      color: inputValue.trim() && !loading ? 'white' : '#8a857f'
+                    }}
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            {/* Static loader when waiting for user input - positioned above input */}
             {!loading && currentConversation && currentConversation.messages.length > 0 && (
-              <div className="mt-3 flex items-center gap-2 px-1">
-                <RoboticArmLoader isAnimated={false} size={20} />
+              <div className="px-6 pb-3 flex items-center gap-2">
+                <div className="max-w-4xl mx-auto w-full">
+                  <RoboticArmLoader isAnimated={false} size={36} />
+                </div>
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Artifact Panel - Floating Design */}
@@ -2162,6 +2436,111 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
                 {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
               </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Modal */}
+      {showShareModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-6"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={() => setShowShareModal(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl overflow-hidden"
+            style={{ background: 'white', border: '1px solid #e8e5e0' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
+              <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
+                Dalintis pokalbiu
+              </h3>
+              <button
+                onClick={() => setShowShareModal(false)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              <p className="text-sm mb-4" style={{ color: '#6b7280' }}>
+                Pasirinkite vartotojus, su kuriais norite pasidalinti pokalbiu
+              </p>
+
+              {/* User List */}
+              <div className="space-y-2 max-h-[400px] overflow-y-auto mb-4">
+                {shareableUsers.length === 0 ? (
+                  <p className="text-sm text-center py-4" style={{ color: '#9ca3af' }}>
+                    Nėra vartotojų, su kuriais galėtumėte dalintis
+                  </p>
+                ) : (
+                  shareableUsers.map((shareUser) => (
+                    <label
+                      key={shareUser.id}
+                      className="flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                      style={{ border: '1px solid #e8e5e0' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedShareUsers.includes(shareUser.id)}
+                        onChange={() => toggleUserSelection(shareUser.id)}
+                        className="w-4 h-4 rounded"
+                        style={{ accentColor: '#5a5550' }}
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium" style={{ color: '#3d3935' }}>
+                          {shareUser.full_name || shareUser.display_name || shareUser.email}
+                        </div>
+                      </div>
+                      {selectedShareUsers.includes(shareUser.id) && (
+                        <Check className="w-4 h-4" style={{ color: '#5a5550' }} />
+                      )}
+                    </label>
+                  ))
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowShareModal(false)}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                  style={{ background: '#f0ede8', color: '#5a5550' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
+                >
+                  Atšaukti
+                </button>
+                <button
+                  onClick={handleShareConversation}
+                  disabled={selectedShareUsers.length === 0 || sharingConversation}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: '#5a5550', color: 'white' }}
+                  onMouseEnter={(e) => {
+                    if (!e.currentTarget.disabled) e.currentTarget.style.background = '#3d3935';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!e.currentTarget.disabled) e.currentTarget.style.background = '#5a5550';
+                  }}
+                >
+                  {sharingConversation ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
+                      Dalinasi...
+                    </span>
+                  ) : (
+                    `Dalintis (${selectedShareUsers.length})`
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
