@@ -95,14 +95,13 @@ export const getUserByKodas = (kodas: string, users: AppUserData[]): AppUserData
 };
 
 /**
- * Get users that can be shared with (excludes managers and self)
+ * Get users that can be shared with (excludes only self)
  */
 export const getShareableUsers = async (excludeUserId: string): Promise<AppUserData[]> => {
   try {
     const { data, error } = await supabase
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
-      .not('role', 'ilike', 'vadybininkas')
       .neq('id', excludeUserId)
       .order('full_name', { ascending: true });
 
