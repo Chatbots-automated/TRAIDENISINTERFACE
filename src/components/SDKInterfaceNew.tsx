@@ -54,7 +54,7 @@ import {
   type SharedConversation,
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
-import { useNotification } from '../contexts/NotificationContext';
+import NotificationContainer, { Notification } from './NotificationContainer';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -106,11 +106,23 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   const [conversationDetails, setConversationDetails] = useState<SharedConversationDetails | null>(null);
   const [isReadOnly, setIsReadOnly] = useState(false);
 
-  const { addNotification } = useNotification();
+  // Notifications
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+
+  // Notification helper functions
+  const addNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    const id = `notification-${Date.now()}-${Math.random()}`;
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   useEffect(() => {
     loadSystemPrompt();
@@ -2545,6 +2557,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           </div>
         </div>
       )}
+
+      {/* Notification Container */}
+      <NotificationContainer
+        notifications={notifications}
+        onRemove={removeNotification}
+      />
     </div>
   );
 }
