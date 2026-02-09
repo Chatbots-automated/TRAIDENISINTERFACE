@@ -12,16 +12,27 @@ Successfully migrated the TRAIDENIS interface from Supabase Cloud to local Postg
 
 ## What Changed
 
-### 1. **Environment Variables** (.env)
+### 1. **Environment Variables**
+
+**For Local Development** (`.env` file - not committed to git):
 ```env
-# NEW - PostgREST Configuration
+# PostgREST Configuration
 VITE_POSTGREST_URL=https://api.traidenis.org
 VITE_POSTGREST_ANON_KEY=anon
 
-# OLD - Supabase (now commented out)
-# VITE_SUPABASE_URL=https://tahsnionivotlbbbyuya.supabase.co
-# VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+# Voiceflow
+VITE_VOICEFLOW_API_KEY=your_api_key
+VITE_VOICEFLOW_PROJECT_ID=your_project_id
 ```
+
+**For Netlify Production** (Set in Netlify Dashboard → Site Settings → Environment Variables):
+- `VITE_POSTGREST_URL` = `https://api.traidenis.org`
+- `VITE_POSTGREST_ANON_KEY` = `anon`
+- `VITE_VOICEFLOW_API_KEY` = (your Voiceflow API key)
+- `VITE_VOICEFLOW_PROJECT_ID` = (your Voiceflow project ID)
+- `VITE_N8N_WEBHOOK_UPLOAD_NEW` = (your n8n webhook URL)
+- `VITE_N8N_WEBHOOK_FIND_SIMILAR` = (your n8n webhook URL)
+- `VITE_N8N_WEBHOOK_UPLOAD_SOLUTION` = (your n8n webhook URL)
 
 ### 2. **Client Library** (src/lib/supabase.ts)
 - **Before:** Used `@supabase/supabase-js` client
@@ -29,8 +40,9 @@ VITE_POSTGREST_ANON_KEY=anon
 - **Compatibility:** Maintains identical API interface - no changes needed in service files!
 
 ### 3. **Files Modified**
-- `.env` - Updated with PostgREST configuration
 - `src/lib/supabase.ts` - Replaced with PostgREST-based implementation
+- `.env.example` - Updated with PostgREST configuration template
+- `.gitignore` - Now ignores `.env` file (environment variables not committed)
 - `src/lib/supabase.ts.backup` - Created backup of original Supabase client (not tracked in git)
 
 ### 4. **No Changes Required**
@@ -255,18 +267,26 @@ However, complex relationship queries may be slower if not properly indexed.
 
 ## Next Steps
 
-1. **Deploy to Netlify:**
+1. **Set Netlify Environment Variables (REQUIRED):**
+
+   Go to Netlify Dashboard → Your Site → Site Settings → Environment Variables
+
+   Add these variables:
+   | Key | Value |
+   |-----|-------|
+   | `VITE_POSTGREST_URL` | `https://api.traidenis.org` |
+   | `VITE_POSTGREST_ANON_KEY` | `anon` |
+   | `VITE_VOICEFLOW_API_KEY` | (your Voiceflow API key) |
+   | `VITE_VOICEFLOW_PROJECT_ID` | (your Voiceflow project ID) |
+   | `VITE_N8N_WEBHOOK_UPLOAD_NEW` | (your n8n webhook URL) |
+   | `VITE_N8N_WEBHOOK_FIND_SIMILAR` | (your n8n webhook URL) |
+   | `VITE_N8N_WEBHOOK_UPLOAD_SOLUTION` | (your n8n webhook URL) |
+
+2. **Deploy to Netlify:**
    ```bash
    git push origin claude/update-eml-upload-tab-SBc3g
    ```
-   Netlify will automatically build and deploy with the new PostgREST configuration.
-
-2. **Update Netlify Environment Variables:**
-   In Netlify dashboard, set:
-   ```
-   VITE_POSTGREST_URL=https://api.traidenis.org
-   VITE_POSTGREST_ANON_KEY=anon
-   ```
+   Netlify will automatically build and deploy using the environment variables from the dashboard.
 
 3. **Test in Production:**
    - Verify API connectivity from Netlify to your VM
