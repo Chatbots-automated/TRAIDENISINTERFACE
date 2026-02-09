@@ -178,10 +178,8 @@ class PostgrestQueryBuilder<T = any> {
     try {
       const params = new URLSearchParams();
 
-      // Add select fields
-      if (this.selectFields !== '*') {
-        params.append('select', this.selectFields);
-      }
+      // Add select fields (always include select parameter)
+      params.append('select', this.selectFields);
 
       // Add filters
       this.filters.forEach(filter => {
@@ -206,17 +204,24 @@ class PostgrestQueryBuilder<T = any> {
       }
 
       const url = `${this.url}?${params.toString()}`;
+      console.log('[PostgREST] GET', url);
+      console.log('[PostgREST] Headers:', headers);
+
       const response = await fetch(url, {
         method: 'GET',
         headers
       });
 
+      console.log('[PostgREST] Response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const error = await this.parseError(response);
+        console.error('[PostgREST] Error:', error);
         return { data: null, error };
       }
 
       const data = await response.json();
+      console.log('[PostgREST] Success:', data);
       return { data, error: null };
     } catch (error: any) {
       return {
@@ -297,18 +302,25 @@ class PostgrestInsertBuilder<T = any> {
         ? `${this.url}?select=${this.selectFields}`
         : this.url;
 
+      console.log('[PostgREST] POST', url);
+      console.log('[PostgREST] Body:', this.payload);
+
       const response = await fetch(url, {
         method: 'POST',
         headers: this.headers,
         body: JSON.stringify(this.payload)
       });
 
+      console.log('[PostgREST] Response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const error = await this.parseError(response);
+        console.error('[PostgREST] Error:', error);
         return { data: null, error };
       }
 
       const data = await response.json();
+      console.log('[PostgREST] Success:', data);
       return { data, error: null };
     } catch (error: any) {
       return {
@@ -393,18 +405,25 @@ class PostgrestUpdateBuilder<T = any> {
       }
 
       const url = `${this.url}?${params.toString()}`;
+      console.log('[PostgREST] PATCH', url);
+      console.log('[PostgREST] Body:', this.payload);
+
       const response = await fetch(url, {
         method: 'PATCH',
         headers: this.headers,
         body: JSON.stringify(this.payload)
       });
 
+      console.log('[PostgREST] Response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const error = await this.parseError(response);
+        console.error('[PostgREST] Error:', error);
         return { data: null, error };
       }
 
       const data = await response.json();
+      console.log('[PostgREST] Success:', data);
       return { data, error: null };
     } catch (error: any) {
       return {
@@ -473,16 +492,22 @@ class PostgrestDeleteBuilder<T = any> {
       });
 
       const url = `${this.url}?${params.toString()}`;
+      console.log('[PostgREST] DELETE', url);
+
       const response = await fetch(url, {
         method: 'DELETE',
         headers: this.headers
       });
 
+      console.log('[PostgREST] Response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const error = await this.parseError(response);
+        console.error('[PostgREST] Error:', error);
         return { data: null, error };
       }
 
+      console.log('[PostgREST] Delete successful');
       return { data: null, error: null };
     } catch (error: any) {
       return {
