@@ -114,7 +114,7 @@ const [artifactStreamContent, setArtifactStreamContent] = useState('');
 
 ### 4.3 Webhook Execution
 1. POST to `https://n8n.traidenis.org/webhook/a80582f0-d42b-4490-b142-0494f0afff89`
-2. Log to Supabase `webhooks` table
+2. Log to database `webhooks` table
 3. Display in Webhooks tab under appropriate category
 
 ### 4.4 Fix Duplicate Button Issue

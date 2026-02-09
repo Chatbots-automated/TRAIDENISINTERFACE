@@ -82,16 +82,15 @@ To look up 13PE capacity systems, simply use the tool:
 To enable full pricing functionality:
 1. Run the SQL migration: `supabase_migration_pricing_tables.sql`
 2. Populate the `products`, `pricing`, and `price_multiplier` tables
-3. Re-enable the `query_supabase` tool in `toolDefinitions.ts`
+3. Re-enable the database query tool in `toolDefinitions.ts`
 4. Update this system prompt to include the query_supabase tool documentation
 
 ---
 
 ## Instructions for Updating the Database
 
-1. Go to Supabase Dashboard → SQL Editor
-2. Copy the contents of `supabase_migration_pricing_tables.sql`
-3. Run the migration to create tables
-4. Insert your product data, pricing, and multipliers
-5. Test with: `SELECT * FROM products; SELECT * FROM pricing; SELECT * FROM price_multiplier;`
-6. Once tables have data, re-enable the `query_supabase` tool
+1. Open pgAdmin or psql
+2. Run the migration file `supabase_migration_pricing_tables.sql` to create tables
+3. Insert your product data, pricing, and multipliers
+4. Test with: `SELECT * FROM products; SELECT * FROM pricing; SELECT * FROM price_multiplier;`
+5. Once tables have data, re-enable the database query tool

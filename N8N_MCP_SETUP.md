@@ -33,7 +33,7 @@ All tool calls now route through `callN8nMCPServer()` which:
 
 The Google Sheets URL needs to be user-configurable via the `instruction_variables` table.
 
-**Run this SQL in Supabase:**
+**Run this SQL in pgAdmin or psql:**
 
 ```sql
 INSERT INTO instruction_variables (

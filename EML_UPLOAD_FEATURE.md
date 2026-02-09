@@ -17,7 +17,7 @@ The "Nestandartiniai Gaminiai" (Non-standard Products) feature is a comprehensiv
 - Drag & drop interface
 
 #### 2. **Įkelti Sprendimą (Upload Solution)**
-- Select existing project from Supabase database
+- Select existing project from the database
 - Search projects by subject line
 - Upload commercial offer files (PDF, Word, Excel, etc.)
 - Option to find similar products for existing projects
@@ -62,7 +62,7 @@ The tab features a segmented control at the top to switch between:
 1. **Select Project**
    - Type in the search field to find projects by subject line
    - Select a project from the dropdown
-   - Projects are fetched from Supabase `nestandartiniai_projects` table
+   - Projects are fetched from the database `nestandartiniai_projects` table
 
 2. **Optional: Find Similar**
    - Once a project is selected, you can click "Rasti panašius šiam projektui" (Find similar for this project)
@@ -97,7 +97,7 @@ VITE_N8N_WEBHOOK_UPLOAD_SOLUTION=https://your-n8n-instance.com/webhook/nestandar
 
 Replace the URLs with your actual n8n webhook endpoints.
 
-### Supabase Database
+### Database Setup
 
 Create a table called `nestandartiniai_projects` with the following structure:
 

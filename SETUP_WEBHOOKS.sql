@@ -1,5 +1,5 @@
 -- Nestandartiniai Gaminiai Webhooks Setup
--- Run this SQL in your Supabase SQL Editor to populate the webhooks table
+-- Run this SQL in pgAdmin or psql to populate the webhooks table
 
 -- 1. Upload New EML (without search) - "Tiesiog įkelti naują įrašą"
 INSERT INTO webhooks (

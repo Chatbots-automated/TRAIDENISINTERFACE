@@ -19,17 +19,11 @@ Successfully migrated the TRAIDENIS interface from Supabase Cloud to local Postg
 # PostgREST Configuration
 VITE_POSTGREST_URL=https://api.traidenis.org
 VITE_POSTGREST_ANON_KEY=anon
-
-# Voiceflow
-VITE_VOICEFLOW_API_KEY=your_api_key
-VITE_VOICEFLOW_PROJECT_ID=your_project_id
 ```
 
 **For Netlify Production** (Set in Netlify Dashboard → Site Settings → Environment Variables):
 - `VITE_POSTGREST_URL` = `https://api.traidenis.org`
 - `VITE_POSTGREST_ANON_KEY` = `anon`
-- `VITE_VOICEFLOW_API_KEY` = (your Voiceflow API key)
-- `VITE_VOICEFLOW_PROJECT_ID` = (your Voiceflow project ID)
 - `VITE_N8N_WEBHOOK_UPLOAD_NEW` = (your n8n webhook URL)
 - `VITE_N8N_WEBHOOK_FIND_SIMILAR` = (your n8n webhook URL)
 - `VITE_N8N_WEBHOOK_UPLOAD_SOLUTION` = (your n8n webhook URL)
@@ -276,8 +270,6 @@ However, complex relationship queries may be slower if not properly indexed.
    |-----|-------|
    | `VITE_POSTGREST_URL` | `https://api.traidenis.org` |
    | `VITE_POSTGREST_ANON_KEY` | `anon` |
-   | `VITE_VOICEFLOW_API_KEY` | (your Voiceflow API key) |
-   | `VITE_VOICEFLOW_PROJECT_ID` | (your Voiceflow project ID) |
    | `VITE_N8N_WEBHOOK_UPLOAD_NEW` | (your n8n webhook URL) |
    | `VITE_N8N_WEBHOOK_FIND_SIMILAR` | (your n8n webhook URL) |
    | `VITE_N8N_WEBHOOK_UPLOAD_SOLUTION` | (your n8n webhook URL) |

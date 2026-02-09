@@ -1,4 +1,4 @@
-import { supabase } from './database';
+import { db } from './database';
 import { appLogger } from './appLogger';
 
 const WEBHOOK_URL = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/3961e6fa-4199-4f85-82f5-4e7e036f7e18';
@@ -28,7 +28,7 @@ export interface InstructionVersion {
  * Fetch all instruction variables ordered by display_order
  */
 export async function getInstructionVariables(): Promise<InstructionVariable[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_variables')
     .select('*')
     .order('display_order', { ascending: true });
@@ -45,7 +45,7 @@ export async function getInstructionVariables(): Promise<InstructionVariable[]> 
  * Get a single instruction variable by key
  */
 export async function getInstructionVariable(variableKey: string): Promise<InstructionVariable | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_variables')
     .select('*')
     .eq('variable_key', variableKey)
@@ -67,7 +67,7 @@ export async function updateInstructionVariable(
   content: string,
   userId: string
 ): Promise<InstructionVariable | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_variables')
     .update({
       content,
@@ -104,7 +104,7 @@ export async function createVersionSnapshot(
     snapshot[v.variable_key] = v.content;
   });
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_versions')
     .insert({
       snapshot,
@@ -128,7 +128,7 @@ export async function createVersionSnapshot(
  * Get all version history ordered by version_number descending
  */
 export async function getVersionHistory(limit: number = 50): Promise<InstructionVersion[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_versions')
     .select('*')
     .order('version_number', { ascending: false })
@@ -146,7 +146,7 @@ export async function getVersionHistory(limit: number = 50): Promise<Instruction
  * Get a specific version by version_number
  */
 export async function getVersion(versionNumber: number): Promise<InstructionVersion | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_versions')
     .select('*')
     .eq('version_number', versionNumber)
@@ -317,7 +317,7 @@ export async function verifyUserPassword(
   email: string,
   password: string
 ): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('app_users')
     .select('id')
     .eq('email', email)
@@ -339,7 +339,7 @@ export async function initializeVariableContent(
   content: string,
   userId: string
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await db
     .from('instruction_variables')
     .update({
       content,

@@ -40,7 +40,7 @@ The SDK interface has been completely redesigned to match the Anthropic Claude i
 ### 3. Conversation Management
 
 ```typescript
-// Conversations are stored in Supabase with structure:
+// Conversations are stored in the database with structure:
 interface SDKConversation {
   id: string;
   project_id: string;
@@ -124,7 +124,7 @@ Following Anthropic's design system:
 Run the SQL migration file to create the `sdk_conversations` table:
 
 ```bash
-# In Supabase SQL Editor, run:
+# In pgAdmin or psql, run:
 cat supabase_migration_sdk_conversations.sql
 ```
 
@@ -238,7 +238,7 @@ When Claude generates a commercial offer, it will:
 ## Troubleshooting
 
 ### Conversations not loading
-- Check Supabase connection
+- Check database connection
 - Verify `sdk_conversations` table exists
 - Check browser console for errors
 
@@ -261,6 +261,6 @@ When Claude generates a commercial offer, it will:
 
 For issues or questions, check:
 1. Browser console for errors
-2. Supabase logs for database issues
+2. PostgreSQL logs for database issues
 3. Network tab for API call failures
 4. This documentation for setup steps

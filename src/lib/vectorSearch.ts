@@ -1,5 +1,5 @@
 import { appLogger } from './appLogger';
-import { supabase, supabaseAdmin } from './database';
+import { getCurrentUser } from './database';
 
 export interface SearchResult {
   id: string;
@@ -32,7 +32,7 @@ export async function searchDocumentsClient(
     console.log('Request body:', requestBody);
 
     // Get current user for logging
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await getCurrentUser();
 
     const response = await fetch(webhookUrl, {
       method: 'POST',
@@ -108,7 +108,7 @@ export async function searchDocumentsClient(
   } catch (error: any) {
     console.error('Error calling vector search function:', error);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { user } = await getCurrentUser();
 
     await appLogger.logError({
       action: 'vector_search_failed',

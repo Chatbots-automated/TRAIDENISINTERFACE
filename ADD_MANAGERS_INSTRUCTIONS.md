@@ -1,8 +1,8 @@
 # Adding Managers (Vadybininkai) to Database
 
-## Method 1: Run SQL directly in Supabase Dashboard
+## Method 1: Run SQL directly in pgAdmin or psql
 
-Go to your Supabase project dashboard → SQL Editor and run:
+Connect to your PostgreSQL database and run:
 
 ```sql
 INSERT INTO app_users (email, display_name, full_name, kodas, role, is_admin, created_at, id)
@@ -31,7 +31,7 @@ ON CONFLICT (email) DO UPDATE SET
 
 ```javascript
 async function addManagers() {
-  const { supabase } = await import('./src/lib/supabase.js');
+  const { db } = await import('./src/lib/database.js');
 
   const managers = [
     { email: 'edvinas.linkus@traidenis.org', full_name: 'Edvinas Linkus', kodas: 'EL' },
@@ -47,7 +47,7 @@ async function addManagers() {
 
   for (const manager of managers) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('app_users')
         .upsert({
           email: manager.email,
@@ -64,7 +64,7 @@ async function addManagers() {
       if (error) {
         console.error(`Error adding ${manager.full_name}:`, error);
       } else {
-        console.log(`✓ Added ${manager.full_name} (${manager.kodas})`);
+        console.log(`Added ${manager.full_name} (${manager.kodas})`);
       }
     } catch (err) {
       console.error(`Exception adding ${manager.full_name}:`, err);
@@ -79,7 +79,7 @@ addManagers();
 
 ## Verification
 
-After running either method, verify by running this in SQL Editor or browser console:
+After running either method, verify by running this in psql/pgAdmin:
 
 ```sql
 SELECT full_name, kodas, role FROM app_users WHERE role = 'vadybininkas' ORDER BY full_name;
@@ -87,7 +87,7 @@ SELECT full_name, kodas, role FROM app_users WHERE role = 'vadybininkas' ORDER B
 
 Or in browser console:
 ```javascript
-const { supabase } = await import('./src/lib/supabase.js');
-const { data } = await supabase.from('app_users').select('full_name, kodas, role').eq('role', 'vadybininkas').order('full_name');
+const { db } = await import('./src/lib/database.js');
+const { data } = await db.from('app_users').select('full_name, kodas, role').eq('role', 'vadybininkas').order('full_name');
 console.table(data);
 ```

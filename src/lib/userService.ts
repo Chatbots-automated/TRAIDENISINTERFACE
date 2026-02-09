@@ -1,4 +1,4 @@
-import { supabase } from './database';
+import { db } from './database';
 
 export interface AppUserData {
   id: string;
@@ -17,7 +17,7 @@ export interface AppUserData {
  */
 export const getAllUsersData = async (): Promise<AppUserData[]> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .order('created_at', { ascending: false });
@@ -39,7 +39,7 @@ export const getAllUsersData = async (): Promise<AppUserData[]> => {
  */
 export const getEconomists = async (): Promise<AppUserData[]> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .ilike('role', 'ekonomistas')
@@ -62,7 +62,7 @@ export const getEconomists = async (): Promise<AppUserData[]> => {
  */
 export const getManagers = async (): Promise<AppUserData[]> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .ilike('role', 'vadybininkas')
@@ -99,7 +99,7 @@ export const getUserByKodas = (kodas: string, users: AppUserData[]): AppUserData
  */
 export const getShareableUsers = async (excludeUserId: string): Promise<AppUserData[]> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .neq('id', excludeUserId)
