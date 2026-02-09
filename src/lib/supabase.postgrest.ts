@@ -1,0 +1,693 @@
+/**
+ * PostgREST-based database client
+ * This replaces the Supabase client for local PostgreSQL + PostgREST setup
+ */
+
+import { postgrest, createClient } from './postgrest';
+import { appLogger } from './appLogger';
+
+const postgrestUrl = import.meta.env.VITE_POSTGREST_URL || 'http://localhost:3000';
+const postgrestAnonKey = import.meta.env.VITE_POSTGREST_ANON_KEY || 'anon';
+
+if (!postgrestUrl) {
+  throw new Error('Missing VITE_POSTGREST_URL environment variable');
+}
+
+// Main client (using anon role)
+export const supabase = createClient(postgrestUrl, postgrestAnonKey);
+
+// Admin client (same as main client for PostgREST - permissions controlled by DB roles)
+export const supabaseAdmin = createClient(postgrestUrl, postgrestAnonKey);
+
+console.log('✅ PostgREST client configured at:', postgrestUrl);
+
+// ============================================================================
+// Auth helpers (using local password-based authentication)
+// ============================================================================
+
+export const signUp = async (email: string, password: string, fullName?: string) => {
+  try {
+    const newUserId = crypto.randomUUID();
+
+    // Create app_users record with password
+    const { data: appUserData, error: appUserError } = await supabase
+      .from('app_users')
+      .insert([{
+        id: newUserId,
+        email: email,
+        password: password,
+        display_name: fullName,
+        is_admin: false
+      }])
+      .select()
+      .single()
+      ;
+
+    if (appUserError) {
+      console.error('Error creating app user:', appUserError);
+      await appLogger.logAuth({
+        action: 'signup_failed',
+        userEmail: email,
+        metadata: { error: appUserError.message, display_name: fullName }
+      });
+      return { data: null, error: appUserError };
+    }
+
+    await appLogger.logAuth({
+      action: 'signup_success',
+      userId: newUserId,
+      userEmail: email,
+      metadata: { display_name: fullName }
+    });
+
+    // Return user data in expected format
+    return {
+      data: {
+        user: appUserData,
+        session: { user: appUserData }
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('Signup error:', error);
+    return { data: null, error: { message: error.message || 'Signup failed' } };
+  }
+};
+
+export const signIn = async (email: string, password: string) => {
+  try {
+    // Query app_users table for email and password
+    const { data: userData, error } = await supabase
+      .from('app_users')
+      .select('*')
+      .eq('email', email)
+      .eq('password', password)
+      .single()
+      ;
+
+    if (error || !userData) {
+      await appLogger.logAuth({
+        action: 'login_failed',
+        userEmail: email,
+        metadata: { error: 'Invalid credentials' }
+      });
+      return { data: null, error: { message: 'Invalid email or password' } };
+    }
+
+    // Store user in localStorage for session persistence
+    localStorage.setItem('currentUser', JSON.stringify(userData));
+
+    await appLogger.logAuth({
+      action: 'login_success',
+      userId: userData.id,
+      userEmail: email,
+      metadata: { is_admin: userData.is_admin }
+    });
+
+    // Return user data in the expected format
+    return {
+      data: {
+        user: userData,
+        session: { user: userData }
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('Login error:', error);
+    await appLogger.logAuth({
+      action: 'login_failed',
+      userEmail: email,
+      level: 'error',
+      metadata: { error: error.message }
+    });
+    return { data: null, error: { message: 'Invalid email or password' } };
+  }
+};
+
+export const signOut = async () => {
+  try {
+    const { user } = await getCurrentUser();
+    // Remove user from localStorage
+    localStorage.removeItem('currentUser');
+    // Clear Voiceflow chat session state (forces "Start Chat" button on next login)
+    sessionStorage.removeItem('traidenis_voiceflow_chat_started');
+
+    if (user) {
+      await appLogger.logAuth({
+        action: 'logout',
+        userId: user.id,
+        userEmail: user.email
+      });
+    }
+
+    return { error: null };
+  } catch (error) {
+    console.error('Error signing out:', error);
+    return { error };
+  }
+};
+
+export const getCurrentUser = async () => {
+  try {
+    // Check localStorage for current user
+    const storedUser = localStorage.getItem('currentUser');
+    if (storedUser) {
+      const userData = JSON.parse(storedUser);
+      return { user: userData, error: null };
+    }
+    return { user: null, error: null };
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return { user: null, error: null };
+  }
+};
+
+// ============================================================================
+// Admin functions
+// ============================================================================
+
+export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
+  try {
+    const { user: adminUser } = await getCurrentUser();
+
+    // Create app_users record with password
+    const { data: appUserData, error: appUserError } = await supabase
+      .from('app_users')
+      .insert([{
+        id: crypto.randomUUID(),
+        email: email,
+        password: password,
+        display_name: displayName,
+        is_admin: isAdmin
+      }])
+      .select()
+      .single()
+      ;
+
+    if (appUserError) {
+      console.error('Error creating app user:', appUserError);
+      await appLogger.logUserManagement({
+        action: 'user_created',
+        userId: adminUser?.id,
+        userEmail: adminUser?.email,
+        targetUserEmail: email,
+        level: 'error',
+        metadata: { error: appUserError.message, is_admin: isAdmin }
+      });
+      return { data: null, error: appUserError };
+    }
+
+    await appLogger.logUserManagement({
+      action: 'user_created',
+      userId: adminUser?.id,
+      userEmail: adminUser?.email,
+      targetUserId: appUserData.id,
+      targetUserEmail: email,
+      metadata: { display_name: displayName, is_admin: isAdmin }
+    });
+
+    return { data: appUserData, error: null };
+  } catch (error: any) {
+    await appLogger.logError({
+      action: 'create_user_by_admin_failed',
+      error,
+      level: 'error',
+      metadata: { target_email: email }
+    });
+    return { data: null, error };
+  }
+};
+
+export const getAllUsers = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
+      .order('created_at', { ascending: false })
+      ;
+
+    if (error) {
+      console.error('Error getting users:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getAllUsers:', error);
+    return { data: null, error };
+  }
+};
+
+export const updateUserByAdmin = async (userId: string, updates: { display_name?: string; is_admin?: boolean; password?: string }) => {
+  try {
+    const { user: adminUser } = await getCurrentUser();
+
+    // Get target user email
+    const { data: targetUser } = await supabase
+      .from('app_users')
+      .select('email')
+      .eq('id', userId)
+      .single()
+      ;
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single()
+      ;
+
+    if (error) {
+      console.error('Error updating user:', error);
+      await appLogger.logUserManagement({
+        action: 'user_updated',
+        userId: adminUser?.id,
+        userEmail: adminUser?.email,
+        targetUserId: userId,
+        targetUserEmail: targetUser?.email,
+        level: 'error',
+        metadata: { error: error.message, updates }
+      });
+      throw error;
+    }
+
+    await appLogger.logUserManagement({
+      action: 'user_updated',
+      userId: adminUser?.id,
+      userEmail: adminUser?.email,
+      targetUserId: userId,
+      targetUserEmail: targetUser?.email,
+      metadata: { updates }
+    });
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in updateUserByAdmin:', error);
+    return { data: null, error };
+  }
+};
+
+export const deleteUserByAdmin = async (userId: string) => {
+  try {
+    const { user: adminUser } = await getCurrentUser();
+
+    // Get target user email before deleting
+    const { data: targetUser } = await supabase
+      .from('app_users')
+      .select('email')
+      .eq('id', userId)
+      .single()
+      ;
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .delete()
+      .eq('id', userId)
+      ;
+
+    if (error) {
+      console.error('Error deleting user:', error);
+      await appLogger.logUserManagement({
+        action: 'user_deleted',
+        userId: adminUser?.id,
+        userEmail: adminUser?.email,
+        targetUserId: userId,
+        targetUserEmail: targetUser?.email,
+        level: 'error',
+        metadata: { error: error.message }
+      });
+      throw error;
+    }
+
+    await appLogger.logUserManagement({
+      action: 'user_deleted',
+      userId: adminUser?.id,
+      userEmail: adminUser?.email,
+      targetUserId: userId,
+      targetUserEmail: targetUser?.email
+    });
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in deleteUserByAdmin:', error);
+    return { data: null, error };
+  }
+};
+
+// ============================================================================
+// Project management
+// ============================================================================
+
+export const getOrCreateDefaultProject = async (userId: string, userEmail: string) => {
+  try {
+    // Check if user is a member of any project
+    const { data: membershipData, error: membershipError } = await supabase
+      .from('project_members')
+      .select('project_id, role')
+      .eq('user_id', userId)
+      .limit(1)
+      ;
+
+    if (membershipError) {
+      console.error('Error checking project membership:', membershipError);
+      throw membershipError;
+    }
+
+    // If user is member of a project, return that project ID
+    if (membershipData && membershipData.length > 0) {
+      return membershipData[0].project_id;
+    }
+
+    // Generate a new project ID (since we don't have a projects table)
+    const newProjectId = crypto.randomUUID();
+
+    // Add user as owner of the new project
+    const { error: memberError } = await supabase
+      .from('project_members')
+      .insert({
+        project_id: newProjectId,
+        user_id: userId,
+        role: 'owner'
+      })
+      ;
+
+    if (memberError) {
+      console.error('Error adding user as project member:', memberError);
+      throw memberError;
+    }
+
+    return newProjectId;
+  } catch (error) {
+    console.error('Error in getOrCreateDefaultProject:', error);
+    throw error;
+  }
+};
+
+// ============================================================================
+// Chat helpers
+// ============================================================================
+
+export const createChatThread = async (projectId: string, title: string, authorEmail: string) => {
+  try {
+    // Get current user to set author_id
+    const { user: currentUser } = await getCurrentUser();
+
+    const { data, error } = await supabase
+      .from('chat_items')
+      .insert([{
+        type: 'thread',
+        project_id: projectId,
+        title: title,
+        author_ref: authorEmail,
+        author_id: currentUser?.id || null,
+        participants: [authorEmail],
+        message_count: 0,
+        last_message_at: new Date().toISOString(),
+        status: 'active'
+      }])
+      .select()
+      .single()
+      ;
+
+    if (error) {
+      console.error('Error creating chat thread:', error);
+      throw error;
+    }
+
+    return { data: data.id, error: null };
+  } catch (error) {
+    console.error('Error in createChatThread:', error);
+    return { data: null, error };
+  }
+};
+
+export const sendMessage = async (
+  projectId: string,
+  threadId: string,
+  content: string,
+  role: 'user' | 'assistant' = 'user',
+  authorEmail: string,
+  authorName?: string,
+  existingHistory?: any[]
+) => {
+  try {
+    // Get current chat history
+    const { data: threadData, error: fetchError } = await supabase
+      .from('chat_items')
+      .select('chat_history, message_count')
+      .eq('id', threadId)
+      .eq('type', 'thread')
+      .single()
+      ;
+
+    if (fetchError) {
+      console.error('Error fetching thread:', fetchError);
+      throw fetchError;
+    }
+
+    // Get existing chat history or initialize empty array
+    const currentHistory = threadData?.chat_history || [];
+
+    // Create new message object
+    const newMessage = {
+      id: Date.now().toString(),
+      role: role,
+      content: content,
+      author_ref: authorEmail,
+      author_name: authorName || '',
+      timestamp: new Date().toISOString()
+    };
+
+    // Add new message to history
+    const updatedHistory = [...currentHistory, newMessage];
+
+    // Update thread with new message in chat_history
+    const currentCount = threadData?.message_count || 0;
+    const { data, error } = await supabase
+      .from('chat_items')
+      .update({
+        chat_history: updatedHistory,
+        message_count: currentCount + 1,
+        last_message_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', threadId)
+      .eq('type', 'thread')
+      .select()
+      .single()
+      ;
+
+    if (error) {
+      console.error('Error updating thread with message:', error);
+      throw error;
+    }
+
+    return { data: newMessage.id, error: null };
+  } catch (error) {
+    console.error('Error in sendMessage:', error);
+    return { data: null, error };
+  }
+};
+
+export const getChatThreads = async (projectId: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('chat_items')
+      .select('id, title, message_count, last_message_at, created_at')
+      .eq('type', 'thread')
+      .eq('project_id', projectId)
+      .is('deleted_at', null)
+      .order('last_message_at', { ascending: false })
+      ;
+
+    if (error) {
+      console.error('Error getting chat threads:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getChatThreads:', error);
+    return { data: null, error };
+  }
+};
+
+export const getChatMessages = async (threadId: string) => {
+  try {
+    const { data: threadData, error } = await supabase
+      .from('chat_items')
+      .select('chat_history')
+      .eq('id', threadId)
+      .eq('type', 'thread')
+      .single()
+      ;
+
+    if (error) {
+      console.error('Error getting chat messages:', error);
+      throw error;
+    }
+
+    // Return the chat_history array, or empty array if none
+    const messages = threadData?.chat_history || [];
+    return { data: messages, error: null };
+  } catch (error) {
+    console.error('Error in getChatMessages:', error);
+    return { data: null, error };
+  }
+};
+
+// Soft delete a chat thread (sets deleted_at timestamp)
+export const deleteChatThread = async (threadId: string) => {
+  try {
+    const { error } = await supabase
+      .from('chat_items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', threadId)
+      .eq('type', 'thread')
+      ;
+
+    if (error) {
+      console.error('Error deleting chat thread:', error);
+      throw error;
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error in deleteChatThread:', error);
+    return { success: false, error };
+  }
+};
+
+// Update chat thread title
+export const updateChatThreadTitle = async (threadId: string, title: string) => {
+  try {
+    const { error } = await supabase
+      .from('chat_items')
+      .update({ title })
+      .eq('id', threadId)
+      .eq('type', 'thread')
+      ;
+
+    if (error) {
+      console.error('Error updating chat thread title:', error);
+      throw error;
+    }
+
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error in updateChatThreadTitle:', error);
+    return { success: false, error };
+  }
+};
+
+// ============================================================================
+// Document helpers
+// ============================================================================
+
+export const createDocument = async (
+  content: string,
+  metadata: Record<string, any> = {}
+) => {
+  try {
+    const { data, error } = await supabase
+      .from('documents')
+      .insert([{
+        content,
+        metadata
+      }])
+      .select()
+      .single()
+      ;
+
+    if (error) {
+      console.error('Error creating document:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in createDocument:', error);
+    return { data: null, error };
+  }
+};
+
+export const updateDocument = async (
+  id: string,
+  content?: string,
+  metadata?: Record<string, any>
+) => {
+  try {
+    const updates: any = {};
+    if (content !== undefined) updates.content = content;
+    if (metadata !== undefined) {
+      // If metadata is a string, try to parse it first
+      if (typeof metadata === 'string') {
+        try {
+          updates.metadata = JSON.parse(metadata);
+        } catch (e) {
+          throw new Error('Invalid JSON format in metadata');
+        }
+      } else {
+        updates.metadata = metadata;
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('documents')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single()
+      ;
+
+    if (error) {
+      console.error('Error updating document:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in updateDocument:', error);
+    return { data: null, error };
+  }
+};
+
+export const deleteDocument = async (id: string) => {
+  try {
+    const { data, error } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', id)
+      ;
+
+    if (error) {
+      console.error('Error deleting document:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in deleteDocument:', error);
+    return { data: null, error };
+  }
+};
+
+export const getDocuments = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      ;
+
+    if (error) {
+      console.error('Error getting documents:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getDocuments:', error);
+    return { data: null, error };
+  }
+};
