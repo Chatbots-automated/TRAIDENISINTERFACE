@@ -341,46 +341,14 @@ export const deleteUserByAdmin = async (userId: string) => {
 
 export const getOrCreateDefaultProject = async (userId: string, userEmail: string) => {
   try {
-    // Check if user is a member of any project
-    const { data: membershipData, error: membershipError } = await supabase
-      .from('project_members')
-      .select('project_id, role')
-      .eq('user_id', userId)
-      .limit(1)
-      ;
-
-    if (membershipError) {
-      console.error('Error checking project membership:', membershipError);
-      throw membershipError;
-    }
-
-    // If user is member of a project, return that project ID
-    if (membershipData && membershipData.length > 0) {
-      return membershipData[0].project_id;
-    }
-
-    // Generate a new project ID (since we don't have a projects table)
-    const newProjectId = crypto.randomUUID();
-
-    // Add user as owner of the new project
-    const { error: memberError } = await supabase
-      .from('project_members')
-      .insert({
-        project_id: newProjectId,
-        user_id: userId,
-        role: 'owner'
-      })
-      ;
-
-    if (memberError) {
-      console.error('Error adding user as project member:', memberError);
-      throw memberError;
-    }
-
-    return newProjectId;
+    // For now, use userId as the project ID
+    // In the future, you can implement a proper projects table
+    console.log('[Auth] Creating/getting project for user:', userId);
+    return userId;
   } catch (error) {
     console.error('Error in getOrCreateDefaultProject:', error);
-    throw error;
+    // Return userId as fallback
+    return userId;
   }
 };
 

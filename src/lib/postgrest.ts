@@ -551,7 +551,9 @@ class PostgrestClient {
     this.baseUrl = url;
     this.headers = {
       'apikey': anonKey,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Prefer': 'return=representation'
     };
   }
 
