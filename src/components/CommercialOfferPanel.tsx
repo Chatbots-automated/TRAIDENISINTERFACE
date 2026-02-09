@@ -5,6 +5,7 @@ import {
   updateCommercialOffer,
   CommercialOffer,
 } from '../lib/commercialOfferStorage';
+import { getWebhookUrl } from '../lib/webhooksService';
 
 interface CommercialOfferPanelProps {
   isOpen: boolean;
@@ -49,7 +50,12 @@ export default function CommercialOfferPanel({
     setIsFilling(true);
 
     try {
-      const webhookUrl = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6';
+      const webhookUrl = await getWebhookUrl('n8n_generate_doc');
+
+      if (!webhookUrl) {
+        console.error('Webhook "n8n_generate_doc" not found or inactive');
+        return;
+      }
 
       const response = await fetch(webhookUrl, {
         method: 'POST',

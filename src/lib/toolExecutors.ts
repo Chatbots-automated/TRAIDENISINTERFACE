@@ -1,16 +1,22 @@
 /**
  * Execute tools via n8n webhooks + UI interactions
  *
+ * Webhook URLs are fetched from the database `webhooks` table.
+ * Keys: n8n_get_products, n8n_get_prices, n8n_get_multiplier
+ *
  * - get_products: Query products table by product_code
  * - get_prices: Query pricing table by product id
  * - get_multiplier: Get latest price multiplier
  * - display_buttons: Display interactive buttons in UI (special handling)
  */
 
-const N8N_WEBHOOKS = {
-  get_products: 'https://n8n.traidenis.org/webhook/91307d0b-16c6-4de5-b349-ea274dd9259d',
-  get_prices: 'https://n8n.traidenis.org/webhook/60d19a37-65b1-492f-ad35-3bbb474f3cd9',
-  get_multiplier: 'https://n8n.traidenis.org/webhook/77887f94-dfa2-48fe-8b13-8798b693a55a'
+import { getWebhookUrl } from './webhooksService';
+
+// Map tool names to webhook keys in the database
+const TOOL_WEBHOOK_KEYS: Record<string, string> = {
+  get_products: 'n8n_get_products',
+  get_prices: 'n8n_get_prices',
+  get_multiplier: 'n8n_get_multiplier'
 };
 
 /**
@@ -18,10 +24,15 @@ const N8N_WEBHOOKS = {
  */
 export async function executeGetProductsTool(input: { product_code: string }): Promise<string> {
   try {
-    console.log('[Tool: get_products] Searching for product code:', input.product_code);
-    console.log('[Tool: get_products] Calling webhook:', N8N_WEBHOOKS.get_products);
+    const webhookUrl = await getWebhookUrl(TOOL_WEBHOOK_KEYS.get_products);
+    if (!webhookUrl) {
+      return JSON.stringify({ success: false, error: 'Webhook "n8n_get_products" not found or inactive' });
+    }
 
-    const response = await fetch(N8N_WEBHOOKS.get_products, {
+    console.log('[Tool: get_products] Searching for product code:', input.product_code);
+    console.log('[Tool: get_products] Calling webhook:', webhookUrl);
+
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -62,10 +73,15 @@ export async function executeGetProductsTool(input: { product_code: string }): P
  */
 export async function executeGetPricesTool(input: { id: number }): Promise<string> {
   try {
-    console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
-    console.log('[Tool: get_prices] Calling webhook:', N8N_WEBHOOKS.get_prices);
+    const webhookUrl = await getWebhookUrl(TOOL_WEBHOOK_KEYS.get_prices);
+    if (!webhookUrl) {
+      return JSON.stringify({ success: false, error: 'Webhook "n8n_get_prices" not found or inactive' });
+    }
 
-    const response = await fetch(N8N_WEBHOOKS.get_prices, {
+    console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
+    console.log('[Tool: get_prices] Calling webhook:', webhookUrl);
+
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -106,10 +122,15 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
  */
 export async function executeGetMultiplierTool(): Promise<string> {
   try {
-    console.log('[Tool: get_multiplier] Fetching latest price multiplier');
-    console.log('[Tool: get_multiplier] Calling webhook:', N8N_WEBHOOKS.get_multiplier);
+    const webhookUrl = await getWebhookUrl(TOOL_WEBHOOK_KEYS.get_multiplier);
+    if (!webhookUrl) {
+      return JSON.stringify({ success: false, error: 'Webhook "n8n_get_multiplier" not found or inactive' });
+    }
 
-    const response = await fetch(N8N_WEBHOOKS.get_multiplier, {
+    console.log('[Tool: get_multiplier] Fetching latest price multiplier');
+    console.log('[Tool: get_multiplier] Calling webhook:', webhookUrl);
+
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'

@@ -1,7 +1,6 @@
 import { db } from './database';
 import { appLogger } from './appLogger';
-
-const WEBHOOK_URL = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/3961e6fa-4199-4f85-82f5-4e7e036f7e18';
+import { getWebhookUrl } from './webhooksService';
 
 export interface InstructionVariable {
   id: string;
@@ -276,6 +275,13 @@ async function triggerWebhook(
   action: string
 ): Promise<void> {
   try {
+    const webhookUrl = await getWebhookUrl('n8n_instructions_sync');
+
+    if (!webhookUrl) {
+      console.warn('[Instructions] Webhook "n8n_instructions_sync" not found or inactive, skipping');
+      return;
+    }
+
     const payload = {
       action,
       timestamp: new Date().toISOString(),
@@ -286,7 +292,7 @@ async function triggerWebhook(
       variables
     };
 
-    const response = await fetch(WEBHOOK_URL, {
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
