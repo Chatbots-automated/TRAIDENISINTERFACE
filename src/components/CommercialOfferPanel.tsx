@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X, FileText, Loader2 } from 'lucide-react';
+import { X, FileText } from 'lucide-react';
 import {
   getCommercialOffer,
   updateCommercialOffer,
   CommercialOffer,
 } from '../lib/commercialOfferStorage';
-import { getWebhookUrl } from '../lib/webhooksService';
 
 interface CommercialOfferPanelProps {
   isOpen: boolean;
@@ -19,8 +18,6 @@ export default function CommercialOfferPanel({
   threadId,
 }: CommercialOfferPanelProps) {
   const [offer, setOffer] = useState<CommercialOffer | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFilling, setIsFilling] = useState(false);
 
   // Load offer when panel opens or threadId changes
   useEffect(() => {
@@ -32,7 +29,7 @@ export default function CommercialOfferPanel({
 
   // Handle field updates
   const handleFieldChange = (field: keyof Omit<CommercialOffer, 'createdAt' | 'updatedAt'>, value: string) => {
-    if (!threadId || isFilling) return;
+    if (!threadId) return;
 
     setOffer((prev) => {
       if (!prev) return prev;
@@ -41,55 +38,6 @@ export default function CommercialOfferPanel({
 
     // Save to localStorage
     updateCommercialOffer(threadId, { [field]: value });
-  };
-
-  // Handle Fill Doc button click
-  const handleFillDoc = async () => {
-    if (!offer || !threadId || isFilling) return;
-
-    setIsFilling(true);
-
-    try {
-      const webhookUrl = await getWebhookUrl('n8n_generate_doc');
-
-      if (!webhookUrl) {
-        console.error('Webhook "n8n_generate_doc" not found or inactive');
-        return;
-      }
-
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query_type: 'generate_doc',
-          thread_id: threadId,
-          commercial_offer: {
-            components: offer.components,
-            tech_description: offer.techDescription,
-            economy_tier: offer.economyTier,
-            midi_tier: offer.midiTier,
-            maxi_tier: offer.maxiTier,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Webhook returned ${response.status}`);
-      }
-
-      // Wait for and process the response
-      const result = await response.text();
-      console.log('Fill Doc response:', result);
-
-      // You can add additional handling here based on the webhook response
-
-    } catch (error) {
-      console.error('Error calling Fill Doc webhook:', error);
-    } finally {
-      setIsFilling(false);
-    }
   };
 
   // Handle click outside to close
@@ -130,7 +78,7 @@ export default function CommercialOfferPanel({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6 overflow-y-auto h-[calc(100%-140px)]">
+        <div className="p-6 space-y-6 overflow-y-auto h-[calc(100%-73px)]">
           {offer ? (
             <>
               {/* Components Section */}
@@ -141,10 +89,7 @@ export default function CommercialOfferPanel({
                 <textarea
                   value={offer.components}
                   onChange={(e) => handleFieldChange('components', e.target.value)}
-                  disabled={isFilling}
-                  className={`w-full h-40 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-40 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                   placeholder="Components will appear here..."
                 />
               </div>
@@ -157,10 +102,7 @@ export default function CommercialOfferPanel({
                 <textarea
                   value={offer.techDescription}
                   onChange={(e) => handleFieldChange('techDescription', e.target.value)}
-                  disabled={isFilling}
-                  className={`w-full h-40 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-40 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                   placeholder="Technological description will appear here..."
                 />
               </div>
@@ -174,10 +116,7 @@ export default function CommercialOfferPanel({
                 <textarea
                   value={offer.economyTier}
                   onChange={(e) => handleFieldChange('economyTier', e.target.value)}
-                  disabled={isFilling}
-                  className={`w-full h-32 p-3 border border-green-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-32 p-3 border border-green-300 rounded-lg resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                   placeholder="Economy tier pricing will appear here..."
                 />
               </div>
@@ -191,10 +130,7 @@ export default function CommercialOfferPanel({
                 <textarea
                   value={offer.midiTier}
                   onChange={(e) => handleFieldChange('midiTier', e.target.value)}
-                  disabled={isFilling}
-                  className={`w-full h-32 p-3 border border-blue-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-32 p-3 border border-blue-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                   placeholder="Midi tier pricing will appear here..."
                 />
               </div>
@@ -208,10 +144,7 @@ export default function CommercialOfferPanel({
                 <textarea
                   value={offer.maxiTier}
                   onChange={(e) => handleFieldChange('maxiTier', e.target.value)}
-                  disabled={isFilling}
-                  className={`w-full h-32 p-3 border border-purple-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
-                    isFilling ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
-                  }`}
+                  className="w-full h-32 p-3 border border-purple-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="Maxi tier pricing will appear here..."
                 />
               </div>
@@ -256,47 +189,7 @@ export default function CommercialOfferPanel({
           )}
         </div>
 
-        {/* Footer with Fill Doc Button */}
-        {offer && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 bg-white">
-            <button
-              onClick={handleFillDoc}
-              disabled={isFilling}
-              className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {isFilling ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Generating Document...</span>
-                </>
-              ) : (
-                <>
-                  <FileText className="w-5 h-5" />
-                  <span>Fill Doc</span>
-                </>
-              )}
-            </button>
-            {isFilling && (
-              <p className="text-center text-sm text-gray-500 mt-2">
-                This may take up to 2 minutes. Please wait...
-              </p>
-            )}
-          </div>
-        )}
       </div>
-
-      {/* Loading overlay for the text areas */}
-      {isFilling && (
-        <style>{`
-          @keyframes pulse-subtle {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-          }
-          .filling-animation {
-            animation: pulse-subtle 1.5s ease-in-out infinite;
-          }
-        `}</style>
-      )}
     </>
   );
 }

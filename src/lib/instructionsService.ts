@@ -1,6 +1,5 @@
 import { db } from './database';
 import { appLogger } from './appLogger';
-import { getWebhookUrl } from './webhooksService';
 
 export interface InstructionVariable {
   id: string;
@@ -195,9 +194,6 @@ export async function revertToVersion(
       versionNumber
     );
 
-    // 5. Trigger webhook with all updated variables
-    await triggerWebhook(snapshot, userId, userEmail, `revert_to_v${versionNumber}`);
-
     await appLogger.logSystem({
       action: 'instruction_revert',
       userId,
@@ -216,7 +212,7 @@ export async function revertToVersion(
 }
 
 /**
- * Save a variable and trigger webhook
+ * Save a variable and create version snapshot
  */
 export async function saveInstructionVariable(
   variableKey: string,
@@ -226,10 +222,8 @@ export async function saveInstructionVariable(
   createVersion: boolean = true
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Update the variable
     await updateInstructionVariable(variableKey, content, userId);
 
-    // 2. Optionally create a version snapshot
     if (createVersion) {
       const variable = await getInstructionVariable(variableKey);
       await createVersionSnapshot(
@@ -237,16 +231,6 @@ export async function saveInstructionVariable(
         `Updated: ${variable?.variable_name || variableKey}`
       );
     }
-
-    // 3. Get all current variables for webhook
-    const allVariables = await getInstructionVariables();
-    const payload: Record<string, string> = {};
-    allVariables.forEach(v => {
-      payload[v.variable_key] = v.content;
-    });
-
-    // 4. Trigger webhook
-    await triggerWebhook(payload, userId, userEmail, `update_${variableKey}`);
 
     await appLogger.logSystem({
       action: 'instruction_saved',
@@ -262,57 +246,6 @@ export async function saveInstructionVariable(
   } catch (error: any) {
     console.error('Error saving instruction variable:', error);
     return { success: false, error: error.message };
-  }
-}
-
-/**
- * Trigger the n8n webhook with variable data
- */
-async function triggerWebhook(
-  variables: Record<string, string>,
-  userId: string,
-  userEmail: string,
-  action: string
-): Promise<void> {
-  try {
-    const webhookUrl = await getWebhookUrl('n8n_instructions_sync');
-
-    if (!webhookUrl) {
-      console.warn('[Instructions] Webhook "n8n_instructions_sync" not found or inactive, skipping');
-      return;
-    }
-
-    const payload = {
-      action,
-      timestamp: new Date().toISOString(),
-      user: {
-        id: userId,
-        email: userEmail
-      },
-      variables
-    };
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      console.warn('Webhook returned non-OK status:', response.status);
-    }
-
-    console.log('Webhook triggered successfully for action:', action);
-  } catch (error) {
-    // Log but don't throw - webhook failure shouldn't block the save
-    console.error('Failed to trigger webhook:', error);
-    await appLogger.logError({
-      action: 'instruction_webhook_failed',
-      error,
-      metadata: { webhook_action: action }
-    });
   }
 }
 
@@ -382,16 +315,6 @@ export async function bulkUpdateVariables(
         `Bulk update: ${updates.length} variables`
       );
     }
-
-    // Get all variables for webhook
-    const allVariables = await getInstructionVariables();
-    const payload: Record<string, string> = {};
-    allVariables.forEach(v => {
-      payload[v.variable_key] = v.content;
-    });
-
-    // Trigger webhook
-    await triggerWebhook(payload, userId, userEmail, 'bulk_update');
 
     return { success: true };
   } catch (error: any) {

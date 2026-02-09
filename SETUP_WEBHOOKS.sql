@@ -79,59 +79,7 @@ INSERT INTO webhooks (
   is_active = EXCLUDED.is_active,
   updated_at = NOW();
 
--- 4. Generate Document (Fill Doc) - Commercial offer document generation
-INSERT INTO webhooks (
-  id,
-  webhook_key,
-  webhook_name,
-  description,
-  url,
-  is_active,
-  created_at,
-  updated_at
-) VALUES (
-  gen_random_uuid(),
-  'n8n_generate_doc',
-  'Generate Document (Fill Doc)',
-  'Generates a commercial offer document from structured offer data. Triggered by the "Fill Doc" button in the Commercial Offer panel.',
-  'https://n8n-self-host-gedarta.onrender.com/webhook-test/16bbcb4a-d49e-4590-883b-440eb952b3c6',
-  true,
-  NOW(),
-  NOW()
-) ON CONFLICT (webhook_key) DO UPDATE SET
-  url = EXCLUDED.url,
-  webhook_name = EXCLUDED.webhook_name,
-  description = EXCLUDED.description,
-  is_active = EXCLUDED.is_active,
-  updated_at = NOW();
-
--- 5. Instructions Sync - Syncs prompt instruction variables to n8n
-INSERT INTO webhooks (
-  id,
-  webhook_key,
-  webhook_name,
-  description,
-  url,
-  is_active,
-  created_at,
-  updated_at
-) VALUES (
-  gen_random_uuid(),
-  'n8n_instructions_sync',
-  'Instructions Variable Sync',
-  'Triggers when instruction variables (system prompt sections) are saved or reverted. Sends all current variable values to n8n for syncing.',
-  'https://n8n-self-host-gedarta.onrender.com/webhook-test/3961e6fa-4199-4f85-82f5-4e7e036f7e18',
-  true,
-  NOW(),
-  NOW()
-) ON CONFLICT (webhook_key) DO UPDATE SET
-  url = EXCLUDED.url,
-  webhook_name = EXCLUDED.webhook_name,
-  description = EXCLUDED.description,
-  is_active = EXCLUDED.is_active,
-  updated_at = NOW();
-
--- 6. Get Products - SDK tool for querying products by code
+-- 4. Get Products - SDK tool for querying products by code
 INSERT INTO webhooks (
   id,
   webhook_key,
@@ -157,7 +105,7 @@ INSERT INTO webhooks (
   is_active = EXCLUDED.is_active,
   updated_at = NOW();
 
--- 7. Get Prices - SDK tool for querying pricing by product ID
+-- 5. Get Prices - SDK tool for querying pricing by product ID
 INSERT INTO webhooks (
   id,
   webhook_key,
@@ -183,7 +131,7 @@ INSERT INTO webhooks (
   is_active = EXCLUDED.is_active,
   updated_at = NOW();
 
--- 8. Get Multiplier - SDK tool for fetching latest price multiplier
+-- 6. Get Multiplier - SDK tool for fetching latest price multiplier
 INSERT INTO webhooks (
   id,
   webhook_key,
@@ -209,7 +157,7 @@ INSERT INTO webhooks (
   is_active = EXCLUDED.is_active,
   updated_at = NOW();
 
--- 9. Commercial Offer - Generate and send standard commercial offer document
+-- 7. Commercial Offer - Generate and send standard commercial offer document
 INSERT INTO webhooks (
   id,
   webhook_key,
