@@ -1342,12 +1342,35 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   };
 
   /**
+   * Render user message with {{variable}} references highlighted in blue
+   */
+  const renderUserMessageWithVariables = (text: string): React.ReactNode => {
+    const parts = text.split(/(\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\})/g);
+    if (parts.length === 1) return text;
+    return parts.map((part, i) => {
+      if (part.startsWith('{{') && part.endsWith('}}')) {
+        const varName = part.slice(2, -2);
+        return (
+          <span
+            key={i}
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-[13px] font-mono font-medium"
+            style={{ background: '#dbeafe', color: '#1d4ed8' }}
+          >
+            {`{{${varName}}}`}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
+  /**
    * Render YAML content with interactive variables
    */
   const renderInteractiveYAML = (yamlContent: string) => {
     const lines = yamlContent.split('\n');
-    // Pattern: variable_key: "value" or variable_key: |
-    const variablePattern = /^([a-z_]+[a-z0-9_]*)\s*:\s*(.+)$/;
+    // Pattern: variable_key: "value" or variable_key: | (supports mixed case like economy_HNV)
+    const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/;
 
     return lines.map((line, index) => {
       const match = line.match(variablePattern);
@@ -2072,7 +2095,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                           }}
                         >
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                            {contentString}
+                            {renderUserMessageWithVariables(contentString)}
                           </div>
                         </div>
                       </div>
@@ -2156,26 +2179,32 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               {loading && streamingContent && (
                 <div className="mb-8">
                   <MessageContent content={streamingContent.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
-                  <div className="mt-3 flex items-start gap-2">
-                    <RoboticArmLoader isAnimated={true} size={48} />
-                  </div>
                 </div>
               )}
 
               {/* Tool usage indicator */}
               {loading && isToolUse && (
-                <div className="mb-6">
-                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}>
-                    <RoboticArmLoader isAnimated={true} size={32} />
-                    <span className="text-sm">Vykdoma: {toolUseName}</span>
-                  </div>
+                <div className="mb-6 flex items-center gap-3 ml-1">
+                  <span className="text-sm" style={{ color: '#f97316' }}>
+                    ✦
+                  </span>
+                  <span className="text-sm font-medium" style={{ color: '#f97316' }}>
+                    Vykdoma: {toolUseName}...
+                  </span>
                 </div>
               )}
 
-              {/* Initial loading indicator */}
-              {loading && !streamingContent && !isToolUse && (
-                <div className="py-4 flex justify-start">
-                  <RoboticArmLoader isAnimated={true} size={48} />
+              {/* Animated loader - always at bottom of all content when loading */}
+              {loading && (
+                <div className="py-2 flex justify-start">
+                  <RoboticArmLoader isAnimated={true} size={56} />
+                </div>
+              )}
+
+              {/* Static loader when idle with conversation history */}
+              {!loading && currentConversation && currentConversation.messages.length > 0 && (
+                <div className="py-3 flex justify-start">
+                  <RoboticArmLoader isAnimated={false} size={48} />
                 </div>
               )}
 
@@ -2245,7 +2274,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   onKeyDown={handleKeyDown}
                   placeholder="Parašykite žinutę..."
                   rows={1}
-                  className="w-full px-4 py-3.5 pr-80 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full px-4 py-3.5 pr-24 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}`, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
                   disabled={loading || !systemPrompt}
                 />
@@ -2273,14 +2302,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 </div>
               </div>
             </div>
-            {/* Static loader when waiting for user input - positioned above input */}
-            {!loading && currentConversation && currentConversation.messages.length > 0 && (
-              <div className="px-6 pb-3 flex items-center gap-2">
-                <div className="max-w-4xl mx-auto w-full">
-                  <RoboticArmLoader isAnimated={false} size={36} />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

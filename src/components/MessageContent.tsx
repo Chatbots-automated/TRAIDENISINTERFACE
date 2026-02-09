@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Wrench, Calculator, Copy } from 'lucide-react';
+import { ChevronDown, ChevronRight, Calculator, Copy } from 'lucide-react';
 
 interface MessageContentProps {
   content: string;
@@ -226,29 +226,14 @@ export default function MessageContent({ content }: MessageContentProps) {
 }
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
-  const [expanded, setExpanded] = useState(false);
-  const [showAllRecords, setShowAllRecords] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [showOutputs, setShowOutputs] = useState(false);
 
-  // Group by tool name
-  const groupedTools = toolCalls.reduce((acc, call) => {
-    if (!acc[call.name]) {
-      acc[call.name] = [];
-    }
-    acc[call.name].push(call);
-    return acc;
-  }, {} as Record<string, ToolCall[]>);
+  const displayLimit = 4;
+  const displayedCalls = showAll ? toolCalls : toolCalls.slice(0, displayLimit);
+  const hiddenCount = toolCalls.length - displayLimit;
 
-  const toolCount = toolCalls.length;
-  const uniqueToolCount = Object.keys(groupedTools).length;
-  const toolEntries = Object.entries(groupedTools);
-
-  // Limit to 3 records unless showAllRecords is true
-  const displayLimit = 3;
-  const hasMoreRecords = toolEntries.length > displayLimit;
-  const displayedTools = showAllRecords ? toolEntries : toolEntries.slice(0, displayLimit);
-
-  // Format tool name for display
+  // Format tool name for display (e.g. "search_documents" -> "Search Documents")
   const formatToolName = (name: string): string => {
     return name
       .split('_')
@@ -256,72 +241,96 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       .join(' ');
   };
 
+  // Truncate parameter text for the pill display
+  const truncateParam = (text: string, maxLen: number = 70): string => {
+    const cleaned = text.replace(/\s+/g, ' ').trim();
+    if (cleaned.length <= maxLen) return cleaned;
+    return cleaned.slice(0, maxLen) + '…';
+  };
+
   return (
-    <div className="my-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors w-full text-left"
-        style={{ background: '#f0ede8', color: '#5a5550' }}
-        onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
-        onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
-      >
-        <Wrench className="w-3.5 h-3.5 flex-shrink-0" />
-        <span className="text-xs font-medium flex-1">
-          {uniqueToolCount === 1
-            ? `Naudotas įrankis: ${formatToolName(Object.keys(groupedTools)[0])} (${toolCount}×)`
-            : `Naudoti įrankiai (${toolCount})`
-          }
-        </span>
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
-        )}
-      </button>
-
-      {expanded && (
+    <div className="my-3 ml-1">
+      {/* Tree structure with vertical line */}
+      <div className="relative pl-5">
+        {/* Vertical connecting line */}
         <div
-          className="mt-1 ml-6 space-y-2"
-          onMouseEnter={() => setIsHovering(true)}
-          onMouseLeave={() => setIsHovering(false)}
-        >
-          {displayedTools.map(([toolName, calls], idx) => {
-            // Show "Show more" button in place of 3rd record when hovering and there are more records
-            if (idx === displayLimit - 1 && hasMoreRecords && isHovering && !showAllRecords) {
-              return (
-                <button
-                  key="show-more"
-                  onClick={() => setShowAllRecords(true)}
-                  className="w-full px-3 py-2 rounded text-xs transition-colors"
-                  style={{ background: '#e8e5e0', border: '1px solid #d4d1cc', color: '#5a5550' }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#dddad5'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#e8e5e0'}
-                >
-                  <div className="font-semibold">
-                    Show {toolEntries.length - displayLimit + 1} more...
-                  </div>
-                </button>
-              );
-            }
+          className="absolute left-[5px] top-1 bottom-1 w-[1.5px]"
+          style={{ background: '#d4d1cc' }}
+        />
 
-            return (
-              <div key={idx} className="px-3 py-2 rounded text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-                <div className="font-semibold mb-2" style={{ color: '#3d3935' }}>
-                  {formatToolName(toolName)} ({calls.length}×)
-                </div>
-                {calls.map((call, callIdx) => (
-                  <div key={callIdx} className="mb-2 last:mb-0">
-                    <div className="font-mono text-[11px]" style={{ color: '#5a5550' }}>
-                      <pre className="whitespace-pre-wrap break-words">{call.parameters}</pre>
-                    </div>
-                    {callIdx < calls.length - 1 && (
-                      <div className="border-t my-2" style={{ borderColor: '#e8e5e0' }} />
-                    )}
-                  </div>
-                ))}
+        <div className="space-y-1.5">
+          {displayedCalls.map((call, idx) => (
+            <div key={idx} className="relative flex items-center gap-2.5 min-h-[28px]">
+              {/* Branch connector */}
+              <div
+                className="absolute left-[-15px] top-1/2 w-[12px] h-[1.5px]"
+                style={{ background: '#d4d1cc' }}
+              />
+              {/* Tool name label */}
+              <span
+                className="text-sm font-semibold flex-shrink-0"
+                style={{ color: '#8a857f' }}
+              >
+                {formatToolName(call.name)}
+              </span>
+              {/* Parameter pill */}
+              <code
+                className="px-2 py-0.5 rounded text-xs truncate max-w-[400px]"
+                style={{
+                  background: '#f0ede8',
+                  color: '#5a5550',
+                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace'
+                }}
+              >
+                {truncateParam(call.parameters)}
+              </code>
+              {/* Show tool outputs button - only on first tool */}
+              {idx === 0 && (
+                <button
+                  onClick={() => setShowOutputs(!showOutputs)}
+                  className="flex-shrink-0 px-2.5 py-0.5 rounded text-xs transition-colors"
+                  style={{
+                    background: showOutputs ? '#e8e5e0' : 'transparent',
+                    color: '#8a857f',
+                    border: '1px solid #e8e5e0'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = showOutputs ? '#e8e5e0' : 'transparent'}
+                >
+                  {showOutputs ? 'Hide outputs' : 'Show tool outputs'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Show more button */}
+        {hiddenCount > 0 && !showAll && (
+          <button
+            onClick={() => setShowAll(true)}
+            className="relative mt-2 text-sm transition-colors"
+            style={{ color: '#8a857f' }}
+            onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+            onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+          >
+            Show {hiddenCount} more
+          </button>
+        )}
+      </div>
+
+      {/* Expanded tool outputs */}
+      {showOutputs && (
+        <div className="mt-2 ml-5 space-y-1.5">
+          {toolCalls.map((call, idx) => (
+            <div key={idx} className="px-3 py-2 rounded text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
+              <div className="font-semibold mb-1" style={{ color: '#3d3935' }}>
+                {formatToolName(call.name)}
               </div>
-            );
-          })}
+              <pre className="whitespace-pre-wrap break-words font-mono text-[11px]" style={{ color: '#5a5550' }}>
+                {call.parameters}
+              </pre>
+            </div>
+          ))}
         </div>
       )}
     </div>
