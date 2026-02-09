@@ -27,6 +27,7 @@ interface LayoutProps {
   viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
   onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
+  sdkUnreadCount?: number;
 }
 
 export default function Layout({
@@ -36,7 +37,8 @@ export default function Layout({
   onToggleNaujokas,
   viewMode = 'sdk',
   onViewModeChange,
-  onSidebarCollapseChange
+  onSidebarCollapseChange,
+  sdkUnreadCount = 0
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -119,7 +121,7 @@ export default function Layout({
             <div className={`py-3 space-y-1 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
               <button
                 onClick={() => onViewModeChange?.('sdk')}
-                className={`w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
+                className={`relative w-full flex items-center rounded-md text-sm font-medium transition-all duration-150 ${
                   sidebarCollapsed ? 'justify-center px-3 py-2' : 'px-3 py-2'
                 } ${
                   viewMode === 'sdk'
@@ -128,10 +130,24 @@ export default function Layout({
                 }`}
                 title={sidebarCollapsed ? 'SDK' : undefined}
               >
-                <div className="flex items-center justify-center w-4 flex-shrink-0">
+                <div className="relative flex items-center justify-center w-4 flex-shrink-0">
                   <MessageSquare className="w-4 h-4" />
+                  {sidebarCollapsed && sdkUnreadCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[9px] font-bold flex items-center justify-center" style={{ background: '#f97316', color: 'white' }}>
+                      {sdkUnreadCount > 9 ? '9+' : sdkUnreadCount}
+                    </span>
+                  )}
                 </div>
-                {!sidebarCollapsed && <span className="ml-3 whitespace-nowrap">SDK</span>}
+                {!sidebarCollapsed && (
+                  <>
+                    <span className="ml-3 whitespace-nowrap">SDK</span>
+                    {sdkUnreadCount > 0 && (
+                      <span className="ml-auto w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center flex-shrink-0" style={{ background: '#f97316', color: 'white' }}>
+                        {sdkUnreadCount > 9 ? '9+' : sdkUnreadCount}
+                      </span>
+                    )}
+                  </>
+                )}
               </button>
 
               <button

@@ -61,9 +61,10 @@ interface SDKInterfaceNewProps {
   user: AppUser;
   projectId: string;
   mainSidebarCollapsed: boolean;
+  onUnreadCountChange?: (count: number) => void;
 }
 
-export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed }: SDKInterfaceNewProps) {
+export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange }: SDKInterfaceNewProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
@@ -153,6 +154,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       console.error('[Managers] Error loading:', error);
     }
   };
+
+  // Propagate unread count to parent for main sidebar badge
+  useEffect(() => {
+    onUnreadCountChange?.(unreadSharedCount);
+  }, [unreadSharedCount, onUnreadCountChange]);
 
   useEffect(() => {
     // Auto-scroll on new messages only if user hasn't scrolled up
@@ -446,7 +452,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
    */
   const handleSelectSharedConversation = async (sharedConv: SharedConversation) => {
     try {
-      if (!sharedConv.conversation) return;
+      // Fetch fresh conversation data (consistent with handleSelectConversation)
+      const { data, error: fetchError } = await getSDKConversation(sharedConv.conversation_id);
+      if (fetchError || !data) {
+        console.error('Error fetching shared conversation:', fetchError);
+        return;
+      }
+
+      // Run the same content migration as owned conversations
+      if (data.messages) {
+        data.messages = data.messages.map(msg => {
+          if (typeof msg.content !== 'string') {
+            const newContent = Array.isArray(msg.content)
+              ? (msg.content as any[]).map((block: any) =>
+                  block.type === 'text' ? block.text : ''
+                ).filter(Boolean).join('\n\n')
+              : '[Content format error]';
+            return { ...msg, content: newContent };
+          }
+          return msg;
+        });
+      }
 
       // Mark as read
       await markSharedAsRead(sharedConv.conversation_id, user.id);
@@ -455,8 +481,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       await loadConversationDetails(sharedConv.conversation_id);
 
       // Set as current conversation with read-only flag
-      setCurrentConversation(sharedConv.conversation);
+      setCurrentConversation(data);
       setIsReadOnly(true);
+      setShowArtifact(false);
       setError(null);
 
       // Reload shared conversations to update unread count
@@ -1719,7 +1746,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   color: sidebarView === 'shared' ? '#3d3935' : '#8a857f'
                 }}
               >
-                Pasidalinti
+                Bendri
                 {unreadSharedCount > 0 && (
                   <span className="absolute top-1 right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center" style={{ background: '#f97316', color: 'white' }}>
                     {unreadSharedCount}
@@ -1854,144 +1881,146 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Floating Action Buttons */}
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
-          {/* Share Button - Show when conversation exists and user is owner */}
-          {currentConversation && !isReadOnly && (
-            <div className="relative">
+        {/* Floating Action Buttons - Hidden when artifact panel is open to avoid overlap */}
+        {!showArtifact && (
+          <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
+            {/* Artifact Toggle Button - Left of Share when both visible */}
+            {(currentConversation?.artifact || isStreamingArtifact) && (
               <button
-                onClick={handleToggleShareDropdown}
+                onClick={() => setShowArtifact(true)}
                 className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
                 style={{
-                  background: 'white',
-                  color: '#5a5550',
+                  background: isStreamingArtifact ? '#5a5550' : 'white',
+                  color: isStreamingArtifact ? 'white' : '#5a5550',
                   border: '1px solid #e8e5e0'
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <Share2 className="w-4 h-4" />
-                  <span className="text-sm font-medium">Dalintis</span>
+                  <FileText className="w-4 h-4" />
+                  <span className="text-sm font-medium">
+                    Generuoti
+                    {isStreamingArtifact && <span className="ml-1">●</span>}
+                  </span>
                 </div>
               </button>
+            )}
 
-              {/* Share Dropdown */}
-              {showShareDropdown && (
-                <>
-                  {/* Backdrop */}
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowShareDropdown(false)}
-                  />
-
-                  {/* Dropdown Content */}
-                  <div
-                    className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
-                    style={{ background: 'white', border: '1px solid #e8e5e0' }}
-                  >
-                    {/* Header */}
-                    <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
-                      <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
-                        Dalintis pokalbiu
-                      </h3>
-                      <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
-                        Pasirinkite vartotojus
-                      </p>
-                    </div>
-
-                    {/* User List */}
-                    <div className="max-h-64 overflow-y-auto p-2">
-                      {shareableUsers.length === 0 ? (
-                        <p className="text-xs text-center py-6" style={{ color: '#9ca3af' }}>
-                          Nėra vartotojų
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          {shareableUsers.map((shareUser) => (
-                            <label
-                              key={shareUser.id}
-                              className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedShareUsers.includes(shareUser.id)}
-                                onChange={() => toggleUserSelection(shareUser.id)}
-                                className="w-4 h-4 rounded"
-                                style={{ accentColor: '#5a5550' }}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
-                                  {shareUser.full_name || shareUser.display_name || shareUser.email}
-                                </div>
-                              </div>
-                              {selectedShareUsers.includes(shareUser.id) && (
-                                <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#5a5550' }} />
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Footer Actions */}
-                    <div className="px-3 py-3 border-t flex items-center gap-2" style={{ borderColor: '#f0ede8' }}>
-                      <button
-                        onClick={() => setShowShareDropdown(false)}
-                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                        style={{ background: '#f0ede8', color: '#5a5550' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      >
-                        Atšaukti
-                      </button>
-                      <button
-                        onClick={handleShareConversation}
-                        disabled={selectedShareUsers.length === 0 || sharingConversation}
-                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#5a5550', color: 'white' }}
-                        onMouseEnter={(e) => {
-                          if (!e.currentTarget.disabled) e.currentTarget.style.background = '#3d3935';
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!e.currentTarget.disabled) e.currentTarget.style.background = '#5a5550';
-                        }}
-                      >
-                        {sharingConversation ? (
-                          <span className="flex items-center justify-center gap-1">
-                            <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />
-                            Dalinasi...
-                          </span>
-                        ) : (
-                          `Dalintis (${selectedShareUsers.length})`
-                        )}
-                      </button>
-                    </div>
+            {/* Share Button - Show when conversation exists and user is owner */}
+            {currentConversation && !isReadOnly && (
+              <div className="relative">
+                <button
+                  onClick={handleToggleShareDropdown}
+                  className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
+                  style={{
+                    background: 'white',
+                    color: '#5a5550',
+                    border: '1px solid #e8e5e0'
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Share2 className="w-4 h-4" />
+                    <span className="text-sm font-medium">Dalintis</span>
                   </div>
-                </>
-              )}
-            </div>
-          )}
+                </button>
 
-          {/* Floating Artifact Toggle Button - Only show when panel is closed */}
-          {(currentConversation?.artifact || isStreamingArtifact) && !showArtifact && (
-            <button
-              onClick={() => setShowArtifact(true)}
-              className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
-              style={{
-                background: isStreamingArtifact ? '#5a5550' : 'white',
-                color: isStreamingArtifact ? 'white' : '#5a5550',
-                border: '1px solid #e8e5e0'
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                <span className="text-sm font-medium">
-                  Generuoti
-                  {isStreamingArtifact && <span className="ml-1">●</span>}
-                </span>
+                {/* Share Dropdown */}
+                {showShareDropdown && (
+                  <>
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowShareDropdown(false)}
+                    />
+
+                    {/* Dropdown Content */}
+                    <div
+                      className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                      style={{ background: 'white', border: '1px solid #e8e5e0' }}
+                    >
+                      {/* Header */}
+                      <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
+                        <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
+                          Dalintis pokalbiu
+                        </h3>
+                        <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
+                          Pasirinkite vartotojus
+                        </p>
+                      </div>
+
+                      {/* User List */}
+                      <div className="max-h-64 overflow-y-auto p-2">
+                        {shareableUsers.length === 0 ? (
+                          <p className="text-xs text-center py-6" style={{ color: '#9ca3af' }}>
+                            Nėra vartotojų
+                          </p>
+                        ) : (
+                          <div className="space-y-1">
+                            {shareableUsers.map((shareUser) => (
+                              <label
+                                key={shareUser.id}
+                                className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedShareUsers.includes(shareUser.id)}
+                                  onChange={() => toggleUserSelection(shareUser.id)}
+                                  className="w-4 h-4 rounded"
+                                  style={{ accentColor: '#5a5550' }}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
+                                    {shareUser.full_name || shareUser.display_name || shareUser.email}
+                                  </div>
+                                </div>
+                                {selectedShareUsers.includes(shareUser.id) && (
+                                  <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#5a5550' }} />
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="px-3 py-3 border-t flex items-center gap-2" style={{ borderColor: '#f0ede8' }}>
+                        <button
+                          onClick={() => setShowShareDropdown(false)}
+                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                          style={{ background: '#f0ede8', color: '#5a5550' }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
+                        >
+                          Atšaukti
+                        </button>
+                        <button
+                          onClick={handleShareConversation}
+                          disabled={selectedShareUsers.length === 0 || sharingConversation}
+                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ background: '#5a5550', color: 'white' }}
+                          onMouseEnter={(e) => {
+                            if (!e.currentTarget.disabled) e.currentTarget.style.background = '#3d3935';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!e.currentTarget.disabled) e.currentTarget.style.background = '#5a5550';
+                          }}
+                        >
+                          {sharingConversation ? (
+                            <span className="flex items-center justify-center gap-1">
+                              <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />
+                              Dalinasi...
+                            </span>
+                          ) : (
+                            `Dalintis (${selectedShareUsers.length})`
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Messages Area */}
         <div

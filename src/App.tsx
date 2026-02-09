@@ -49,6 +49,9 @@ function AppContent() {
   // Main sidebar collapse state (for SDK interface positioning)
   const [mainSidebarCollapsed, setMainSidebarCollapsed] = useState(false);
 
+  // SDK unread shared conversations count (for main sidebar badge)
+  const [sdkUnreadCount, setSdkUnreadCount] = useState(0);
+
   useEffect(() => {
     checkUser();
   }, []);
@@ -149,6 +152,7 @@ function AppContent() {
       viewMode={viewMode}
       onViewModeChange={handleViewModeChange}
       onSidebarCollapseChange={setMainSidebarCollapsed}
+      sdkUnreadCount={sdkUnreadCount}
     >
       <Routes>
         <Route path="/" element={<Navigate to="/sdk" replace />} />
@@ -170,7 +174,7 @@ function AppContent() {
         />
         <Route
           path="/sdk"
-          element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />}
+          element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} />}
         />
         {/* Catch-all redirect to sdk */}
         <Route path="*" element={<Navigate to="/sdk" replace />} />
