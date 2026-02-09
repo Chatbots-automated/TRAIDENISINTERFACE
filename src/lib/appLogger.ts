@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './database';
+import { dbAdmin } from './database';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 export type LogCategory = 'auth' | 'chat' | 'document' | 'user_management' | 'system' | 'api' | 'error';
@@ -27,7 +27,7 @@ class AppLogger {
 
   private async log(entry: LogEntry): Promise<void> {
     try {
-      const { error } = await supabaseAdmin
+      const { error } = await dbAdmin
         .from('application_logs')
         .insert({
           level: entry.level,

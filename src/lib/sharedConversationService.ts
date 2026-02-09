@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './database';
+import { dbAdmin } from './database';
 import { appLogger } from './appLogger';
 import type { SDKConversation } from './sdkConversationService';
 
@@ -47,7 +47,7 @@ export const shareConversation = async (
       is_read: false
     }));
 
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('shared_conversations')
       .insert(shareRecords);
 
@@ -81,7 +81,7 @@ export const getSharedConversations = async (
   userId: string
 ): Promise<{ data: SharedConversation[] | null; error: any }> => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbAdmin
       .from('shared_conversations')
       .select(`
         *,
@@ -125,7 +125,7 @@ export const getSharedConversationDetails = async (
 ): Promise<{ data: SharedConversationDetails | null; error: any }> => {
   try {
     // Get the conversation
-    const { data: conversation, error: convError } = await supabaseAdmin
+    const { data: conversation, error: convError } = await dbAdmin
       .from('sdk_conversations')
       .select('*')
       .eq('id', conversationId)
@@ -134,7 +134,7 @@ export const getSharedConversationDetails = async (
     if (convError) throw convError;
 
     // Get all shares for this conversation
-    const { data: shares, error: sharesError } = await supabaseAdmin
+    const { data: shares, error: sharesError } = await dbAdmin
       .from('shared_conversations')
       .select(`
         *,
@@ -145,7 +145,7 @@ export const getSharedConversationDetails = async (
     if (sharesError) throw sharesError;
 
     // Get the owner info
-    const { data: owner, error: ownerError } = await supabaseAdmin
+    const { data: owner, error: ownerError } = await dbAdmin
       .from('app_users')
       .select('id, email, display_name')
       .eq('id', conversation.author_id)
@@ -181,7 +181,7 @@ export const markSharedAsRead = async (
   userId: string
 ): Promise<{ data: boolean; error: any }> => {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('shared_conversations')
       .update({ is_read: true })
       .eq('conversation_id', conversationId)
@@ -206,7 +206,7 @@ export const unshareConversation = async (
   removedByEmail: string
 ): Promise<{ data: boolean; error: any }> => {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('shared_conversations')
       .delete()
       .eq('conversation_id', conversationId)
@@ -240,7 +240,7 @@ export const checkConversationAccess = async (
 ): Promise<{ hasAccess: boolean; isOwner: boolean; isShared: boolean }> => {
   try {
     // Check if user is owner
-    const { data: conversation } = await supabaseAdmin
+    const { data: conversation } = await dbAdmin
       .from('sdk_conversations')
       .select('author_id')
       .eq('id', conversationId)
@@ -251,7 +251,7 @@ export const checkConversationAccess = async (
     }
 
     // Check if conversation is shared with user
-    const { data: share } = await supabaseAdmin
+    const { data: share } = await dbAdmin
       .from('shared_conversations')
       .select('id')
       .eq('conversation_id', conversationId)
@@ -276,7 +276,7 @@ export const getUnreadSharedCount = async (
   userId: string
 ): Promise<{ data: number; error: any }> => {
   try {
-    const { count, error } = await supabaseAdmin
+    const { count, error } = await dbAdmin
       .from('shared_conversations')
       .select('*', { count: 'exact', head: true })
       .eq('shared_with_user_id', userId)

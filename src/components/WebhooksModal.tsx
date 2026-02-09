@@ -7,7 +7,6 @@ import {
   AlertCircle,
   Loader2,
   ExternalLink,
-  FileText,
   Package,
   Database,
   Settings
@@ -27,7 +26,7 @@ interface WebhooksModalProps {
   user: AppUser;
 }
 
-type WebhookCategory = 'nestandartiniai' | 'documents' | 'general' | 'all';
+type WebhookCategory = 'nestandartiniai' | 'sdk_tools' | 'all';
 
 interface WebhookGroup {
   category: WebhookCategory;
@@ -50,22 +49,15 @@ const WEBHOOK_GROUPS: WebhookGroup[] = [
     ]
   },
   {
-    category: 'documents',
-    label: 'Documents',
-    icon: <FileText className="w-4 h-4" />,
-    description: 'Document processing webhooks',
-    webhookKeys: [
-      'document_upload',
-      'document_process'
-    ]
-  },
-  {
-    category: 'general',
-    label: 'General',
+    category: 'sdk_tools',
+    label: 'SDK Tools',
     icon: <Settings className="w-4 h-4" />,
-    description: 'General system webhooks',
+    description: 'Anthropic SDK chat tool webhooks and commercial offer generation',
     webhookKeys: [
-      'general_webhook'
+      'n8n_get_products',
+      'n8n_get_prices',
+      'n8n_get_multiplier',
+      'n8n_commercial_offer'
     ]
   }
 ];

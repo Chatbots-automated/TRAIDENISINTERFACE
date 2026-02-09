@@ -1,9 +1,8 @@
 /**
  * PostgREST-based database client
- * This replaces the Supabase client for local PostgreSQL + PostgREST setup
  */
 
-import { postgrest, createClient } from './postgrest';
+import { createClient } from './postgrest';
 import { appLogger } from './appLogger';
 
 const postgrestUrl = import.meta.env.VITE_POSTGREST_URL || 'http://localhost:3000';
@@ -14,12 +13,12 @@ if (!postgrestUrl) {
 }
 
 // Main client (using anon role)
-export const supabase = createClient(postgrestUrl, postgrestAnonKey);
+export const db = createClient(postgrestUrl, postgrestAnonKey);
 
 // Admin client (same as main client for PostgREST - permissions controlled by DB roles)
-export const supabaseAdmin = createClient(postgrestUrl, postgrestAnonKey);
+export const dbAdmin = createClient(postgrestUrl, postgrestAnonKey);
 
-console.log('✅ PostgREST client configured at:', postgrestUrl);
+console.log('[PostgREST] Client configured at:', postgrestUrl);
 
 // ============================================================================
 // Auth helpers (using local password-based authentication)
@@ -30,7 +29,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
     const newUserId = crypto.randomUUID();
 
     // Create app_users record with password
-    const { data: appUserData, error: appUserError } = await supabase
+    const { data: appUserData, error: appUserError } = await db
       .from('app_users')
       .insert([{
         id: newUserId,
@@ -77,7 +76,7 @@ export const signUp = async (email: string, password: string, fullName?: string)
 export const signIn = async (email: string, password: string) => {
   try {
     // Query app_users table for email and password
-    const { data: userData, error } = await supabase
+    const { data: userData, error } = await db
       .from('app_users')
       .select('*')
       .eq('email', email)
@@ -129,8 +128,8 @@ export const signOut = async () => {
     const { user } = await getCurrentUser();
     // Remove user from localStorage
     localStorage.removeItem('currentUser');
-    // Clear Voiceflow chat session state (forces "Start Chat" button on next login)
-    sessionStorage.removeItem('traidenis_voiceflow_chat_started');
+    // Clear chat session state
+    sessionStorage.removeItem('traidenis_chat_started');
 
     if (user) {
       await appLogger.logAuth({
@@ -171,7 +170,7 @@ export const createUserByAdmin = async (email: string, password: string, display
     const { user: adminUser } = await getCurrentUser();
 
     // Create app_users record with password
-    const { data: appUserData, error: appUserError } = await supabase
+    const { data: appUserData, error: appUserError } = await db
       .from('app_users')
       .insert([{
         id: crypto.randomUUID(),
@@ -220,7 +219,7 @@ export const createUserByAdmin = async (email: string, password: string, display
 
 export const getAllUsers = async () => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .order('created_at', { ascending: false })
@@ -243,14 +242,14 @@ export const updateUserByAdmin = async (userId: string, updates: { display_name?
     const { user: adminUser } = await getCurrentUser();
 
     // Get target user email
-    const { data: targetUser } = await supabase
+    const { data: targetUser } = await db
       .from('app_users')
       .select('email')
       .eq('id', userId)
       .single()
       ;
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .update(updates)
       .eq('id', userId)
@@ -293,14 +292,14 @@ export const deleteUserByAdmin = async (userId: string) => {
     const { user: adminUser } = await getCurrentUser();
 
     // Get target user email before deleting
-    const { data: targetUser } = await supabase
+    const { data: targetUser } = await db
       .from('app_users')
       .select('email')
       .eq('id', userId)
       .single()
       ;
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('app_users')
       .delete()
       .eq('id', userId)
@@ -361,7 +360,7 @@ export const createChatThread = async (projectId: string, title: string, authorE
     // Get current user to set author_id
     const { user: currentUser } = await getCurrentUser();
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('chat_items')
       .insert([{
         type: 'thread',
@@ -401,7 +400,7 @@ export const sendMessage = async (
 ) => {
   try {
     // Get current chat history
-    const { data: threadData, error: fetchError } = await supabase
+    const { data: threadData, error: fetchError } = await db
       .from('chat_items')
       .select('chat_history, message_count')
       .eq('id', threadId)
@@ -432,7 +431,7 @@ export const sendMessage = async (
 
     // Update thread with new message in chat_history
     const currentCount = threadData?.message_count || 0;
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('chat_items')
       .update({
         chat_history: updatedHistory,
@@ -460,7 +459,7 @@ export const sendMessage = async (
 
 export const getChatThreads = async (projectId: string) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('chat_items')
       .select('id, title, message_count, last_message_at, created_at')
       .eq('type', 'thread')
@@ -483,7 +482,7 @@ export const getChatThreads = async (projectId: string) => {
 
 export const getChatMessages = async (threadId: string) => {
   try {
-    const { data: threadData, error } = await supabase
+    const { data: threadData, error } = await db
       .from('chat_items')
       .select('chat_history')
       .eq('id', threadId)
@@ -508,7 +507,7 @@ export const getChatMessages = async (threadId: string) => {
 // Soft delete a chat thread (sets deleted_at timestamp)
 export const deleteChatThread = async (threadId: string) => {
   try {
-    const { error } = await supabase
+    const { error } = await db
       .from('chat_items')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', threadId)
@@ -530,7 +529,7 @@ export const deleteChatThread = async (threadId: string) => {
 // Update chat thread title
 export const updateChatThreadTitle = async (threadId: string, title: string) => {
   try {
-    const { error } = await supabase
+    const { error } = await db
       .from('chat_items')
       .update({ title })
       .eq('id', threadId)
@@ -558,7 +557,7 @@ export const createDocument = async (
   metadata: Record<string, any> = {}
 ) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('documents')
       .insert([{
         content,
@@ -601,7 +600,7 @@ export const updateDocument = async (
       }
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('documents')
       .update(updates)
       .eq('id', id)
@@ -623,7 +622,7 @@ export const updateDocument = async (
 
 export const deleteDocument = async (id: string) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('documents')
       .delete()
       .eq('id', id)
@@ -643,7 +642,7 @@ export const deleteDocument = async (id: string) => {
 
 export const getDocuments = async () => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('documents')
       .select('*')
       ;

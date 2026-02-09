@@ -19,9 +19,9 @@ I've updated `SETUP_WEBHOOKS.sql` to use **HTTP** URLs instead of HTTPS:
    - Check your n8n configuration allows HTTP on port 5678
    - No infrastructure changes needed if n8n already listens on HTTP
 
-2. **Update webhook URLs in Supabase**
+2. **Update webhook URLs in the database**
    ```bash
-   # Run this in Supabase SQL Editor
+   # Run this in pgAdmin or psql
    UPDATE webhooks
    SET url = REPLACE(url, 'https://', 'http://')
    WHERE webhook_key LIKE 'n8n_%';

@@ -1,7 +1,5 @@
-import { supabase } from './database';
+import { db } from './database';
 import { appLogger } from './appLogger';
-
-const WEBHOOK_URL = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/3961e6fa-4199-4f85-82f5-4e7e036f7e18';
 
 export interface InstructionVariable {
   id: string;
@@ -28,7 +26,7 @@ export interface InstructionVersion {
  * Fetch all instruction variables ordered by display_order
  */
 export async function getInstructionVariables(): Promise<InstructionVariable[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_variables')
     .select('*')
     .order('display_order', { ascending: true });
@@ -45,7 +43,7 @@ export async function getInstructionVariables(): Promise<InstructionVariable[]> 
  * Get a single instruction variable by key
  */
 export async function getInstructionVariable(variableKey: string): Promise<InstructionVariable | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_variables')
     .select('*')
     .eq('variable_key', variableKey)
@@ -67,7 +65,7 @@ export async function updateInstructionVariable(
   content: string,
   userId: string
 ): Promise<InstructionVariable | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_variables')
     .update({
       content,
@@ -104,7 +102,7 @@ export async function createVersionSnapshot(
     snapshot[v.variable_key] = v.content;
   });
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_versions')
     .insert({
       snapshot,
@@ -128,7 +126,7 @@ export async function createVersionSnapshot(
  * Get all version history ordered by version_number descending
  */
 export async function getVersionHistory(limit: number = 50): Promise<InstructionVersion[]> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_versions')
     .select('*')
     .order('version_number', { ascending: false })
@@ -146,7 +144,7 @@ export async function getVersionHistory(limit: number = 50): Promise<Instruction
  * Get a specific version by version_number
  */
 export async function getVersion(versionNumber: number): Promise<InstructionVersion | null> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('instruction_versions')
     .select('*')
     .eq('version_number', versionNumber)
@@ -196,9 +194,6 @@ export async function revertToVersion(
       versionNumber
     );
 
-    // 5. Trigger webhook with all updated variables
-    await triggerWebhook(snapshot, userId, userEmail, `revert_to_v${versionNumber}`);
-
     await appLogger.logSystem({
       action: 'instruction_revert',
       userId,
@@ -217,7 +212,7 @@ export async function revertToVersion(
 }
 
 /**
- * Save a variable and trigger webhook
+ * Save a variable and create version snapshot
  */
 export async function saveInstructionVariable(
   variableKey: string,
@@ -227,10 +222,8 @@ export async function saveInstructionVariable(
   createVersion: boolean = true
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Update the variable
     await updateInstructionVariable(variableKey, content, userId);
 
-    // 2. Optionally create a version snapshot
     if (createVersion) {
       const variable = await getInstructionVariable(variableKey);
       await createVersionSnapshot(
@@ -238,16 +231,6 @@ export async function saveInstructionVariable(
         `Updated: ${variable?.variable_name || variableKey}`
       );
     }
-
-    // 3. Get all current variables for webhook
-    const allVariables = await getInstructionVariables();
-    const payload: Record<string, string> = {};
-    allVariables.forEach(v => {
-      payload[v.variable_key] = v.content;
-    });
-
-    // 4. Trigger webhook
-    await triggerWebhook(payload, userId, userEmail, `update_${variableKey}`);
 
     await appLogger.logSystem({
       action: 'instruction_saved',
@@ -267,57 +250,13 @@ export async function saveInstructionVariable(
 }
 
 /**
- * Trigger the n8n webhook with variable data
- */
-async function triggerWebhook(
-  variables: Record<string, string>,
-  userId: string,
-  userEmail: string,
-  action: string
-): Promise<void> {
-  try {
-    const payload = {
-      action,
-      timestamp: new Date().toISOString(),
-      user: {
-        id: userId,
-        email: userEmail
-      },
-      variables
-    };
-
-    const response = await fetch(WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      console.warn('Webhook returned non-OK status:', response.status);
-    }
-
-    console.log('Webhook triggered successfully for action:', action);
-  } catch (error) {
-    // Log but don't throw - webhook failure shouldn't block the save
-    console.error('Failed to trigger webhook:', error);
-    await appLogger.logError({
-      action: 'instruction_webhook_failed',
-      error,
-      metadata: { webhook_action: action }
-    });
-  }
-}
-
-/**
  * Verify user password for editing access
  */
 export async function verifyUserPassword(
   email: string,
   password: string
 ): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('app_users')
     .select('id')
     .eq('email', email)
@@ -339,7 +278,7 @@ export async function initializeVariableContent(
   content: string,
   userId: string
 ): Promise<void> {
-  const { error } = await supabase
+  const { error } = await db
     .from('instruction_variables')
     .update({
       content,
@@ -376,16 +315,6 @@ export async function bulkUpdateVariables(
         `Bulk update: ${updates.length} variables`
       );
     }
-
-    // Get all variables for webhook
-    const allVariables = await getInstructionVariables();
-    const payload: Record<string, string> = {};
-    allVariables.forEach(v => {
-      payload[v.variable_key] = v.content;
-    });
-
-    // Trigger webhook
-    await triggerWebhook(payload, userId, userEmail, 'bulk_update');
 
     return { success: true };
   } catch (error: any) {

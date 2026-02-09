@@ -25,6 +25,7 @@ import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/i
 import MessageContent from './MessageContent';
 import RoboticArmLoader from './RoboticArmLoader';
 import { colors } from '../lib/designSystem';
+import { getWebhookUrl } from '../lib/webhooksService';
 import {
   createSDKConversation,
   getSDKConversations,
@@ -199,8 +200,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
   const fetchTemplateVariable = async (): Promise<string> => {
     try {
-      const { supabaseAdmin } = await import('../lib/database');
-      const { data, error } = await supabaseAdmin
+      const { dbAdmin } = await import('../lib/database');
+      const { data, error } = await dbAdmin
         .from('instruction_variables')
         .select('content')
         .eq('variable_key', 'template')
@@ -220,10 +221,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
   const saveTemplateVariable = async (content: string): Promise<{ success: boolean; error?: any }> => {
     try {
-      const { supabaseAdmin } = await import('../lib/database');
+      const { dbAdmin } = await import('../lib/database');
 
       // Update the template variable in instruction_variables table
-      const { error } = await supabaseAdmin
+      const { error } = await dbAdmin
         .from('instruction_variables')
         .update({
           content: content,
@@ -1527,7 +1528,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       console.log('[Webhook] Payload:', payload);
 
       // Send to n8n webhook
-      const response = await fetch('https://n8n.traidenis.org/webhook/a80582f0-d42b-4490-b142-0494f0afff89', {
+      const commercialWebhookUrl = await getWebhookUrl('n8n_commercial_offer');
+      if (!commercialWebhookUrl) {
+        throw new Error('Webhook "n8n_commercial_offer" not found or inactive. Configure it in Webhooks settings.');
+      }
+
+      const response = await fetch(commercialWebhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

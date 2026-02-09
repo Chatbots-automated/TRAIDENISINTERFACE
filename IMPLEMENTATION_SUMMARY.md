@@ -72,7 +72,7 @@ User can edit, download, or share with client
 
 ### **Step 1: Add Google Sheets URL to Database** (5 minutes)
 
-Run this SQL in Supabase SQL Editor:
+Run this SQL in pgAdmin or psql:
 
 ```sql
 INSERT INTO instruction_variables (

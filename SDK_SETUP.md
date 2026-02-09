@@ -52,8 +52,6 @@ Create or update your `.env` file in the project root:
 ```env
 VITE_POSTGREST_URL=http://localhost:3000
 VITE_POSTGREST_ANON_KEY=anon
-VITE_VOICEFLOW_API_KEY=your_voiceflow_api_key
-VITE_VOICEFLOW_PROJECT_ID=your_voiceflow_project_id
 
 # Anthropic SDK
 VITE_ANTHROPIC_API_KEY=sk-ant-api03-your-actual-key-here
@@ -160,7 +158,7 @@ The app defaults to "New Version" mode. To change this:
 
 ### "Nepavyko užkrauti sistemos nurodymus"
 - **Cause**: Missing or empty `instruction_variables` table
-- **Solution**: Create table and populate with required variables (see Supabase Table Setup)
+- **Solution**: Create table and populate with required variables (see Database Table Setup)
 
 ### No Response from API
 - **Cause**: Invalid API key or network issues
@@ -204,5 +202,5 @@ With prompt caching:
 For issues or questions:
 1. Check browser console for detailed error messages
 2. Verify all environment variables are set correctly
-3. Ensure Supabase table has all required variables populated
+3. Ensure database table has all required variables populated
 4. Contact system administrator for API key or access issues

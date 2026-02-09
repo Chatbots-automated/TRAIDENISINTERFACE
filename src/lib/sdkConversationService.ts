@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from './database';
+import { db, dbAdmin } from './database';
 import { appLogger } from './appLogger';
 
 export interface SDKConversation {
@@ -57,7 +57,7 @@ export const createSDKConversation = async (
   title: string = 'Naujas pokalbis'
 ): Promise<{ data: string | null; error: any }> => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbAdmin
       .from('sdk_conversations')
       .insert([{
         project_id: projectId,
@@ -102,7 +102,7 @@ export const getSDKConversations = async (
   projectId: string
 ): Promise<{ data: SDKConversation[] | null; error: any }> => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbAdmin
       .from('sdk_conversations')
       .select('*')
       .eq('project_id', projectId)
@@ -127,7 +127,7 @@ export const getSDKConversation = async (
   conversationId: string
 ): Promise<{ data: SDKConversation | null; error: any }> => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbAdmin
       .from('sdk_conversations')
       .select('*')
       .eq('id', conversationId)
@@ -154,7 +154,7 @@ export const addMessageToConversation = async (
 ): Promise<{ data: boolean; error: any }> => {
   try {
     // Fetch current conversation
-    const { data: conversation, error: fetchError } = await supabaseAdmin
+    const { data: conversation, error: fetchError } = await dbAdmin
       .from('sdk_conversations')
       .select('messages, message_count')
       .eq('id', conversationId)
@@ -166,7 +166,7 @@ export const addMessageToConversation = async (
     const updatedMessages = [...currentMessages, message];
 
     // Update conversation with new message
-    const { error: updateError } = await supabaseAdmin
+    const { error: updateError } = await dbAdmin
       .from('sdk_conversations')
       .update({
         messages: updatedMessages,
@@ -193,7 +193,7 @@ export const updateConversationArtifact = async (
   artifact: CommercialOfferArtifact
 ): Promise<{ data: boolean; error: any }> => {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('sdk_conversations')
       .update({
         artifact: artifact,
@@ -219,7 +219,7 @@ export const deleteSDKConversation = async (
   userEmail: string
 ): Promise<{ data: boolean; error: any }> => {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('sdk_conversations')
       .delete()
       .eq('id', conversationId);
@@ -250,7 +250,7 @@ export const renameSDKConversation = async (
   newTitle: string
 ): Promise<{ data: boolean; error: any }> => {
   try {
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('sdk_conversations')
       .update({
         title: newTitle,
@@ -277,7 +277,7 @@ export const updateMessageButtonSelection = async (
 ): Promise<{ data: boolean; error: any }> => {
   try {
     // Fetch current conversation
-    const { data: conversation, error: fetchError } = await supabaseAdmin
+    const { data: conversation, error: fetchError } = await dbAdmin
       .from('sdk_conversations')
       .select('messages')
       .eq('id', conversationId)
@@ -292,7 +292,7 @@ export const updateMessageButtonSelection = async (
       currentMessages[messageIndex].selectedButtonId = selectedButtonId;
 
       // Update conversation with modified messages
-      const { error: updateError } = await supabaseAdmin
+      const { error: updateError } = await dbAdmin
         .from('sdk_conversations')
         .update({
           messages: currentMessages,

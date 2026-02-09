@@ -1,15 +1,6 @@
 [build]
   publish = "dist"
   command = "npm run build"
-  functions = "netlify/functions"
-
-[functions]
-  node_bundler = "esbuild"
-
-[build.environment]
-  VITE_SUPABASE_URL = "https://tahsnionivotlbbbyuya.supabase.co"
-  VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhaHNuaW9uaXZvdGxiYmJ5dXlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTY1NTAxMjUsImV4cCI6MjA3MjEyNjEyNX0.p6uFOXgCzeTEpMLsmjl3fl0h7V3rzuzNzT9eozDY8uE"
-  VITE_SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhaHNuaW9uaXZvdGxiYmJ5dXlhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjU1MDEyNSwiZXhwIjoyMDcyMTI2MTI1fQ.iqSAEvyJF0jk5fFwHyN6zuadZZS-heoWlIV8hKu7jv4"
 
 [[redirects]]
   from = "/*"

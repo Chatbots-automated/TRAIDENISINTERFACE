@@ -1,4 +1,4 @@
-import { supabase } from './database';
+import { db } from './database';
 import { appLogger } from './appLogger';
 
 export interface NestandardinisProject {
@@ -10,12 +10,12 @@ export interface NestandardinisProject {
 }
 
 /**
- * Fetch all nestandartiniai projects from Supabase
+ * Fetch all nestandartiniai projects from the database
  * Projects are stored with their subject lines from emails
  */
 export const fetchNestandardiniaiProjects = async (): Promise<NestandardinisProject[]> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('nestandartiniai_projects')
       .select('*')
       .order('created_at', { ascending: false });
@@ -25,7 +25,7 @@ export const fetchNestandardiniaiProjects = async (): Promise<NestandardinisProj
       await appLogger.logError({
         action: 'fetch_nestandartiniai_projects_error',
         error: error.message,
-        metadata: { supabase_error: error }
+        metadata: { db_error: error }
       });
       throw error;
     }
@@ -46,7 +46,7 @@ export const searchProjectsBySubjectLine = async (query: string): Promise<Nestan
       return await fetchNestandardiniaiProjects();
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('nestandartiniai_projects')
       .select('*')
       .ilike('subject_line', `%${query}%`)
@@ -70,7 +70,7 @@ export const searchProjectsBySubjectLine = async (query: string): Promise<Nestan
  */
 export const getProjectById = async (projectId: string): Promise<NestandardinisProject | null> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('nestandartiniai_projects')
       .select('*')
       .eq('id', projectId)

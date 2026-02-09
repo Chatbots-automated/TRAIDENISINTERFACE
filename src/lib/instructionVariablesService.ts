@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from './database';
+import { db, dbAdmin } from './database';
 
 export interface InstructionVariable {
   id: string;
@@ -12,12 +12,12 @@ export interface InstructionVariable {
 }
 
 /**
- * Fetch all instruction variables from Supabase
+ * Fetch all instruction variables from the database
  */
 export const fetchInstructionVariables = async (): Promise<InstructionVariable[]> => {
   try {
     console.log('[fetchInstructionVariables] Querying instruction_variables table...');
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbAdmin
       .from('instruction_variables')
       .select('*')
       .order('display_order', { ascending: true });
@@ -89,7 +89,7 @@ export const getPromptTemplate = async (): Promise<string> => {
   try {
     // Try NEW system first: instruction_variables table
     console.log('[getPromptTemplate] Checking instruction_variables for template...');
-    const { data: templateVar, error: varError } = await supabaseAdmin
+    const { data: templateVar, error: varError } = await dbAdmin
       .from('instruction_variables')
       .select('content')
       .eq('variable_key', 'template')
@@ -103,7 +103,7 @@ export const getPromptTemplate = async (): Promise<string> => {
     console.log('[getPromptTemplate] Template not in instruction_variables, checking prompt_template (OLD system)...');
 
     // Fallback to OLD system: prompt_template table
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await dbAdmin
       .from('prompt_template')
       .select('template_content')
       .single();
@@ -127,7 +127,7 @@ export const getPromptTemplate = async (): Promise<string> => {
 export const savePromptTemplate = async (template: string): Promise<{ success: boolean; error?: any }> => {
   try {
     // Use upsert to insert or update in one operation
-    const { error } = await supabaseAdmin
+    const { error } = await dbAdmin
       .from('prompt_template')
       .upsert(
         {
@@ -224,15 +224,15 @@ You are Traidenis's commercial offer generation specialist - an expert system fo
 ### How to Calculate Prices
 
 **Step 1:** Get product IDs from product codes
-- Use \`query_supabase\` with table="products", filter="productCode=eq.[CODE]"
+- Use \`query_database\` with table="products", filter="productCode=eq.[CODE]"
 - Extract the \`id\` from results
 
 **Step 2:** Get base prices for each product
-- Use \`query_supabase\` with table="pricing", filter="productid=eq.[ID]", order="created.desc", limit=1
+- Use \`query_database\` with table="pricing", filter="productid=eq.[ID]", order="created.desc", limit=1
 - This gets the LATEST price for each product
 
 **Step 3:** Get current price multiplier
-- Use \`query_supabase\` with table="price_multiplier", order="created.desc", limit=1
+- Use \`query_database\` with table="price_multiplier", order="created.desc", limit=1
 - Use the MOST RECENT multiplier value
 - **NEVER** show this multiplier to the user
 
@@ -429,7 +429,7 @@ After you output the \`<commercial_offer>\` tags:
 
 **Example usage:** When you need to check what components are available for 13PE capacity, just use this tool. The system will automatically execute it and return the data.
 
-### Tool 2: query_supabase
+### Tool 2: query_database
 **Purpose:** Query database tables for products, pricing, and price multipliers
 **When to use:** Converting product codes to IDs, getting prices, fetching multiplier
 **Parameters:**

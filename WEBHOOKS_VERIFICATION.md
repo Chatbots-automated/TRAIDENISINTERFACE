@@ -1,12 +1,12 @@
 # Webhooks Verification for Nestandartiniai Projektai
 
 ## Overview
-All three webhook requests in the Nestandartiniai Projektai tab have been updated to fetch webhook URLs from the Supabase `webhooks` table using the `getWebhookUrl()` function from `webhooksService.ts`.
+All three webhook requests in the Nestandartiniai Projektai tab have been updated to fetch webhook URLs from the database `webhooks` table using the `getWebhookUrl()` function from `webhooksService.ts`.
 
 ## Webhook Configuration
 
 ### Database Setup
-Webhooks are stored in the Supabase `webhooks` table with the following keys:
+Webhooks are stored in the database `webhooks` table with the following keys:
 - `n8n_upload_new` - Upload new .eml file without search
 - `n8n_find_similar` - Find similar products
 - `n8n_upload_solution` - Upload commercial offer for a project
@@ -23,7 +23,7 @@ To set up webhooks, run the SQL script: `SETUP_WEBHOOKS.sql`
 - **Trigger**: When user selects "Pateikti naują užklausą" card and uploads a .eml file
 
 ### Request Validation
-✅ Webhook URL fetched from Supabase using `getWebhookUrl('n8n_upload_new')`
+✅ Webhook URL fetched from the database using `getWebhookUrl('n8n_upload_new')`
 ✅ Validates webhook exists and is active
 ✅ File is converted to base64 before sending
 ✅ Proper error handling with Lithuanian error messages
@@ -81,7 +81,7 @@ To set up webhooks, run the SQL script: `SETUP_WEBHOOKS.sql`
 - **Trigger**: When user selects "Rasti panašius" card and uploads a .eml file
 
 ### Request Validation
-✅ Webhook URL fetched from Supabase using `getWebhookUrl('n8n_find_similar')`
+✅ Webhook URL fetched from the database using `getWebhookUrl('n8n_find_similar')`
 ✅ Validates webhook exists and is active
 ✅ File is converted to base64 before sending
 ✅ Proper error handling with Lithuanian error messages
@@ -123,7 +123,7 @@ Same format as "Pateikti naują užklausą" (includes emlFile and attachmentFile
 - **Trigger**: When user selects "Pateikti sprendimą užklausai" card, selects a project, and uploads a file
 
 ### Request Validation
-✅ Webhook URL fetched from Supabase using `getWebhookUrl('n8n_upload_solution')`
+✅ Webhook URL fetched from the database using `getWebhookUrl('n8n_upload_solution')`
 ✅ Validates webhook exists and is active
 ✅ File is converted to base64 before sending
 ✅ Validates project is selected
@@ -247,7 +247,7 @@ All error messages are in Lithuanian for consistency with the interface:
 
 ## Summary
 
-✅ All three webhooks fetch URLs from Supabase `webhooks` table
+✅ All three webhooks fetch URLs from the database `webhooks` table
 ✅ Proper validation and error handling in place
 ✅ Files are correctly encoded as base64
 ✅ Request payloads include all necessary user and file information
@@ -259,7 +259,7 @@ All error messages are in Lithuanian for consistency with the interface:
 
 ## Next Steps
 
-1. Run `SETUP_WEBHOOKS.sql` in Supabase SQL Editor
+1. Run `SETUP_WEBHOOKS.sql` in pgAdmin or psql
 2. Update webhook URLs in the Webhooks settings modal
 3. Set webhooks to active status
 4. Configure n8n workflows to handle the request payloads

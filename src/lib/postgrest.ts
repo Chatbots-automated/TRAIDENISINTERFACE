@@ -1,6 +1,6 @@
 /**
  * PostgREST Client Wrapper
- * Provides a Supabase-like API interface for PostgREST
+ * Provides a query-builder API interface for PostgREST
  */
 
 const POSTGREST_URL = import.meta.env.VITE_POSTGREST_URL || 'http://localhost:3000';
