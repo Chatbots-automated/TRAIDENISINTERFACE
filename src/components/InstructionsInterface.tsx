@@ -746,39 +746,64 @@ function PasswordInput({
   onCancel: () => void;
 }) {
   const [confirmHovered, setConfirmHovered] = React.useState(false);
-  const [cancelHovered, setCancelHovered] = React.useState(false);
 
   return (
-    <div className="mt-4 p-4 rounded-lg" style={{
-      background: colors.status.warning,
-      border: `1px solid ${colors.status.warningBorder}`
-    }}>
-      <div className="flex items-center space-x-2 mb-3">
-        <Lock className="w-4 h-4" style={{ color: colors.status.warningText }} />
-        <span className="text-sm font-medium" style={{ color: colors.status.warningText }}>Patvirtinkite tapatybę</span>
-      </div>
-      <div className="flex items-center space-x-3">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-8"
+        style={{ border: `1px solid ${colors.border.light}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Lock Icon */}
+        <div className="flex justify-center mb-4">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center"
+            style={{ background: colors.interactive.accentLight }}
+          >
+            <Lock className="w-8 h-8" style={{ color: colors.interactive.accent }} />
+          </div>
+        </div>
+
+        {/* Title */}
+        <h3 className="text-center text-lg font-semibold mb-6" style={{ color: colors.text.primary }}>
+          Dokumentas apsaugotas
+        </h3>
+
+        {/* Password Input */}
         <input
           type="password"
           value={password}
           onChange={onPasswordChange}
           onKeyDown={(e) => e.key === 'Enter' && onAuthenticate()}
-          placeholder="Įveskite slaptažodį"
-          className="flex-1 px-3 py-2 text-sm rounded-lg focus:outline-none"
+          placeholder="Slaptažodis"
+          className="w-full px-4 py-3 text-sm rounded-lg focus:outline-none transition-all mb-4"
           style={{
-            border: `1px solid ${colors.status.warningBorder}`,
+            border: `2px solid ${passwordError ? colors.status.errorBorder : colors.border.default}`,
             background: colors.bg.white,
             color: colors.text.primary
           }}
-          onFocus={(e) => e.target.style.border = `2px solid ${colors.interactive.accent}`}
-          onBlur={(e) => e.target.style.border = `1px solid ${colors.status.warningBorder}`}
+          onFocus={(e) => e.target.style.borderColor = colors.interactive.accent}
+          onBlur={(e) => e.target.style.borderColor = passwordError ? colors.status.errorBorder : colors.border.default}
           autoFocus
         />
+
+        {/* Error Message */}
+        {passwordError && (
+          <p className="text-xs text-center mb-4" style={{ color: colors.status.errorText }}>
+            {passwordError}
+          </p>
+        )}
+
+        {/* Confirm Button */}
         <button
           onClick={onAuthenticate}
           onMouseEnter={() => setConfirmHovered(true)}
           onMouseLeave={() => setConfirmHovered(false)}
-          className="px-4 py-2 text-sm rounded-lg transition-colors"
+          className="w-full px-4 py-3 text-sm font-medium rounded-lg transition-colors"
           style={{
             color: colors.bg.white,
             background: confirmHovered ? colors.interactive.accentHover : colors.interactive.accent
@@ -786,19 +811,7 @@ function PasswordInput({
         >
           Patvirtinti
         </button>
-        <button
-          onClick={onCancel}
-          onMouseEnter={() => setCancelHovered(true)}
-          onMouseLeave={() => setCancelHovered(false)}
-          className="px-3 py-2 text-sm transition-colors"
-          style={{ color: cancelHovered ? colors.text.primary : colors.text.secondary }}
-        >
-          Atšaukti
-        </button>
       </div>
-      {passwordError && (
-        <p className="mt-2 text-sm" style={{ color: colors.status.errorText }}>{passwordError}</p>
-      )}
     </div>
   );
 }

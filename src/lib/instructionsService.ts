@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './database';
 import { appLogger } from './appLogger';
 
 const WEBHOOK_URL = 'https://n8n-self-host-gedarta.onrender.com/webhook-test/3961e6fa-4199-4f85-82f5-4e7e036f7e18';

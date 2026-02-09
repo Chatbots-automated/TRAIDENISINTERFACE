@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check } from 'lucide-react';
-import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/supabase';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown } from 'lucide-react';
+import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
 
@@ -14,6 +14,10 @@ interface UserData {
   display_name?: string;
   is_admin: boolean;
   created_at: string;
+  phone?: string;
+  kodas?: string;
+  full_name?: string;
+  role?: string;
 }
 
 export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) {
@@ -24,6 +28,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [roleFilter, setRoleFilter] = useState<string | null>(null); // null = exclude vadybininkas, 'all' = show all, or specific role
+  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
@@ -119,6 +126,20 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
     }
   };
 
+  // Get unique roles from users
+  const availableRoles = Array.from(new Set(users.map(u => u.role).filter(Boolean))) as string[];
+
+  // Filter users based on role filter
+  const filteredUsers = users.filter(u => {
+    if (roleFilter === 'all') return true;
+    if (roleFilter === null) {
+      // Default: exclude vadybininkas
+      return u.role?.toLowerCase() !== 'vadybininkas';
+    }
+    // Specific role selected
+    return u.role?.toLowerCase() === roleFilter.toLowerCase();
+  });
+
   if (!user.is_admin) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.primary }}>
@@ -147,19 +168,104 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>User Management</h2>
             <p className="text-sm" style={{ color: colors.text.secondary }}>Create and manage user accounts</p>
           </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
-            style={{
-              background: colors.interactive.accent,
-              color: '#ffffff'
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
-            onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add User</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Role Filter */}
+            <div className="relative">
+              <button
+                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border"
+                style={{
+                  background: colors.bg.white,
+                  color: colors.text.primary,
+                  borderColor: colors.border.default
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = colors.border.default}
+              >
+                <Filter className="w-4 h-4" />
+                <span className="text-sm">
+                  {roleFilter === 'all' ? 'All Roles' : roleFilter === null ? 'Default Filter' : roleFilter}
+                </span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {/* Dropdown */}
+              {showRoleDropdown && (
+                <div
+                  className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto"
+                  style={{ borderColor: colors.border.default }}
+                >
+                  <button
+                    onClick={() => {
+                      setRoleFilter(null);
+                      setShowRoleDropdown(false);
+                    }}
+                    className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                    style={{ color: colors.text.primary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    <span>Default (hide managers)</span>
+                    {roleFilter === null && (
+                      <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRoleFilter('all');
+                      setShowRoleDropdown(false);
+                    }}
+                    className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                    style={{ color: colors.text.primary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                  >
+                    <span>All Roles</span>
+                    {roleFilter === 'all' && (
+                      <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
+                    )}
+                  </button>
+                  {availableRoles.length > 0 && (
+                    <>
+                      <div className="border-t my-1" style={{ borderColor: colors.border.light }} />
+                      {availableRoles.map((role) => (
+                        <button
+                          key={role}
+                          onClick={() => {
+                            setRoleFilter(role);
+                            setShowRoleDropdown(false);
+                          }}
+                          className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                          style={{ color: colors.text.primary }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                        >
+                          <span className="capitalize">{role}</span>
+                          {roleFilter === role && (
+                            <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
+              style={{
+                background: colors.interactive.accent,
+                color: '#ffffff'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add User</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -334,27 +440,33 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: colors.bg.secondary }} />
             ))}
           </div>
-        ) : users.length === 0 ? (
+        ) : filteredUsers.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-16 h-16 mx-auto mb-4" style={{ color: colors.text.tertiary }} />
-            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>No users yet</h3>
-            <p className="mb-6" style={{ color: colors.text.secondary }}>Create your first user to get started</p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="px-6 py-3 rounded-lg transition-colors"
-              style={{
-                background: colors.interactive.accent,
-                color: '#ffffff'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
-              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
-            >
-              Add User
-            </button>
+            <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
+              {users.length === 0 ? 'No users yet' : 'No users match the filter'}
+            </h3>
+            <p className="mb-6" style={{ color: colors.text.secondary }}>
+              {users.length === 0 ? 'Create your first user to get started' : 'Try changing the filter to see users'}
+            </p>
+            {users.length === 0 && (
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-6 py-3 rounded-lg transition-colors"
+                style={{
+                  background: colors.interactive.accent,
+                  color: '#ffffff'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
+                onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
+              >
+                Add User
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
-            {users.map((userData) => (
+            {filteredUsers.map((userData) => (
               <div
                 key={userData.id}
                 className="rounded-lg p-4 border transition-all"
@@ -432,68 +544,120 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
-                        background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
-                      }}>
-                        {userData.is_admin ? (
-                          <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
-                        ) : (
-                          <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
-                        )}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center space-x-2">
-                          <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
-                            {userData.display_name || userData.email}
-                          </h3>
-                          {userData.is_admin && (
-                            <span className="px-2 py-1 text-xs rounded-full" style={{
-                              background: colors.interactive.accentLight,
-                              color: colors.interactive.accent
-                            }}>
-                              Admin
-                            </span>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
+                          background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
+                        }}>
+                          {userData.is_admin ? (
+                            <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
+                          ) : (
+                            <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
                           )}
                         </div>
-                        <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
-                        <p className="text-xs" style={{ color: colors.text.tertiary }}>
-                          Created: {new Date(userData.created_at).toLocaleDateString()}
-                        </p>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
+                              {userData.display_name || userData.full_name || userData.email}
+                            </h3>
+                            {userData.is_admin && (
+                              <span className="px-2 py-1 text-xs rounded-full" style={{
+                                background: colors.interactive.accentLight,
+                                color: colors.interactive.accent
+                              }}>
+                                Admin
+                              </span>
+                            )}
+                            {userData.role && (
+                              <span className="px-2 py-1 text-xs rounded-full" style={{
+                                background: colors.bg.tertiary,
+                                color: colors.text.secondary
+                              }}>
+                                {userData.role}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
+                          <p className="text-xs" style={{ color: colors.text.tertiary }}>
+                            Created: {new Date(userData.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setExpandedUserId(expandedUserId === userData.id ? null : userData.id)}
+                          className="p-2 rounded-lg transition-colors"
+                          style={{ color: colors.text.tertiary }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = colors.interactive.accent;
+                            e.currentTarget.style.background = colors.interactive.accentLight;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = colors.text.tertiary;
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                          title="View details"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(userData)}
+                          className="p-2 rounded-lg transition-colors"
+                          style={{ color: colors.text.tertiary }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = colors.text.secondary;
+                            e.currentTarget.style.background = colors.bg.secondary;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = colors.text.tertiary;
+                            e.currentTarget.style.background = 'transparent';
+                          }}
+                          title="Edit user"
+                        >
+                          <UserIcon className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteUser(userData.id)}
+                          className="p-2 rounded-lg transition-colors"
+                          style={{ color: colors.status.errorText }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          title="Delete user"
+                          disabled={userData.id === user.id}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setEditingUser(userData)}
-                        className="p-2 rounded-lg transition-colors"
-                        style={{ color: colors.text.tertiary }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = colors.text.secondary;
-                          e.currentTarget.style.background = colors.bg.secondary;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = colors.text.tertiary;
-                          e.currentTarget.style.background = 'transparent';
-                        }}
-                        title="Edit user"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteUser(userData.id)}
-                        className="p-2 rounded-lg transition-colors"
-                        style={{ color: colors.status.errorText }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        title="Delete user"
-                        disabled={userData.id === user.id}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {/* Expandable Details */}
+                    {expandedUserId === userData.id && (
+                      <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4" style={{ borderColor: colors.border.light }}>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Full Name</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.full_name || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Email</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.email}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Phone</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.phone || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Code (Kodas)</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.kodas || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Role</label>
+                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.role || '-'}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

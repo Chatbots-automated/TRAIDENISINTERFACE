@@ -1,77 +1,77 @@
-import { createClient } from '@supabase/supabase-js';
+/**
+ * PostgREST-based database client
+ * This replaces the Supabase client for local PostgreSQL + PostgREST setup
+ */
+
+import { postgrest, createClient } from './postgrest';
 import { appLogger } from './appLogger';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const postgrestUrl = import.meta.env.VITE_POSTGREST_URL || 'http://localhost:3000';
+const postgrestAnonKey = import.meta.env.VITE_POSTGREST_ANON_KEY || 'anon';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables');
+if (!postgrestUrl) {
+  throw new Error('Missing VITE_POSTGREST_URL environment variable');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Main client (using anon role)
+export const supabase = createClient(postgrestUrl, postgrestAnonKey);
 
-// Admin client with service role key to bypass RLS when needed
-// Use a different auth storage key to avoid "Multiple GoTrueClient instances" warning
-export const supabaseAdmin = supabaseServiceKey
-  ? createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        storageKey: 'supabase-admin-auth',
-        autoRefreshToken: false,
-        persistSession: false,
-      }
-    })
-  : supabase; // Fallback to regular client if service key not available
+// Admin client (same as main client for PostgREST - permissions controlled by DB roles)
+export const supabaseAdmin = createClient(postgrestUrl, postgrestAnonKey);
 
-// Auth helpers
+console.log('✅ PostgREST client configured at:', postgrestUrl);
+
+// ============================================================================
+// Auth helpers (using local password-based authentication)
+// ============================================================================
+
 export const signUp = async (email: string, password: string, fullName?: string) => {
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password,
-  });
+  try {
+    const newUserId = crypto.randomUUID();
 
-  if (authError) {
-    await appLogger.logAuth({
-      action: 'signup_failed',
-      userEmail: email,
-      metadata: { error: authError.message, display_name: fullName }
-    });
-    return { data: null, error: authError };
-  }
-
-  // Create app_users record
-  if (authData.user) {
+    // Create app_users record with password
     const { data: appUserData, error: appUserError } = await supabase
       .from('app_users')
       .insert([{
-        id: authData.user.id,
+        id: newUserId,
         email: email,
+        password: password,
         display_name: fullName,
         is_admin: false
       }])
       .select()
-      .single();
+      .single()
+      ;
 
     if (appUserError) {
       console.error('Error creating app user:', appUserError);
       await appLogger.logAuth({
         action: 'signup_failed',
-        userId: authData.user.id,
         userEmail: email,
         metadata: { error: appUserError.message, display_name: fullName }
       });
-      return { data: authData, error: appUserError };
+      return { data: null, error: appUserError };
     }
 
     await appLogger.logAuth({
       action: 'signup_success',
-      userId: authData.user.id,
+      userId: newUserId,
       userEmail: email,
       metadata: { display_name: fullName }
     });
-  }
 
-  return { data: authData, error: null };
+    // Return user data in expected format
+    return {
+      data: {
+        user: appUserData,
+        session: { user: appUserData }
+      },
+      error: null
+    };
+  } catch (error: any) {
+    console.error('Signup error:', error);
+    return { data: null, error: { message: error.message || 'Signup failed' } };
+  }
 };
 
 export const signIn = async (email: string, password: string) => {
@@ -82,7 +82,8 @@ export const signIn = async (email: string, password: string) => {
       .select('*')
       .eq('email', email)
       .eq('password', password)
-      .single();
+      .single()
+      ;
 
     if (error || !userData) {
       await appLogger.logAuth({
@@ -161,7 +162,10 @@ export const getCurrentUser = async () => {
   }
 };
 
+// ============================================================================
 // Admin functions
+// ============================================================================
+
 export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
   try {
     const { user: adminUser } = await getCurrentUser();
@@ -177,7 +181,8 @@ export const createUserByAdmin = async (email: string, password: string, display
         is_admin: isAdmin
       }])
       .select()
-      .single();
+      .single()
+      ;
 
     if (appUserError) {
       console.error('Error creating app user:', appUserError);
@@ -217,8 +222,9 @@ export const getAllUsers = async () => {
   try {
     const { data, error } = await supabase
       .from('app_users')
-      .select('id, email, display_name, is_admin, created_at')
-      .order('created_at', { ascending: false });
+      .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
+      .order('created_at', { ascending: false })
+      ;
 
     if (error) {
       console.error('Error getting users:', error);
@@ -241,14 +247,16 @@ export const updateUserByAdmin = async (userId: string, updates: { display_name?
       .from('app_users')
       .select('email')
       .eq('id', userId)
-      .single();
+      .single()
+      ;
 
     const { data, error } = await supabase
       .from('app_users')
       .update(updates)
       .eq('id', userId)
       .select()
-      .single();
+      .single()
+      ;
 
     if (error) {
       console.error('Error updating user:', error);
@@ -289,12 +297,14 @@ export const deleteUserByAdmin = async (userId: string) => {
       .from('app_users')
       .select('email')
       .eq('id', userId)
-      .single();
+      .single()
+      ;
 
     const { data, error } = await supabase
       .from('app_users')
       .delete()
-      .eq('id', userId);
+      .eq('id', userId)
+      ;
 
     if (error) {
       console.error('Error deleting user:', error);
@@ -324,56 +334,33 @@ export const deleteUserByAdmin = async (userId: string) => {
     return { data: null, error };
   }
 };
+
+// ============================================================================
 // Project management
+// ============================================================================
+
 export const getOrCreateDefaultProject = async (userId: string, userEmail: string) => {
   try {
-    // Check if user is a member of any project
-    const { data: membershipData, error: membershipError } = await supabase
-      .from('project_members')
-      .select('project_id, role')
-      .eq('user_id', userId)
-      .limit(1);
-
-    if (membershipError) {
-      console.error('Error checking project membership:', membershipError);
-      throw membershipError;
-    }
-
-    // If user is member of a project, return that project ID
-    if (membershipData && membershipData.length > 0) {
-      return membershipData[0].project_id;
-    }
-
-    // Generate a new project ID (since we don't have a projects table)
-    const newProjectId = crypto.randomUUID();
-
-    // Add user as owner of the new project  
-    const { error: memberError } = await supabase
-      .from('project_members')
-      .insert({
-        project_id: newProjectId,
-        user_id: userId,
-        role: 'owner'
-      });
-
-    if (memberError) {
-      console.error('Error adding user as project member:', memberError);
-      throw memberError;
-    }
-
-    return newProjectId;
+    // For now, use userId as the project ID
+    // In the future, you can implement a proper projects table
+    console.log('[Auth] Creating/getting project for user:', userId);
+    return userId;
   } catch (error) {
     console.error('Error in getOrCreateDefaultProject:', error);
-    throw error;
+    // Return userId as fallback
+    return userId;
   }
 };
 
+// ============================================================================
 // Chat helpers
+// ============================================================================
+
 export const createChatThread = async (projectId: string, title: string, authorEmail: string) => {
   try {
     // Get current user to set author_id
     const { user: currentUser } = await getCurrentUser();
-    
+
     const { data, error } = await supabase
       .from('chat_items')
       .insert([{
@@ -388,7 +375,8 @@ export const createChatThread = async (projectId: string, title: string, authorE
         status: 'active'
       }])
       .select()
-      .single();
+      .single()
+      ;
 
     if (error) {
       console.error('Error creating chat thread:', error);
@@ -418,7 +406,8 @@ export const sendMessage = async (
       .select('chat_history, message_count')
       .eq('id', threadId)
       .eq('type', 'thread')
-      .single();
+      .single()
+      ;
 
     if (fetchError) {
       console.error('Error fetching thread:', fetchError);
@@ -454,7 +443,8 @@ export const sendMessage = async (
       .eq('id', threadId)
       .eq('type', 'thread')
       .select()
-      .single();
+      .single()
+      ;
 
     if (error) {
       console.error('Error updating thread with message:', error);
@@ -476,7 +466,8 @@ export const getChatThreads = async (projectId: string) => {
       .eq('type', 'thread')
       .eq('project_id', projectId)
       .is('deleted_at', null)
-      .order('last_message_at', { ascending: false });
+      .order('last_message_at', { ascending: false })
+      ;
 
     if (error) {
       console.error('Error getting chat threads:', error);
@@ -497,7 +488,8 @@ export const getChatMessages = async (threadId: string) => {
       .select('chat_history')
       .eq('id', threadId)
       .eq('type', 'thread')
-      .single();
+      .single()
+      ;
 
     if (error) {
       console.error('Error getting chat messages:', error);
@@ -520,7 +512,8 @@ export const deleteChatThread = async (threadId: string) => {
       .from('chat_items')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', threadId)
-      .eq('type', 'thread');
+      .eq('type', 'thread')
+      ;
 
     if (error) {
       console.error('Error deleting chat thread:', error);
@@ -541,7 +534,8 @@ export const updateChatThreadTitle = async (threadId: string, title: string) => 
       .from('chat_items')
       .update({ title })
       .eq('id', threadId)
-      .eq('type', 'thread');
+      .eq('type', 'thread')
+      ;
 
     if (error) {
       console.error('Error updating chat thread title:', error);
@@ -555,7 +549,10 @@ export const updateChatThreadTitle = async (threadId: string, title: string) => 
   }
 };
 
+// ============================================================================
 // Document helpers
+// ============================================================================
+
 export const createDocument = async (
   content: string,
   metadata: Record<string, any> = {}
@@ -568,7 +565,8 @@ export const createDocument = async (
         metadata
       }])
       .select()
-      .single();
+      .single()
+      ;
 
     if (error) {
       console.error('Error creating document:', error);
@@ -603,14 +601,13 @@ export const updateDocument = async (
       }
     }
 
-    let query = supabase
+    const { data, error } = await supabase
       .from('documents')
       .update(updates)
-      .eq('id', id);
-
-    const { data, error } = await query
+      .eq('id', id)
       .select()
-      .single();
+      .single()
+      ;
 
     if (error) {
       console.error('Error updating document:', error);
@@ -629,7 +626,8 @@ export const deleteDocument = async (id: string) => {
     const { data, error } = await supabase
       .from('documents')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      ;
 
     if (error) {
       console.error('Error deleting document:', error);
@@ -647,7 +645,8 @@ export const getDocuments = async () => {
   try {
     const { data, error } = await supabase
       .from('documents')
-      .select('*');
+      .select('*')
+      ;
 
     if (error) {
       console.error('Error getting documents:', error);

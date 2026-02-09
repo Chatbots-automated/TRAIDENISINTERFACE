@@ -1,7 +1,7 @@
 // Voiceflow API Service
 // Handles fetching transcripts and conversation data from Voiceflow
 
-import { supabase } from './supabase';
+import { supabase } from './database';
 import type { AppUser } from '../types';
 
 const VOICEFLOW_API_KEY = import.meta.env.VITE_VOICEFLOW_API_KEY;

@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './supabase';
+import { supabaseAdmin } from './database';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
 export type LogCategory = 'auth' | 'chat' | 'document' | 'user_management' | 'system' | 'api' | 'error';

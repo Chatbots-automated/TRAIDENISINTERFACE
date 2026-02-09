@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: traidenis_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - traidenis_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgREST API
+  postgrest:
+    image: postgrest/postgrest:latest
+    container_name: traidenis_postgrest
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGREST_PASSWORD:-your_authenticator_password}@postgres:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMA: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${POSTGREST_JWT_SECRET:-your_jwt_secret_minimum_32_characters_long}
+      PGRST_DB_MAX_ROWS: 1000
+      PGRST_DB_POOL: 10
+      PGRST_DB_POOL_TIMEOUT: 10
+      PGRST_SERVER_PROXY_URI: ${POSTGREST_PROXY_URI:-http://localhost:3000}
+      # Allow CORS for development
+      PGRST_SERVER_CORS_ALLOWED_ORIGINS: ${CORS_ORIGINS:-*}
+    ports:
+      - "0.0.0.0:3000:3000"  # Bind to all interfaces for network access
+    networks:
+      - traidenis_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # pgAdmin (Optional - for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: traidenis_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@traidenis.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    networks:
+      - traidenis_network
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+networks:
+  traidenis_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local

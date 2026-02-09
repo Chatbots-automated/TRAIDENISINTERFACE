@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, User, Activity, AlertCircle } from 'lucide-react';
-import { supabaseAdmin } from '../lib/supabase';
+import { supabaseAdmin } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
 
