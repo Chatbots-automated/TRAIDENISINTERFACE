@@ -1,4 +1,4 @@
-import { supabaseAdmin } from './supabase';
+import { supabaseAdmin } from './database';
 import { appLogger } from './appLogger';
 import type { SDKConversation } from './sdkConversationService';
 

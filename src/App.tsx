@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { getCurrentUser, getOrCreateDefaultProject } from './lib/supabase';
+import { getCurrentUser, getOrCreateDefaultProject } from './lib/database';
 import Layout from './components/Layout';
 import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';

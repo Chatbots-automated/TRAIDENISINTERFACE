@@ -1,5 +1,5 @@
--- Migration from Supabase to Local PostgreSQL with PostgREST
--- This script creates all necessary tables for the TRAIDENIS application
+-- Initial Database Schema for TRAIDENIS
+-- PostgreSQL with PostgREST - All necessary tables and configurations
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

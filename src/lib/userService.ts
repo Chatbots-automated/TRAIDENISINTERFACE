@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './database';
 
 export interface AppUserData {
   id: string;

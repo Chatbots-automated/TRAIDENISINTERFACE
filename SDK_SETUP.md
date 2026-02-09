@@ -5,7 +5,7 @@ The SDK tab provides direct integration with Anthropic's Claude Sonnet 4 API usi
 
 ## Prerequisites
 - Anthropic API key (get one at: https://console.anthropic.com/)
-- Supabase table `instruction_variables` populated with prompt variables
+- PostgreSQL database with `instruction_variables` table populated
 - Netlify deployment (for production)
 
 ---
@@ -50,8 +50,8 @@ npm install
 Create or update your `.env` file in the project root:
 
 ```env
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_POSTGREST_URL=http://localhost:3000
+VITE_POSTGREST_ANON_KEY=anon
 VITE_VOICEFLOW_API_KEY=your_voiceflow_api_key
 VITE_VOICEFLOW_PROJECT_ID=your_voiceflow_project_id
 
@@ -71,9 +71,9 @@ npm run dev
 
 ---
 
-## Supabase Table Setup
+## Database Table Setup
 
-The SDK tab requires a table called `instruction_variables` in Supabase:
+The SDK tab requires a table called `instruction_variables` in PostgreSQL:
 
 ### Table Schema
 ```sql

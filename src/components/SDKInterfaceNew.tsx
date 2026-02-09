@@ -199,7 +199,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
   const fetchTemplateVariable = async (): Promise<string> => {
     try {
-      const { supabaseAdmin } = await import('../lib/supabase');
+      const { supabaseAdmin } = await import('../lib/database');
       const { data, error } = await supabaseAdmin
         .from('instruction_variables')
         .select('content')
@@ -220,7 +220,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
   const saveTemplateVariable = async (content: string): Promise<{ success: boolean; error?: any }> => {
     try {
-      const { supabaseAdmin } = await import('../lib/supabase');
+      const { supabaseAdmin } = await import('../lib/database');
 
       // Update the template variable in instruction_variables table
       const { error } = await supabaseAdmin

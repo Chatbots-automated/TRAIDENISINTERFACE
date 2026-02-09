@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './database';
 import { appLogger } from './appLogger';
 
 export interface NestandardinisProject {

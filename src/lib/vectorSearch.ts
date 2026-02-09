@@ -1,5 +1,5 @@
 import { appLogger } from './appLogger';
-import { supabase, supabaseAdmin } from './supabase';
+import { supabase, supabaseAdmin } from './database';
 
 export interface SearchResult {
   id: string;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
-import { signOut } from '../lib/supabase';
+import { signOut } from '../lib/database';
 import {
   Menu,
   X,

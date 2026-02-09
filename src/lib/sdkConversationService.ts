@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from './supabase';
+import { supabase, supabaseAdmin } from './database';
 import { appLogger } from './appLogger';
 
 export interface SDKConversation {
