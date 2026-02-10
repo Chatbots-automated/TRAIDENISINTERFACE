@@ -15,6 +15,7 @@ import {
   Copy,
   RotateCcw,
   ChevronDown,
+  ChevronUp,
   User,
   Check,
   Share2,
@@ -45,6 +46,7 @@ import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
+import { OFFER_PARAMETER_DEFINITIONS, loadOfferParameters, saveOfferParameters, getDefaultOfferParameters } from '../lib/offerParametersService';
 import {
   shareConversation,
   getSharedConversations,
@@ -110,6 +112,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Notifications
   const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Offer parameters (per-conversation, stored in localStorage)
+  const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
+  // Collapsible sections state
+  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: false, objectParams: true });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -181,6 +188,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setShowScrollButton(false);
     }
   }, [loading]);
+
+  // Load offer parameters when conversation changes
+  useEffect(() => {
+    if (currentConversation?.id) {
+      setOfferParameters(loadOfferParameters(currentConversation.id));
+    } else {
+      setOfferParameters(getDefaultOfferParameters());
+    }
+  }, [currentConversation?.id]);
 
   const loadSystemPrompt = async () => {
     try {
@@ -1431,27 +1447,36 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     return items.map((item) => (
       <div key={item.lineIndex} className="group mb-2">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           <button
             onClick={() => {
               setInputValue(`Pakeisk {{${item.key}}} į: `);
               textareaRef.current?.focus();
             }}
-            className="text-left flex-1 rounded-lg px-4 py-3 transition-shadow hover:shadow-md"
+            className="yaml-var-card text-left flex-1 rounded-md px-4 py-2.5 transition-all"
             style={{
               background: '#ffffff',
-              border: '1px solid #e8e5e0',
+              borderLeft: '3px solid #d1d5db',
               fontSize: '15px',
               lineHeight: '1.5',
               color: '#1D1D1F',
               fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
             }}
             title="Spustelėkite, kad redaguotumėte"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#f0f7ff';
+              e.currentTarget.style.borderLeftColor = '#3b82f6';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#ffffff';
+              e.currentTarget.style.borderLeftColor = '#d1d5db';
+            }}
           >
+            <span style={{ fontSize: '10px', color: '#9ca3af', letterSpacing: '0.02em', display: 'block', marginBottom: '2px' }}>{item.key}</span>
             <span style={{ whiteSpace: 'pre-wrap' }}>{item.value}</span>
           </button>
           <Copy
-            className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+            className="w-3.5 h-3.5 mt-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
             style={{ color: '#8a857f' }}
             onClick={() => {
               navigator.clipboard.writeText(`{{${item.key}}}`);
@@ -1616,6 +1641,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         ekonomistas_name: selectedEconomist.full_name || selectedEconomist.display_name || selectedEconomist.email,
         manager_code: managerCode,
         manager_name: selectedManager.full_name || selectedManager.display_name || selectedManager.email,
+
+        // Offer parameters (object & water params)
+        ...offerParameters,
 
         // Original YAML for reference (in case n8n needs it)
         original_yaml: currentConversation.artifact.content
@@ -2398,197 +2426,317 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               )}
             </div>
 
-            {/* Content */}
+            {/* Scrollable Content with Collapsible Sections */}
             <div
-              className="flex-1 overflow-y-auto px-6 py-6 relative"
+              className="flex-1 overflow-y-auto px-6 py-4 relative"
               style={{
-                maskImage: 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)'
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)'
               }}
             >
-              {isStreamingArtifact ? (
-                <div>
-                  <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                    {renderInteractiveYAML(artifactStreamContent)}
+              {/* Section 1: Offer Data (AI-generated YAML variables) */}
+              <div className="mb-4">
+                <button
+                  onClick={() => setSectionCollapsed(prev => ({ ...prev, offerData: !prev.offerData }))}
+                  className="w-full flex items-center justify-between py-2 mb-2 transition-colors"
+                  style={{ color: '#3d3935' }}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>
+                    Pasiūlymo duomenys
+                  </span>
+                  {sectionCollapsed.offerData ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />}
+                </button>
+
+                {!sectionCollapsed.offerData && (
+                  <div>
+                    {isStreamingArtifact ? (
+                      <div>
+                        <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                          {renderInteractiveYAML(artifactStreamContent)}
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
+                          <span className="text-xs" style={{ color: '#6b7280' }}>Generuojamas pasiūlymas...</span>
+                        </div>
+                      </div>
+                    ) : currentConversation?.artifact ? (
+                      <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                        {renderInteractiveYAML(currentConversation.artifact.content)}
+                      </div>
+                    ) : (
+                      <p className="text-xs py-4 text-center" style={{ color: '#9ca3af' }}>
+                        Pasiūlymo duomenys bus rodomi po generavimo.
+                      </p>
+                    )}
                   </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
-                    <span className="text-xs" style={{ color: '#6b7280' }}>Generuojamas pasiūlymas...</span>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid #f0ede8' }} className="my-3" />
+
+              {/* Section 2: Object & Water Parameters */}
+              <div className="mb-4">
+                <button
+                  onClick={() => setSectionCollapsed(prev => ({ ...prev, objectParams: !prev.objectParams }))}
+                  className="w-full flex items-center justify-between py-2 mb-2 transition-colors"
+                  style={{ color: '#3d3935' }}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>
+                    Objekto ir vandens parametrai
+                  </span>
+                  {sectionCollapsed.objectParams ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />}
+                </button>
+
+                {!sectionCollapsed.objectParams && (
+                  <div className="space-y-3">
+                    {/* Object sentence */}
+                    {OFFER_PARAMETER_DEFINITIONS.filter(p => p.group === 'object').map((param) => (
+                      <div key={param.key}>
+                        <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>{param.label}</label>
+                        <input
+                          type="text"
+                          value={offerParameters[param.key] || ''}
+                          onChange={(e) => {
+                            const updated = { ...offerParameters, [param.key]: e.target.value };
+                            setOfferParameters(updated);
+                            if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                          }}
+                          className="w-full px-3 py-2 text-sm rounded-md transition-all focus:outline-none"
+                          style={{
+                            background: '#ffffff',
+                            borderLeft: '3px solid #d1d5db',
+                            color: '#1D1D1F',
+                            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderLeftColor = '#3b82f6';
+                            e.currentTarget.style.background = '#f0f7ff';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderLeftColor = '#d1d5db';
+                            e.currentTarget.style.background = '#ffffff';
+                          }}
+                          placeholder={param.defaultValue || 'Įveskite...'}
+                        />
+                      </div>
+                    ))}
+
+                    {/* Contamination & After Cleaning - compact table */}
+                    <div className="mt-2">
+                      <div className="grid grid-cols-3 gap-1 mb-1">
+                        <div className="text-[10px] font-medium" style={{ color: '#9ca3af' }}></div>
+                        <div className="text-[10px] font-medium text-center" style={{ color: '#9ca3af' }}>Užterštumo</div>
+                        <div className="text-[10px] font-medium text-center" style={{ color: '#9ca3af' }}>Po valymo</div>
+                      </div>
+                      {['BDS', 'SM', 'N', 'P'].map((param) => {
+                        const contKey = `${param}_reglamentORprovided`;
+                        const afterKey = `${param}_aftercleaning`;
+                        const contDef = OFFER_PARAMETER_DEFINITIONS.find(p => p.key === contKey);
+                        const afterDef = OFFER_PARAMETER_DEFINITIONS.find(p => p.key === afterKey);
+                        return (
+                          <div key={param} className="grid grid-cols-3 gap-1 mb-1 items-center">
+                            <div className="text-[11px] font-medium" style={{ color: '#6b7280' }}>{contDef?.label || param}</div>
+                            <input
+                              type="text"
+                              value={offerParameters[contKey] || ''}
+                              onChange={(e) => {
+                                const updated = { ...offerParameters, [contKey]: e.target.value };
+                                setOfferParameters(updated);
+                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                              }}
+                              className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
+                              style={{
+                                background: '#ffffff',
+                                borderLeft: '2px solid #d1d5db',
+                                color: '#1D1D1F'
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#3b82f6';
+                                e.currentTarget.style.background = '#f0f7ff';
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#d1d5db';
+                                e.currentTarget.style.background = '#ffffff';
+                              }}
+                            />
+                            <input
+                              type="text"
+                              value={offerParameters[afterKey] || ''}
+                              onChange={(e) => {
+                                const updated = { ...offerParameters, [afterKey]: e.target.value };
+                                setOfferParameters(updated);
+                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                              }}
+                              className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
+                              style={{
+                                background: '#ffffff',
+                                borderLeft: '2px solid #d1d5db',
+                                color: '#1D1D1F'
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#3b82f6';
+                                e.currentTarget.style.background = '#f0f7ff';
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#d1d5db';
+                                e.currentTarget.style.background = '#ffffff';
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div style={{ borderTop: '1px solid #f0ede8' }} className="my-3" />
+
+              {/* Section 3: Team (Economist & Manager) */}
+              {!isStreamingArtifact && currentConversation?.artifact && (
+                <div className="mb-4">
+                  <span className="text-xs font-semibold uppercase tracking-wider block py-2 mb-2" style={{ color: '#6b7280' }}>
+                    Komanda
+                  </span>
+                  <div className="space-y-2">
+                    {/* Economist Selection */}
+                    <div>
+                      <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>Ekonomistas</label>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowEconomistDropdown(!showEconomistDropdown)}
+                          className="w-full px-3 py-2 text-sm rounded-md transition-all flex items-center justify-between"
+                          style={{
+                            borderLeft: '3px solid ' + (selectedEconomist ? '#10b981' : '#d1d5db'),
+                            background: 'white',
+                            color: selectedEconomist ? '#3d3935' : '#8a857f'
+                          }}
+                          onMouseEnter={(e) => { if (!selectedEconomist) e.currentTarget.style.borderLeftColor = '#3b82f6'; e.currentTarget.style.background = '#f0f7ff'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = selectedEconomist ? '#10b981' : '#d1d5db'; e.currentTarget.style.background = 'white'; }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <User className="w-3.5 h-3.5" />
+                            <span>{selectedEconomist ? (selectedEconomist.full_name || selectedEconomist.email) : 'Pasirinkti...'}</span>
+                          </div>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+
+                        {showEconomistDropdown && (
+                          <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                            {economists.length === 0 ? (
+                              <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>Nerasta ekonomistų</div>
+                            ) : (
+                              economists.map((economist) => (
+                                <button
+                                  key={economist.id}
+                                  onClick={() => { setSelectedEconomist(economist); setShowEconomistDropdown(false); }}
+                                  className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                                  style={{ color: '#3d3935' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                >
+                                  <div>
+                                    <div className="font-medium">{economist.full_name || economist.display_name || economist.email}</div>
+                                    {economist.kodas && <div className="text-xs" style={{ color: '#8a857f' }}>Kodas: {economist.kodas}</div>}
+                                  </div>
+                                  {selectedEconomist?.id === economist.id && <Check className="w-4 h-4" style={{ color: '#10b981' }} />}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Manager Selection */}
+                    <div>
+                      <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>Vadybininkas</label>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowManagerDropdown(!showManagerDropdown)}
+                          className="w-full px-3 py-2 text-sm rounded-md transition-all flex items-center justify-between"
+                          style={{
+                            borderLeft: '3px solid ' + (selectedManager ? '#10b981' : '#d1d5db'),
+                            background: 'white',
+                            color: selectedManager ? '#3d3935' : '#8a857f'
+                          }}
+                          onMouseEnter={(e) => { if (!selectedManager) e.currentTarget.style.borderLeftColor = '#3b82f6'; e.currentTarget.style.background = '#f0f7ff'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = selectedManager ? '#10b981' : '#d1d5db'; e.currentTarget.style.background = 'white'; }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <User className="w-3.5 h-3.5" />
+                            <span>{selectedManager ? (selectedManager.full_name || selectedManager.email) : 'Pasirinkti...'}</span>
+                          </div>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+
+                        {showManagerDropdown && (
+                          <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                            {managers.length === 0 ? (
+                              <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>Nerasta vadybininkų</div>
+                            ) : (
+                              managers.map((manager) => (
+                                <button
+                                  key={manager.id}
+                                  onClick={() => { setSelectedManager(manager); setShowManagerDropdown(false); }}
+                                  className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                                  style={{ color: '#3d3935' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                >
+                                  <div>
+                                    <div className="font-medium">{manager.full_name || manager.display_name || manager.email}</div>
+                                    {manager.kodas && <div className="text-xs" style={{ color: '#8a857f' }}>Kodas: {manager.kodas}</div>}
+                                  </div>
+                                  {selectedManager?.id === manager.id && <Check className="w-4 h-4" style={{ color: '#10b981' }} />}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              ) : currentConversation?.artifact ? (
-                <div>
-                  <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                    {renderInteractiveYAML(currentConversation.artifact.content)}
-                  </div>
-                  <div className="mt-6 p-3 rounded-lg" style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
-                    <p className="text-xs" style={{ color: '#6b7280' }}>
-                      <strong>Patarimas:</strong> Spustelėkite ant kintamojo, kad įterptumėte nuorodą į pokalbį. Tada galite paprašyti Claude pakeisti tik tą reikšmę.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
+              )}
             </div>
 
-            {/* Footer - Economist Selection & Send Button */}
+            {/* Footer - Send Button */}
             {!isStreamingArtifact && currentConversation?.artifact && (
-              <div className="px-6 py-4">
-                <div className="space-y-3">
-                  {/* Economist Selection */}
-                  <div>
-                    <label className="text-xs font-medium mb-2 block" style={{ color: '#6b7280' }}>
-                      Select Economist
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowEconomistDropdown(!showEconomistDropdown)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-between"
-                        style={{
-                          borderColor: '#e8e5e0',
-                          background: 'white',
-                          color: selectedEconomist ? '#3d3935' : '#8a857f'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#5a5550'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8e5e0'}
-                      >
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4" />
-                          <span>{selectedEconomist ? (selectedEconomist.full_name || selectedEconomist.email) : 'Select economist...'}</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-
-                      {/* Dropdown */}
-                      {showEconomistDropdown && (
-                        <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
-                          {economists.length === 0 ? (
-                            <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
-                              No economists found
-                            </div>
-                          ) : (
-                            economists.map((economist) => (
-                              <button
-                                key={economist.id}
-                                onClick={() => {
-                                  setSelectedEconomist(economist);
-                                  setShowEconomistDropdown(false);
-                                }}
-                                className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                                style={{ color: '#3d3935' }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                              >
-                                <div>
-                                  <div className="font-medium">{economist.full_name || economist.display_name || economist.email}</div>
-                                  {economist.kodas && (
-                                    <div className="text-xs" style={{ color: '#8a857f' }}>Code: {economist.kodas}</div>
-                                  )}
-                                </div>
-                                {selectedEconomist?.id === economist.id && (
-                                  <Check className="w-4 h-4" style={{ color: '#10b981' }} />
-                                )}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Manager Selection */}
-                  <div>
-                    <label className="text-xs font-medium mb-2 block" style={{ color: '#6b7280' }}>
-                      Select Manager (Vadybininkas)
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowManagerDropdown(!showManagerDropdown)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-between"
-                        style={{
-                          borderColor: '#e8e5e0',
-                          background: 'white',
-                          color: selectedManager ? '#3d3935' : '#8a857f'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#5a5550'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8e5e0'}
-                      >
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4" />
-                          <span>{selectedManager ? (selectedManager.full_name || selectedManager.email) : 'Select manager...'}</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-
-                      {/* Dropdown */}
-                      {showManagerDropdown && (
-                        <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
-                          {managers.length === 0 ? (
-                            <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
-                              No managers found
-                            </div>
-                          ) : (
-                            managers.map((manager) => (
-                              <button
-                                key={manager.id}
-                                onClick={() => {
-                                  setSelectedManager(manager);
-                                  setShowManagerDropdown(false);
-                                }}
-                                className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                                style={{ color: '#3d3935' }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                              >
-                                <div>
-                                  <div className="font-medium">{manager.full_name || manager.display_name || manager.email}</div>
-                                  {manager.kodas && (
-                                    <div className="text-xs" style={{ color: '#8a857f' }}>Code: {manager.kodas}</div>
-                                  )}
-                                </div>
-                                {selectedManager?.id === manager.id && (
-                                  <Check className="w-4 h-4" style={{ color: '#10b981' }} />
-                                )}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Send Button */}
-                  <button
-                    onClick={handleSendToWebhook}
-                    disabled={!selectedEconomist || !selectedManager || sendingWebhook}
-                    className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    style={{
-                      background: selectedEconomist && !sendingWebhook ? '#5a5550' : '#d4cfc8',
-                      color: 'white'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedEconomist && !sendingWebhook) {
-                        e.currentTarget.style.background = '#3d3935';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selectedEconomist && !sendingWebhook) {
-                        e.currentTarget.style.background = '#5a5550';
-                      }
-                    }}
-                  >
-                    {sendingWebhook ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                        <span>Generuojama...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        <span>Generuoti</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+              <div className="px-6 py-3" style={{ borderTop: '1px solid #f0ede8' }}>
+                <button
+                  onClick={handleSendToWebhook}
+                  disabled={!selectedEconomist || !selectedManager || sendingWebhook}
+                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  style={{
+                    background: selectedEconomist && selectedManager && !sendingWebhook ? '#5a5550' : '#d4cfc8',
+                    color: 'white'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (selectedEconomist && selectedManager && !sendingWebhook) {
+                      e.currentTarget.style.background = '#3d3935';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (selectedEconomist && selectedManager && !sendingWebhook) {
+                      e.currentTarget.style.background = '#5a5550';
+                    }
+                  }}
+                >
+                  {sendingWebhook ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
+                      <span>Generuojama...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Generuoti</span>
+                    </>
+                  )}
+                </button>
               </div>
             )}
           </div>
