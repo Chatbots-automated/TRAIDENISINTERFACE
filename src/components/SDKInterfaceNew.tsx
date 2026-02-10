@@ -1834,7 +1834,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             <div className="flex-1 overflow-y-auto px-2">
               {loadingConversations ? (
                 <div className="p-4 text-center">
-                  <RoboticArmLoader isAnimated={true} size={80} />
+                  <RoboticArmLoader isAnimated={true} size={40} />
                 </div>
               ) : conversations.length === 0 ? (
                 <div className="p-4 text-center">
@@ -2220,15 +2220,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
               {/* Animated loader - always at bottom of all content when loading */}
               {loading && (
-                <div className="py-2 flex justify-start">
-                  <RoboticArmLoader isAnimated={true} size={200} />
+                <div className="flex justify-start -ml-2">
+                  <RoboticArmLoader isAnimated={true} size={120} />
                 </div>
               )}
 
               {/* Static loader when idle with conversation history */}
               {!loading && currentConversation && currentConversation.messages.length > 0 && (
-                <div className="py-3 flex justify-start">
-                  <RoboticArmLoader isAnimated={false} size={180} />
+                <div className="flex justify-start -ml-2">
+                  <RoboticArmLoader isAnimated={false} size={100} />
                 </div>
               )}
 
