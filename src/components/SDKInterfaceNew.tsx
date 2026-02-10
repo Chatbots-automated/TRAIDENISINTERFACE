@@ -1396,49 +1396,71 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Pattern: variable_key: "value" or variable_key: | (supports mixed case like economy_HNV)
     const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/;
 
-    return lines.map((line, index) => {
-      const match = line.match(variablePattern);
+    // Collect multiline values
+    const items: { key: string; value: string; lineIndex: number }[] = [];
+    let currentMultiline: { key: string; lines: string[]; lineIndex: number } | null = null;
 
-      if (match && !line.startsWith('#') && !line.startsWith(' ')) {
-        const [, varKey, value] = match;
-        const isMultiline = value.trim() === '|';
-
-        return (
-          <div key={index} className="group hover:bg-gray-50 px-2 py-1 -mx-2 rounded transition-colors">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  // Insert variable reference into chat input
-                  setInputValue(`Pakeisk {{${varKey}}} į: `);
-                  textareaRef.current?.focus();
-                }}
-                className="text-left flex-1 font-mono text-xs"
-                title="Spustelėkite, kad įterptumėte nuorodą į pokalbį"
-              >
-                <span style={{ color: '#0066cc', fontWeight: 600 }}>{varKey}</span>
-                <span style={{ color: '#666' }}>: </span>
-                {!isMultiline && <span style={{ color: '#059669' }}>{value}</span>}
-              </button>
-              <Copy
-                className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                style={{ color: '#8a857f' }}
-                onClick={() => {
-                  navigator.clipboard.writeText(`{{${varKey}}}`);
-                }}
-                title="Kopijuoti kintamojo nuorodą"
-              />
-            </div>
-          </div>
-        );
+    lines.forEach((line, index) => {
+      if (currentMultiline) {
+        if (/^\s+/.test(line) || line.trim() === '') {
+          currentMultiline.lines.push(line.trimStart());
+          return;
+        } else {
+          items.push({ key: currentMultiline.key, value: currentMultiline.lines.join('\n'), lineIndex: currentMultiline.lineIndex });
+          currentMultiline = null;
+        }
       }
 
-      // Regular line (comment, multiline content, etc.)
-      return (
-        <div key={index} className="font-mono text-xs" style={{ color: line.startsWith('#') ? '#888' : '#3d3935' }}>
-          {line || '\u00A0'}
-        </div>
-      );
+      const match = line.match(variablePattern);
+      if (match && !line.startsWith('#') && !line.startsWith(' ')) {
+        const [, varKey, value] = match;
+        if (value.trim() === '|') {
+          currentMultiline = { key: varKey, lines: [], lineIndex: index };
+        } else {
+          // Strip surrounding quotes from value
+          const cleanValue = value.replace(/^["']|["']$/g, '');
+          items.push({ key: varKey, value: cleanValue, lineIndex: index });
+        }
+      }
     });
+
+    // Flush any remaining multiline
+    if (currentMultiline) {
+      items.push({ key: currentMultiline.key, value: currentMultiline.lines.join('\n'), lineIndex: currentMultiline.lineIndex });
+    }
+
+    return items.map((item) => (
+      <div key={item.lineIndex} className="group mb-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setInputValue(`Pakeisk {{${item.key}}} į: `);
+              textareaRef.current?.focus();
+            }}
+            className="text-left flex-1 rounded-lg px-4 py-3 transition-shadow hover:shadow-md"
+            style={{
+              background: '#ffffff',
+              border: '1px solid #e8e5e0',
+              fontSize: '15px',
+              lineHeight: '1.5',
+              color: '#1D1D1F',
+              fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
+            }}
+            title="Spustelėkite, kad redaguotumėte"
+          >
+            <span style={{ whiteSpace: 'pre-wrap' }}>{item.value}</span>
+          </button>
+          <Copy
+            className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+            style={{ color: '#8a857f' }}
+            onClick={() => {
+              navigator.clipboard.writeText(`{{${item.key}}}`);
+            }}
+            title="Kopijuoti kintamojo nuorodą"
+          />
+        </div>
+      </div>
+    ));
   };
 
   const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
