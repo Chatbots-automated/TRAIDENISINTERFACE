@@ -2221,14 +2221,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               {/* Animated loader - always at bottom of all content when loading */}
               {loading && (
                 <div className="flex justify-start -ml-2">
-                  <RoboticArmLoader isAnimated={true} size={120} />
+                  <RoboticArmLoader isAnimated={true} size={80} />
                 </div>
               )}
 
               {/* Static loader when idle with conversation history */}
               {!loading && currentConversation && currentConversation.messages.length > 0 && (
                 <div className="flex justify-start -ml-2">
-                  <RoboticArmLoader isAnimated={false} size={100} />
+                  <RoboticArmLoader isAnimated={false} size={70} />
                 </div>
               )}
 
