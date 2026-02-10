@@ -55,9 +55,14 @@ export default function MessageContent({ content }: MessageContentProps) {
       let invokeMatch;
 
       while ((invokeMatch = invokeRegex.exec(match[1])) !== null) {
+        // Unescape HTML entities in parameters (from tool call XML encoding)
+        const rawParam = invokeMatch[2]
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&');
         toolCalls.push({
           name: invokeMatch[1],
-          parameters: invokeMatch[2],
+          parameters: rawParam,
           fullXml: invokeMatch[0]
         });
       }
@@ -241,9 +246,23 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       .join(' ');
   };
 
-  // Truncate parameter text for the pill display
+  // Extract a readable summary from parameter text for the pill display
   const truncateParam = (text: string, maxLen: number = 70): string => {
     const cleaned = text.replace(/\s+/g, ' ').trim();
+    // Try to parse JSON and extract the most readable value
+    try {
+      const parsed = JSON.parse(cleaned);
+      if (typeof parsed === 'object' && parsed !== null) {
+        // Pick the first string value that looks meaningful
+        const values = Object.values(parsed);
+        const readable = values.find(v => typeof v === 'string' && (v as string).length > 2) as string | undefined;
+        if (readable) {
+          return readable.length <= maxLen ? readable : readable.slice(0, maxLen) + '…';
+        }
+      }
+    } catch {
+      // Not JSON, use as-is
+    }
     if (cleaned.length <= maxLen) return cleaned;
     return cleaned.slice(0, maxLen) + '…';
   };

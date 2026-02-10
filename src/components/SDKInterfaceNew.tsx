@@ -614,9 +614,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           continue;
         }
 
+        // Strip display-only <function_calls> XML before sending to API
+        const cleaned = (msg.content as string).replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').trim();
         anthropicMessages.push({
           role: msg.role,
-          content: msg.content
+          content: cleaned || msg.content
         });
       }
 
@@ -643,7 +645,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     messages: Anthropic.MessageParam[],
     systemPrompt: string,
     conversation: SDKConversation,
-    currentMessages: SDKMessage[]
+    currentMessages: SDKMessage[],
+    accumulatedToolXml: string = ''
   ): Promise<void> => {
     try {
       // CRITICAL: Validate messages before API call
@@ -876,6 +879,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       });
       console.log(`[Content Filter] Filtered blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
 
+      // Build tool call XML from this round for persistence in chat history
+      const buildToolXml = (tools: Array<{ id: string; name: string; input: any }>): string => {
+        if (tools.length === 0) return '';
+        const invokeBlocks = tools.map(tu => {
+          const paramStr = typeof tu.input === 'string' ? tu.input : JSON.stringify(tu.input);
+          const safeParam = paramStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return '  <invoke name="' + tu.name + '">\n    <parameter name="input">' + safeParam + '</parameter' + '>\n  </invoke' + '>';
+        });
+        return '\n\n<function_calls' + '>\n' + invokeBlocks.join('\n') + '\n</function_calls' + '>\n';
+      };
+      const roundToolXml = buildToolXml(finalToolUses);
+      const newAccumulatedToolXml = accumulatedToolXml + (responseContent ? responseContent : '') + roundToolXml;
+
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
         console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
@@ -928,9 +944,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             .join('\n\n');
 
           // Create assistant message with buttons (ensure content is string)
+          // Prepend accumulated tool call XML so tool usage persists in chat history
+          const fullButtonContent = newAccumulatedToolXml
+            ? (newAccumulatedToolXml + (textContent || 'Displaying options...'))
+            : (textContent || 'Displaying options...');
           const assistantMessage: SDKMessage = {
             role: 'assistant',
-            content: textContent || 'Displaying options...',
+            content: fullButtonContent,
             timestamp: new Date().toISOString(),
             buttons: parsed.buttons, // Store buttons with the message
             buttonsMessage: parsed.message
@@ -1038,13 +1058,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           anthropicMessagesWithToolResults,
           systemPrompt,
           conversation,
-          currentMessages // Keep same currentMessages, not adding anything yet
+          currentMessages, // Keep same currentMessages, not adding anything yet
+          newAccumulatedToolXml
         );
       } else {
         // No more tool uses, save final assistant message
+        // Prepend accumulated tool call XML so tool usage persists in chat history
+        const fullContent = accumulatedToolXml ? (accumulatedToolXml + responseContent) : responseContent;
         const assistantMessage: SDKMessage = {
           role: 'assistant',
-          content: responseContent,
+          content: fullContent,
           timestamp: new Date().toISOString(),
           thinking: thinkingContent
         };
@@ -1242,11 +1265,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           continue;
         }
 
-        // Safe to add
-        console.log(`[PHASE 2][${idx}] ✅ KEEPING: Valid string message, length=${contentStr.length}`);
+        // Safe to add - strip display-only <function_calls> XML before sending to API
+        const cleanedContent = contentStr.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').trim();
+        console.log(`[PHASE 2][${idx}] ✅ KEEPING: Valid string message, length=${cleanedContent.length}`);
         anthropicMessages.push({
           role: msg.role,
-          content: msg.content
+          content: cleanedContent || contentStr
         });
         lastRole = msg.role;
       }
@@ -2184,11 +2208,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
               {/* Tool usage indicator */}
               {loading && isToolUse && (
-                <div className="mb-6 flex items-center gap-3 ml-1">
-                  <span className="text-sm" style={{ color: '#f97316' }}>
+                <div className="mb-4 flex items-center gap-2 ml-1">
+                  <span className="text-sm" style={{ color: '#8a857f' }}>
                     ✦
                   </span>
-                  <span className="text-sm font-medium" style={{ color: '#f97316' }}>
+                  <span className="text-sm font-medium" style={{ color: '#8a857f' }}>
                     Vykdoma: {toolUseName}...
                   </span>
                 </div>
@@ -2197,14 +2221,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               {/* Animated loader - always at bottom of all content when loading */}
               {loading && (
                 <div className="py-2 flex justify-start">
-                  <RoboticArmLoader isAnimated={true} size={56} />
+                  <RoboticArmLoader isAnimated={true} size={112} />
                 </div>
               )}
 
               {/* Static loader when idle with conversation history */}
               {!loading && currentConversation && currentConversation.messages.length > 0 && (
                 <div className="py-3 flex justify-start">
-                  <RoboticArmLoader isAnimated={false} size={48} />
+                  <RoboticArmLoader isAnimated={false} size={96} />
                 </div>
               )}
 
