@@ -61,9 +61,10 @@ interface SDKInterfaceNewProps {
   user: AppUser;
   projectId: string;
   mainSidebarCollapsed: boolean;
+  onUnreadCountChange?: (count: number) => void;
 }
 
-export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed }: SDKInterfaceNewProps) {
+export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange }: SDKInterfaceNewProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
@@ -153,6 +154,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       console.error('[Managers] Error loading:', error);
     }
   };
+
+  // Propagate unread count to parent for main sidebar badge
+  useEffect(() => {
+    onUnreadCountChange?.(unreadSharedCount);
+  }, [unreadSharedCount, onUnreadCountChange]);
 
   useEffect(() => {
     // Auto-scroll on new messages only if user hasn't scrolled up
@@ -446,7 +452,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
    */
   const handleSelectSharedConversation = async (sharedConv: SharedConversation) => {
     try {
-      if (!sharedConv.conversation) return;
+      // Fetch fresh conversation data (consistent with handleSelectConversation)
+      const { data, error: fetchError } = await getSDKConversation(sharedConv.conversation_id);
+      if (fetchError || !data) {
+        console.error('Error fetching shared conversation:', fetchError);
+        return;
+      }
+
+      // Run the same content migration as owned conversations
+      if (data.messages) {
+        data.messages = data.messages.map(msg => {
+          if (typeof msg.content !== 'string') {
+            const newContent = Array.isArray(msg.content)
+              ? (msg.content as any[]).map((block: any) =>
+                  block.type === 'text' ? block.text : ''
+                ).filter(Boolean).join('\n\n')
+              : '[Content format error]';
+            return { ...msg, content: newContent };
+          }
+          return msg;
+        });
+      }
 
       // Mark as read
       await markSharedAsRead(sharedConv.conversation_id, user.id);
@@ -455,8 +481,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       await loadConversationDetails(sharedConv.conversation_id);
 
       // Set as current conversation with read-only flag
-      setCurrentConversation(sharedConv.conversation);
+      setCurrentConversation(data);
       setIsReadOnly(true);
+      setShowArtifact(false);
       setError(null);
 
       // Reload shared conversations to update unread count
@@ -587,9 +614,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           continue;
         }
 
+        // Strip display-only <function_calls> XML before sending to API
+        const cleaned = (msg.content as string).replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').trim();
         anthropicMessages.push({
           role: msg.role,
-          content: msg.content
+          content: cleaned || msg.content
         });
       }
 
@@ -616,7 +645,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
     messages: Anthropic.MessageParam[],
     systemPrompt: string,
     conversation: SDKConversation,
-    currentMessages: SDKMessage[]
+    currentMessages: SDKMessage[],
+    accumulatedToolXml: string = ''
   ): Promise<void> => {
     try {
       // CRITICAL: Validate messages before API call
@@ -849,6 +879,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
       });
       console.log(`[Content Filter] Filtered blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
 
+      // Build tool call XML from this round for persistence in chat history
+      const buildToolXml = (tools: Array<{ id: string; name: string; input: any }>): string => {
+        if (tools.length === 0) return '';
+        const invokeBlocks = tools.map(tu => {
+          const paramStr = typeof tu.input === 'string' ? tu.input : JSON.stringify(tu.input);
+          const safeParam = paramStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          return '  <invoke name="' + tu.name + '">\n    <parameter name="input">' + safeParam + '</parameter' + '>\n  </invoke' + '>';
+        });
+        return '\n\n<function_calls' + '>\n' + invokeBlocks.join('\n') + '\n</function_calls' + '>\n';
+      };
+      const roundToolXml = buildToolXml(finalToolUses);
+      const newAccumulatedToolXml = accumulatedToolXml + (responseContent ? responseContent : '') + roundToolXml;
+
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
         console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
@@ -901,9 +944,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
             .join('\n\n');
 
           // Create assistant message with buttons (ensure content is string)
+          // Prepend accumulated tool call XML so tool usage persists in chat history
+          const fullButtonContent = newAccumulatedToolXml
+            ? (newAccumulatedToolXml + (textContent || 'Displaying options...'))
+            : (textContent || 'Displaying options...');
           const assistantMessage: SDKMessage = {
             role: 'assistant',
-            content: textContent || 'Displaying options...',
+            content: fullButtonContent,
             timestamp: new Date().toISOString(),
             buttons: parsed.buttons, // Store buttons with the message
             buttonsMessage: parsed.message
@@ -1011,13 +1058,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           anthropicMessagesWithToolResults,
           systemPrompt,
           conversation,
-          currentMessages // Keep same currentMessages, not adding anything yet
+          currentMessages, // Keep same currentMessages, not adding anything yet
+          newAccumulatedToolXml
         );
       } else {
         // No more tool uses, save final assistant message
+        // Prepend accumulated tool call XML so tool usage persists in chat history
+        const fullContent = accumulatedToolXml ? (accumulatedToolXml + responseContent) : responseContent;
         const assistantMessage: SDKMessage = {
           role: 'assistant',
-          content: responseContent,
+          content: fullContent,
           timestamp: new Date().toISOString(),
           thinking: thinkingContent
         };
@@ -1215,11 +1265,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
           continue;
         }
 
-        // Safe to add
-        console.log(`[PHASE 2][${idx}] ✅ KEEPING: Valid string message, length=${contentStr.length}`);
+        // Safe to add - strip display-only <function_calls> XML before sending to API
+        const cleanedContent = contentStr.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').trim();
+        console.log(`[PHASE 2][${idx}] ✅ KEEPING: Valid string message, length=${cleanedContent.length}`);
         anthropicMessages.push({
           role: msg.role,
-          content: msg.content
+          content: cleanedContent || contentStr
         });
         lastRole = msg.role;
       }
@@ -1315,12 +1366,35 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
   };
 
   /**
+   * Render user message with {{variable}} references highlighted in blue
+   */
+  const renderUserMessageWithVariables = (text: string): React.ReactNode => {
+    const parts = text.split(/(\{\{[a-zA-Z_][a-zA-Z0-9_]*\}\})/g);
+    if (parts.length === 1) return text;
+    return parts.map((part, i) => {
+      if (part.startsWith('{{') && part.endsWith('}}')) {
+        const varName = part.slice(2, -2);
+        return (
+          <span
+            key={i}
+            className="inline-flex items-center px-1.5 py-0.5 rounded text-[13px] font-mono font-medium"
+            style={{ background: '#dbeafe', color: '#1d4ed8' }}
+          >
+            {`{{${varName}}}`}
+          </span>
+        );
+      }
+      return part;
+    });
+  };
+
+  /**
    * Render YAML content with interactive variables
    */
   const renderInteractiveYAML = (yamlContent: string) => {
     const lines = yamlContent.split('\n');
-    // Pattern: variable_key: "value" or variable_key: |
-    const variablePattern = /^([a-z_]+[a-z0-9_]*)\s*:\s*(.+)$/;
+    // Pattern: variable_key: "value" or variable_key: | (supports mixed case like economy_HNV)
+    const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/;
 
     return lines.map((line, index) => {
       const match = line.match(variablePattern);
@@ -1719,7 +1793,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   color: sidebarView === 'shared' ? '#3d3935' : '#8a857f'
                 }}
               >
-                Pasidalinti
+                Bendri
                 {unreadSharedCount > 0 && (
                   <span className="absolute top-1 right-1 w-5 h-5 rounded-full text-xs flex items-center justify-center" style={{ background: '#f97316', color: 'white' }}>
                     {unreadSharedCount}
@@ -1854,144 +1928,146 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Floating Action Buttons */}
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
-          {/* Share Button - Show when conversation exists and user is owner */}
-          {currentConversation && !isReadOnly && (
-            <div className="relative">
+        {/* Floating Action Buttons - Hidden when artifact panel is open to avoid overlap */}
+        {!showArtifact && (
+          <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
+            {/* Artifact Toggle Button - Left of Share when both visible */}
+            {(currentConversation?.artifact || isStreamingArtifact) && (
               <button
-                onClick={handleToggleShareDropdown}
+                onClick={() => setShowArtifact(true)}
                 className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
                 style={{
-                  background: 'white',
-                  color: '#5a5550',
+                  background: isStreamingArtifact ? '#5a5550' : 'white',
+                  color: isStreamingArtifact ? 'white' : '#5a5550',
                   border: '1px solid #e8e5e0'
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <Share2 className="w-4 h-4" />
-                  <span className="text-sm font-medium">Dalintis</span>
+                  <FileText className="w-4 h-4" />
+                  <span className="text-sm font-medium">
+                    Generuoti
+                    {isStreamingArtifact && <span className="ml-1">●</span>}
+                  </span>
                 </div>
               </button>
+            )}
 
-              {/* Share Dropdown */}
-              {showShareDropdown && (
-                <>
-                  {/* Backdrop */}
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setShowShareDropdown(false)}
-                  />
-
-                  {/* Dropdown Content */}
-                  <div
-                    className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
-                    style={{ background: 'white', border: '1px solid #e8e5e0' }}
-                  >
-                    {/* Header */}
-                    <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
-                      <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
-                        Dalintis pokalbiu
-                      </h3>
-                      <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
-                        Pasirinkite vartotojus
-                      </p>
-                    </div>
-
-                    {/* User List */}
-                    <div className="max-h-64 overflow-y-auto p-2">
-                      {shareableUsers.length === 0 ? (
-                        <p className="text-xs text-center py-6" style={{ color: '#9ca3af' }}>
-                          Nėra vartotojų
-                        </p>
-                      ) : (
-                        <div className="space-y-1">
-                          {shareableUsers.map((shareUser) => (
-                            <label
-                              key={shareUser.id}
-                              className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedShareUsers.includes(shareUser.id)}
-                                onChange={() => toggleUserSelection(shareUser.id)}
-                                className="w-4 h-4 rounded"
-                                style={{ accentColor: '#5a5550' }}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
-                                  {shareUser.full_name || shareUser.display_name || shareUser.email}
-                                </div>
-                              </div>
-                              {selectedShareUsers.includes(shareUser.id) && (
-                                <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#5a5550' }} />
-                              )}
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Footer Actions */}
-                    <div className="px-3 py-3 border-t flex items-center gap-2" style={{ borderColor: '#f0ede8' }}>
-                      <button
-                        onClick={() => setShowShareDropdown(false)}
-                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                        style={{ background: '#f0ede8', color: '#5a5550' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      >
-                        Atšaukti
-                      </button>
-                      <button
-                        onClick={handleShareConversation}
-                        disabled={selectedShareUsers.length === 0 || sharingConversation}
-                        className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: '#5a5550', color: 'white' }}
-                        onMouseEnter={(e) => {
-                          if (!e.currentTarget.disabled) e.currentTarget.style.background = '#3d3935';
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!e.currentTarget.disabled) e.currentTarget.style.background = '#5a5550';
-                        }}
-                      >
-                        {sharingConversation ? (
-                          <span className="flex items-center justify-center gap-1">
-                            <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />
-                            Dalinasi...
-                          </span>
-                        ) : (
-                          `Dalintis (${selectedShareUsers.length})`
-                        )}
-                      </button>
-                    </div>
+            {/* Share Button - Show when conversation exists and user is owner */}
+            {currentConversation && !isReadOnly && (
+              <div className="relative">
+                <button
+                  onClick={handleToggleShareDropdown}
+                  className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
+                  style={{
+                    background: 'white',
+                    color: '#5a5550',
+                    border: '1px solid #e8e5e0'
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Share2 className="w-4 h-4" />
+                    <span className="text-sm font-medium">Dalintis</span>
                   </div>
-                </>
-              )}
-            </div>
-          )}
+                </button>
 
-          {/* Floating Artifact Toggle Button - Only show when panel is closed */}
-          {(currentConversation?.artifact || isStreamingArtifact) && !showArtifact && (
-            <button
-              onClick={() => setShowArtifact(true)}
-              className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
-              style={{
-                background: isStreamingArtifact ? '#5a5550' : 'white',
-                color: isStreamingArtifact ? 'white' : '#5a5550',
-                border: '1px solid #e8e5e0'
-              }}
-            >
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                <span className="text-sm font-medium">
-                  Generuoti
-                  {isStreamingArtifact && <span className="ml-1">●</span>}
-                </span>
+                {/* Share Dropdown */}
+                {showShareDropdown && (
+                  <>
+                    {/* Backdrop */}
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowShareDropdown(false)}
+                    />
+
+                    {/* Dropdown Content */}
+                    <div
+                      className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                      style={{ background: 'white', border: '1px solid #e8e5e0' }}
+                    >
+                      {/* Header */}
+                      <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
+                        <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
+                          Dalintis pokalbiu
+                        </h3>
+                        <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
+                          Pasirinkite vartotojus
+                        </p>
+                      </div>
+
+                      {/* User List */}
+                      <div className="max-h-64 overflow-y-auto p-2">
+                        {shareableUsers.length === 0 ? (
+                          <p className="text-xs text-center py-6" style={{ color: '#9ca3af' }}>
+                            Nėra vartotojų
+                          </p>
+                        ) : (
+                          <div className="space-y-1">
+                            {shareableUsers.map((shareUser) => (
+                              <label
+                                key={shareUser.id}
+                                className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedShareUsers.includes(shareUser.id)}
+                                  onChange={() => toggleUserSelection(shareUser.id)}
+                                  className="w-4 h-4 rounded"
+                                  style={{ accentColor: '#5a5550' }}
+                                />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
+                                    {shareUser.full_name || shareUser.display_name || shareUser.email}
+                                  </div>
+                                </div>
+                                {selectedShareUsers.includes(shareUser.id) && (
+                                  <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#5a5550' }} />
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="px-3 py-3 border-t flex items-center gap-2" style={{ borderColor: '#f0ede8' }}>
+                        <button
+                          onClick={() => setShowShareDropdown(false)}
+                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+                          style={{ background: '#f0ede8', color: '#5a5550' }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
+                        >
+                          Atšaukti
+                        </button>
+                        <button
+                          onClick={handleShareConversation}
+                          disabled={selectedShareUsers.length === 0 || sharingConversation}
+                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ background: '#5a5550', color: 'white' }}
+                          onMouseEnter={(e) => {
+                            if (!e.currentTarget.disabled) e.currentTarget.style.background = '#3d3935';
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!e.currentTarget.disabled) e.currentTarget.style.background = '#5a5550';
+                          }}
+                        >
+                          {sharingConversation ? (
+                            <span className="flex items-center justify-center gap-1">
+                              <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />
+                              Dalinasi...
+                            </span>
+                          ) : (
+                            `Dalintis (${selectedShareUsers.length})`
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Messages Area */}
         <div
@@ -2043,7 +2119,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                           }}
                         >
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
-                            {contentString}
+                            {renderUserMessageWithVariables(contentString)}
                           </div>
                         </div>
                       </div>
@@ -2127,26 +2203,32 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
               {loading && streamingContent && (
                 <div className="mb-8">
                   <MessageContent content={streamingContent.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')} />
-                  <div className="mt-3 flex items-start gap-2">
-                    <RoboticArmLoader isAnimated={true} size={48} />
-                  </div>
                 </div>
               )}
 
               {/* Tool usage indicator */}
               {loading && isToolUse && (
-                <div className="mb-6">
-                  <div className="flex items-center gap-3 px-3 py-2 rounded-lg" style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}>
-                    <RoboticArmLoader isAnimated={true} size={32} />
-                    <span className="text-sm">Vykdoma: {toolUseName}</span>
-                  </div>
+                <div className="mb-4 flex items-center gap-2 ml-1">
+                  <span className="text-sm" style={{ color: '#8a857f' }}>
+                    ✦
+                  </span>
+                  <span className="text-sm font-medium" style={{ color: '#8a857f' }}>
+                    Vykdoma: {toolUseName}...
+                  </span>
                 </div>
               )}
 
-              {/* Initial loading indicator */}
-              {loading && !streamingContent && !isToolUse && (
-                <div className="py-4 flex justify-start">
-                  <RoboticArmLoader isAnimated={true} size={48} />
+              {/* Animated loader - always at bottom of all content when loading */}
+              {loading && (
+                <div className="flex justify-start -ml-2">
+                  <RoboticArmLoader isAnimated={true} size={80} />
+                </div>
+              )}
+
+              {/* Static loader when idle with conversation history */}
+              {!loading && currentConversation && currentConversation.messages.length > 0 && (
+                <div className="flex justify-start -ml-2">
+                  <RoboticArmLoader isAnimated={false} size={70} />
                 </div>
               )}
 
@@ -2216,7 +2298,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                   onKeyDown={handleKeyDown}
                   placeholder="Parašykite žinutę..."
                   rows={1}
-                  className="w-full px-4 py-3.5 pr-80 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full px-4 py-3.5 pr-24 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}`, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
                   disabled={loading || !systemPrompt}
                 />
@@ -2244,14 +2326,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed 
                 </div>
               </div>
             </div>
-            {/* Static loader when waiting for user input - positioned above input */}
-            {!loading && currentConversation && currentConversation.messages.length > 0 && (
-              <div className="px-6 pb-3 flex items-center gap-2">
-                <div className="max-w-4xl mx-auto w-full">
-                  <RoboticArmLoader isAnimated={false} size={36} />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

@@ -14,7 +14,7 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
         display: 'inline-block'
       }}
     >
-      <svg viewBox="0 0 500 500" style={{ width: '100%', height: '100%' }}>
+      <svg viewBox="130 130 240 240" style={{ width: '100%', height: '100%' }}>
         <defs>
           <filter id="metaball">
             <feGaussianBlur
