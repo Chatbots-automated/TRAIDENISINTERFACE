@@ -1633,8 +1633,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     return 'yaml';
   };
 
-  /** Handle a variable click from the interactive preview. */
-  const handleVariableClick = (info: VariableClickInfo) => {
+  /** Handle a variable click from the interactive preview (null = close). */
+  const handleVariableClick = (info: VariableClickInfo | null) => {
+    if (!info) {
+      setEditingVariable(null);
+      return;
+    }
     const merged = mergeAllVariables();
     setEditingVariable({
       key: info.key,
@@ -1650,26 +1654,24 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     const category = categorizeVariable(key);
 
     if (category === 'offer') {
-      // Update offer parameter
       if (currentConversation) {
         const updated = { ...offerParameters, [key]: value };
         setOfferParameters(updated);
         saveOfferParameters(currentConversation.id, updated);
       }
     } else if (category === 'economist') {
-      // Find economist by name
       const match = economists.find((e) => e.full_name === value);
       if (match) setSelectedEconomist(match);
     } else if (category === 'manager') {
       const match = managers.find((m) => m.full_name === value);
       if (match) setSelectedManager(match);
     } else if (category === 'yaml') {
-      // Populate the chat input with a replacement prompt
       setInputValue(`Pakeisk {{${key}}} į: ${value}`);
       textareaRef.current?.focus();
     }
 
     setEditingVariable(null);
+    documentPreviewRef.current?.clearActiveVariable();
   };
 
   const handleSendToWebhook = async () => {
@@ -2551,190 +2553,237 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   ref={documentPreviewRef}
                   variables={mergeAllVariables()}
                   onVariableClick={handleVariableClick}
+                  onScroll={() => {
+                    if (editingVariable) {
+                      setEditingVariable(null);
+                      documentPreviewRef.current?.clearActiveVariable();
+                    }
+                  }}
                 />
 
-                {/* Floating variable editor popup */}
+                {/* Click-outside overlay + floating variable editor popup */}
                 {editingVariable && (() => {
                   const cat = categorizeVariable(editingVariable.key);
                   const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
                   const label = paramDef?.label || editingVariable.key;
+                  const categoryLabel = cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : 'AI kintamasis';
+                  const categoryColor = cat === 'offer' ? '#8b5cf6' : cat === 'economist' ? '#2563eb' : cat === 'manager' ? '#2563eb' : cat === 'team' ? '#059669' : '#d97706';
 
                   return (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        left: Math.min(editingVariable.x - 120, 280),
-                        top: editingVariable.y + 6,
-                        zIndex: 50,
-                        width: '260px',
-                      }}
-                    >
+                    <>
+                      {/* Invisible overlay to catch clicks outside the popup */}
                       <div
-                        className="rounded-lg shadow-lg"
+                        style={{ position: 'absolute', inset: 0, zIndex: 49 }}
+                        onClick={() => {
+                          setEditingVariable(null);
+                          documentPreviewRef.current?.clearActiveVariable();
+                        }}
+                      />
+
+                      {/* Popup card */}
+                      <div
                         style={{
-                          background: '#ffffff',
-                          border: '1px solid #e5e2dd',
-                          overflow: 'hidden',
+                          position: 'absolute',
+                          left: Math.min(Math.max(editingVariable.x - 130, 8), 260),
+                          top: editingVariable.y + 8,
+                          zIndex: 50,
+                          width: '264px',
+                          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
                         }}
                       >
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f0ede8', background: '#fafaf8' }}>
-                          <div>
-                            <span className="text-[10px] block" style={{ color: '#9ca3af' }}>
-                              {cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : 'AI kintamasis'}
-                            </span>
-                            <span className="text-xs font-medium" style={{ color: '#3d3935' }}>{label}</span>
+                        {/* Pointer triangle */}
+                        <div style={{
+                          width: 0, height: 0,
+                          borderLeft: '7px solid transparent',
+                          borderRight: '7px solid transparent',
+                          borderBottom: '7px solid #ffffff',
+                          marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                        }} />
+
+                        <div style={{
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(0,0,0,0.06)',
+                        }}>
+                          {/* Header — compact with colored category pill */}
+                          <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f3f2f0' }}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: categoryColor + '10', color: categoryColor }}>
+                                {categoryLabel}
+                              </span>
+                              <span className="text-[11px] font-medium truncate" style={{ color: '#3d3935' }}>{label}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setEditingVariable(null);
+                                documentPreviewRef.current?.clearActiveVariable();
+                              }}
+                              className="p-0.5 rounded-full flex-shrink-0 transition-colors"
+                              style={{ color: '#c0bbb5' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
                           </div>
-                          <button
-                            onClick={() => setEditingVariable(null)}
-                            className="p-0.5 rounded"
-                            style={{ color: '#9ca3af' }}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
 
-                        {/* Body — varies by category */}
-                        <div className="px-3 py-2.5">
-                          {cat === 'team' && (
-                            <div className="text-xs" style={{ color: '#6b7280' }}>
-                              <span>Automatiškai užpildyta:</span>
-                              <div className="mt-1 font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
-                            </div>
-                          )}
-
-                          {cat === 'economist' && (
-                            <div className="flex flex-col gap-1">
-                              {economists.length === 0 ? (
-                                <span className="text-xs" style={{ color: '#9ca3af' }}>Nėra ekonomistų</span>
-                              ) : (
-                                economists.map((econ) => (
-                                  <button
-                                    key={econ.id}
-                                    onClick={() => {
-                                      setSelectedEconomist(econ);
-                                      setEditingVariable(null);
-                                    }}
-                                    className="text-left text-xs px-2 py-1.5 rounded transition-colors"
-                                    style={{
-                                      background: selectedEconomist?.id === econ.id ? '#eff6ff' : 'transparent',
-                                      color: '#3d3935',
-                                      border: selectedEconomist?.id === econ.id ? '1px solid #bfdbfe' : '1px solid transparent',
-                                    }}
-                                    onMouseEnter={(e) => { if (selectedEconomist?.id !== econ.id) e.currentTarget.style.background = '#f9f8f6'; }}
-                                    onMouseLeave={(e) => { if (selectedEconomist?.id !== econ.id) e.currentTarget.style.background = 'transparent'; }}
-                                  >
-                                    <span className="font-medium">{econ.full_name || econ.email}</span>
-                                    {selectedEconomist?.id === econ.id && <Check className="w-3 h-3 inline ml-1" style={{ color: '#3b82f6' }} />}
-                                  </button>
-                                ))
-                              )}
-                            </div>
-                          )}
-
-                          {cat === 'manager' && (
-                            <div className="flex flex-col gap-1">
-                              {managers.length === 0 ? (
-                                <span className="text-xs" style={{ color: '#9ca3af' }}>Nėra vadybininkų</span>
-                              ) : (
-                                managers.map((mgr) => (
-                                  <button
-                                    key={mgr.id}
-                                    onClick={() => {
-                                      setSelectedManager(mgr);
-                                      setEditingVariable(null);
-                                    }}
-                                    className="text-left text-xs px-2 py-1.5 rounded transition-colors"
-                                    style={{
-                                      background: selectedManager?.id === mgr.id ? '#eff6ff' : 'transparent',
-                                      color: '#3d3935',
-                                      border: selectedManager?.id === mgr.id ? '1px solid #bfdbfe' : '1px solid transparent',
-                                    }}
-                                    onMouseEnter={(e) => { if (selectedManager?.id !== mgr.id) e.currentTarget.style.background = '#f9f8f6'; }}
-                                    onMouseLeave={(e) => { if (selectedManager?.id !== mgr.id) e.currentTarget.style.background = 'transparent'; }}
-                                  >
-                                    <span className="font-medium">{mgr.full_name || mgr.email}</span>
-                                    {selectedManager?.id === mgr.id && <Check className="w-3 h-3 inline ml-1" style={{ color: '#3b82f6' }} />}
-                                  </button>
-                                ))
-                              )}
-                            </div>
-                          )}
-
-                          {cat === 'offer' && (
-                            <div>
-                              <input
-                                type="text"
-                                value={editingVariable.editValue}
-                                onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleVariableSave(editingVariable.key, editingVariable.editValue);
-                                  if (e.key === 'Escape') setEditingVariable(null);
-                                }}
-                                autoFocus
-                                className="w-full text-xs px-2.5 py-1.5 rounded-md outline-none transition-colors"
-                                style={{ border: '1px solid #d1cdc7', color: '#3d3935' }}
-                                onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
-                                onBlur={(e) => e.currentTarget.style.borderColor = '#d1cdc7'}
-                              />
-                              <div className="flex justify-end mt-2 gap-1.5">
-                                <button
-                                  onClick={() => setEditingVariable(null)}
-                                  className="text-[10px] px-2 py-1 rounded"
-                                  style={{ color: '#8a857f' }}
-                                >
-                                  Atšaukti
-                                </button>
-                                <button
-                                  onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                  className="text-[10px] px-2.5 py-1 rounded font-medium"
-                                  style={{ background: '#5a5550', color: 'white' }}
-                                >
-                                  Išsaugoti
-                                </button>
+                          {/* Body */}
+                          <div className="px-3 py-2.5">
+                            {cat === 'team' && (
+                              <div>
+                                <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai užpildyta</span>
+                                <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
                               </div>
-                            </div>
-                          )}
+                            )}
 
-                          {cat === 'yaml' && (
-                            <div>
-                              <textarea
-                                value={editingVariable.editValue}
-                                onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Escape') setEditingVariable(null);
-                                }}
-                                autoFocus
-                                rows={3}
-                                className="w-full text-xs px-2.5 py-1.5 rounded-md outline-none resize-none transition-colors"
-                                style={{ border: '1px solid #d1cdc7', color: '#3d3935' }}
-                                onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
-                                onBlur={(e) => e.currentTarget.style.borderColor = '#d1cdc7'}
-                              />
-                              <div className="flex items-center justify-between mt-2">
-                                <span className="text-[9px]" style={{ color: '#b0aaa3' }}>Enter → čatas</span>
-                                <div className="flex gap-1.5">
+                            {cat === 'economist' && (
+                              <div className="flex flex-col gap-0.5">
+                                {economists.length === 0 ? (
+                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>Nėra ekonomistų</span>
+                                ) : (
+                                  economists.map((econ) => {
+                                    const isSelected = selectedEconomist?.id === econ.id;
+                                    return (
+                                      <button
+                                        key={econ.id}
+                                        onClick={() => {
+                                          setSelectedEconomist(econ);
+                                          setEditingVariable(null);
+                                          documentPreviewRef.current?.clearActiveVariable();
+                                        }}
+                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        style={{
+                                          background: isSelected ? '#eff6ff' : 'transparent',
+                                          color: '#3d3935',
+                                        }}
+                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
+                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                      >
+                                        <span className={isSelected ? 'font-medium' : ''}>{econ.full_name || econ.email}</span>
+                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'manager' && (
+                              <div className="flex flex-col gap-0.5">
+                                {managers.length === 0 ? (
+                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>Nėra vadybininkų</span>
+                                ) : (
+                                  managers.map((mgr) => {
+                                    const isSelected = selectedManager?.id === mgr.id;
+                                    return (
+                                      <button
+                                        key={mgr.id}
+                                        onClick={() => {
+                                          setSelectedManager(mgr);
+                                          setEditingVariable(null);
+                                          documentPreviewRef.current?.clearActiveVariable();
+                                        }}
+                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        style={{
+                                          background: isSelected ? '#eff6ff' : 'transparent',
+                                          color: '#3d3935',
+                                        }}
+                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
+                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                      >
+                                        <span className={isSelected ? 'font-medium' : ''}>{mgr.full_name || mgr.email}</span>
+                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'offer' && (
+                              <div>
+                                <input
+                                  type="text"
+                                  value={editingVariable.editValue}
+                                  onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleVariableSave(editingVariable.key, editingVariable.editValue);
+                                    if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                  }}
+                                  autoFocus
+                                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none transition-all"
+                                  style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                  onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                />
+                                <div className="flex justify-end mt-2 gap-1.5">
                                   <button
-                                    onClick={() => setEditingVariable(null)}
-                                    className="text-[10px] px-2 py-1 rounded"
-                                    style={{ color: '#8a857f' }}
+                                    onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                    className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                    style={{ color: '#9ca3af' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                   >
                                     Atšaukti
                                   </button>
                                   <button
                                     onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                    className="text-[10px] px-2.5 py-1 rounded font-medium"
-                                    style={{ background: '#5a5550', color: 'white' }}
+                                    className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                    style={{ background: '#3d3935', color: 'white' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
                                   >
-                                    Siųsti į čatą
+                                    Išsaugoti
                                   </button>
                                 </div>
                               </div>
-                            </div>
-                          )}
+                            )}
+
+                            {cat === 'yaml' && (
+                              <div>
+                                <textarea
+                                  value={editingVariable.editValue}
+                                  onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                  }}
+                                  autoFocus
+                                  rows={3}
+                                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                  style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                  onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                />
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-[9px]" style={{ color: '#c0bbb5' }}>Siųsti per čatą</span>
+                                  <div className="flex gap-1.5">
+                                    <button
+                                      onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                      className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                      style={{ color: '#9ca3af' }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                      Atšaukti
+                                    </button>
+                                    <button
+                                      onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                      className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                      style={{ background: '#3d3935', color: 'white' }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                                    >
+                                      Siųsti į čatą
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    </>
                   );
                 })()}
               </div>

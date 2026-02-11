@@ -4,6 +4,7 @@ import { renderTemplate, getDefaultTemplate, getUnfilledVariables } from '../lib
 
 export interface DocumentPreviewHandle {
   print: () => void;
+  clearActiveVariable: () => void;
 }
 
 export interface VariableClickInfo {
@@ -17,7 +18,8 @@ export interface VariableClickInfo {
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
-  onVariableClick?: (info: VariableClickInfo) => void;
+  onVariableClick?: (info: VariableClickInfo | null) => void;
+  onScroll?: () => void;
 }
 
 // The "native" zoom where the document fits the panel well.
@@ -25,11 +27,17 @@ interface DocumentPreviewProps {
 const BASE_ZOOM = 0.95;
 
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template, onVariableClick }, ref) {
+  function DocumentPreview({ variables, template, onVariableClick, onScroll }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
     const [iframeHeight, setIframeHeight] = useState(1200);
+
+    // Refs to avoid stale closures in iframe event handlers
+    const zoomRef = useRef(zoom);
+    zoomRef.current = zoom;
+    const onVariableClickRef = useRef(onVariableClick);
+    onVariableClickRef.current = onVariableClick;
 
     const templateHtml = template || getDefaultTemplate();
 
@@ -56,22 +64,28 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         padding: 36pt 36pt 36pt 36pt;
       }
 
-      /* Interactive variable styles */
+      /* Interactive variable styles — always visible */
       .template-var {
         cursor: pointer;
-        border-radius: 2px;
+        border-radius: 3px;
         transition: background 0.15s, box-shadow 0.15s;
       }
+      .template-var.filled {
+        background: rgba(59,130,246,0.04);
+        box-shadow: 0 0 0 1px rgba(59,130,246,0.12);
+        padding: 0 2px;
+        border-radius: 3px;
+      }
       .template-var.filled:hover {
-        background: #e8f0fe;
-        box-shadow: 0 0 0 2px #a8c7fa;
+        background: rgba(59,130,246,0.08);
+        box-shadow: 0 0 0 1.5px rgba(59,130,246,0.3);
       }
       .template-var.unfilled:hover {
         box-shadow: 0 0 0 2px #f59e0b;
       }
       .template-var.active {
-        background: #dbeafe !important;
-        box-shadow: 0 0 0 2px #3b82f6 !important;
+        background: rgba(59,130,246,0.12) !important;
+        box-shadow: 0 0 0 1.5px #3b82f6 !important;
       }
 
       /* Print-optimized styles */
@@ -91,7 +105,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           box-shadow: none !important;
         }
         .template-var { cursor: default; }
-        .template-var.filled { background: transparent !important; box-shadow: none !important; }
+        .template-var.filled { background: transparent !important; box-shadow: none !important; padding: 0 !important; }
         span[style*="background:#fff3cd"] {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
@@ -119,12 +133,18 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       );
     }, [renderedHtml]);
 
-    // Expose print() to parent via ref
+    // Expose print() and clearActiveVariable() to parent via ref
     useImperativeHandle(ref, () => ({
       print: () => {
         const iframe = iframeRef.current;
         if (iframe?.contentWindow) {
           iframe.contentWindow.print();
+        }
+      },
+      clearActiveVariable: () => {
+        const doc = iframeRef.current?.contentDocument;
+        if (doc) {
+          doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
         }
       },
     }));
@@ -144,6 +164,12 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       const iframe = iframeRef.current;
       const doc = iframe?.contentDocument;
       if (!doc) return;
+
+      // Click on body (non-variable area) clears active state and closes popup
+      doc.body.addEventListener('click', () => {
+        doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
+        onVariableClickRef.current?.(null);
+      });
 
       const varSpans = doc.querySelectorAll<HTMLSpanElement>('[data-var]');
       varSpans.forEach((span) => {
@@ -167,14 +193,14 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           const iframeRect = iframeEl.getBoundingClientRect();
           const containerRect = container.getBoundingClientRect();
 
-          // spanRect is in iframe viewport coords; iframeRect gives us
-          // the iframe's position in the page. Apply zoom scaling.
-          const x = iframeRect.left - containerRect.left + spanRect.left * zoom + (spanRect.width * zoom) / 2;
-          const y = iframeRect.top - containerRect.top + spanRect.top * zoom + spanRect.height * zoom;
+          // Use refs to get current zoom (avoids stale closure)
+          const z = zoomRef.current;
+          const x = iframeRect.left - containerRect.left + spanRect.left * z + (spanRect.width * z) / 2;
+          const y = iframeRect.top - containerRect.top + spanRect.top * z + spanRect.height * z;
 
           const isFilled = span.classList.contains('filled');
 
-          onVariableClick?.({
+          onVariableClickRef.current?.({
             key: varKey,
             filled: isFilled,
             x,
@@ -182,7 +208,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           });
         });
       });
-    }, [measureIframe, zoom, onVariableClick]);
+    }, [measureIframe]);
 
     // Re-measure when variables change (srcdoc updates trigger onLoad)
     useEffect(() => {
@@ -248,6 +274,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         <div
           className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
           style={{ background: '#ffffff' }}
+          onScroll={onScroll}
         >
           {/* Scaled wrapper — explicit size so scroll area matches visual content */}
           <div
