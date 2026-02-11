@@ -1579,19 +1579,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const parseYAMLContent = (yamlContent: string): Record<string, any> => {
     const lines = yamlContent.split('\n');
     const parsed: Record<string, any> = {};
+    let currentKey: string | null = null;
+    let multilineValue: string[] = [];
+
+    const flushMultiline = () => {
+      if (currentKey) {
+        parsed[currentKey] = multilineValue.join('\n').trim();
+        currentKey = null;
+        multilineValue = [];
+      }
+    };
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#')) {
-        const colonIndex = trimmed.indexOf(':');
-        if (colonIndex > 0) {
-          const key = trimmed.substring(0, colonIndex).trim();
-          const value = trimmed.substring(colonIndex + 1).trim();
-          // Remove quotes if present
-          parsed[key] = value.replace(/^["']|["']$/g, '');
+
+      // If we're collecting a multi-line block, indented lines belong to it
+      if (currentKey && (line.startsWith('  ') || line.startsWith('\t') || trimmed === '')) {
+        multilineValue.push(trimmed);
+        continue;
+      }
+
+      // Non-indented line while collecting → flush previous block
+      if (currentKey) flushMultiline();
+
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const colonIndex = trimmed.indexOf(':');
+      if (colonIndex > 0) {
+        const key = trimmed.substring(0, colonIndex).trim();
+        const rawValue = trimmed.substring(colonIndex + 1).trim();
+
+        if (rawValue === '|' || rawValue === '>') {
+          // Start of a multi-line block scalar
+          currentKey = key;
+          multilineValue = [];
+        } else {
+          // Simple key: value
+          parsed[key] = rawValue.replace(/^["']|["']$/g, '');
         }
       }
     }
+
+    // Flush any trailing multi-line block
+    flushMultiline();
 
     return parsed;
   };
