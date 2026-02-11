@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Send,
   Loader2,
@@ -71,7 +72,7 @@ interface SDKInterfaceNewProps {
 
 // Session persistence keys
 const SESSION_KEY = 'traidenis_sdk_session';
-function loadSession(): { conversationId?: string; showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
+function loadSession(): { showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
   try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}'); } catch { return {}; }
 }
 function saveSession(patch: Record<string, unknown>) {
@@ -82,6 +83,8 @@ function saveSession(patch: Record<string, unknown>) {
 }
 
 export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
+  const { conversationId: urlConversationId } = useParams<{ conversationId?: string }>();
+  const navigate = useNavigate();
   const session = useRef(loadSession()).current;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(session.sidebarCollapsed ?? false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
@@ -175,8 +178,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadShareableUsers();
   }, []);
 
-  // Persist session state so refresh restores where the user left off
-  useEffect(() => { saveSession({ conversationId: currentConversation?.id || null }); }, [currentConversation?.id]);
+  // Sync URL ↔ currentConversation
+  useEffect(() => {
+    const id = currentConversation?.id;
+    if (id && id !== urlConversationId) {
+      navigate(`/sdk/${id}`, { replace: true });
+    } else if (!id && urlConversationId) {
+      navigate('/sdk', { replace: true });
+    }
+  }, [currentConversation?.id]);
+
+  // Persist non-URL session state so refresh restores panel states
   useEffect(() => { saveSession({ showArtifact }); }, [showArtifact]);
   useEffect(() => { saveSession({ artifactTab }); }, [artifactTab]);
   useEffect(() => { saveSession({ sidebarCollapsed }); }, [sidebarCollapsed]);
@@ -322,10 +334,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (fetchError) throw fetchError;
       setConversations(data || []);
 
-      // Restore previous conversation from session
-      const savedId = loadSession().conversationId;
-      if (savedId && !currentConversation && data?.some(c => c.id === savedId)) {
-        handleSelectConversation(savedId);
+      // Restore conversation from URL parameter
+      if (urlConversationId && !currentConversation && data?.some(c => c.id === urlConversationId)) {
+        handleSelectConversation(urlConversationId);
       }
     } catch (err) {
       console.error('Error loading conversations:', err);
@@ -3041,7 +3052,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           '</style>',
           `
           /* Preview host overrides */
-          html, body { margin: 0; padding: 0; background: #ffffff; }
+          html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
           body.c47.doc-content {
             max-width: 595px;
             margin: 0 auto;
@@ -3115,7 +3126,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     srcDoc={editorSrcdoc}
                     title="Šablono redaktorius"
                     sandbox="allow-same-origin"
-                    style={{ width: '595px', border: 'none', display: 'block', minHeight: '800px' }}
+                    scrolling="no"
+                    style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
                     onLoad={() => {
                       const doc = templateEditorIframeRef.current?.contentDocument;
                       if (doc) {
