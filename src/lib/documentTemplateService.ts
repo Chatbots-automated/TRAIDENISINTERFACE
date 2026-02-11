@@ -61,6 +61,11 @@ export function renderTemplate(
   const headerMatch = html.match(/<body[^>]*>(\s*<div>[\s\S]*?<\/div>)/);
   const headerBlock = headerMatch ? headerMatch[1] : '';
 
+  // Count total pages (page-break HRs + 1)
+  const pageBreakRegex = /<hr[^>]*style="page-break-before:\s*always[^"]*"[^>]*>/gi;
+  const pageBreakCount = (html.match(pageBreakRegex) || []).length;
+  const totalPages = pageBreakCount + 1;
+
   // Convert Google Docs page-break <hr> to visual page separators,
   // injecting the header block after each separator so subsequent pages
   // display the company logo/info.
@@ -69,10 +74,20 @@ export function renderTemplate(
     `<span style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;padding:0 12px;font-size:10px;color:#9ca3af;white-space:nowrap;">Naujas puslapis</span>` +
     `</div>`;
 
+  // Inject page number footer before each page separator
+  let pageNum = 1;
   html = html.replace(
     /<hr[^>]*style="page-break-before:\s*always[^"]*"[^>]*>/gi,
-    pageSeparator + headerBlock
+    () => {
+      const pageFooter = `<div class="page-number">${pageNum} / ${totalPages}</div>`;
+      pageNum++;
+      return pageFooter + pageSeparator + headerBlock;
+    }
   );
+
+  // Add page number footer for the last page before </body>
+  const lastPageFooter = `<div class="page-number">${totalPages} / ${totalPages}</div>`;
+  html = html.replace('</body>', lastPageFooter + '</body>');
 
   return html;
 }

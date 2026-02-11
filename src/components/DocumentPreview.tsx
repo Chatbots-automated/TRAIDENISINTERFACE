@@ -93,6 +93,16 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         box-shadow: 0 0 0 1.5px #3b82f6 !important;
       }
 
+      /* Page number footer */
+      .page-number {
+        text-align: right;
+        padding: 16px 0 4px;
+        font-size: 9px;
+        color: #9ca3af;
+        font-family: Arial, sans-serif;
+        letter-spacing: 0.5px;
+      }
+
       /* Print-optimized styles */
       @media print {
         html, body {
@@ -123,6 +133,13 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         }
         div[style*="border-top:2px dashed"] span {
           display: none !important;
+        }
+        .page-number {
+          text-align: right;
+          font-size: 8px;
+          color: #9ca3af;
+          padding: 0;
+          margin-top: auto;
         }
         img {
           max-width: 100% !important;
