@@ -59,7 +59,7 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized } from '../lib/documentTemplateService';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor } from '../lib/documentTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -139,7 +139,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateVersion, setTemplateVersion] = useState(0);
   // Global template editor
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
-  const [templateEditorValue, setTemplateEditorValue] = useState('');
+  const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -1709,15 +1709,33 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     });
   };
 
-  /** Open the global template editor with the current template HTML. */
+  /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
-    setTemplateEditorValue(getDefaultTemplate());
     setShowTemplateEditor(true);
   };
 
-  /** Save the edited global template from the textarea. */
+  /**
+   * Save the visually-edited global template.
+   * Extracts outerHTML from the editor iframe, strips injected preview CSS,
+   * converts data-var spans back to {{key}}, and persists.
+   */
   const handleSaveGlobalTemplate = () => {
-    saveGlobalTemplate(templateEditorValue);
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (!doc) return;
+
+    let html = doc.documentElement.outerHTML;
+
+    // Strip the preview CSS we injected
+    html = html.replace(/\/\* Preview host overrides \*\/[\s\S]*?<\/style>/, '</style>');
+
+    // Convert data-var spans back to {{key}} placeholders
+    html = html.replace(/<span[^>]+data-var="([^"]+)"[^>]*>[^<]*<\/span>/gi,
+      (_m, key) => `{{${key}}}`);
+
+    // Clean up editor artifacts
+    html = html.replace(/\s*contenteditable="(true|false)"/gi, '');
+
+    saveGlobalTemplate(html);
     setTemplateVersion(v => v + 1);
     setShowTemplateEditor(false);
   };
@@ -3014,65 +3032,108 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         </div>
       )}
 
-      {/* Global Template Editor Modal */}
-      {showTemplateEditor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowTemplateEditor(false)}>
-          <div className="w-full max-w-5xl flex flex-col rounded-xl overflow-hidden" style={{ background: '#ffffff', height: '85vh' }} onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium" style={{ color: '#3d3935' }}>Redaguoti šabloną</span>
-                {isGlobalTemplateCustomized() && (
-                  <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>Pakeistas</span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {isGlobalTemplateCustomized() && (
+      {/* Global Template Editor Modal — visual WYSIWYG */}
+      {showTemplateEditor && (() => {
+        // Render template for editing — variable chips but no page-break processing
+        const tpl = getDefaultTemplate();
+        const rendered = renderTemplateForEditor(tpl);
+        const editorSrcdoc = rendered.replace(
+          '</style>',
+          `
+          /* Preview host overrides */
+          html, body { margin: 0; padding: 0; background: #ffffff; }
+          body.c47.doc-content {
+            max-width: 595px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 36pt;
+          }
+          body:focus { outline: none; }
+          .template-var { cursor: default; border-radius: 3px; }
+          .template-var.unfilled { cursor: text; }
+          .template-var.filled { background: rgba(59,130,246,0.04); box-shadow: 0 0 0 1px rgba(59,130,246,0.12); padding: 0 2px; border-radius: 3px; }
+          </style>`
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowTemplateEditor(false)}>
+            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden" style={{ background: '#ffffff', height: '88vh' }} onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium" style={{ color: '#3d3935' }}>Redaguoti šabloną</span>
+                  {isGlobalTemplateCustomized() && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>Pakeistas</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {isGlobalTemplateCustomized() && (
+                    <button
+                      onClick={() => {
+                        resetGlobalTemplate();
+                        setTemplateVersion(v => v + 1);
+                        setShowTemplateEditor(false);
+                      }}
+                      className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Atkurti pradinį
+                    </button>
+                  )}
                   <button
-                    onClick={() => {
-                      resetGlobalTemplate();
-                      setTemplateEditorValue(getDefaultTemplate());
-                      setTemplateVersion(v => v + 1);
-                    }}
+                    onClick={() => setShowTemplateEditor(false)}
                     className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
                     style={{ color: '#8a857f' }}
                     onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
-                    Atkurti pradinį
+                    Atšaukti
                   </button>
-                )}
-                <button
-                  onClick={() => setShowTemplateEditor(false)}
-                  className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
-                  style={{ color: '#8a857f' }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  Atšaukti
-                </button>
-                <button
-                  onClick={handleSaveGlobalTemplate}
-                  className="text-[11px] px-4 py-1.5 rounded-md font-medium transition-colors"
-                  style={{ background: '#3d3935', color: 'white' }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
-                >
-                  Išsaugoti
-                </button>
+                  <button
+                    onClick={handleSaveGlobalTemplate}
+                    className="text-[11px] px-4 py-1.5 rounded-md font-medium transition-colors"
+                    style={{ background: '#3d3935', color: 'white' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                  >
+                    Išsaugoti
+                  </button>
+                </div>
+              </div>
+              {/* Hint bar */}
+              <div className="px-5 py-1.5 flex-shrink-0" style={{ background: '#fafaf8', borderBottom: '1px solid #f0ede8' }}>
+                <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                  Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
+                </span>
+              </div>
+              {/* Visual editor iframe */}
+              <div className="flex-1 overflow-auto" style={{ background: '#f5f4f2' }}>
+                <div style={{ width: '595px', margin: '24px auto' }}>
+                  <iframe
+                    ref={templateEditorIframeRef}
+                    srcDoc={editorSrcdoc}
+                    title="Šablono redaktorius"
+                    sandbox="allow-same-origin"
+                    style={{ width: '595px', border: 'none', display: 'block', minHeight: '800px' }}
+                    onLoad={() => {
+                      const doc = templateEditorIframeRef.current?.contentDocument;
+                      if (doc) {
+                        doc.body.contentEditable = 'true';
+                        // Auto-size iframe to content
+                        const h = doc.body.scrollHeight;
+                        if (templateEditorIframeRef.current) {
+                          templateEditorIframeRef.current.style.height = h + 'px';
+                        }
+                      }
+                    }}
+                  />
+                </div>
               </div>
             </div>
-            {/* Editor */}
-            <textarea
-              value={templateEditorValue}
-              onChange={(e) => setTemplateEditorValue(e.target.value)}
-              className="flex-1 w-full p-5 text-xs outline-none resize-none"
-              style={{ fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace', color: '#3d3935', background: '#fafaf8', tabSize: 2 }}
-              spellCheck={false}
-            />
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Prompt Modal */}
       {showPromptModal && (

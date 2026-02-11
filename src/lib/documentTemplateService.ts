@@ -77,6 +77,18 @@ export function renderTemplate(
   return html;
 }
 
+/**
+ * Render template for the visual editor: only variable substitution,
+ * no page-break processing or header injection.  This keeps the raw
+ * template structure intact so we can cleanly extract it back on save.
+ */
+export function renderTemplateForEditor(template: string): string {
+  return template.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
+    const trimKey = key.trim();
+    return `<span data-var="${trimKey}" class="template-var unfilled" contenteditable="false" style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;display:inline-block;">${trimKey}</span>`;
+  });
+}
+
 const GLOBAL_TEMPLATE_KEY = 'traidenis_global_template';
 
 /**
