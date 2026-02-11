@@ -54,12 +54,23 @@ export function renderTemplate(
     return `<span style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;">${trimKey}</span>`;
   });
 
-  // Convert Google Docs page-break <hr> to visual page separators
+  // Extract the header block (logo bar + company info) — the first <div>
+  // inside <body>.  This block is injected after every page break so each
+  // printed page starts with the company heading.
+  const headerMatch = html.match(/<body[^>]*>(\s*<div>[\s\S]*?<\/div>)/);
+  const headerBlock = headerMatch ? headerMatch[1] : '';
+
+  // Convert Google Docs page-break <hr> to visual page separators,
+  // injecting the header block after each separator so subsequent pages
+  // display the company logo/info.
+  const pageSeparator =
+    `<div style="width:100%;border-top:2px dashed #d1d5db;margin:32px 0;position:relative;">` +
+    `<span style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;padding:0 12px;font-size:10px;color:#9ca3af;white-space:nowrap;">Naujas puslapis</span>` +
+    `</div>`;
+
   html = html.replace(
     /<hr[^>]*style="page-break-before:\s*always[^"]*"[^>]*>/gi,
-    `<div style="width:100%;border-top:2px dashed #d1d5db;margin:32px 0;position:relative;">
-       <span style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;padding:0 12px;font-size:10px;color:#9ca3af;white-space:nowrap;">Naujas puslapis</span>
-     </div>`
+    pageSeparator + headerBlock
   );
 
   return html;
