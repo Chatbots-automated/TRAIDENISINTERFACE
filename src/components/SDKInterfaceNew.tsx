@@ -19,7 +19,8 @@ import {
   User,
   Check,
   Share2,
-  Users
+  Users,
+  Download
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -58,7 +59,7 @@ import {
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
-import DocumentPreview from './DocumentPreview';
+import DocumentPreview, { type DocumentPreviewHandle } from './DocumentPreview';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -125,6 +126,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const documentPreviewRef = useRef<DocumentPreviewHandle>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   // Notification helper functions
@@ -2481,7 +2483,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
               <div className="flex-1 overflow-hidden">
-                <DocumentPreview variables={mergeAllVariables()} />
+                <DocumentPreview ref={documentPreviewRef} variables={mergeAllVariables()} />
               </div>
             ) : (
             <div
@@ -2761,37 +2763,53 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             </div>
             )}
 
-            {/* Footer - Send Button */}
+            {/* Footer - Action Buttons */}
             {!isStreamingArtifact && currentConversation?.artifact && (
-              <div className="px-6 py-3" style={{ borderTop: '1px solid #f0ede8' }}>
+              <div className="px-6 py-3 flex flex-col gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
+                {/* Primary: Download PDF */}
+                <button
+                  onClick={() => documentPreviewRef.current?.print()}
+                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                  style={{
+                    background: '#5a5550',
+                    color: 'white'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Atsisiųsti PDF</span>
+                </button>
+                {/* Secondary: Send to webhook */}
                 <button
                   onClick={handleSendToWebhook}
                   disabled={!selectedEconomist || !selectedManager || sendingWebhook}
-                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  className="w-full px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   style={{
-                    background: selectedEconomist && selectedManager && !sendingWebhook ? '#5a5550' : '#d4cfc8',
-                    color: 'white'
+                    background: 'transparent',
+                    color: selectedEconomist && selectedManager && !sendingWebhook ? '#5a5550' : '#b0aaa3',
+                    border: '1px solid #e5e2dd'
                   }}
                   onMouseEnter={(e) => {
                     if (selectedEconomist && selectedManager && !sendingWebhook) {
-                      e.currentTarget.style.background = '#3d3935';
+                      e.currentTarget.style.background = '#f9f8f6';
+                      e.currentTarget.style.borderColor = '#d1cdc7';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (selectedEconomist && selectedManager && !sendingWebhook) {
-                      e.currentTarget.style.background = '#5a5550';
-                    }
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.borderColor = '#e5e2dd';
                   }}
                 >
                   {sendingWebhook ? (
                     <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                      <span>Generuojama...</span>
+                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-current/30 border-t-current" />
+                      <span>Siunčiama...</span>
                     </>
                   ) : (
                     <>
-                      <Send className="w-4 h-4" />
-                      <span>Generuoti</span>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Siųsti į Google Drive</span>
                     </>
                   )}
                 </button>
