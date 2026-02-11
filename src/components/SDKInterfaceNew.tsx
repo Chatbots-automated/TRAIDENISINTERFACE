@@ -2513,10 +2513,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="flex-1 min-w-0 p-4 flex-shrink-0" style={{ maxWidth: '50vw' }}>
-          <div className="w-full bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
+        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+          <div className="w-full flex flex-col" style={{ height: '100vh', background: '#ffffff' }}>
             {/* Header — compact single row */}
-            <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+            <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
               <div className="flex items-center gap-3">
                 {/* Tab switcher (Peržiūra first) */}
                 {currentConversation?.artifact && !isStreamingArtifact ? (
@@ -2575,6 +2575,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 </button>
               </div>
             </div>
+            {/* Fade separator */}
+            <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
 
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
@@ -2863,8 +2865,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 )}
               </div>
 
-              {/* Divider */}
-              <div style={{ borderTop: '1px solid #f0ede8' }} className="my-3" />
+              {/* Fade divider */}
+              <div className="my-3" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 30%, #e5e2dd 70%, transparent)' }} />
 
               {/* Section 2: Object & Water Parameters */}
               <div className="mb-4">
@@ -2982,8 +2984,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 )}
               </div>
 
-              {/* Divider */}
-              <div style={{ borderTop: '1px solid #f0ede8' }} className="my-3" />
+              {/* Fade divider */}
+              <div className="my-3" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 30%, #e5e2dd 70%, transparent)' }} />
 
               {/* Section 3: Team (Economist & Manager) */}
               {!isStreamingArtifact && currentConversation?.artifact && (
@@ -3097,7 +3099,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
             {/* Footer - Action Buttons */}
             {!isStreamingArtifact && currentConversation?.artifact && (
-              <div className="px-6 py-3 flex flex-col gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
+              <>
+              <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
+              <div className="px-6 py-3 flex flex-col gap-2">
                 {/* Primary: Download PDF */}
                 <button
                   onClick={() => documentPreviewRef.current?.print()}
@@ -3146,6 +3150,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   )}
                 </button>
               </div>
+              </>
             )}
           </div>
         </div>

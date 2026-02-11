@@ -238,7 +238,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         {/* Toolbar */}
         <div
           className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
-          style={{ borderBottom: '1px solid #f0ede8' }}
         >
           <span className="text-[10px]" style={{ color: '#9ca3af' }}>
             {unfilled.length === 0
@@ -269,6 +268,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             </button>
           </div>
         </div>
+        <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
 
         {/* Preview area — single scroll layer, white background */}
         <div
@@ -306,9 +306,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         </div>
 
         {/* Disclaimer */}
+        <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
         <div
           className="px-3 py-1 text-center flex-shrink-0"
-          style={{ borderTop: '1px solid #f0ede8' }}
         >
           <span className="text-[9px]" style={{ color: '#bbb' }}>
             Peržiūra yra apytikslė. Galutinis dokumentas gali šiek tiek skirtis.
