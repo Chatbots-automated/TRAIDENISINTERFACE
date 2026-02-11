@@ -48,6 +48,8 @@ function AppContent() {
 
   // Main sidebar collapse state (for SDK interface positioning)
   const [mainSidebarCollapsed, setMainSidebarCollapsed] = useState(false);
+  // Force-collapse main sidebar (e.g., when artifact panel opens)
+  const [forceMainSidebarCollapsed, setForceMainSidebarCollapsed] = useState<boolean | undefined>(undefined);
 
   // SDK unread shared conversations count (for main sidebar badge)
   const [sdkUnreadCount, setSdkUnreadCount] = useState(0);
@@ -152,6 +154,7 @@ function AppContent() {
       viewMode={viewMode}
       onViewModeChange={handleViewModeChange}
       onSidebarCollapseChange={setMainSidebarCollapsed}
+      forceCollapsed={forceMainSidebarCollapsed}
       sdkUnreadCount={sdkUnreadCount}
     >
       <Routes>
@@ -174,7 +177,7 @@ function AppContent() {
         />
         <Route
           path="/sdk"
-          element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} />}
+          element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} onRequestMainSidebarCollapse={setForceMainSidebarCollapsed} />}
         />
         {/* Catch-all redirect to sdk */}
         <Route path="*" element={<Navigate to="/sdk" replace />} />

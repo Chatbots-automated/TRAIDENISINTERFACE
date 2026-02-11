@@ -65,9 +65,10 @@ interface SDKInterfaceNewProps {
   projectId: string;
   mainSidebarCollapsed: boolean;
   onUnreadCountChange?: (count: number) => void;
+  onRequestMainSidebarCollapse?: (collapsed: boolean) => void;
 }
 
-export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange }: SDKInterfaceNewProps) {
+export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
@@ -119,7 +120,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Collapsible sections state
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: false, objectParams: true });
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
-  const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>('data');
+  const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>('preview');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -200,6 +201,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setOfferParameters(getDefaultOfferParameters());
     }
   }, [currentConversation?.id]);
+
+  // Auto-collapse both sidebars when artifact panel opens, restore when closed
+  useEffect(() => {
+    if (showArtifact) {
+      setSidebarCollapsed(true);
+      onRequestMainSidebarCollapse?.(true);
+    }
+  }, [showArtifact]);
 
   const loadSystemPrompt = async () => {
     try {
@@ -2019,7 +2028,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   <span className="text-sm font-medium">
-                    Generuoti
+                    Dokumentas
                     {isStreamingArtifact && <span className="ml-1">●</span>}
                   </span>
                 </div>
@@ -2406,63 +2415,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="p-4 flex-shrink-0">
-          <div className="w-[460px] bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
-            {/* Header */}
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold" style={{ color: '#3d3935' }}>
-                  Komercinis pasiūlymas
-                  {isStreamingArtifact && (
-                    <span className="ml-2 text-xs" style={{ color: '#3b82f6' }}>
-                      Generuojama...
-                    </span>
-                  )}
-                </h2>
-                <div className="flex items-center gap-2">
-                  {!isStreamingArtifact && currentConversation?.artifact && (
-                    <button
-                      onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
-                      className="px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2"
-                      style={{ background: '#5a5550', color: 'white' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setShowArtifact(false)}
-                    className="p-1.5 rounded-lg transition-colors"
-                    style={{ color: '#8a857f' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-              {currentConversation?.artifact && !isStreamingArtifact && (
-                <div className="flex items-center justify-between mt-2">
-                  <p className="text-xs" style={{ color: '#8a857f' }}>
-                    Versija {currentConversation.artifact.version}
-                  </p>
-                  {/* Tab switcher */}
-                  <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #e8e5e0' }}>
-                    <button
-                      onClick={() => setArtifactTab('data')}
-                      className="px-3 py-1 text-[11px] font-medium transition-colors"
-                      style={{
-                        background: artifactTab === 'data' ? '#3d3935' : 'transparent',
-                        color: artifactTab === 'data' ? '#ffffff' : '#8a857f',
-                      }}
-                    >
-                      Duomenys
-                    </button>
+        <div className="flex-1 min-w-0 p-4 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+          <div className="w-full bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
+            {/* Header — compact single row */}
+            <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <div className="flex items-center gap-3">
+                {/* Tab switcher (Peržiūra first) */}
+                {currentConversation?.artifact && !isStreamingArtifact ? (
+                  <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e2dd' }}>
                     <button
                       onClick={() => setArtifactTab('preview')}
-                      className="px-3 py-1 text-[11px] font-medium transition-colors"
+                      className="px-2.5 py-1 text-[11px] font-medium transition-colors"
                       style={{
                         background: artifactTab === 'preview' ? '#3d3935' : 'transparent',
                         color: artifactTab === 'preview' ? '#ffffff' : '#8a857f',
@@ -2470,9 +2433,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     >
                       Peržiūra
                     </button>
+                    <button
+                      onClick={() => setArtifactTab('data')}
+                      className="px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: artifactTab === 'data' ? '#3d3935' : 'transparent',
+                        color: artifactTab === 'data' ? '#ffffff' : '#8a857f',
+                      }}
+                    >
+                      Duomenys
+                    </button>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <span className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                    Komercinis pasiūlymas
+                    {isStreamingArtifact && (
+                      <span className="ml-2" style={{ color: '#3b82f6' }}>Generuojama...</span>
+                    )}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {!isStreamingArtifact && currentConversation?.artifact && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
+                    className="p-1.5 rounded-md transition-colors"
+                    style={{ color: '#8a857f' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    title="Kopijuoti YAML"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowArtifact(false)}
+                  className="p-1.5 rounded-md transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
             {/* Content area — either Data or Preview */}
