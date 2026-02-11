@@ -58,6 +58,7 @@ import {
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
+import DocumentPreview from './DocumentPreview';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -117,6 +118,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
   // Collapsible sections state
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: false, objectParams: true });
+  // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
+  const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>('data');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1573,6 +1576,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     return parsed;
   };
 
+  /**
+   * Merge all variable sources into a single Record for the document preview.
+   * Sources: YAML artifact content + offer parameters + team info.
+   */
+  const mergeAllVariables = (): Record<string, string> => {
+    const yamlVars: Record<string, string> = currentConversation?.artifact
+      ? parseYAMLContent(currentConversation.artifact.content)
+      : {};
+
+    return {
+      ...yamlVars,
+      ...offerParameters,
+      technologist: user.full_name || user.email,
+      technologist_phone: user.phone || '',
+      technologist_email: user.email,
+      ekonomistas: selectedEconomist?.full_name || '',
+      vadybininkas: selectedManager?.full_name || '',
+      project_name: currentConversation?.title || '',
+    };
+  };
+
   const handleSendToWebhook = async () => {
     if (!currentConversation?.artifact) {
       setError('No artifact to send');
@@ -2420,13 +2444,43 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 </div>
               </div>
               {currentConversation?.artifact && !isStreamingArtifact && (
-                <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
-                  Versija {currentConversation.artifact.version}
-                </p>
+                <div className="flex items-center justify-between mt-2">
+                  <p className="text-xs" style={{ color: '#8a857f' }}>
+                    Versija {currentConversation.artifact.version}
+                  </p>
+                  {/* Tab switcher */}
+                  <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #e8e5e0' }}>
+                    <button
+                      onClick={() => setArtifactTab('data')}
+                      className="px-3 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: artifactTab === 'data' ? '#3d3935' : 'transparent',
+                        color: artifactTab === 'data' ? '#ffffff' : '#8a857f',
+                      }}
+                    >
+                      Duomenys
+                    </button>
+                    <button
+                      onClick={() => setArtifactTab('preview')}
+                      className="px-3 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: artifactTab === 'preview' ? '#3d3935' : 'transparent',
+                        color: artifactTab === 'preview' ? '#ffffff' : '#8a857f',
+                      }}
+                    >
+                      Peržiūra
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* Scrollable Content with Collapsible Sections */}
+            {/* Content area — either Data or Preview */}
+            {artifactTab === 'preview' && !isStreamingArtifact ? (
+              <div className="flex-1 overflow-hidden">
+                <DocumentPreview variables={mergeAllVariables()} />
+              </div>
+            ) : (
             <div
               className="flex-1 overflow-y-auto px-6 py-4 relative"
               style={{
@@ -2702,6 +2756,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 </div>
               )}
             </div>
+            )}
 
             {/* Footer - Send Button */}
             {!isStreamingArtifact && currentConversation?.artifact && (
