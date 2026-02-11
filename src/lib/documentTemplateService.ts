@@ -77,11 +77,40 @@ export function renderTemplate(
   return html;
 }
 
+const GLOBAL_TEMPLATE_KEY = 'traidenis_global_template';
+
 /**
- * Returns the default template HTML.
+ * Returns the global template HTML.
+ * Reads from localStorage first (user-edited version), falls back to
+ * the hardcoded default.
  */
 export function getDefaultTemplate(): string {
+  try {
+    const stored = localStorage.getItem(GLOBAL_TEMPLATE_KEY);
+    if (stored) return stored;
+  } catch { /* ignore */ }
   return COMMERCIAL_OFFER_TEMPLATE;
+}
+
+/**
+ * Save a user-edited global template to localStorage.
+ */
+export function saveGlobalTemplate(html: string): void {
+  localStorage.setItem(GLOBAL_TEMPLATE_KEY, html);
+}
+
+/**
+ * Reset the global template back to the hardcoded default.
+ */
+export function resetGlobalTemplate(): void {
+  localStorage.removeItem(GLOBAL_TEMPLATE_KEY);
+}
+
+/**
+ * Check whether the global template has been customized.
+ */
+export function isGlobalTemplateCustomized(): boolean {
+  return localStorage.getItem(GLOBAL_TEMPLATE_KEY) !== null;
 }
 
 /**

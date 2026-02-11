@@ -5,6 +5,8 @@ import { renderTemplate, getDefaultTemplate, getUnfilledVariables } from '../lib
 export interface DocumentPreviewHandle {
   print: () => void;
   clearActiveVariable: () => void;
+  /** Get the full innerHTML of the iframe body (includes user text edits). */
+  getEditedHtml: () => string | null;
 }
 
 export interface VariableClickInfo {
@@ -18,6 +20,8 @@ export interface VariableClickInfo {
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
+  /** Bump to force re-reading the global template from localStorage. */
+  templateVersion?: number;
   onVariableClick?: (info: VariableClickInfo | null) => void;
   onScroll?: () => void;
 }
@@ -27,7 +31,7 @@ interface DocumentPreviewProps {
 const BASE_ZOOM = 0.95;
 
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template, onVariableClick, onScroll }, ref) {
+  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
@@ -39,7 +43,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     const onVariableClickRef = useRef(onVariableClick);
     onVariableClickRef.current = onVariableClick;
 
-    const templateHtml = template || getDefaultTemplate();
+    // Re-read global template whenever templateVersion changes
+    const templateHtml = useMemo(() => template || getDefaultTemplate(), [template, templateVersion]);
 
     const renderedHtml = useMemo(
       () => renderTemplate(templateHtml, variables),
@@ -133,7 +138,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       );
     }, [renderedHtml]);
 
-    // Expose print() and clearActiveVariable() to parent via ref
+    // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
       print: () => {
         const iframe = iframeRef.current;
@@ -146,6 +151,10 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         if (doc) {
           doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
         }
+      },
+      getEditedHtml: () => {
+        const doc = iframeRef.current?.contentDocument;
+        return doc?.documentElement?.outerHTML || null;
       },
     }));
 
@@ -164,6 +173,10 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       const iframe = iframeRef.current;
       const doc = iframe?.contentDocument;
       if (!doc) return;
+
+      // Enable basic text editing (type, delete, etc.)
+      doc.body.contentEditable = 'true';
+      doc.body.style.outline = 'none';
 
       // Click on body (non-variable area) clears active state and closes popup
       doc.body.addEventListener('click', () => {

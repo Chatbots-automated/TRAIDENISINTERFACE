@@ -35,7 +35,6 @@ import {
   addMessageToConversation,
   updateConversationArtifact,
   deleteSDKConversation,
-  renameSDKConversation,
   updateMessageButtonSelection,
   calculateDiff,
   type SDKConversation,
@@ -60,6 +59,7 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized } from '../lib/documentTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -69,8 +69,21 @@ interface SDKInterfaceNewProps {
   onRequestMainSidebarCollapse?: (collapsed: boolean) => void;
 }
 
+// Session persistence keys
+const SESSION_KEY = 'traidenis_sdk_session';
+function loadSession(): { conversationId?: string; showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}'); } catch { return {}; }
+}
+function saveSession(patch: Record<string, unknown>) {
+  try {
+    const current = loadSession();
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch { /* ignore */ }
+}
+
 export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const session = useRef(loadSession()).current;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(session.sidebarCollapsed ?? false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -87,7 +100,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showTemplateView, setShowTemplateView] = useState(false);
-  const [showArtifact, setShowArtifact] = useState(false);
+  const [showArtifact, setShowArtifact] = useState(session.showArtifact ?? false);
   const [showDiff, setShowDiff] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -100,7 +113,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [managers, setManagers] = useState<AppUserData[]>([]);
   const [selectedManager, setSelectedManager] = useState<AppUserData | null>(null);
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
-  const [sendingWebhook, setSendingWebhook] = useState(false);
+
 
   // Sharing states
   const [showShareDropdown, setShowShareDropdown] = useState(false);
@@ -121,7 +134,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Collapsible sections state
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: false, objectParams: true });
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
-  const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>('preview');
+  const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>(session.artifactTab ?? 'preview');
+  // Bump to force DocumentPreview to re-fetch the global template
+  const [templateVersion, setTemplateVersion] = useState(0);
+  // Global template editor
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [templateEditorValue, setTemplateEditorValue] = useState('');
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -156,6 +174,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadSharedConversations();
     loadShareableUsers();
   }, []);
+
+  // Persist session state so refresh restores where the user left off
+  useEffect(() => { saveSession({ conversationId: currentConversation?.id || null }); }, [currentConversation?.id]);
+  useEffect(() => { saveSession({ showArtifact }); }, [showArtifact]);
+  useEffect(() => { saveSession({ artifactTab }); }, [artifactTab]);
+  useEffect(() => { saveSession({ sidebarCollapsed }); }, [sidebarCollapsed]);
 
   const loadEconomists = async () => {
     try {
@@ -297,6 +321,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const { data, error: fetchError } = await getSDKConversations(projectId);
       if (fetchError) throw fetchError;
       setConversations(data || []);
+
+      // Restore previous conversation from session
+      const savedId = loadSession().conversationId;
+      if (savedId && !currentConversation && data?.some(c => c.id === savedId)) {
+        handleSelectConversation(savedId);
+      }
     } catch (err) {
       console.error('Error loading conversations:', err);
     } finally {
@@ -1679,6 +1709,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     });
   };
 
+  /** Open the global template editor with the current template HTML. */
+  const handleOpenTemplateEditor = () => {
+    setTemplateEditorValue(getDefaultTemplate());
+    setShowTemplateEditor(true);
+  };
+
+  /** Save the edited global template from the textarea. */
+  const handleSaveGlobalTemplate = () => {
+    saveGlobalTemplate(templateEditorValue);
+    setTemplateVersion(v => v + 1);
+    setShowTemplateEditor(false);
+  };
+
   /** Save the current editing variable value. */
   const handleVariableSave = (key: string, value: string) => {
     const category = categorizeVariable(key);
@@ -1702,159 +1745,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     setEditingVariable(null);
     documentPreviewRef.current?.clearActiveVariable();
-  };
-
-  const handleSendToWebhook = async () => {
-    if (!currentConversation?.artifact) {
-      setError('No artifact to send');
-      return;
-    }
-
-    if (!selectedEconomist) {
-      setError('Please select an economist first');
-      return;
-    }
-
-    if (!selectedManager) {
-      setError('Please select a manager first');
-      return;
-    }
-
-    try {
-      setSendingWebhook(true);
-      console.log('[Webhook] Sending to n8n...');
-
-      // Generate project name: U+[manager code]+[tech code]+[date YY-MM-DD]
-      const now = new Date();
-      const year = String(now.getFullYear()).substring(2); // Last 2 digits of year
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
-
-      const managerCode = selectedManager.kodas || 'XX';
-      const techCode = user.kodas || 'YY';
-      const projectName = `U${managerCode}${techCode}${dateStr}`;
-
-      console.log('[Webhook] Generated project name:', projectName);
-
-      // Rename conversation to project name
-      await renameSDKConversation(currentConversation.id, projectName);
-
-      // Update local state
-      setCurrentConversation(prev => prev ? { ...prev, title: projectName } : prev);
-      setConversations(prevConvs =>
-        prevConvs.map(conv =>
-          conv.id === currentConversation.id ? { ...conv, title: projectName } : conv
-        )
-      );
-
-      // Parse YAML content into separate fields
-      const parsedYAML = parseYAMLContent(currentConversation.artifact.content);
-
-      // Construct payload with parsed fields
-      const payload = {
-        // Parsed YAML fields as separate properties
-        ...parsedYAML,
-
-        // Project and metadata
-        project_name: projectName,
-        project_id: projectId,
-        conversation_id: currentConversation.id,
-        artifact_id: currentConversation.artifact.id,
-        timestamp: new Date().toISOString(),
-
-        // Team members
-        technologist: user.full_name || user.display_name || user.email,
-        technologist_code: techCode,
-        technologist_phone: user.phone || '',
-        technologist_email: user.email,
-        ekonomistas_code: selectedEconomist.kodas || '',
-        ekonomistas_name: selectedEconomist.full_name || selectedEconomist.display_name || selectedEconomist.email,
-        manager_code: managerCode,
-        manager_name: selectedManager.full_name || selectedManager.display_name || selectedManager.email,
-
-        // Offer parameters (object & water params)
-        ...offerParameters,
-
-        // Original YAML for reference (in case n8n needs it)
-        original_yaml: currentConversation.artifact.content
-      };
-
-      console.log('[Webhook] Payload:', payload);
-
-      // Send to n8n webhook
-      const commercialWebhookUrl = await getWebhookUrl('n8n_commercial_offer');
-      if (!commercialWebhookUrl) {
-        throw new Error('Webhook "n8n_commercial_offer" not found or inactive. Configure it in Webhooks settings.');
-      }
-
-      const response = await fetch(commercialWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Webhook returned ${response.status}: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      console.log('[Webhook] Success:', result);
-
-      // Extract URL from response
-      const generatedUrl = result.standartinis_generatedUrl;
-
-      if (generatedUrl) {
-        // Create a fake assistant message with the URL (not sent to API)
-        const urlMessage: SDKMessage = {
-          role: 'assistant',
-          content: `Komercinis pasiūlymas sėkmingai sugeneruotas! Jūsų dokumentas pasiekiamas čia:\n\n${generatedUrl}`,
-          timestamp: new Date().toISOString(),
-          isSilent: false
-        };
-
-        // Add to database
-        await addMessageToConversation(currentConversation.id, urlMessage);
-
-        // Update local state immediately
-        setCurrentConversation(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            messages: [...prev.messages, urlMessage]
-          };
-        });
-
-        // Update conversations list
-        setConversations(prevConvs =>
-          prevConvs.map(conv => {
-            if (conv.id === currentConversation.id) {
-              return {
-                ...conv,
-                messages: [...conv.messages, urlMessage],
-                last_message_at: urlMessage.timestamp
-              };
-            }
-            return conv;
-          })
-        );
-
-        console.log('[Webhook] URL message added to chat:', generatedUrl);
-      }
-
-      // Show success message
-      setError(null);
-      setShowEconomistDropdown(false);
-      setShowManagerDropdown(false);
-
-    } catch (err: any) {
-      console.error('[Webhook] Error:', err);
-      setError(`Failed to send webhook: ${err.message}`);
-    } finally {
-      setSendingWebhook(false);
-    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2565,15 +2455,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                       <Download className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={handleSendToWebhook}
-                      disabled={!selectedEconomist || !selectedManager || sendingWebhook}
-                      className="p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      onClick={handleOpenTemplateEditor}
+                      className="p-1.5 rounded-md transition-colors"
                       style={{ color: '#8a857f' }}
-                      onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.background = '#f0ede8'; }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      title={!selectedEconomist || !selectedManager ? 'Pasirinkite ekonomistą ir vadybininką' : 'Siųsti į Google Drive'}
+                      title="Redaguoti šabloną"
                     >
-                      {sendingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                      <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
@@ -2607,6 +2496,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 <DocumentPreview
                   ref={documentPreviewRef}
                   variables={mergeAllVariables()}
+                  templateVersion={templateVersion}
                   onVariableClick={handleVariableClick}
                   onScroll={() => {
                     if (editingVariable) {
@@ -3120,6 +3010,66 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Global Template Editor Modal */}
+      {showTemplateEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => setShowTemplateEditor(false)}>
+          <div className="w-full max-w-5xl flex flex-col rounded-xl overflow-hidden" style={{ background: '#ffffff', height: '85vh' }} onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium" style={{ color: '#3d3935' }}>Redaguoti šabloną</span>
+                {isGlobalTemplateCustomized() && (
+                  <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>Pakeistas</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {isGlobalTemplateCustomized() && (
+                  <button
+                    onClick={() => {
+                      resetGlobalTemplate();
+                      setTemplateEditorValue(getDefaultTemplate());
+                      setTemplateVersion(v => v + 1);
+                    }}
+                    className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
+                    style={{ color: '#8a857f' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >
+                    Atkurti pradinį
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowTemplateEditor(false)}
+                  className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  Atšaukti
+                </button>
+                <button
+                  onClick={handleSaveGlobalTemplate}
+                  className="text-[11px] px-4 py-1.5 rounded-md font-medium transition-colors"
+                  style={{ background: '#3d3935', color: 'white' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                >
+                  Išsaugoti
+                </button>
+              </div>
+            </div>
+            {/* Editor */}
+            <textarea
+              value={templateEditorValue}
+              onChange={(e) => setTemplateEditorValue(e.target.value)}
+              className="flex-1 w-full p-5 text-xs outline-none resize-none"
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace', color: '#3d3935', background: '#fafaf8', tabSize: 2 }}
+              spellCheck={false}
+            />
           </div>
         </div>
       )}
