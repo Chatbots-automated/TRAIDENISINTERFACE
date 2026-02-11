@@ -11,10 +11,14 @@ interface DocumentPreviewProps {
   template?: string;
 }
 
+// The "native" zoom where the document fits the panel well.
+// Displayed as 100% in the UI; other zoom levels are relative to this.
+const BASE_ZOOM = 0.95;
+
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
   function DocumentPreview({ variables, template }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
-    const [zoom, setZoom] = useState(0.65);
+    const [zoom, setZoom] = useState(BASE_ZOOM);
     const [iframeHeight, setIframeHeight] = useState(1200);
 
     const templateHtml = template || getDefaultTemplate();
@@ -34,7 +38,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         '</style>',
         `
       /* Preview host overrides */
-      html, body { margin: 0; padding: 0; background: #ffffff; }
+      html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
       body.c47.doc-content {
         max-width: 595px;
         margin: 0 auto;
@@ -48,6 +52,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
+          overflow: visible !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
@@ -112,8 +117,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       return () => clearTimeout(t);
     }, [srcdoc, measureIframe]);
 
-    const handleZoomIn = () => setZoom((z) => Math.min(z + 0.1, 1.2));
-    const handleZoomOut = () => setZoom((z) => Math.max(z - 0.1, 0.3));
+    const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
+    const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
+
+    // Display zoom relative to BASE_ZOOM (0.95 = 100%)
+    const displayZoom = Math.round((zoom / BASE_ZOOM) * 100);
 
     // The scaled wrapper gets explicit dimensions so the parent scroll area
     // matches the visual size exactly — no extra dead space.
@@ -121,7 +129,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     const scaledHeight = iframeHeight * zoom;
 
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full min-h-0">
         {/* Toolbar */}
         <div
           className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
@@ -142,8 +150,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             >
               <ZoomOut className="w-3 h-3" />
             </button>
-            <span className="text-[10px] w-7 text-center tabular-nums" style={{ color: '#9ca3af' }}>
-              {Math.round(zoom * 100)}%
+            <span className="text-[10px] w-8 text-center tabular-nums" style={{ color: '#9ca3af' }}>
+              {displayZoom}%
             </span>
             <button
               onClick={handleZoomIn}
@@ -157,9 +165,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           </div>
         </div>
 
-        {/* Preview area — white background, vertical scroll only */}
+        {/* Preview area — single scroll layer, white background */}
         <div
-          className="flex-1 overflow-y-auto overflow-x-hidden"
+          className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
           style={{ background: '#ffffff' }}
         >
           {/* Scaled wrapper — explicit size so scroll area matches visual content */}
@@ -176,11 +184,13 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               srcDoc={srcdoc}
               title="Dokumento peržiūra"
               sandbox="allow-same-origin allow-modals"
+              scrolling="no"
               style={{
                 width: '595px',
                 height: `${iframeHeight}px`,
                 border: 'none',
                 display: 'block',
+                overflow: 'hidden',
                 transform: `scale(${zoom})`,
                 transformOrigin: 'top left',
               }}

@@ -2482,7 +2482,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
-              <div className="flex-1 overflow-hidden">
+              <div className="flex-1 overflow-hidden min-h-0">
                 <DocumentPreview ref={documentPreviewRef} variables={mergeAllVariables()} />
               </div>
             ) : (
