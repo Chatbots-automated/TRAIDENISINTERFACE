@@ -2553,16 +2553,39 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               </div>
               <div className="flex items-center gap-1">
                 {!isStreamingArtifact && currentConversation?.artifact && (
-                  <button
-                    onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
-                    className="p-1.5 rounded-md transition-colors"
-                    style={{ color: '#8a857f' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    title="Kopijuoti YAML"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => documentPreviewRef.current?.print()}
+                      className="p-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Atsisiųsti PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={handleSendToWebhook}
+                      disabled={!selectedEconomist || !selectedManager || sendingWebhook}
+                      className="p-1.5 rounded-md transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.background = '#f0ede8'; }}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title={!selectedEconomist || !selectedManager ? 'Pasirinkite ekonomistą ir vadybininką' : 'Siųsti į Google Drive'}
+                    >
+                      {sendingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
+                      className="p-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Kopijuoti YAML"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => setShowArtifact(false)}
@@ -3097,61 +3120,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             </div>
             )}
 
-            {/* Footer - Action Buttons */}
-            {!isStreamingArtifact && currentConversation?.artifact && (
-              <>
-              <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
-              <div className="px-6 py-3 flex flex-col gap-2">
-                {/* Primary: Download PDF */}
-                <button
-                  onClick={() => documentPreviewRef.current?.print()}
-                  className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                  style={{
-                    background: '#5a5550',
-                    color: 'white'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Atsisiųsti PDF</span>
-                </button>
-                {/* Secondary: Send to webhook */}
-                <button
-                  onClick={handleSendToWebhook}
-                  disabled={!selectedEconomist || !selectedManager || sendingWebhook}
-                  className="w-full px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  style={{
-                    background: 'transparent',
-                    color: selectedEconomist && selectedManager && !sendingWebhook ? '#5a5550' : '#b0aaa3',
-                    border: '1px solid #e5e2dd'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (selectedEconomist && selectedManager && !sendingWebhook) {
-                      e.currentTarget.style.background = '#f9f8f6';
-                      e.currentTarget.style.borderColor = '#d1cdc7';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.borderColor = '#e5e2dd';
-                  }}
-                >
-                  {sendingWebhook ? (
-                    <>
-                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-current/30 border-t-current" />
-                      <span>Siunčiama...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Siųsti į Google Drive</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              </>
-            )}
           </div>
         </div>
       )}
