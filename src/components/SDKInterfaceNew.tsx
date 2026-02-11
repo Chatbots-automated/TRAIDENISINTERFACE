@@ -59,7 +59,7 @@ import {
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
-import DocumentPreview, { type DocumentPreviewHandle } from './DocumentPreview';
+import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -122,6 +122,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: false, objectParams: true });
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
   const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>('preview');
+
+  // Floating variable editor state (interactive preview)
+  const [editingVariable, setEditingVariable] = useState<{
+    key: string;
+    filled: boolean;
+    x: number;
+    y: number;
+    editValue: string;
+  } | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1608,6 +1617,61 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     };
   };
 
+  /**
+   * Categorize a variable key to determine which edit control to show.
+   * - 'offer'      → offer parameter (BDS, SM, N, P, object, cleaned water, etc.)
+   * - 'economist'   → economist dropdown
+   * - 'manager'     → manager dropdown
+   * - 'team'        → auto-filled from logged-in user (read-only info shown)
+   * - 'yaml'        → AI-generated, editable via chat prompt
+   */
+  const categorizeVariable = (key: string): 'offer' | 'economist' | 'manager' | 'team' | 'yaml' => {
+    if (OFFER_PARAMETER_DEFINITIONS.some((p) => p.key === key)) return 'offer';
+    if (key === 'ekonomistas') return 'economist';
+    if (key === 'vadybininkas') return 'manager';
+    if (['technologist', 'technologist_phone', 'technologist_email'].includes(key)) return 'team';
+    return 'yaml';
+  };
+
+  /** Handle a variable click from the interactive preview. */
+  const handleVariableClick = (info: VariableClickInfo) => {
+    const merged = mergeAllVariables();
+    setEditingVariable({
+      key: info.key,
+      filled: info.filled,
+      x: info.x,
+      y: info.y,
+      editValue: merged[info.key] || '',
+    });
+  };
+
+  /** Save the current editing variable value. */
+  const handleVariableSave = (key: string, value: string) => {
+    const category = categorizeVariable(key);
+
+    if (category === 'offer') {
+      // Update offer parameter
+      if (currentConversation) {
+        const updated = { ...offerParameters, [key]: value };
+        setOfferParameters(updated);
+        saveOfferParameters(currentConversation.id, updated);
+      }
+    } else if (category === 'economist') {
+      // Find economist by name
+      const match = economists.find((e) => e.full_name === value);
+      if (match) setSelectedEconomist(match);
+    } else if (category === 'manager') {
+      const match = managers.find((m) => m.full_name === value);
+      if (match) setSelectedManager(match);
+    } else if (category === 'yaml') {
+      // Populate the chat input with a replacement prompt
+      setInputValue(`Pakeisk {{${key}}} į: ${value}`);
+      textareaRef.current?.focus();
+    }
+
+    setEditingVariable(null);
+  };
+
   const handleSendToWebhook = async () => {
     if (!currentConversation?.artifact) {
       setError('No artifact to send');
@@ -2482,8 +2546,197 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
-              <div className="flex-1 overflow-hidden min-h-0">
-                <DocumentPreview ref={documentPreviewRef} variables={mergeAllVariables()} />
+              <div className="flex-1 overflow-hidden min-h-0 relative">
+                <DocumentPreview
+                  ref={documentPreviewRef}
+                  variables={mergeAllVariables()}
+                  onVariableClick={handleVariableClick}
+                />
+
+                {/* Floating variable editor popup */}
+                {editingVariable && (() => {
+                  const cat = categorizeVariable(editingVariable.key);
+                  const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
+                  const label = paramDef?.label || editingVariable.key;
+
+                  return (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: Math.min(editingVariable.x - 120, 280),
+                        top: editingVariable.y + 6,
+                        zIndex: 50,
+                        width: '260px',
+                      }}
+                    >
+                      <div
+                        className="rounded-lg shadow-lg"
+                        style={{
+                          background: '#ffffff',
+                          border: '1px solid #e5e2dd',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f0ede8', background: '#fafaf8' }}>
+                          <div>
+                            <span className="text-[10px] block" style={{ color: '#9ca3af' }}>
+                              {cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : 'AI kintamasis'}
+                            </span>
+                            <span className="text-xs font-medium" style={{ color: '#3d3935' }}>{label}</span>
+                          </div>
+                          <button
+                            onClick={() => setEditingVariable(null)}
+                            className="p-0.5 rounded"
+                            style={{ color: '#9ca3af' }}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Body — varies by category */}
+                        <div className="px-3 py-2.5">
+                          {cat === 'team' && (
+                            <div className="text-xs" style={{ color: '#6b7280' }}>
+                              <span>Automatiškai užpildyta:</span>
+                              <div className="mt-1 font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                            </div>
+                          )}
+
+                          {cat === 'economist' && (
+                            <div className="flex flex-col gap-1">
+                              {economists.length === 0 ? (
+                                <span className="text-xs" style={{ color: '#9ca3af' }}>Nėra ekonomistų</span>
+                              ) : (
+                                economists.map((econ) => (
+                                  <button
+                                    key={econ.id}
+                                    onClick={() => {
+                                      setSelectedEconomist(econ);
+                                      setEditingVariable(null);
+                                    }}
+                                    className="text-left text-xs px-2 py-1.5 rounded transition-colors"
+                                    style={{
+                                      background: selectedEconomist?.id === econ.id ? '#eff6ff' : 'transparent',
+                                      color: '#3d3935',
+                                      border: selectedEconomist?.id === econ.id ? '1px solid #bfdbfe' : '1px solid transparent',
+                                    }}
+                                    onMouseEnter={(e) => { if (selectedEconomist?.id !== econ.id) e.currentTarget.style.background = '#f9f8f6'; }}
+                                    onMouseLeave={(e) => { if (selectedEconomist?.id !== econ.id) e.currentTarget.style.background = 'transparent'; }}
+                                  >
+                                    <span className="font-medium">{econ.full_name || econ.email}</span>
+                                    {selectedEconomist?.id === econ.id && <Check className="w-3 h-3 inline ml-1" style={{ color: '#3b82f6' }} />}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+
+                          {cat === 'manager' && (
+                            <div className="flex flex-col gap-1">
+                              {managers.length === 0 ? (
+                                <span className="text-xs" style={{ color: '#9ca3af' }}>Nėra vadybininkų</span>
+                              ) : (
+                                managers.map((mgr) => (
+                                  <button
+                                    key={mgr.id}
+                                    onClick={() => {
+                                      setSelectedManager(mgr);
+                                      setEditingVariable(null);
+                                    }}
+                                    className="text-left text-xs px-2 py-1.5 rounded transition-colors"
+                                    style={{
+                                      background: selectedManager?.id === mgr.id ? '#eff6ff' : 'transparent',
+                                      color: '#3d3935',
+                                      border: selectedManager?.id === mgr.id ? '1px solid #bfdbfe' : '1px solid transparent',
+                                    }}
+                                    onMouseEnter={(e) => { if (selectedManager?.id !== mgr.id) e.currentTarget.style.background = '#f9f8f6'; }}
+                                    onMouseLeave={(e) => { if (selectedManager?.id !== mgr.id) e.currentTarget.style.background = 'transparent'; }}
+                                  >
+                                    <span className="font-medium">{mgr.full_name || mgr.email}</span>
+                                    {selectedManager?.id === mgr.id && <Check className="w-3 h-3 inline ml-1" style={{ color: '#3b82f6' }} />}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          )}
+
+                          {cat === 'offer' && (
+                            <div>
+                              <input
+                                type="text"
+                                value={editingVariable.editValue}
+                                onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleVariableSave(editingVariable.key, editingVariable.editValue);
+                                  if (e.key === 'Escape') setEditingVariable(null);
+                                }}
+                                autoFocus
+                                className="w-full text-xs px-2.5 py-1.5 rounded-md outline-none transition-colors"
+                                style={{ border: '1px solid #d1cdc7', color: '#3d3935' }}
+                                onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                                onBlur={(e) => e.currentTarget.style.borderColor = '#d1cdc7'}
+                              />
+                              <div className="flex justify-end mt-2 gap-1.5">
+                                <button
+                                  onClick={() => setEditingVariable(null)}
+                                  className="text-[10px] px-2 py-1 rounded"
+                                  style={{ color: '#8a857f' }}
+                                >
+                                  Atšaukti
+                                </button>
+                                <button
+                                  onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                  className="text-[10px] px-2.5 py-1 rounded font-medium"
+                                  style={{ background: '#5a5550', color: 'white' }}
+                                >
+                                  Išsaugoti
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {cat === 'yaml' && (
+                            <div>
+                              <textarea
+                                value={editingVariable.editValue}
+                                onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Escape') setEditingVariable(null);
+                                }}
+                                autoFocus
+                                rows={3}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-md outline-none resize-none transition-colors"
+                                style={{ border: '1px solid #d1cdc7', color: '#3d3935' }}
+                                onFocus={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                                onBlur={(e) => e.currentTarget.style.borderColor = '#d1cdc7'}
+                              />
+                              <div className="flex items-center justify-between mt-2">
+                                <span className="text-[9px]" style={{ color: '#b0aaa3' }}>Enter → čatas</span>
+                                <div className="flex gap-1.5">
+                                  <button
+                                    onClick={() => setEditingVariable(null)}
+                                    className="text-[10px] px-2 py-1 rounded"
+                                    style={{ color: '#8a857f' }}
+                                  >
+                                    Atšaukti
+                                  </button>
+                                  <button
+                                    onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                    className="text-[10px] px-2.5 py-1 rounded font-medium"
+                                    style={{ background: '#5a5550', color: 'white' }}
+                                  >
+                                    Siųsti į čatą
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
             <div

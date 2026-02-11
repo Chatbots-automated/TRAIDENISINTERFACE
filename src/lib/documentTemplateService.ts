@@ -39,19 +39,20 @@ export function renderTemplate(
 ): string {
   let html = template;
 
-  // Replace every {{key}} with the value or a placeholder chip
+  // Replace every {{key}} with a clickable data-var span.
+  // Filled variables show the value; unfilled ones show a yellow placeholder chip.
+  // Both are wrapped in <span data-var="key"> for click handling in the preview.
   html = html.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
     const trimKey = key.trim();
     const value = variables[trimKey];
 
     if (value !== undefined && value !== '') {
-      // Render the actual value, escaping HTML entities for safety.
-      // Convert newlines to <br> so multiline values (e.g. bullet lists) render.
-      return escapeHtml(value).replace(/\n/g, '<br>');
+      const escaped = escapeHtml(value).replace(/\n/g, '<br>');
+      return `<span data-var="${trimKey}" class="template-var filled">${escaped}</span>`;
     }
 
-    // Unfilled — render a visible placeholder chip
-    return `<span style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;">${trimKey}</span>`;
+    // Unfilled — visible placeholder chip, also clickable
+    return `<span data-var="${trimKey}" class="template-var unfilled" style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;cursor:pointer;">${trimKey}</span>`;
   });
 
   // Extract the header block (logo bar + company info) — the first <div>

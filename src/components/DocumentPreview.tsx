@@ -6,9 +6,18 @@ export interface DocumentPreviewHandle {
   print: () => void;
 }
 
+export interface VariableClickInfo {
+  key: string;
+  filled: boolean;
+  /** Position relative to the DocumentPreview container */
+  x: number;
+  y: number;
+}
+
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
+  onVariableClick?: (info: VariableClickInfo) => void;
 }
 
 // The "native" zoom where the document fits the panel well.
@@ -16,8 +25,9 @@ interface DocumentPreviewProps {
 const BASE_ZOOM = 0.95;
 
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template }, ref) {
+  function DocumentPreview({ variables, template, onVariableClick }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
     const [iframeHeight, setIframeHeight] = useState(1200);
 
@@ -46,6 +56,24 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         padding: 36pt 36pt 36pt 36pt;
       }
 
+      /* Interactive variable styles */
+      .template-var {
+        cursor: pointer;
+        border-radius: 2px;
+        transition: background 0.15s, box-shadow 0.15s;
+      }
+      .template-var.filled:hover {
+        background: #e8f0fe;
+        box-shadow: 0 0 0 2px #a8c7fa;
+      }
+      .template-var.unfilled:hover {
+        box-shadow: 0 0 0 2px #f59e0b;
+      }
+      .template-var.active {
+        background: #dbeafe !important;
+        box-shadow: 0 0 0 2px #3b82f6 !important;
+      }
+
       /* Print-optimized styles */
       @media print {
         html, body {
@@ -62,12 +90,12 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           padding: 36pt 36pt 36pt 36pt !important;
           box-shadow: none !important;
         }
-        /* Unfilled placeholder chips — keep visible in print */
+        .template-var { cursor: default; }
+        .template-var.filled { background: transparent !important; box-shadow: none !important; }
         span[style*="background:#fff3cd"] {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
-        /* Page break markers — convert back to real page breaks */
         div[style*="border-top:2px dashed"] {
           border: none !important;
           margin: 0 !important;
@@ -77,7 +105,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         div[style*="border-top:2px dashed"] span {
           display: none !important;
         }
-        /* Ensure images print */
         img {
           max-width: 100% !important;
           -webkit-print-color-adjust: exact !important;
@@ -110,26 +137,78 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       }
     }, []);
 
+    // After iframe loads: measure height + attach click handlers to [data-var] spans
+    const handleIframeLoad = useCallback(() => {
+      measureIframe();
+
+      const iframe = iframeRef.current;
+      const doc = iframe?.contentDocument;
+      if (!doc) return;
+
+      const varSpans = doc.querySelectorAll<HTMLSpanElement>('[data-var]');
+      varSpans.forEach((span) => {
+        span.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const varKey = span.getAttribute('data-var');
+          if (!varKey) return;
+
+          // Remove active class from all, add to clicked
+          doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
+          span.classList.add('active');
+
+          // Calculate position relative to the DocumentPreview container
+          const iframeEl = iframeRef.current;
+          const container = containerRef.current;
+          if (!iframeEl || !container) return;
+
+          const spanRect = span.getBoundingClientRect();
+          const iframeRect = iframeEl.getBoundingClientRect();
+          const containerRect = container.getBoundingClientRect();
+
+          // spanRect is in iframe viewport coords; iframeRect gives us
+          // the iframe's position in the page. Apply zoom scaling.
+          const x = iframeRect.left - containerRect.left + spanRect.left * zoom + (spanRect.width * zoom) / 2;
+          const y = iframeRect.top - containerRect.top + spanRect.top * zoom + spanRect.height * zoom;
+
+          const isFilled = span.classList.contains('filled');
+
+          onVariableClick?.({
+            key: varKey,
+            filled: isFilled,
+            x,
+            y,
+          });
+        });
+      });
+    }, [measureIframe, zoom, onVariableClick]);
+
     // Re-measure when variables change (srcdoc updates trigger onLoad)
     useEffect(() => {
-      // Small delay for srcdoc to re-render
       const t = setTimeout(measureIframe, 150);
       return () => clearTimeout(t);
     }, [srcdoc, measureIframe]);
 
+    // Clear active state inside iframe when variables change (re-render)
+    const prevSrcdocRef = useRef(srcdoc);
+    useEffect(() => {
+      if (prevSrcdocRef.current !== srcdoc) {
+        prevSrcdocRef.current = srcdoc;
+        // srcdoc changed → iframe will reload, active states reset automatically
+      }
+    }, [srcdoc]);
+
     const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
 
-    // Display zoom relative to BASE_ZOOM (0.95 = 100%)
     const displayZoom = Math.round((zoom / BASE_ZOOM) * 100);
 
-    // The scaled wrapper gets explicit dimensions so the parent scroll area
-    // matches the visual size exactly — no extra dead space.
     const scaledWidth = 595 * zoom;
     const scaledHeight = iframeHeight * zoom;
 
     return (
-      <div className="flex flex-col h-full min-h-0">
+      <div ref={containerRef} className="flex flex-col h-full min-h-0 relative">
         {/* Toolbar */}
         <div
           className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
@@ -194,7 +273,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
                 transform: `scale(${zoom})`,
                 transformOrigin: 'top left',
               }}
-              onLoad={measureIframe}
+              onLoad={handleIframeLoad}
             />
           </div>
         </div>
