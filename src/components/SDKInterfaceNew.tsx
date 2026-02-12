@@ -157,6 +157,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
   const [techDescResult, setTechDescResult] = useState<string | null>(null);
+  const [techDescError, setTechDescError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1692,7 +1693,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Composite code: U + manager_kodas + economist_kodas + technologist_kodas + yy/mm/dd
     const mgrCode = selectedManager?.kodas || '';
     const econCode = selectedEconomist?.kodas || '';
-    const techCode = (user as any).kodas || '';
+    const techCode = user.kodas || '';
     const yy = String(now.getFullYear()).slice(-2);
     const mm = String(now.getMonth() + 1).padStart(2, '0');
     const dd = String(now.getDate()).padStart(2, '0');
@@ -1714,11 +1715,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   /**
    * Categorize a variable key to determine which edit control to show.
-   * - 'offer'      → offer parameter (BDS, SM, N, P, object, cleaned water, etc.)
-   * - 'economist'   → economist dropdown
-   * - 'manager'     → manager dropdown
-   * - 'team'        → auto-filled from logged-in user (read-only info shown)
-   * - 'yaml'        → AI-generated, editable via chat prompt
+   * - 'offer'            → offer parameter (BDS, SM, N, P, object, cleaned water, etc.)
+   * - 'economist'        → economist dropdown
+   * - 'manager'          → manager dropdown
+   * - 'team'             → auto-filled from logged-in user (read-only)
+   * - 'auto'             → auto-computed (date, code — read-only)
+   * - 'tech_description' → technological description with "Generuoti" API call
+   * - 'yaml'             → AI-generated, editable via chat prompt
    */
   const categorizeVariable = (key: string): 'offer' | 'economist' | 'manager' | 'team' | 'auto' | 'tech_description' | 'yaml' => {
     if (OFFER_PARAMETER_DEFINITIONS.some((p) => p.key === key)) return 'offer';
@@ -1813,6 +1816,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleGenerateTechDescription = async () => {
     setTechDescLoading(true);
     setTechDescResult(null);
+    setTechDescError(null);
 
     try {
       if (!anthropicApiKey) throw new Error('API key not found');
@@ -1824,7 +1828,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const componentsList = yamlVars['components_bulletlist'] || '';
 
       if (!componentsList.trim()) {
-        setTechDescResult('Komponentų sąrašas tuščias. Pirma sugeneruokite komponentų sąrašą per čatą.');
+        setTechDescError('Komponentų sąrašas tuščias. Pirma sugeneruokite komponentų sąrašą per čatą.');
         setTechDescLoading(false);
         return;
       }
@@ -1832,7 +1836,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Fetch the tech description prompt from instruction_variables table
       const promptVar = await getInstructionVariable('tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
-        setTechDescResult('Klaida: technologinio aprašymo prompt nerastas duomenų bazėje (variable_key: tech_description_prompt)');
+        setTechDescError('Technologinio aprašymo prompt nerastas duomenų bazėje (variable_key: tech_description_prompt).');
         setTechDescLoading(false);
         return;
       }
@@ -1858,7 +1862,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setTechDescResult(text);
     } catch (err: any) {
       console.error('Tech description generation failed:', err);
-      setTechDescResult(`Klaida: ${err.message || 'Nepavyko sugeneruoti'}`);
+      setTechDescError(err.message || 'Nepavyko sugeneruoti');
     } finally {
       setTechDescLoading(false);
     }
@@ -2708,7 +2712,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
                             {cat === 'tech_description' && (
                               <div>
-                                {!techDescResult && !techDescLoading && (
+                                {!techDescResult && !techDescLoading && !techDescError && (
                                   <div>
                                     {editingVariable.editValue ? (
                                       <div className="text-[11px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
@@ -2734,6 +2738,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                                   <div className="flex items-center justify-center gap-2 py-4">
                                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
                                     <span className="text-[11px]" style={{ color: '#9ca3af' }}>Generuojama...</span>
+                                  </div>
+                                )}
+                                {techDescError && !techDescLoading && (
+                                  <div>
+                                    <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                      {techDescError}
+                                    </div>
+                                    <button
+                                      onClick={() => setTechDescError(null)}
+                                      className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                      style={{ color: '#9ca3af' }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                      Grįžti
+                                    </button>
                                   </div>
                                 )}
                                 {techDescResult && !techDescLoading && (

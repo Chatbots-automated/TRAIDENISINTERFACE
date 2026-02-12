@@ -138,8 +138,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           text-align: right;
           font-size: 8px;
           color: #9ca3af;
-          padding: 0;
-          margin-top: auto;
+          padding: 8px 0 0;
         }
         img {
           max-width: 100% !important;

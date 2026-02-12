@@ -85,9 +85,11 @@ export function renderTemplate(
     }
   );
 
-  // Add page number footer for the last page before </body>
-  const lastPageFooter = `<div class="page-number">${totalPages} / ${totalPages}</div>`;
-  html = html.replace('</body>', lastPageFooter + '</body>');
+  // Add page number footer for the last page before </body> (skip for single-page docs)
+  if (totalPages > 1) {
+    const lastPageFooter = `<div class="page-number">${totalPages} / ${totalPages}</div>`;
+    html = html.replace('</body>', lastPageFooter + '</body>');
+  }
 
   return html;
 }
