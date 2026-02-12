@@ -23,7 +23,8 @@ import {
   Users,
   Download,
   Lock,
-  Unlock
+  Unlock,
+  Sparkles
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -164,6 +165,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [techDescLoading, setTechDescLoading] = useState(false);
   const [techDescResult, setTechDescResult] = useState<string | null>(null);
   const [techDescError, setTechDescError] = useState<string | null>(null);
+
+  // AI-assisted variable editing state
+  const [aiVarEditMode, setAiVarEditMode] = useState(false);
+  const [aiVarEditInstruction, setAiVarEditInstruction] = useState('');
+  const [aiVarEditLoading, setAiVarEditLoading] = useState(false);
+  const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
+  const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -1822,6 +1830,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setEditingVariable(null);
       return;
     }
+    // Reset AI edit state when switching variables
+    setAiVarEditMode(false);
+    setAiVarEditInstruction('');
+    setAiVarEditResult(null);
+    setAiVarEditError(null);
+    setAiVarEditLoading(false);
+
     const merged = mergeAllVariables();
     setEditingVariable({
       key: info.key,
@@ -1972,6 +1987,81 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setTechDescError(err.message || 'Nepavyko sugeneruoti');
     } finally {
       setTechDescLoading(false);
+    }
+  };
+
+  /** AI-assisted edit for a single YAML variable — dedicated API call, no full regeneration. */
+  const handleAIVariableEdit = async () => {
+    if (!editingVariable || !currentConversation?.artifact) return;
+
+    setAiVarEditLoading(true);
+    setAiVarEditResult(null);
+    setAiVarEditError(null);
+
+    try {
+      if (!anthropicApiKey) throw new Error('API key not found');
+
+      const yamlContent = currentConversation.artifact.content;
+      const currentValue = editingVariable.editValue;
+      const variableKey = editingVariable.key;
+      const instruction = aiVarEditInstruction.trim();
+
+      if (!instruction) {
+        setAiVarEditError('Įveskite instrukciją AI.');
+        setAiVarEditLoading(false);
+        return;
+      }
+
+      // Fetch the variable edit prompt from instruction_variables table
+      const promptVar = await getInstructionVariable('variable_edit_prompt');
+
+      // Fallback system prompt if DB entry doesn't exist yet
+      const systemPromptText = promptVar?.content?.trim()
+        ? promptVar.content
+        : `Tu esi Traidenis komercinio pasiūlymo redaktorius. Tau bus pateiktas YAML turinys su visais kintamaisiais, konkretus kintamojo pavadinimas, jo dabartinė reikšmė, ir vartotojo instrukcija.
+
+Tavo užduotis: sugeneruoti NAUJĄ reikšmę TIK nurodytam kintamajam, atsižvelgiant į vartotojo instrukciją ir visą YAML kontekstą.
+
+SVARBU:
+- Grąžink TIK naują reikšmę, be jokių paaiškinimų, be YAML formatavimo, be kintamojo pavadinimo
+- Jei reikšmė turi būti kelių eilučių (pvz. sąrašas su • ženkleliais), naudok naujas eilutes
+- Nekeisk kitų kintamųjų - tik nurodytą
+- Atsakyk lietuvių kalba, nebent instrukcija nurodo kitaip`;
+
+      const anthropic = new Anthropic({
+        apiKey: anthropicApiKey,
+        dangerouslyAllowBrowser: true
+      });
+
+      const userMessage = `YAML turinys:
+\`\`\`
+${yamlContent}
+\`\`\`
+
+Kintamasis: ${variableKey}
+Dabartinė reikšmė: ${currentValue || '(tuščia)'}
+
+Vartotojo instrukcija: ${instruction}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        system: systemPromptText,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+        .trim();
+
+      setAiVarEditResult(text);
+    } catch (err: any) {
+      console.error('[AI Variable Edit] Failed:', err);
+      setAiVarEditError(err.message || 'Nepavyko sugeneruoti');
+    } finally {
+      setAiVarEditLoading(false);
     }
   };
 
@@ -3025,42 +3115,170 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
                             {cat === 'yaml' && (
                               <div>
-                                <textarea
-                                  value={editingVariable.editValue}
-                                  onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
-                                  }}
-                                  autoFocus
-                                  rows={3}
-                                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
-                                  style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
-                                  onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
-                                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
-                                />
-                                <div className="flex items-center justify-between mt-2">
-                                  <span className="text-[9px]" style={{ color: '#c0bbb5' }}>Tiesioginis pakeitimas</span>
-                                  <div className="flex gap-1.5">
-                                    <button
-                                      onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                      className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
-                                      style={{ color: '#9ca3af' }}
-                                      onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                      Atšaukti
-                                    </button>
-                                    <button
-                                      onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                      className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
-                                      style={{ background: '#3d3935', color: 'white' }}
-                                      onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
-                                      onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
-                                    >
-                                      Išsaugoti
-                                    </button>
-                                  </div>
-                                </div>
+                                {!aiVarEditMode ? (
+                                  <>
+                                    {/* Direct edit mode */}
+                                    <textarea
+                                      value={editingVariable.editValue}
+                                      onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                      }}
+                                      autoFocus
+                                      rows={3}
+                                      className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                      style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                      onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                    />
+                                    <div className="flex items-center justify-between mt-2">
+                                      <button
+                                        onClick={() => { setAiVarEditMode(true); setAiVarEditInstruction(''); setAiVarEditResult(null); setAiVarEditError(null); }}
+                                        className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                        style={{ color: '#8b5cf6' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3ff'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        title="AI redakcija"
+                                      >
+                                        <Sparkles className="w-2.5 h-2.5" />
+                                        AI
+                                      </button>
+                                      <div className="flex gap-1.5">
+                                        <button
+                                          onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                          className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                          style={{ color: '#9ca3af' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                          Atšaukti
+                                        </button>
+                                        <button
+                                          onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                          className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                          style={{ background: '#3d3935', color: 'white' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                                        >
+                                          Išsaugoti
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* AI edit mode */}
+                                    {!aiVarEditResult && !aiVarEditLoading && !aiVarEditError && (
+                                      <div>
+                                        {editingVariable.editValue && (
+                                          <div className="text-[10px] max-h-20 overflow-y-auto mb-2 px-2 py-1.5 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
+                                            {editingVariable.editValue.slice(0, 150)}{editingVariable.editValue.length > 150 ? '...' : ''}
+                                          </div>
+                                        )}
+                                        <textarea
+                                          value={aiVarEditInstruction}
+                                          onChange={(e) => setAiVarEditInstruction(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAIVariableEdit(); }
+                                            if (e.key === 'Escape') { setAiVarEditMode(false); }
+                                          }}
+                                          autoFocus
+                                          rows={2}
+                                          placeholder="Aprašykite, ką AI turėtų pakeisti..."
+                                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                          style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                          onFocus={(e) => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)'; }}
+                                          onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                        />
+                                        <div className="flex items-center justify-between mt-2">
+                                          <button
+                                            onClick={() => setAiVarEditMode(false)}
+                                            className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                            style={{ color: '#9ca3af' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                          >
+                                            Grįžti
+                                          </button>
+                                          <button
+                                            onClick={handleAIVariableEdit}
+                                            disabled={!aiVarEditInstruction.trim()}
+                                            className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            style={{
+                                              background: aiVarEditInstruction.trim() ? '#8b5cf6' : '#e5e2dd',
+                                              color: aiVarEditInstruction.trim() ? 'white' : '#9ca3af',
+                                            }}
+                                            onMouseEnter={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#7c3aed'; }}
+                                            onMouseLeave={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#8b5cf6'; }}
+                                          >
+                                            <Sparkles className="w-3 h-3" />
+                                            Generuoti
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditLoading && (
+                                      <div className="flex items-center justify-center gap-2 py-4">
+                                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
+                                        <span className="text-[11px]" style={{ color: '#9ca3af' }}>AI generuoja...</span>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditError && !aiVarEditLoading && (
+                                      <div>
+                                        <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                          {aiVarEditError}
+                                        </div>
+                                        <button
+                                          onClick={() => setAiVarEditError(null)}
+                                          className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                          style={{ color: '#9ca3af' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                          Grįžti
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditResult && !aiVarEditLoading && (
+                                      <div>
+                                        <div
+                                          className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                          style={{ color: '#3d3935', lineHeight: '1.6', background: '#faf5ff', border: '1px solid #e9d5ff' }}
+                                        >
+                                          {aiVarEditResult}
+                                        </div>
+                                        <div className="flex justify-end mt-2 gap-1.5">
+                                          <button
+                                            onClick={() => { setAiVarEditResult(null); }}
+                                            className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                            style={{ color: '#ef4444' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                          >
+                                            Atmesti
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              handleVariableSave(editingVariable.key, aiVarEditResult!);
+                                              setAiVarEditResult(null);
+                                              setAiVarEditMode(false);
+                                              addNotification('success', 'AI redakcija priimta', `„${editingVariable.key}" atnaujintas pagal AI.`);
+                                            }}
+                                            className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            style={{ background: '#8b5cf6', color: 'white' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#7c3aed'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = '#8b5cf6'}
+                                          >
+                                            Priimti
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
