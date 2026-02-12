@@ -432,7 +432,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       if (deleteError || !data) {
         console.error('[Delete] Error:', deleteError);
-        setError(`Nepavyko ištrinti pokalbio: ${deleteError?.message || 'nežinoma klaida'}`);
+        addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${deleteError?.message || 'nežinoma klaida'}`);
         return;
       }
 
@@ -442,9 +442,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
       }
+      addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
       console.error('[Delete] Exception:', err);
-      setError(`Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
+      addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
     }
   };
 
@@ -1550,6 +1551,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             style={{ color: '#8a857f' }}
             onClick={() => {
               navigator.clipboard.writeText(`{{${item.key}}}`);
+              addNotification('info', 'Nukopijuota', `{{${item.key}}} nukopijuota į iškarpinę.`);
             }}
             title="Kopijuoti kintamojo nuorodą"
           />
@@ -1778,6 +1780,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     saveGlobalTemplate(html);
     setTemplateVersion(v => v + 1);
     setShowTemplateEditor(false);
+    addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
   /** Save the current editing variable value. */
@@ -2363,7 +2366,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
                           style={{ color: '#6b7280' }}
                           title="Copy"
-                          onClick={() => navigator.clipboard.writeText(contentString)}
+                          onClick={() => { navigator.clipboard.writeText(contentString); addNotification('info', 'Nukopijuota', 'Žinutės tekstas nukopijuotas.'); }}
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -2586,7 +2589,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
+                      onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
                       className="p-1.5 rounded-md transition-colors"
                       style={{ color: '#8a857f' }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
@@ -2776,8 +2779,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                                       </button>
                                       <button
                                         onClick={() => {
-                                          handleVariableSave('technological_description', techDescResult);
+                                          handleVariableSave('technological_description', techDescResult!);
                                           setTechDescResult(null);
+                                          addNotification('success', 'Aprašymas priimtas', 'Technologinis aprašymas įrašytas į dokumentą.');
                                         }}
                                         className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
                                         style={{ background: '#059669', color: 'white' }}
