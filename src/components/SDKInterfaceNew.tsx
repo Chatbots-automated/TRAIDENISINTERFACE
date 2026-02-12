@@ -153,6 +153,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     editValue: string;
   } | null>(null);
 
+  // Technological description generator state
+  const [techDescLoading, setTechDescLoading] = useState(false);
+  const [techDescResult, setTechDescResult] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1676,9 +1680,28 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       ? parseYAMLContent(currentConversation.artifact.content)
       : {};
 
+    // Lithuanian date: "2026 m. vasario mėn. 12 d."
+    const LITHUANIAN_MONTHS_GENITIVE = [
+      'sausio', 'vasario', 'kovo', 'balandžio', 'gegužės', 'birželio',
+      'liepos', 'rugpjūčio', 'rugsėjo', 'spalio', 'lapkričio', 'gruodžio'
+    ];
+    const now = new Date();
+    const ltDate = `${now.getFullYear()} m. ${LITHUANIAN_MONTHS_GENITIVE[now.getMonth()]} mėn. ${now.getDate()} d.`;
+
+    // Composite code: U + manager_kodas + economist_kodas + technologist_kodas + yy/mm/dd
+    const mgrCode = selectedManager?.kodas || '';
+    const econCode = selectedEconomist?.kodas || '';
+    const techCode = (user as any).kodas || '';
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const compositeCode = `U${mgrCode}${econCode}${techCode}${yy}/${mm}/${dd}`;
+
     return {
       ...yamlVars,
       ...offerParameters,
+      'date_yyyy-month_men.-dd': ltDate,
+      'code_yy/mm/dd': compositeCode,
       technologist: user.full_name || user.email,
       technologist_phone: user.phone || '',
       technologist_email: user.email,
@@ -1696,11 +1719,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    * - 'team'        → auto-filled from logged-in user (read-only info shown)
    * - 'yaml'        → AI-generated, editable via chat prompt
    */
-  const categorizeVariable = (key: string): 'offer' | 'economist' | 'manager' | 'team' | 'yaml' => {
+  const categorizeVariable = (key: string): 'offer' | 'economist' | 'manager' | 'team' | 'auto' | 'tech_description' | 'yaml' => {
     if (OFFER_PARAMETER_DEFINITIONS.some((p) => p.key === key)) return 'offer';
     if (key === 'ekonomistas') return 'economist';
     if (key === 'vadybininkas') return 'manager';
     if (['technologist', 'technologist_phone', 'technologist_email'].includes(key)) return 'team';
+    if (['date_yyyy-month_men.-dd', 'code_yy/mm/dd'].includes(key)) return 'auto';
+    if (key === 'technological_description') return 'tech_description';
     return 'yaml';
   };
 
@@ -1767,6 +1792,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } else if (category === 'manager') {
       const match = managers.find((m) => m.full_name === value);
       if (match) setSelectedManager(match);
+    } else if (category === 'tech_description') {
+      // Save technological description to offer parameters (persisted per conversation)
+      if (currentConversation) {
+        const updated = { ...offerParameters, [key]: value };
+        setOfferParameters(updated);
+        saveOfferParameters(currentConversation.id, updated);
+      }
     } else if (category === 'yaml') {
       setInputValue(`Pakeisk {{${key}}} į: ${value}`);
       textareaRef.current?.focus();
@@ -1774,6 +1806,103 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     setEditingVariable(null);
     documentPreviewRef.current?.clearActiveVariable();
+  };
+
+  /** Generate the technological description via API call with the component list. */
+  const handleGenerateTechDescription = async () => {
+    setTechDescLoading(true);
+    setTechDescResult(null);
+
+    try {
+      if (!anthropicApiKey) throw new Error('API key not found');
+
+      // Get component list from YAML artifact
+      const yamlVars: Record<string, string> = currentConversation?.artifact
+        ? parseYAMLContent(currentConversation.artifact.content)
+        : {};
+      const componentsList = yamlVars['components_bulletlist'] || '';
+
+      if (!componentsList.trim()) {
+        setTechDescResult('Komponentų sąrašas tuščias. Pirma sugeneruokite komponentų sąrašą per čatą.');
+        setTechDescLoading(false);
+        return;
+      }
+
+      const techDescSystemPrompt = `You are the technology writer agent.
+
+## Task
+Your task is to write the technological paragraph part of a commercial offer based on components provided to you. You must follow the Specifics below to complete your task successfully.
+
+## Your Workflow
+
+### Step 1: Receive Component List
+- You will be provided with a complete component list (including product codes and maybe pricing)
+- Parse the component descriptions to understand the system configuration
+- Ignore, discard the prices completely
+- Identify key components: treatment unit, tanks, pumps, automation, etc.
+
+### Step 2: Write Technological Description
+- Write a comprehensive technological process description
+- Reference the actual component models from the list
+- Explain the wastewater treatment process flow
+- Describe how components work together
+- Include technical details about the biological treatment process
+
+### Step 3: Format Output
+Your output should include ONLY the technological description.
+
+## Specifics
+
+The technological description should:
+1. Explain the wastewater flow through the system
+2. Describe the biological treatment process
+3. Reference actual component models from the list
+4. Include technical details about aeration, sludge treatment, etc.
+5. Mention operational costs (electricity for blowers, periodic sludge removal)
+6. Be written in Lithuanian
+7. Follow the structure shown in examples
+
+## WHAT NOT TO DO
+- NEVER write about components that weren't provided in the input
+- NEVER hallucinate or make up component specifications
+- NEVER thank, introduce, or add any meta-commentary
+- AVOID being verbose about your task
+- AVOID expressing emotions or task specifics
+
+## WHAT TO DO
+- ALWAYS base your technological description on the actual components provided
+- ALWAYS reference specific model numbers
+
+## Examples:
+Output Example 1:
+"Pagal pateiktą technologinę schemą nuotekos patenka į srauto išlyginimo rezervuarą (1), iš kurios sumontuoto siurblio dozatoriaus pagalba nuotekos tolygiu srautu per debito apskaitos šulinį (2) ir slėgio gesinimo šulinį (3) perduodamos į biologinio valymo įrenginį HNV-N-12 (4).
+Buitinių nuotekų valymo įrenginys HNV-N-12 susideda iš: aerotanko ir antrinio nusodintuvo. Biologinio valymo įrenginyje nuotekos pirmiausia patenka į aerotanką. Aerotankas tai rezervuaras, kuriame nuotekos susimaišo su aktyviuoju dumblu ir aeruojasi įvairių aeracijos sistemų pagalba. Oras į įrenginį tiekiamas orapūtės, montuojamos orapūčių dėžėje, pagalba. Aeracija užtikrina efektyvų nuotekų susimaišymą su aktyviuoju dumblu, dumblo mišinio aprūpinimą deguonimi ir dumblo plūduriavimą. Aktyvusis dumblas labai įvairus - tai lanksti, savireguliuojanti ir save optimizuojanti sistema. Staigūs darbo sąlygų pasikeitimai gali sukelti šoką. Kad sistema taptų ne tokia jautri aplinkos svyravimams yra naudojama bioįkrova. Bioįkrovos dėka įrenginyje atsiranda prisitvirtinusi biomasė, kurios negali išnešti atsitiktiniai padidėję nuotekų srautai, o svarbiausiai sudaromos sąlygos simbiotiniam bakterijų ir kitų organizmų tarpusavio ryšiams. Biologiškai nepasiekus pakankamo fosforo pašalinimo laipsnio, papildomai naudojamas geležies sulfato koaguliantas. Aktyvus dumblas nuo išvalyto vandens atskiriamas antriniame nusodintuve, iš kurio jis grįžta į aerotanką (cirkuliuojantis aktyvus dumblas). Perteklinis dumblas kaupiamas dumblo tankintuve (7). Nuosėdos ir išplūdos periodiškai šalinamas iš dumblo tankintuvo asenizacinės mašinos pagalba. Po biologinio valymo išvalytos nuotekos teka pro kontrolinį mėginių paėmimo šulinį (6), ir išteka numatytoje vietoje.
+Siūlomų valymo įrenginių tiesiogines eksploatacines išlaidas sudaro elektros suvartojimas orapūtei, kuri dirba be pertraukų ir periodiškai (1 kartą per metus arba pagal faktinį poreikį) išvežamam sukauptam pertekliniam dumblui."`;
+
+      const anthropic = new Anthropic({
+        apiKey: anthropicApiKey,
+        dangerouslyAllowBrowser: true
+      });
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        system: techDescSystemPrompt,
+        messages: [{ role: 'user', content: componentsList }],
+      });
+
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
+
+      setTechDescResult(text);
+    } catch (err: any) {
+      console.error('Tech description generation failed:', err);
+      setTechDescResult(`Klaida: ${err.message || 'Nepavyko sugeneruoti'}`);
+    } finally {
+      setTechDescLoading(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -2540,8 +2669,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   const cat = categorizeVariable(editingVariable.key);
                   const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
                   const label = paramDef?.label || editingVariable.key;
-                  const categoryLabel = cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : 'AI kintamasis';
-                  const categoryColor = cat === 'offer' ? '#8b5cf6' : cat === 'economist' ? '#2563eb' : cat === 'manager' ? '#2563eb' : cat === 'team' ? '#059669' : '#d97706';
+                  const categoryLabel = cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : cat === 'auto' ? 'Automatinis' : cat === 'tech_description' ? 'Technologija' : 'AI kintamasis';
+                  const categoryColor = cat === 'offer' ? '#8b5cf6' : cat === 'economist' ? '#2563eb' : cat === 'manager' ? '#2563eb' : cat === 'team' ? '#059669' : cat === 'auto' ? '#059669' : cat === 'tech_description' ? '#0891b2' : '#d97706';
 
                   return (
                     <>
@@ -2608,6 +2737,79 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                               <div>
                                 <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai užpildyta</span>
                                 <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                              </div>
+                            )}
+
+                            {cat === 'auto' && (
+                              <div>
+                                <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai sugeneruota</span>
+                                <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                              </div>
+                            )}
+
+                            {cat === 'tech_description' && (
+                              <div>
+                                {!techDescResult && !techDescLoading && (
+                                  <div>
+                                    {editingVariable.editValue ? (
+                                      <div className="text-[11px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
+                                        {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                                        Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={handleGenerateTechDescription}
+                                      className="w-full mt-2 text-[11px] px-3 py-2 rounded-lg font-medium transition-colors"
+                                      style={{ background: '#0891b2', color: 'white' }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = '#0e7490'}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = '#0891b2'}
+                                    >
+                                      Generuoti
+                                    </button>
+                                  </div>
+                                )}
+                                {techDescLoading && (
+                                  <div className="flex items-center justify-center gap-2 py-4">
+                                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
+                                    <span className="text-[11px]" style={{ color: '#9ca3af' }}>Generuojama...</span>
+                                  </div>
+                                )}
+                                {techDescResult && !techDescLoading && (
+                                  <div>
+                                    <div
+                                      className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                      style={{ color: '#3d3935', lineHeight: '1.6', background: '#f8f7f6', border: '1px solid #e5e2dd' }}
+                                    >
+                                      {techDescResult}
+                                    </div>
+                                    <div className="flex justify-end mt-2 gap-1.5">
+                                      <button
+                                        onClick={() => { setTechDescResult(null); }}
+                                        className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                        style={{ color: '#ef4444' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                      >
+                                        Atmesti
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleVariableSave('technological_description', techDescResult);
+                                          setTechDescResult(null);
+                                        }}
+                                        className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                        style={{ background: '#059669', color: 'white' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#047857'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = '#059669'}
+                                      >
+                                        Priimti
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
 
