@@ -48,6 +48,7 @@ import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
 import { OFFER_PARAMETER_DEFINITIONS, loadOfferParameters, saveOfferParameters, getDefaultOfferParameters } from '../lib/offerParametersService';
+import { getInstructionVariable } from '../lib/instructionsService';
 import {
   shareConversation,
   getSharedConversations,
@@ -1828,56 +1829,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         return;
       }
 
-      const techDescSystemPrompt = `You are the technology writer agent.
-
-## Task
-Your task is to write the technological paragraph part of a commercial offer based on components provided to you. You must follow the Specifics below to complete your task successfully.
-
-## Your Workflow
-
-### Step 1: Receive Component List
-- You will be provided with a complete component list (including product codes and maybe pricing)
-- Parse the component descriptions to understand the system configuration
-- Ignore, discard the prices completely
-- Identify key components: treatment unit, tanks, pumps, automation, etc.
-
-### Step 2: Write Technological Description
-- Write a comprehensive technological process description
-- Reference the actual component models from the list
-- Explain the wastewater treatment process flow
-- Describe how components work together
-- Include technical details about the biological treatment process
-
-### Step 3: Format Output
-Your output should include ONLY the technological description.
-
-## Specifics
-
-The technological description should:
-1. Explain the wastewater flow through the system
-2. Describe the biological treatment process
-3. Reference actual component models from the list
-4. Include technical details about aeration, sludge treatment, etc.
-5. Mention operational costs (electricity for blowers, periodic sludge removal)
-6. Be written in Lithuanian
-7. Follow the structure shown in examples
-
-## WHAT NOT TO DO
-- NEVER write about components that weren't provided in the input
-- NEVER hallucinate or make up component specifications
-- NEVER thank, introduce, or add any meta-commentary
-- AVOID being verbose about your task
-- AVOID expressing emotions or task specifics
-
-## WHAT TO DO
-- ALWAYS base your technological description on the actual components provided
-- ALWAYS reference specific model numbers
-
-## Examples:
-Output Example 1:
-"Pagal pateiktą technologinę schemą nuotekos patenka į srauto išlyginimo rezervuarą (1), iš kurios sumontuoto siurblio dozatoriaus pagalba nuotekos tolygiu srautu per debito apskaitos šulinį (2) ir slėgio gesinimo šulinį (3) perduodamos į biologinio valymo įrenginį HNV-N-12 (4).
-Buitinių nuotekų valymo įrenginys HNV-N-12 susideda iš: aerotanko ir antrinio nusodintuvo. Biologinio valymo įrenginyje nuotekos pirmiausia patenka į aerotanką. Aerotankas tai rezervuaras, kuriame nuotekos susimaišo su aktyviuoju dumblu ir aeruojasi įvairių aeracijos sistemų pagalba. Oras į įrenginį tiekiamas orapūtės, montuojamos orapūčių dėžėje, pagalba. Aeracija užtikrina efektyvų nuotekų susimaišymą su aktyviuoju dumblu, dumblo mišinio aprūpinimą deguonimi ir dumblo plūduriavimą. Aktyvusis dumblas labai įvairus - tai lanksti, savireguliuojanti ir save optimizuojanti sistema. Staigūs darbo sąlygų pasikeitimai gali sukelti šoką. Kad sistema taptų ne tokia jautri aplinkos svyravimams yra naudojama bioįkrova. Bioįkrovos dėka įrenginyje atsiranda prisitvirtinusi biomasė, kurios negali išnešti atsitiktiniai padidėję nuotekų srautai, o svarbiausiai sudaromos sąlygos simbiotiniam bakterijų ir kitų organizmų tarpusavio ryšiams. Biologiškai nepasiekus pakankamo fosforo pašalinimo laipsnio, papildomai naudojamas geležies sulfato koaguliantas. Aktyvus dumblas nuo išvalyto vandens atskiriamas antriniame nusodintuve, iš kurio jis grįžta į aerotanką (cirkuliuojantis aktyvus dumblas). Perteklinis dumblas kaupiamas dumblo tankintuve (7). Nuosėdos ir išplūdos periodiškai šalinamas iš dumblo tankintuvo asenizacinės mašinos pagalba. Po biologinio valymo išvalytos nuotekos teka pro kontrolinį mėginių paėmimo šulinį (6), ir išteka numatytoje vietoje.
-Siūlomų valymo įrenginių tiesiogines eksploatacines išlaidas sudaro elektros suvartojimas orapūtei, kuri dirba be pertraukų ir periodiškai (1 kartą per metus arba pagal faktinį poreikį) išvežamam sukauptam pertekliniam dumblui."`;
+      // Fetch the tech description prompt from instruction_variables table
+      const promptVar = await getInstructionVariable('tech_description_prompt');
+      if (!promptVar || !promptVar.content.trim()) {
+        setTechDescResult('Klaida: technologinio aprašymo prompt nerastas duomenų bazėje (variable_key: tech_description_prompt)');
+        setTechDescLoading(false);
+        return;
+      }
+      const techDescSystemPrompt = promptVar.content;
 
       const anthropic = new Anthropic({
         apiKey: anthropicApiKey,
