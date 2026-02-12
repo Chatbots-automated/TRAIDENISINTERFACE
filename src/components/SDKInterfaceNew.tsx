@@ -223,9 +223,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       return;
     }
     const popup = popupRef.current;
-    if (!popup) return;
+    if (!popup) { setPopupPlacement('below'); return; }
     const container = popup.offsetParent as HTMLElement;
-    if (!container) return;
+    if (!container) { setPopupPlacement('below'); return; }
 
     const containerHeight = container.clientHeight;
     const popupHeight = popup.offsetHeight;
@@ -1724,6 +1724,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     const lines = yamlContent.split('\n');
     const result: string[] = [];
     let i = 0;
+    let found = false;
 
     while (i < lines.length) {
       const line = lines[i];
@@ -1732,6 +1733,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Check if this line starts with our target key
       const colonIndex = trimmed.indexOf(':');
       if (colonIndex > 0 && trimmed.substring(0, colonIndex).trim() === targetKey) {
+        found = true;
         const rawValue = trimmed.substring(colonIndex + 1).trim();
 
         if (rawValue === '|' || rawValue === '>') {
@@ -1759,6 +1761,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       result.push(line);
       i++;
+    }
+
+    if (!found) {
+      console.warn(`[replaceYAMLValue] Key "${targetKey}" not found in YAML content`);
     }
 
     return result.join('\n');
@@ -3261,11 +3267,12 @@ Vartotojo instrukcija: ${instruction}`;
                                             Atmesti
                                           </button>
                                           <button
-                                            onClick={() => {
-                                              handleVariableSave(editingVariable.key, aiVarEditResult!);
+                                            onClick={async () => {
+                                              const key = editingVariable.key;
+                                              const value = aiVarEditResult!;
                                               setAiVarEditResult(null);
                                               setAiVarEditMode(false);
-                                              addNotification('success', 'AI redakcija priimta', `„${editingVariable.key}" atnaujintas pagal AI.`);
+                                              await handleVariableSave(key, value);
                                             }}
                                             className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
                                             style={{ background: '#8b5cf6', color: 'white' }}
