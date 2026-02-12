@@ -21,7 +21,9 @@ import {
   Check,
   Share2,
   Users,
-  Download
+  Download,
+  Lock,
+  Unlock
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -136,13 +138,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Offer parameters (per-conversation, stored in localStorage)
   const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
   // Collapsible sections state
-  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: false, objectParams: true });
+  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: true, objectParams: true });
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
   const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>(session.artifactTab ?? 'preview');
   // Bump to force DocumentPreview to re-fetch the global template
   const [templateVersion, setTemplateVersion] = useState(0);
   // Global template editor
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  // Per-chat document edit mode (lock/unlock)
+  const [docEditMode, setDocEditMode] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
 
   // Floating variable editor state (interactive preview)
@@ -198,6 +202,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   useEffect(() => { saveSession({ showArtifact }); }, [showArtifact]);
   useEffect(() => { saveSession({ artifactTab }); }, [artifactTab]);
   useEffect(() => { saveSession({ sidebarCollapsed }); }, [sidebarCollapsed]);
+
+  // Auto-exit document edit mode when switching conversations or tabs
+  useEffect(() => { setDocEditMode(false); }, [currentConversation?.id, artifactTab]);
 
   const loadEconomists = async () => {
     try {
@@ -1517,21 +1524,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
 
     return items.map((item) => (
-      <div key={item.lineIndex} className="group mb-2">
-        <div className="flex items-start gap-2">
+      <div key={item.lineIndex} className="group mb-1">
+        <div className="flex items-start gap-1.5">
           <button
             onClick={() => {
               setInputValue(`Pakeisk {{${item.key}}} į: `);
               textareaRef.current?.focus();
             }}
-            className="yaml-var-card text-left flex-1 rounded-md px-4 py-2.5 transition-all"
+            className="yaml-var-card text-left flex-1 rounded px-3 py-1.5 transition-all"
             style={{
               background: '#ffffff',
-              borderLeft: '3px solid #d1d5db',
-              fontSize: '15px',
-              lineHeight: '1.5',
+              borderLeft: '2px solid #d1d5db',
+              fontSize: '12px',
+              lineHeight: '1.4',
               color: '#1D1D1F',
-              fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
             }}
             title="Spustelėkite, kad redaguotumėte"
             onMouseEnter={(e) => {
@@ -1543,11 +1549,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               e.currentTarget.style.borderLeftColor = '#d1d5db';
             }}
           >
-            <span style={{ fontSize: '10px', color: '#9ca3af', letterSpacing: '0.02em', display: 'block', marginBottom: '2px' }}>{item.key}</span>
-            <span style={{ whiteSpace: 'pre-wrap' }}>{item.value}</span>
+            <span style={{ fontSize: '9px', color: '#9ca3af', letterSpacing: '0.02em' }}>{item.key}</span>
+            <span style={{ whiteSpace: 'pre-wrap', display: 'block', marginTop: '1px' }}>{item.value}</span>
           </button>
           <Copy
-            className="w-3.5 h-3.5 mt-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+            className="w-3 h-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
             style={{ color: '#8a857f' }}
             onClick={() => {
               navigator.clipboard.writeText(`{{${item.key}}}`);
@@ -1620,8 +1626,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
+      addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
     } catch (err) {
       console.error('Error handling artifact:', err);
+      addNotification('error', 'Klaida', 'Nepavyko išsaugoti komercinio pasiūlymo.');
     }
   };
 
@@ -2569,7 +2577,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
                     <button
-                      onClick={() => documentPreviewRef.current?.print()}
+                      onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
                       className="p-1.5 rounded-md transition-colors"
                       style={{ color: '#8a857f' }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
@@ -2578,6 +2586,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     >
                       <Download className="w-3.5 h-3.5" />
                     </button>
+                    {artifactTab === 'preview' && (
+                      <button
+                        onClick={() => setDocEditMode(prev => !prev)}
+                        className="p-1.5 rounded-md transition-colors"
+                        style={{ color: docEditMode ? '#3b82f6' : '#8a857f', background: docEditMode ? '#eff6ff' : 'transparent' }}
+                        onMouseEnter={(e) => { if (!docEditMode) e.currentTarget.style.background = '#f0ede8'; }}
+                        onMouseLeave={(e) => { if (!docEditMode) e.currentTarget.style.background = 'transparent'; }}
+                        title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
+                      >
+                        {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
                     <button
                       onClick={handleOpenTemplateEditor}
                       className="p-1.5 rounded-md transition-colors"
@@ -2622,6 +2642,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   variables={mergeAllVariables()}
                   templateVersion={templateVersion}
                   onVariableClick={handleVariableClick}
+                  editable={docEditMode}
+                  conversationId={currentConversation?.id}
                   onScroll={() => {
                     if (editingVariable) {
                       setEditingVariable(null);

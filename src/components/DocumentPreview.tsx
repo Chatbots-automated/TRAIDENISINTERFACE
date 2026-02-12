@@ -24,14 +24,20 @@ interface DocumentPreviewProps {
   templateVersion?: number;
   onVariableClick?: (info: VariableClickInfo | null) => void;
   onScroll?: () => void;
+  /** Whether the document body is contentEditable. Default false. */
+  editable?: boolean;
+  /** Conversation ID — used for localStorage persistence of manual edits. */
+  conversationId?: string;
 }
 
 // The "native" zoom where the document fits the panel well.
 // Displayed as 100% in the UI; other zoom levels are relative to this.
 const BASE_ZOOM = 0.95;
 
+const DOC_EDIT_PREFIX = 'doc_edit_';
+
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll }, ref) {
+  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll, editable = false, conversationId }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
@@ -42,6 +48,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     zoomRef.current = zoom;
     const onVariableClickRef = useRef(onVariableClick);
     onVariableClickRef.current = onVariableClick;
+    const editableRef = useRef(editable);
+    editableRef.current = editable;
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Re-read global template whenever templateVersion changes
     const templateHtml = useMemo(() => template || getDefaultTemplate(), [template, templateVersion]);
@@ -190,9 +199,41 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       const doc = iframe?.contentDocument;
       if (!doc) return;
 
-      // Enable basic text editing (type, delete, etc.)
-      doc.body.contentEditable = 'true';
+      // Set contentEditable based on prop (default: locked)
+      doc.body.contentEditable = editableRef.current ? 'true' : 'false';
       doc.body.style.outline = 'none';
+
+      // Restore saved manual edits if they exist for this conversation
+      if (conversationId) {
+        try {
+          const saved = localStorage.getItem(DOC_EDIT_PREFIX + conversationId);
+          if (saved) {
+            const { html, fingerprint } = JSON.parse(saved);
+            // Only restore if the underlying template hasn't changed
+            if (fingerprint === srcdoc.length.toString()) {
+              doc.body.innerHTML = html;
+              setTimeout(measureIframe, 50);
+            } else {
+              localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
+            }
+          }
+        } catch { /* ignore corrupt data */ }
+      }
+
+      // Auto-save on input (debounced 500ms)
+      doc.body.addEventListener('input', () => {
+        if (!editableRef.current || !conversationId) return;
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => {
+          const body = iframeRef.current?.contentDocument?.body;
+          if (body) {
+            localStorage.setItem(DOC_EDIT_PREFIX + conversationId, JSON.stringify({
+              html: body.innerHTML,
+              fingerprint: srcdoc.length.toString(),
+            }));
+          }
+        }, 500);
+      });
 
       // Click on body (non-variable area) clears active state and closes popup
       doc.body.addEventListener('click', () => {
@@ -251,8 +292,20 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       if (prevSrcdocRef.current !== srcdoc) {
         prevSrcdocRef.current = srcdoc;
         // srcdoc changed → iframe will reload, active states reset automatically
+        // Clear saved edit since underlying data changed
+        if (conversationId) {
+          localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
+        }
       }
-    }, [srcdoc]);
+    }, [srcdoc, conversationId]);
+
+    // Toggle contentEditable when editable prop changes (without iframe reload)
+    useEffect(() => {
+      const doc = iframeRef.current?.contentDocument;
+      if (doc?.body) {
+        doc.body.contentEditable = editable ? 'true' : 'false';
+      }
+    }, [editable]);
 
     const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
