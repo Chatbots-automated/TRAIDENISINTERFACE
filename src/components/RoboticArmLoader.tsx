@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 interface RoboticArmLoaderProps {
   isAnimated?: boolean;
@@ -6,17 +6,27 @@ interface RoboticArmLoaderProps {
 }
 
 export default function RoboticArmLoader({ isAnimated = true, size = 40 }: RoboticArmLoaderProps) {
+  const uid = useId().replace(/:/g, '');
+
+  const filterId = `metaball-${uid}`;
+  const mirId = `robotic-arm-mir-${uid}`;
+  const cls = (name: string) => `${name}-${uid}`;
+
   return (
     <div
       style={{
         width: `${size}px`,
         height: `${size}px`,
-        display: 'inline-block'
+        maxWidth: `${size}px`,
+        maxHeight: `${size}px`,
+        display: 'inline-block',
+        overflow: 'hidden',
+        flexShrink: 0
       }}
     >
-      <svg viewBox="130 130 240 240" style={{ width: '100%', height: '100%' }}>
+      <svg viewBox="130 130 240 240" overflow="hidden" style={{ width: '100%', height: '100%', display: 'block' }}>
         <defs>
-          <filter id="metaball">
+          <filter id={filterId}>
             <feGaussianBlur
               in="SourceGraphic"
               stdDeviation="17"
@@ -34,33 +44,33 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
 
         <style>
           {`
-            .robotic-arm-segment {
+            .${cls('robotic-arm-segment')} {
               stroke: rgba(0, 0, 0, 0);
               stroke-width: 10;
               stroke-linecap: round;
             }
 
-            .robotic-arm-joint {
+            .${cls('robotic-arm-joint')} {
               fill: rgba(122, 164, 186, 1);
               stroke-width: 5px;
             }
 
-            #robotic-arm-mir {
+            #${mirId} {
               scale: -0.25;
             }
 
-            .robotic-arm {
-              filter: url("#metaball");
+            .${cls('robotic-arm')} {
+              filter: url("#${filterId}");
               scale: 0.25;
               transform-origin: 250px 250px;
             }
 
             ${isAnimated ? `
-            .robotic-arm {
-              animation: robotic-rotate 31s ease-in-out infinite;
+            .${cls('robotic-arm')} {
+              animation: ${cls('robotic-rotate')} 31s ease-in-out infinite;
             }
 
-            @keyframes robotic-rotate {
+            @keyframes ${cls('robotic-rotate')} {
               0% {
                 transform: rotate(-90deg);
               }
@@ -78,54 +88,54 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
               }
             }
 
-            .robotic-arm1 {
+            .${cls('robotic-arm1')} {
               transform-origin: 300px 200px;
-              animation: robotic-rotate 23s ease-in-out infinite;
+              animation: ${cls('robotic-rotate')} 23s ease-in-out infinite;
             }
 
-            .robotic-arm2 {
+            .${cls('robotic-arm2')} {
               transform-origin: 400px 200px;
-              animation: robotic-rotate 17s ease-in-out infinite;
+              animation: ${cls('robotic-rotate')} 17s ease-in-out infinite;
             }
 
-            .robotic-arm3 {
+            .${cls('robotic-arm3')} {
               transform-origin: 490px 200px;
-              animation: robotic-rotate 11s ease-in-out infinite;
+              animation: ${cls('robotic-rotate')} 11s ease-in-out infinite;
             }
             ` : ''}
           `}
         </style>
 
-        <g className="robotic-arm">
-          <line className="robotic-arm-segment" x1="250" y1="250" x2="300" y2="250" />
-          <circle className="robotic-arm-joint" cx="250" cy="250" r="64" />
-          <g className="robotic-arm1">
-            <line className="robotic-arm-segment" x1="300" y1="250" x2="400" y2="250" />
-            <circle className="robotic-arm-joint" cx="300" cy="250" r="30" />
-            <g className="robotic-arm2">
-              <line className="robotic-arm-segment" x1="400" y1="250" x2="490" y2="250" />
-              <circle className="robotic-arm-joint" cx="400" cy="250" r="24" />
-              <g className="robotic-arm3">
-                <line className="robotic-arm-segment" x1="490" y1="250" x2="550" y2="250" />
-                <circle className="robotic-arm-joint" cx="490" cy="250" r="16" />
+        <g className={cls('robotic-arm')}>
+          <line className={cls('robotic-arm-segment')} x1="250" y1="250" x2="300" y2="250" />
+          <circle className={cls('robotic-arm-joint')} cx="250" cy="250" r="64" />
+          <g className={cls('robotic-arm1')}>
+            <line className={cls('robotic-arm-segment')} x1="300" y1="250" x2="400" y2="250" />
+            <circle className={cls('robotic-arm-joint')} cx="300" cy="250" r="30" />
+            <g className={cls('robotic-arm2')}>
+              <line className={cls('robotic-arm-segment')} x1="400" y1="250" x2="490" y2="250" />
+              <circle className={cls('robotic-arm-joint')} cx="400" cy="250" r="24" />
+              <g className={cls('robotic-arm3')}>
+                <line className={cls('robotic-arm-segment')} x1="490" y1="250" x2="550" y2="250" />
+                <circle className={cls('robotic-arm-joint')} cx="490" cy="250" r="16" />
               </g>
             </g>
-            <g className="robotic-arm1">
-              <line className="robotic-arm-segment" x1="300" y1="250" x2="400" y2="250" />
-              <circle className="robotic-arm-joint" cx="300" cy="250" r="30" />
-              <g className="robotic-arm2">
-                <line className="robotic-arm-segment" x1="400" y1="250" x2="490" y2="250" />
-                <circle className="robotic-arm-joint" cx="400" cy="250" r="8" />
-                <g className="robotic-arm3">
-                  <line className="robotic-arm-segment" x1="490" y1="250" x2="550" y2="250" />
-                  <circle className="robotic-arm-joint" cx="490" cy="250" r="8" />
+            <g className={cls('robotic-arm1')}>
+              <line className={cls('robotic-arm-segment')} x1="300" y1="250" x2="400" y2="250" />
+              <circle className={cls('robotic-arm-joint')} cx="300" cy="250" r="30" />
+              <g className={cls('robotic-arm2')}>
+                <line className={cls('robotic-arm-segment')} x1="400" y1="250" x2="490" y2="250" />
+                <circle className={cls('robotic-arm-joint')} cx="400" cy="250" r="8" />
+                <g className={cls('robotic-arm3')}>
+                  <line className={cls('robotic-arm-segment')} x1="490" y1="250" x2="550" y2="250" />
+                  <circle className={cls('robotic-arm-joint')} cx="490" cy="250" r="8" />
                 </g>
-                <g className="robotic-arm2">
-                  <line className="robotic-arm-segment" x1="400" y1="250" x2="490" y2="250" />
-                  <circle className="robotic-arm-joint" cx="400" cy="250" r="8" />
-                  <g className="robotic-arm3">
-                    <line className="robotic-arm-segment" x1="490" y1="250" x2="550" y2="250" />
-                    <circle className="robotic-arm-joint" cx="490" cy="250" r="8" />
+                <g className={cls('robotic-arm2')}>
+                  <line className={cls('robotic-arm-segment')} x1="400" y1="250" x2="490" y2="250" />
+                  <circle className={cls('robotic-arm-joint')} cx="400" cy="250" r="8" />
+                  <g className={cls('robotic-arm3')}>
+                    <line className={cls('robotic-arm-segment')} x1="490" y1="250" x2="550" y2="250" />
+                    <circle className={cls('robotic-arm-joint')} cx="490" cy="250" r="8" />
                   </g>
                 </g>
               </g>
@@ -133,36 +143,36 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
           </g>
         </g>
 
-        <g id="robotic-arm-mir" className="robotic-arm">
-          <line className="robotic-arm-segment" x1="250" y1="250" x2="300" y2="250" />
-          <circle className="robotic-arm-joint" cx="250" cy="250" r="64" />
-          <g className="robotic-arm1">
-            <line className="robotic-arm-segment" x1="300" y1="250" x2="400" y2="250" />
-            <circle className="robotic-arm-joint" cx="300" cy="250" r="30" />
-            <g className="robotic-arm2">
-              <line className="robotic-arm-segment" x1="400" y1="250" x2="490" y2="250" />
-              <circle className="robotic-arm-joint" cx="400" cy="250" r="24" />
-              <g className="robotic-arm3">
-                <line className="robotic-arm-segment" x1="490" y1="250" x2="550" y2="250" />
-                <circle className="robotic-arm-joint" cx="490" cy="250" r="16" />
+        <g id={mirId} className={cls('robotic-arm')}>
+          <line className={cls('robotic-arm-segment')} x1="250" y1="250" x2="300" y2="250" />
+          <circle className={cls('robotic-arm-joint')} cx="250" cy="250" r="64" />
+          <g className={cls('robotic-arm1')}>
+            <line className={cls('robotic-arm-segment')} x1="300" y1="250" x2="400" y2="250" />
+            <circle className={cls('robotic-arm-joint')} cx="300" cy="250" r="30" />
+            <g className={cls('robotic-arm2')}>
+              <line className={cls('robotic-arm-segment')} x1="400" y1="250" x2="490" y2="250" />
+              <circle className={cls('robotic-arm-joint')} cx="400" cy="250" r="24" />
+              <g className={cls('robotic-arm3')}>
+                <line className={cls('robotic-arm-segment')} x1="490" y1="250" x2="550" y2="250" />
+                <circle className={cls('robotic-arm-joint')} cx="490" cy="250" r="16" />
               </g>
             </g>
-            <g className="robotic-arm1">
-              <line className="robotic-arm-segment" x1="300" y1="250" x2="400" y2="250" />
-              <circle className="robotic-arm-joint" cx="300" cy="250" r="30" />
-              <g className="robotic-arm2">
-                <line className="robotic-arm-segment" x1="400" y1="250" x2="490" y2="250" />
-                <circle className="robotic-arm-joint" cx="400" cy="250" r="8" />
-                <g className="robotic-arm3">
-                  <line className="robotic-arm-segment" x1="490" y1="250" x2="550" y2="250" />
-                  <circle className="robotic-arm-joint" cx="490" cy="250" r="8" />
+            <g className={cls('robotic-arm1')}>
+              <line className={cls('robotic-arm-segment')} x1="300" y1="250" x2="400" y2="250" />
+              <circle className={cls('robotic-arm-joint')} cx="300" cy="250" r="30" />
+              <g className={cls('robotic-arm2')}>
+                <line className={cls('robotic-arm-segment')} x1="400" y1="250" x2="490" y2="250" />
+                <circle className={cls('robotic-arm-joint')} cx="400" cy="250" r="8" />
+                <g className={cls('robotic-arm3')}>
+                  <line className={cls('robotic-arm-segment')} x1="490" y1="250" x2="550" y2="250" />
+                  <circle className={cls('robotic-arm-joint')} cx="490" cy="250" r="8" />
                 </g>
-                <g className="robotic-arm2">
-                  <line className="robotic-arm-segment" x1="400" y1="250" x2="490" y2="250" />
-                  <circle className="robotic-arm-joint" cx="400" cy="250" r="8" />
-                  <g className="robotic-arm3">
-                    <line className="robotic-arm-segment" x1="490" y1="250" x2="550" y2="250" />
-                    <circle className="robotic-arm-joint" cx="490" cy="250" r="8" />
+                <g className={cls('robotic-arm2')}>
+                  <line className={cls('robotic-arm-segment')} x1="400" y1="250" x2="490" y2="250" />
+                  <circle className={cls('robotic-arm-joint')} cx="400" cy="250" r="8" />
+                  <g className={cls('robotic-arm3')}>
+                    <line className={cls('robotic-arm-segment')} x1="490" y1="250" x2="550" y2="250" />
+                    <circle className={cls('robotic-arm-joint')} cx="490" cy="250" r="8" />
                   </g>
                 </g>
               </g>

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Send,
   Loader2,
@@ -15,10 +16,15 @@ import {
   Copy,
   RotateCcw,
   ChevronDown,
+  ChevronUp,
   User,
   Check,
   Share2,
-  Users
+  Users,
+  Download,
+  Lock,
+  Unlock,
+  Sparkles
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -33,7 +39,6 @@ import {
   addMessageToConversation,
   updateConversationArtifact,
   deleteSDKConversation,
-  renameSDKConversation,
   updateMessageButtonSelection,
   calculateDiff,
   type SDKConversation,
@@ -45,6 +50,8 @@ import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
+import { OFFER_PARAMETER_DEFINITIONS, loadOfferParameters, saveOfferParameters, getDefaultOfferParameters } from '../lib/offerParametersService';
+import { getInstructionVariable } from '../lib/instructionsService';
 import {
   shareConversation,
   getSharedConversations,
@@ -56,16 +63,34 @@ import {
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
+import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor } from '../lib/documentTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
   projectId: string;
   mainSidebarCollapsed: boolean;
   onUnreadCountChange?: (count: number) => void;
+  onRequestMainSidebarCollapse?: (collapsed: boolean) => void;
 }
 
-export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange }: SDKInterfaceNewProps) {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+// Session persistence keys
+const SESSION_KEY = 'traidenis_sdk_session';
+function loadSession(): { showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}'); } catch { return {}; }
+}
+function saveSession(patch: Record<string, unknown>) {
+  try {
+    const current = loadSession();
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch }));
+  } catch { /* ignore */ }
+}
+
+export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
+  const { conversationId: urlConversationId } = useParams<{ conversationId?: string }>();
+  const navigate = useNavigate();
+  const session = useRef(loadSession()).current;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(session.sidebarCollapsed ?? false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -82,7 +107,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showTemplateView, setShowTemplateView] = useState(false);
-  const [showArtifact, setShowArtifact] = useState(false);
+  const [showArtifact, setShowArtifact] = useState(session.showArtifact ?? false);
   const [showDiff, setShowDiff] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [userScrolledUp, setUserScrolledUp] = useState(false);
@@ -95,7 +120,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [managers, setManagers] = useState<AppUserData[]>([]);
   const [selectedManager, setSelectedManager] = useState<AppUserData | null>(null);
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
-  const [sendingWebhook, setSendingWebhook] = useState(false);
+
 
   // Sharing states
   const [showShareDropdown, setShowShareDropdown] = useState(false);
@@ -111,9 +136,47 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Notifications
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
+  // Offer parameters (per-conversation, stored in localStorage)
+  const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
+  // Collapsible sections state
+  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: true, objectParams: true });
+  // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
+  const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>(session.artifactTab ?? 'preview');
+  // Bump to force DocumentPreview to re-fetch the global template
+  const [templateVersion, setTemplateVersion] = useState(0);
+  // Global template editor
+  const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  // Per-chat document edit mode (lock/unlock)
+  const [docEditMode, setDocEditMode] = useState(false);
+  const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Floating variable editor state (interactive preview)
+  const [editingVariable, setEditingVariable] = useState<{
+    key: string;
+    filled: boolean;
+    x: number;
+    y: number;
+    editValue: string;
+  } | null>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [popupPlacement, setPopupPlacement] = useState<'below' | 'above'>('below');
+
+  // Technological description generator state
+  const [techDescLoading, setTechDescLoading] = useState(false);
+  const [techDescResult, setTechDescResult] = useState<string | null>(null);
+  const [techDescError, setTechDescError] = useState<string | null>(null);
+
+  // AI-assisted variable editing state
+  const [aiVarEditMode, setAiVarEditMode] = useState(false);
+  const [aiVarEditInstruction, setAiVarEditInstruction] = useState('');
+  const [aiVarEditLoading, setAiVarEditLoading] = useState(false);
+  const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
+  const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const documentPreviewRef = useRef<DocumentPreviewHandle>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   // Notification helper functions
@@ -134,6 +197,47 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadSharedConversations();
     loadShareableUsers();
   }, []);
+
+  // Sync URL ↔ currentConversation
+  useEffect(() => {
+    const id = currentConversation?.id;
+    if (id && id !== urlConversationId) {
+      navigate(`/sdk/${id}`, { replace: true });
+    } else if (!id && urlConversationId) {
+      navigate('/sdk', { replace: true });
+    }
+  }, [currentConversation?.id]);
+
+  // Persist non-URL session state so refresh restores panel states
+  useEffect(() => { saveSession({ showArtifact }); }, [showArtifact]);
+  useEffect(() => { saveSession({ artifactTab }); }, [artifactTab]);
+  useEffect(() => { saveSession({ sidebarCollapsed }); }, [sidebarCollapsed]);
+
+  // Auto-exit document edit mode when switching conversations or tabs
+  useEffect(() => { setDocEditMode(false); }, [currentConversation?.id, artifactTab]);
+
+  // Smart popup positioning: measure after render, flip above if overflowing container
+  useLayoutEffect(() => {
+    if (!editingVariable) {
+      setPopupPlacement('below');
+      return;
+    }
+    const popup = popupRef.current;
+    if (!popup) { setPopupPlacement('below'); return; }
+    const container = popup.offsetParent as HTMLElement;
+    if (!container) { setPopupPlacement('below'); return; }
+
+    const containerHeight = container.clientHeight;
+    const popupHeight = popup.offsetHeight;
+    const belowBottom = editingVariable.y + 8 + popupHeight;
+    const aboveTop = editingVariable.y - 8 - popupHeight;
+
+    if (belowBottom > containerHeight && aboveTop > 0) {
+      setPopupPlacement('above');
+    } else {
+      setPopupPlacement('below');
+    }
+  }, [editingVariable]);
 
   const loadEconomists = async () => {
     try {
@@ -181,6 +285,23 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setShowScrollButton(false);
     }
   }, [loading]);
+
+  // Load offer parameters when conversation changes
+  useEffect(() => {
+    if (currentConversation?.id) {
+      setOfferParameters(loadOfferParameters(currentConversation.id));
+    } else {
+      setOfferParameters(getDefaultOfferParameters());
+    }
+  }, [currentConversation?.id]);
+
+  // Auto-collapse both sidebars when artifact panel opens, restore when closed
+  useEffect(() => {
+    if (showArtifact) {
+      setSidebarCollapsed(true);
+      onRequestMainSidebarCollapse?.(true);
+    }
+  }, [showArtifact]);
 
   const loadSystemPrompt = async () => {
     try {
@@ -258,6 +379,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const { data, error: fetchError } = await getSDKConversations(projectId);
       if (fetchError) throw fetchError;
       setConversations(data || []);
+
+      // Restore conversation from URL parameter
+      if (urlConversationId && !currentConversation && data?.some(c => c.id === urlConversationId)) {
+        handleSelectConversation(urlConversationId);
+      }
     } catch (err) {
       console.error('Error loading conversations:', err);
     } finally {
@@ -346,7 +472,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       if (deleteError || !data) {
         console.error('[Delete] Error:', deleteError);
-        setError(`Nepavyko ištrinti pokalbio: ${deleteError?.message || 'nežinoma klaida'}`);
+        addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${deleteError?.message || 'nežinoma klaida'}`);
         return;
       }
 
@@ -356,9 +482,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
       }
+      addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
       console.error('[Delete] Exception:', err);
-      setError(`Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
+      addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
     }
   };
 
@@ -1396,49 +1523,80 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Pattern: variable_key: "value" or variable_key: | (supports mixed case like economy_HNV)
     const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/;
 
-    return lines.map((line, index) => {
-      const match = line.match(variablePattern);
+    // Collect multiline values
+    const items: { key: string; value: string; lineIndex: number }[] = [];
+    let currentMultiline: { key: string; lines: string[]; lineIndex: number } | null = null;
 
-      if (match && !line.startsWith('#') && !line.startsWith(' ')) {
-        const [, varKey, value] = match;
-        const isMultiline = value.trim() === '|';
-
-        return (
-          <div key={index} className="group hover:bg-gray-50 px-2 py-1 -mx-2 rounded transition-colors">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  // Insert variable reference into chat input
-                  setInputValue(`Pakeisk {{${varKey}}} į: `);
-                  textareaRef.current?.focus();
-                }}
-                className="text-left flex-1 font-mono text-xs"
-                title="Spustelėkite, kad įterptumėte nuorodą į pokalbį"
-              >
-                <span style={{ color: '#0066cc', fontWeight: 600 }}>{varKey}</span>
-                <span style={{ color: '#666' }}>: </span>
-                {!isMultiline && <span style={{ color: '#059669' }}>{value}</span>}
-              </button>
-              <Copy
-                className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                style={{ color: '#8a857f' }}
-                onClick={() => {
-                  navigator.clipboard.writeText(`{{${varKey}}}`);
-                }}
-                title="Kopijuoti kintamojo nuorodą"
-              />
-            </div>
-          </div>
-        );
+    lines.forEach((line, index) => {
+      if (currentMultiline) {
+        if (/^\s+/.test(line) || line.trim() === '') {
+          currentMultiline.lines.push(line.trimStart());
+          return;
+        } else {
+          items.push({ key: currentMultiline.key, value: currentMultiline.lines.join('\n'), lineIndex: currentMultiline.lineIndex });
+          currentMultiline = null;
+        }
       }
 
-      // Regular line (comment, multiline content, etc.)
-      return (
-        <div key={index} className="font-mono text-xs" style={{ color: line.startsWith('#') ? '#888' : '#3d3935' }}>
-          {line || '\u00A0'}
-        </div>
-      );
+      const match = line.match(variablePattern);
+      if (match && !line.startsWith('#') && !line.startsWith(' ')) {
+        const [, varKey, value] = match;
+        if (value.trim() === '|') {
+          currentMultiline = { key: varKey, lines: [], lineIndex: index };
+        } else {
+          // Strip surrounding quotes from value
+          const cleanValue = value.replace(/^["']|["']$/g, '');
+          items.push({ key: varKey, value: cleanValue, lineIndex: index });
+        }
+      }
     });
+
+    // Flush any remaining multiline
+    if (currentMultiline) {
+      items.push({ key: currentMultiline.key, value: currentMultiline.lines.join('\n'), lineIndex: currentMultiline.lineIndex });
+    }
+
+    return items.map((item) => (
+      <div key={item.lineIndex} className="group mb-1">
+        <div className="flex items-start gap-1.5">
+          <button
+            onClick={() => {
+              setInputValue(`Pakeisk {{${item.key}}} į: `);
+              textareaRef.current?.focus();
+            }}
+            className="yaml-var-card text-left flex-1 rounded px-3 py-1.5 transition-all"
+            style={{
+              background: '#ffffff',
+              borderLeft: '2px solid #d1d5db',
+              fontSize: '12px',
+              lineHeight: '1.4',
+              color: '#1D1D1F',
+            }}
+            title="Spustelėkite, kad redaguotumėte"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#f0f7ff';
+              e.currentTarget.style.borderLeftColor = '#3b82f6';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = '#ffffff';
+              e.currentTarget.style.borderLeftColor = '#d1d5db';
+            }}
+          >
+            <span style={{ fontSize: '9px', color: '#9ca3af', letterSpacing: '0.02em' }}>{item.key}</span>
+            <span style={{ whiteSpace: 'pre-wrap', display: 'block', marginTop: '1px' }}>{item.value}</span>
+          </button>
+          <Copy
+            className="w-3 h-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
+            style={{ color: '#8a857f' }}
+            onClick={() => {
+              navigator.clipboard.writeText(`{{${item.key}}}`);
+              addNotification('info', 'Nukopijuota', `{{${item.key}}} nukopijuota į iškarpinę.`);
+            }}
+            title="Kopijuoti kintamojo nuorodą"
+          />
+        </div>
+      </div>
+    ));
   };
 
   const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
@@ -1501,178 +1659,415 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
+      addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
     } catch (err) {
       console.error('Error handling artifact:', err);
+      addNotification('error', 'Klaida', 'Nepavyko išsaugoti komercinio pasiūlymo.');
     }
   };
 
   const parseYAMLContent = (yamlContent: string): Record<string, any> => {
     const lines = yamlContent.split('\n');
     const parsed: Record<string, any> = {};
+    let currentKey: string | null = null;
+    let multilineValue: string[] = [];
+
+    const flushMultiline = () => {
+      if (currentKey) {
+        parsed[currentKey] = multilineValue.join('\n').trim();
+        currentKey = null;
+        multilineValue = [];
+      }
+    };
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith('#')) {
-        const colonIndex = trimmed.indexOf(':');
-        if (colonIndex > 0) {
-          const key = trimmed.substring(0, colonIndex).trim();
-          const value = trimmed.substring(colonIndex + 1).trim();
-          // Remove quotes if present
-          parsed[key] = value.replace(/^["']|["']$/g, '');
+
+      // If we're collecting a multi-line block, indented lines belong to it
+      if (currentKey && (line.startsWith('  ') || line.startsWith('\t') || trimmed === '')) {
+        multilineValue.push(trimmed);
+        continue;
+      }
+
+      // Non-indented line while collecting → flush previous block
+      if (currentKey) flushMultiline();
+
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const colonIndex = trimmed.indexOf(':');
+      if (colonIndex > 0) {
+        const key = trimmed.substring(0, colonIndex).trim();
+        const rawValue = trimmed.substring(colonIndex + 1).trim();
+
+        if (rawValue === '|' || rawValue === '>') {
+          // Start of a multi-line block scalar
+          currentKey = key;
+          multilineValue = [];
+        } else {
+          // Simple key: value
+          parsed[key] = rawValue.replace(/^["']|["']$/g, '');
         }
       }
     }
 
+    // Flush any trailing multi-line block
+    flushMultiline();
+
     return parsed;
   };
 
-  const handleSendToWebhook = async () => {
-    if (!currentConversation?.artifact) {
-      setError('No artifact to send');
-      return;
+  /**
+   * Replace a single key's value in a YAML string without affecting other keys.
+   * Handles both simple (key: value) and block scalar (key: |\n  line1\n  line2) formats.
+   */
+  const replaceYAMLValue = (yamlContent: string, targetKey: string, newValue: string): string => {
+    const lines = yamlContent.split('\n');
+    const result: string[] = [];
+    let i = 0;
+    let found = false;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Check if this line starts with our target key
+      const colonIndex = trimmed.indexOf(':');
+      if (colonIndex > 0 && trimmed.substring(0, colonIndex).trim() === targetKey) {
+        found = true;
+        const rawValue = trimmed.substring(colonIndex + 1).trim();
+
+        if (rawValue === '|' || rawValue === '>') {
+          // Block scalar — skip all indented continuation lines
+          i++;
+          while (i < lines.length && (lines[i].startsWith('  ') || lines[i].startsWith('\t') || lines[i].trim() === '')) {
+            i++;
+          }
+        } else {
+          // Simple key: value — skip this line
+          i++;
+        }
+
+        // Write the new value
+        if (newValue.includes('\n')) {
+          result.push(`${targetKey}: |`);
+          for (const valueLine of newValue.split('\n')) {
+            result.push(`  ${valueLine}`);
+          }
+        } else {
+          result.push(`${targetKey}: ${newValue}`);
+        }
+        continue;
+      }
+
+      result.push(line);
+      i++;
     }
 
-    if (!selectedEconomist) {
-      setError('Please select an economist first');
-      return;
+    if (!found) {
+      console.warn(`[replaceYAMLValue] Key "${targetKey}" not found in YAML content`);
     }
 
-    if (!selectedManager) {
-      setError('Please select a manager first');
+    return result.join('\n');
+  };
+
+  /**
+   * Merge all variable sources into a single Record for the document preview.
+   * Sources: YAML artifact content + offer parameters + team info.
+   */
+  const mergeAllVariables = (): Record<string, string> => {
+    const yamlVars: Record<string, string> = currentConversation?.artifact
+      ? parseYAMLContent(currentConversation.artifact.content)
+      : {};
+
+    // Lithuanian date: "2026 m. vasario mėn. 12 d."
+    const LITHUANIAN_MONTHS_GENITIVE = [
+      'sausio', 'vasario', 'kovo', 'balandžio', 'gegužės', 'birželio',
+      'liepos', 'rugpjūčio', 'rugsėjo', 'spalio', 'lapkričio', 'gruodžio'
+    ];
+    const now = new Date();
+    const ltDate = `${now.getFullYear()} m. ${LITHUANIAN_MONTHS_GENITIVE[now.getMonth()]} mėn. ${now.getDate()} d.`;
+
+    // Composite code: U + manager_kodas + economist_kodas + technologist_kodas + yy/mm/dd
+    const mgrCode = selectedManager?.kodas || '';
+    const econCode = selectedEconomist?.kodas || '';
+    const techCode = user.kodas || '';
+    const yy = String(now.getFullYear()).slice(-2);
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const compositeCode = `U${mgrCode}${econCode}${techCode}${yy}/${mm}/${dd}`;
+
+    return {
+      ...yamlVars,
+      ...offerParameters,
+      'date_yyyy-month_men.-dd': ltDate,
+      'code_yy/mm/dd': compositeCode,
+      technologist: user.full_name || user.email,
+      technologist_phone: user.phone || '',
+      technologist_email: user.email,
+      ekonomistas: selectedEconomist?.full_name || '',
+      vadybininkas: selectedManager?.full_name || '',
+      project_name: currentConversation?.title || '',
+    };
+  };
+
+  /**
+   * Categorize a variable key to determine which edit control to show.
+   * - 'offer'            → offer parameter (BDS, SM, N, P, object, cleaned water, etc.)
+   * - 'economist'        → economist dropdown
+   * - 'manager'          → manager dropdown
+   * - 'team'             → auto-filled from logged-in user (read-only)
+   * - 'auto'             → auto-computed (date, code — read-only)
+   * - 'tech_description' → technological description with "Generuoti" API call
+   * - 'yaml'             → AI-generated, editable via chat prompt
+   */
+  const categorizeVariable = (key: string): 'offer' | 'economist' | 'manager' | 'team' | 'auto' | 'tech_description' | 'yaml' => {
+    if (OFFER_PARAMETER_DEFINITIONS.some((p) => p.key === key)) return 'offer';
+    if (key === 'ekonomistas') return 'economist';
+    if (key === 'vadybininkas') return 'manager';
+    if (['technologist', 'technologist_phone', 'technologist_email'].includes(key)) return 'team';
+    if (['date_yyyy-month_men.-dd', 'code_yy/mm/dd'].includes(key)) return 'auto';
+    if (key === 'technological_description') return 'tech_description';
+    return 'yaml';
+  };
+
+  /** Handle a variable click from the interactive preview (null = close). */
+  const handleVariableClick = (info: VariableClickInfo | null) => {
+    if (!info) {
+      setEditingVariable(null);
       return;
     }
+    // Reset AI edit state when switching variables
+    setAiVarEditMode(false);
+    setAiVarEditInstruction('');
+    setAiVarEditResult(null);
+    setAiVarEditError(null);
+    setAiVarEditLoading(false);
+
+    const merged = mergeAllVariables();
+    setEditingVariable({
+      key: info.key,
+      filled: info.filled,
+      x: info.x,
+      y: info.y,
+      editValue: merged[info.key] || '',
+    });
+  };
+
+  /** Open the visual global template editor. */
+  const handleOpenTemplateEditor = () => {
+    setShowTemplateEditor(true);
+  };
+
+  /**
+   * Save the visually-edited global template.
+   * Extracts outerHTML from the editor iframe, strips injected preview CSS,
+   * converts data-var spans back to {{key}}, and persists.
+   */
+  const handleSaveGlobalTemplate = () => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (!doc) return;
+
+    let html = doc.documentElement.outerHTML;
+
+    // Strip the preview CSS we injected
+    html = html.replace(/\/\* Preview host overrides \*\/[\s\S]*?<\/style>/, '</style>');
+
+    // Convert data-var spans back to {{key}} placeholders
+    html = html.replace(/<span[^>]+data-var="([^"]+)"[^>]*>[^<]*<\/span>/gi,
+      (_m, key) => `{{${key}}}`);
+
+    // Clean up editor artifacts
+    html = html.replace(/\s*contenteditable="(true|false)"/gi, '');
+
+    saveGlobalTemplate(html);
+    setTemplateVersion(v => v + 1);
+    setShowTemplateEditor(false);
+    addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
+  };
+
+  /** Save the current editing variable value — surgical replacement for YAML keys. */
+  const handleVariableSave = async (key: string, value: string) => {
+    const category = categorizeVariable(key);
+
+    if (category === 'offer') {
+      if (currentConversation) {
+        const updated = { ...offerParameters, [key]: value };
+        setOfferParameters(updated);
+        saveOfferParameters(currentConversation.id, updated);
+      }
+    } else if (category === 'economist') {
+      const match = economists.find((e) => e.full_name === value);
+      if (match) setSelectedEconomist(match);
+    } else if (category === 'manager') {
+      const match = managers.find((m) => m.full_name === value);
+      if (match) setSelectedManager(match);
+    } else if (category === 'tech_description') {
+      // Save technological description to offer parameters (persisted per conversation)
+      if (currentConversation) {
+        const updated = { ...offerParameters, [key]: value };
+        setOfferParameters(updated);
+        saveOfferParameters(currentConversation.id, updated);
+      }
+    } else if (category === 'yaml') {
+      // Surgical replacement: directly modify YAML without AI round-trip
+      if (currentConversation?.artifact) {
+        try {
+          const currentArtifact = currentConversation.artifact;
+          const updatedContent = replaceYAMLValue(currentArtifact.content, key, value);
+          const diff = calculateDiff(currentArtifact.content, updatedContent);
+          const newArtifact: CommercialOfferArtifact = {
+            ...currentArtifact,
+            content: updatedContent,
+            version: currentArtifact.version + 1,
+            updated_at: new Date().toISOString(),
+            diff_history: [...currentArtifact.diff_history, {
+              version: currentArtifact.version + 1,
+              timestamp: new Date().toISOString(),
+              changes: diff
+            }]
+          };
+          await updateConversationArtifact(currentConversation.id, newArtifact);
+          setCurrentConversation({ ...currentConversation, artifact: newArtifact });
+          addNotification('success', 'Kintamasis atnaujintas', `„${key}" reikšmė pakeista.`);
+        } catch (err) {
+          console.error('[Surgical Edit] Error:', err);
+          addNotification('error', 'Klaida', 'Nepavyko atnaujinti kintamojo.');
+        }
+      }
+    }
+
+    setEditingVariable(null);
+    documentPreviewRef.current?.clearActiveVariable();
+  };
+
+  /** Generate the technological description via API call with the component list. */
+  const handleGenerateTechDescription = async () => {
+    setTechDescLoading(true);
+    setTechDescResult(null);
+    setTechDescError(null);
 
     try {
-      setSendingWebhook(true);
-      console.log('[Webhook] Sending to n8n...');
+      if (!anthropicApiKey) throw new Error('API key not found');
 
-      // Generate project name: U+[manager code]+[tech code]+[date YY-MM-DD]
-      const now = new Date();
-      const year = String(now.getFullYear()).substring(2); // Last 2 digits of year
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
+      // Get component list from YAML artifact
+      const yamlVars: Record<string, string> = currentConversation?.artifact
+        ? parseYAMLContent(currentConversation.artifact.content)
+        : {};
+      const componentsList = yamlVars['components_bulletlist'] || '';
 
-      const managerCode = selectedManager.kodas || 'XX';
-      const techCode = user.kodas || 'YY';
-      const projectName = `U${managerCode}${techCode}${dateStr}`;
-
-      console.log('[Webhook] Generated project name:', projectName);
-
-      // Rename conversation to project name
-      await renameSDKConversation(currentConversation.id, projectName);
-
-      // Update local state
-      setCurrentConversation(prev => prev ? { ...prev, title: projectName } : prev);
-      setConversations(prevConvs =>
-        prevConvs.map(conv =>
-          conv.id === currentConversation.id ? { ...conv, title: projectName } : conv
-        )
-      );
-
-      // Parse YAML content into separate fields
-      const parsedYAML = parseYAMLContent(currentConversation.artifact.content);
-
-      // Construct payload with parsed fields
-      const payload = {
-        // Parsed YAML fields as separate properties
-        ...parsedYAML,
-
-        // Project and metadata
-        project_name: projectName,
-        project_id: projectId,
-        conversation_id: currentConversation.id,
-        artifact_id: currentConversation.artifact.id,
-        timestamp: new Date().toISOString(),
-
-        // Team members
-        technologist: user.full_name || user.display_name || user.email,
-        technologist_code: techCode,
-        technologist_phone: user.phone || '',
-        technologist_email: user.email,
-        ekonomistas_code: selectedEconomist.kodas || '',
-        ekonomistas_name: selectedEconomist.full_name || selectedEconomist.display_name || selectedEconomist.email,
-        manager_code: managerCode,
-        manager_name: selectedManager.full_name || selectedManager.display_name || selectedManager.email,
-
-        // Original YAML for reference (in case n8n needs it)
-        original_yaml: currentConversation.artifact.content
-      };
-
-      console.log('[Webhook] Payload:', payload);
-
-      // Send to n8n webhook
-      const commercialWebhookUrl = await getWebhookUrl('n8n_commercial_offer');
-      if (!commercialWebhookUrl) {
-        throw new Error('Webhook "n8n_commercial_offer" not found or inactive. Configure it in Webhooks settings.');
+      if (!componentsList.trim()) {
+        setTechDescError('Komponentų sąrašas tuščias. Pirma sugeneruokite komponentų sąrašą per čatą.');
+        setTechDescLoading(false);
+        return;
       }
 
-      const response = await fetch(commercialWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload)
+      // Fetch the tech description prompt from instruction_variables table
+      const promptVar = await getInstructionVariable('tech_description_prompt');
+      if (!promptVar || !promptVar.content.trim()) {
+        setTechDescError('Technologinio aprašymo prompt nerastas duomenų bazėje (variable_key: tech_description_prompt).');
+        setTechDescLoading(false);
+        return;
+      }
+      const techDescSystemPrompt = promptVar.content;
+
+      const anthropic = new Anthropic({
+        apiKey: anthropicApiKey,
+        dangerouslyAllowBrowser: true
       });
 
-      if (!response.ok) {
-        throw new Error(`Webhook returned ${response.status}: ${response.statusText}`);
-      }
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        system: techDescSystemPrompt,
+        messages: [{ role: 'user', content: componentsList }],
+      });
 
-      const result = await response.json();
-      console.log('[Webhook] Success:', result);
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('');
 
-      // Extract URL from response
-      const generatedUrl = result.standartinis_generatedUrl;
-
-      if (generatedUrl) {
-        // Create a fake assistant message with the URL (not sent to API)
-        const urlMessage: SDKMessage = {
-          role: 'assistant',
-          content: `Komercinis pasiūlymas sėkmingai sugeneruotas! Jūsų dokumentas pasiekiamas čia:\n\n${generatedUrl}`,
-          timestamp: new Date().toISOString(),
-          isSilent: false
-        };
-
-        // Add to database
-        await addMessageToConversation(currentConversation.id, urlMessage);
-
-        // Update local state immediately
-        setCurrentConversation(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            messages: [...prev.messages, urlMessage]
-          };
-        });
-
-        // Update conversations list
-        setConversations(prevConvs =>
-          prevConvs.map(conv => {
-            if (conv.id === currentConversation.id) {
-              return {
-                ...conv,
-                messages: [...conv.messages, urlMessage],
-                last_message_at: urlMessage.timestamp
-              };
-            }
-            return conv;
-          })
-        );
-
-        console.log('[Webhook] URL message added to chat:', generatedUrl);
-      }
-
-      // Show success message
-      setError(null);
-      setShowEconomistDropdown(false);
-      setShowManagerDropdown(false);
-
+      setTechDescResult(text);
     } catch (err: any) {
-      console.error('[Webhook] Error:', err);
-      setError(`Failed to send webhook: ${err.message}`);
+      console.error('Tech description generation failed:', err);
+      setTechDescError(err.message || 'Nepavyko sugeneruoti');
     } finally {
-      setSendingWebhook(false);
+      setTechDescLoading(false);
+    }
+  };
+
+  /** AI-assisted edit for a single YAML variable — dedicated API call, no full regeneration. */
+  const handleAIVariableEdit = async () => {
+    if (!editingVariable || !currentConversation?.artifact) return;
+
+    setAiVarEditLoading(true);
+    setAiVarEditResult(null);
+    setAiVarEditError(null);
+
+    try {
+      if (!anthropicApiKey) throw new Error('API key not found');
+
+      const yamlContent = currentConversation.artifact.content;
+      const currentValue = editingVariable.editValue;
+      const variableKey = editingVariable.key;
+      const instruction = aiVarEditInstruction.trim();
+
+      if (!instruction) {
+        setAiVarEditError('Įveskite instrukciją AI.');
+        setAiVarEditLoading(false);
+        return;
+      }
+
+      // Fetch the variable edit prompt from instruction_variables table
+      const promptVar = await getInstructionVariable('variable_edit_prompt');
+
+      // Fallback system prompt if DB entry doesn't exist yet
+      const systemPromptText = promptVar?.content?.trim()
+        ? promptVar.content
+        : `Tu esi Traidenis komercinio pasiūlymo redaktorius. Tau bus pateiktas YAML turinys su visais kintamaisiais, konkretus kintamojo pavadinimas, jo dabartinė reikšmė, ir vartotojo instrukcija.
+
+Tavo užduotis: sugeneruoti NAUJĄ reikšmę TIK nurodytam kintamajam, atsižvelgiant į vartotojo instrukciją ir visą YAML kontekstą.
+
+SVARBU:
+- Grąžink TIK naują reikšmę, be jokių paaiškinimų, be YAML formatavimo, be kintamojo pavadinimo
+- Jei reikšmė turi būti kelių eilučių (pvz. sąrašas su • ženkleliais), naudok naujas eilutes
+- Nekeisk kitų kintamųjų - tik nurodytą
+- Atsakyk lietuvių kalba, nebent instrukcija nurodo kitaip`;
+
+      const anthropic = new Anthropic({
+        apiKey: anthropicApiKey,
+        dangerouslyAllowBrowser: true
+      });
+
+      const userMessage = `YAML turinys:
+\`\`\`
+${yamlContent}
+\`\`\`
+
+Kintamasis: ${variableKey}
+Dabartinė reikšmė: ${currentValue || '(tuščia)'}
+
+Vartotojo instrukcija: ${instruction}`;
+
+      const response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        system: systemPromptText,
+        messages: [{ role: 'user', content: userMessage }],
+      });
+
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+        .trim();
+
+      setAiVarEditResult(text);
+    } catch (err: any) {
+      console.error('[AI Variable Edit] Failed:', err);
+      setAiVarEditError(err.message || 'Nepavyko sugeneruoti');
+    } finally {
+      setAiVarEditLoading(false);
     }
   };
 
@@ -1945,7 +2340,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   <span className="text-sm font-medium">
-                    Generuoti
+                    Dokumentas
                     {isStreamingArtifact && <span className="ml-1">●</span>}
                   </span>
                 </div>
@@ -2171,7 +2566,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
                           style={{ color: '#6b7280' }}
                           title="Copy"
-                          onClick={() => navigator.clipboard.writeText(contentString)}
+                          onClick={() => { navigator.clipboard.writeText(contentString); addNotification('info', 'Nukopijuota', 'Žinutės tekstas nukopijuotas.'); }}
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
@@ -2332,246 +2727,968 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="p-4 flex-shrink-0">
-          <div className="w-[460px] bg-white rounded-2xl shadow-xl flex flex-col" style={{ height: 'calc(100vh - 32px)', border: '1px solid #e8e5e0' }}>
-            {/* Header */}
-            <div className="px-6 py-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold" style={{ color: '#3d3935' }}>
-                  Komercinis pasiūlymas
-                  {isStreamingArtifact && (
-                    <span className="ml-2 text-xs" style={{ color: '#3b82f6' }}>
-                      Generuojama...
-                    </span>
-                  )}
-                </h2>
-                <div className="flex items-center gap-2">
-                  {!isStreamingArtifact && currentConversation?.artifact && (
+        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+          <div className="w-full flex flex-col" style={{ height: '100vh', background: '#ffffff' }}>
+            {/* Header — compact single row */}
+            <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                {/* Tab switcher (Peržiūra first) */}
+                {currentConversation?.artifact && !isStreamingArtifact ? (
+                  <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e2dd' }}>
                     <button
-                      onClick={() => navigator.clipboard.writeText(currentConversation.artifact!.content)}
-                      className="px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-2"
-                      style={{ background: '#5a5550', color: 'white' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#3d3935'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#5a5550'}
+                      onClick={() => setArtifactTab('preview')}
+                      className="px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: artifactTab === 'preview' ? '#3d3935' : 'transparent',
+                        color: artifactTab === 'preview' ? '#ffffff' : '#8a857f',
+                      }}
+                    >
+                      Peržiūra
+                    </button>
+                    <button
+                      onClick={() => setArtifactTab('data')}
+                      className="px-2.5 py-1 text-[11px] font-medium transition-colors"
+                      style={{
+                        background: artifactTab === 'data' ? '#3d3935' : 'transparent',
+                        color: artifactTab === 'data' ? '#ffffff' : '#8a857f',
+                      }}
+                    >
+                      Duomenys
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                    Komercinis pasiūlymas
+                    {isStreamingArtifact && (
+                      <span className="ml-2" style={{ color: '#3b82f6' }}>Generuojama...</span>
+                    )}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {!isStreamingArtifact && currentConversation?.artifact && (
+                  <>
+                    <button
+                      onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
+                      className="p-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Atsisiųsti PDF"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    {artifactTab === 'preview' && (
+                      <button
+                        onClick={() => setDocEditMode(prev => !prev)}
+                        className="p-1.5 rounded-md transition-colors"
+                        style={{ color: docEditMode ? '#3b82f6' : '#8a857f', background: docEditMode ? '#eff6ff' : 'transparent' }}
+                        onMouseEnter={(e) => { if (!docEditMode) e.currentTarget.style.background = '#f0ede8'; }}
+                        onMouseLeave={(e) => { if (!docEditMode) e.currentTarget.style.background = 'transparent'; }}
+                        title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
+                      >
+                        {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleOpenTemplateEditor}
+                      className="p-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Redaguoti šabloną"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
+                      className="p-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      title="Kopijuoti YAML"
                     >
                       <Copy className="w-3.5 h-3.5" />
-                      Copy
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowArtifact(false)}
+                  className="p-1.5 rounded-md transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            {/* Fade separator */}
+            <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
+
+            {/* Content area — either Data or Preview */}
+            {artifactTab === 'preview' && !isStreamingArtifact ? (
+              <div className="flex-1 overflow-hidden min-h-0 relative">
+                <DocumentPreview
+                  ref={documentPreviewRef}
+                  variables={mergeAllVariables()}
+                  templateVersion={templateVersion}
+                  onVariableClick={handleVariableClick}
+                  editable={docEditMode}
+                  conversationId={currentConversation?.id}
+                  onScroll={() => {
+                    if (editingVariable) {
+                      setEditingVariable(null);
+                      documentPreviewRef.current?.clearActiveVariable();
+                    }
+                  }}
+                />
+
+                {/* Click-outside overlay + floating variable editor popup */}
+                {editingVariable && (() => {
+                  const cat = categorizeVariable(editingVariable.key);
+                  const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
+                  const label = paramDef?.label || editingVariable.key;
+                  const categoryLabel = cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : cat === 'auto' ? 'Automatinis' : cat === 'tech_description' ? 'Technologija' : 'AI kintamasis';
+                  const categoryColor = cat === 'offer' ? '#8b5cf6' : cat === 'economist' ? '#2563eb' : cat === 'manager' ? '#2563eb' : cat === 'team' ? '#059669' : cat === 'auto' ? '#059669' : cat === 'tech_description' ? '#0891b2' : '#d97706';
+
+                  return (
+                    <>
+                      {/* Invisible overlay to catch clicks outside the popup */}
+                      <div
+                        style={{ position: 'absolute', inset: 0, zIndex: 49 }}
+                        onClick={() => {
+                          setEditingVariable(null);
+                          documentPreviewRef.current?.clearActiveVariable();
+                        }}
+                      />
+
+                      {/* Popup card — smart positioning: flips above when overflowing */}
+                      <div
+                        ref={popupRef}
+                        style={{
+                          position: 'absolute',
+                          left: Math.min(Math.max(editingVariable.x - 130, 8), 260),
+                          top: popupPlacement === 'below'
+                            ? editingVariable.y + 8
+                            : editingVariable.y - 8,
+                          transform: popupPlacement === 'above' ? 'translateY(-100%)' : undefined,
+                          zIndex: 50,
+                          width: '264px',
+                          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                        }}
+                      >
+                        {/* Pointer triangle — points toward the variable */}
+                        {popupPlacement === 'below' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderBottom: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                          }} />
+                        )}
+
+                        <div style={{
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(0,0,0,0.06)',
+                        }}>
+                          {/* Header — compact with colored category pill */}
+                          <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f3f2f0' }}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: categoryColor + '10', color: categoryColor }}>
+                                {categoryLabel}
+                              </span>
+                              <span className="text-[11px] font-medium truncate" style={{ color: '#3d3935' }}>{label}</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setEditingVariable(null);
+                                documentPreviewRef.current?.clearActiveVariable();
+                              }}
+                              className="p-0.5 rounded-full flex-shrink-0 transition-colors"
+                              style={{ color: '#c0bbb5' }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          {/* Body */}
+                          <div className="px-3 py-2.5">
+                            {cat === 'team' && (
+                              <div>
+                                <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai užpildyta</span>
+                                <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                              </div>
+                            )}
+
+                            {cat === 'auto' && (
+                              <div>
+                                <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai sugeneruota</span>
+                                <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                              </div>
+                            )}
+
+                            {cat === 'tech_description' && (
+                              <div>
+                                {!techDescResult && !techDescLoading && !techDescError && (
+                                  <div>
+                                    {editingVariable.editValue ? (
+                                      <div className="text-[11px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
+                                        {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                                        Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={handleGenerateTechDescription}
+                                      className="w-full mt-2 text-[11px] px-3 py-2 rounded-lg font-medium transition-colors"
+                                      style={{ background: '#0891b2', color: 'white' }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = '#0e7490'}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = '#0891b2'}
+                                    >
+                                      Generuoti
+                                    </button>
+                                  </div>
+                                )}
+                                {techDescLoading && (
+                                  <div className="flex items-center justify-center gap-2 py-4">
+                                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
+                                    <span className="text-[11px]" style={{ color: '#9ca3af' }}>Generuojama...</span>
+                                  </div>
+                                )}
+                                {techDescError && !techDescLoading && (
+                                  <div>
+                                    <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                      {techDescError}
+                                    </div>
+                                    <button
+                                      onClick={() => setTechDescError(null)}
+                                      className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                      style={{ color: '#9ca3af' }}
+                                      onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                      Grįžti
+                                    </button>
+                                  </div>
+                                )}
+                                {techDescResult && !techDescLoading && (
+                                  <div>
+                                    <div
+                                      className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                      style={{ color: '#3d3935', lineHeight: '1.6', background: '#f8f7f6', border: '1px solid #e5e2dd' }}
+                                    >
+                                      {techDescResult}
+                                    </div>
+                                    <div className="flex justify-end mt-2 gap-1.5">
+                                      <button
+                                        onClick={() => { setTechDescResult(null); }}
+                                        className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                        style={{ color: '#ef4444' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                      >
+                                        Atmesti
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleVariableSave('technological_description', techDescResult!);
+                                          setTechDescResult(null);
+                                          addNotification('success', 'Aprašymas priimtas', 'Technologinis aprašymas įrašytas į dokumentą.');
+                                        }}
+                                        className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                        style={{ background: '#059669', color: 'white' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#047857'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = '#059669'}
+                                      >
+                                        Priimti
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'economist' && (
+                              <div className="flex flex-col gap-0.5">
+                                {economists.length === 0 ? (
+                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>Nėra ekonomistų</span>
+                                ) : (
+                                  economists.map((econ) => {
+                                    const isSelected = selectedEconomist?.id === econ.id;
+                                    return (
+                                      <button
+                                        key={econ.id}
+                                        onClick={() => {
+                                          setSelectedEconomist(econ);
+                                          setEditingVariable(null);
+                                          documentPreviewRef.current?.clearActiveVariable();
+                                        }}
+                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        style={{
+                                          background: isSelected ? '#eff6ff' : 'transparent',
+                                          color: '#3d3935',
+                                        }}
+                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
+                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                      >
+                                        <span className={isSelected ? 'font-medium' : ''}>{econ.full_name || econ.email}</span>
+                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'manager' && (
+                              <div className="flex flex-col gap-0.5">
+                                {managers.length === 0 ? (
+                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>Nėra vadybininkų</span>
+                                ) : (
+                                  managers.map((mgr) => {
+                                    const isSelected = selectedManager?.id === mgr.id;
+                                    return (
+                                      <button
+                                        key={mgr.id}
+                                        onClick={() => {
+                                          setSelectedManager(mgr);
+                                          setEditingVariable(null);
+                                          documentPreviewRef.current?.clearActiveVariable();
+                                        }}
+                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        style={{
+                                          background: isSelected ? '#eff6ff' : 'transparent',
+                                          color: '#3d3935',
+                                        }}
+                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
+                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                      >
+                                        <span className={isSelected ? 'font-medium' : ''}>{mgr.full_name || mgr.email}</span>
+                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'offer' && (
+                              <div>
+                                <input
+                                  type="text"
+                                  value={editingVariable.editValue}
+                                  onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleVariableSave(editingVariable.key, editingVariable.editValue);
+                                    if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                  }}
+                                  autoFocus
+                                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none transition-all"
+                                  style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                  onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                />
+                                <div className="flex justify-end mt-2 gap-1.5">
+                                  <button
+                                    onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                    className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                    style={{ color: '#9ca3af' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    Atšaukti
+                                  </button>
+                                  <button
+                                    onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                    className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                    style={{ background: '#3d3935', color: 'white' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                                  >
+                                    Išsaugoti
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {cat === 'yaml' && (
+                              <div>
+                                {!aiVarEditMode ? (
+                                  <>
+                                    {/* Direct edit mode */}
+                                    <textarea
+                                      value={editingVariable.editValue}
+                                      onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                      }}
+                                      autoFocus
+                                      rows={3}
+                                      className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                      style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                      onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                    />
+                                    <div className="flex items-center justify-between mt-2">
+                                      <button
+                                        onClick={() => { setAiVarEditMode(true); setAiVarEditInstruction(''); setAiVarEditResult(null); setAiVarEditError(null); }}
+                                        className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                        style={{ color: '#8b5cf6' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3ff'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        title="AI redakcija"
+                                      >
+                                        <Sparkles className="w-2.5 h-2.5" />
+                                        AI
+                                      </button>
+                                      <div className="flex gap-1.5">
+                                        <button
+                                          onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                          className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                          style={{ color: '#9ca3af' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                          Atšaukti
+                                        </button>
+                                        <button
+                                          onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                          className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                          style={{ background: '#3d3935', color: 'white' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                                        >
+                                          Išsaugoti
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* AI edit mode */}
+                                    {!aiVarEditResult && !aiVarEditLoading && !aiVarEditError && (
+                                      <div>
+                                        {editingVariable.editValue && (
+                                          <div className="text-[10px] max-h-20 overflow-y-auto mb-2 px-2 py-1.5 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
+                                            {editingVariable.editValue.slice(0, 150)}{editingVariable.editValue.length > 150 ? '...' : ''}
+                                          </div>
+                                        )}
+                                        <textarea
+                                          value={aiVarEditInstruction}
+                                          onChange={(e) => setAiVarEditInstruction(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAIVariableEdit(); }
+                                            if (e.key === 'Escape') { setAiVarEditMode(false); }
+                                          }}
+                                          autoFocus
+                                          rows={2}
+                                          placeholder="Aprašykite, ką AI turėtų pakeisti..."
+                                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                          style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                          onFocus={(e) => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)'; }}
+                                          onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                        />
+                                        <div className="flex items-center justify-between mt-2">
+                                          <button
+                                            onClick={() => setAiVarEditMode(false)}
+                                            className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                            style={{ color: '#9ca3af' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                          >
+                                            Grįžti
+                                          </button>
+                                          <button
+                                            onClick={handleAIVariableEdit}
+                                            disabled={!aiVarEditInstruction.trim()}
+                                            className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            style={{
+                                              background: aiVarEditInstruction.trim() ? '#8b5cf6' : '#e5e2dd',
+                                              color: aiVarEditInstruction.trim() ? 'white' : '#9ca3af',
+                                            }}
+                                            onMouseEnter={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#7c3aed'; }}
+                                            onMouseLeave={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#8b5cf6'; }}
+                                          >
+                                            <Sparkles className="w-3 h-3" />
+                                            Generuoti
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditLoading && (
+                                      <div className="flex items-center justify-center gap-2 py-4">
+                                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
+                                        <span className="text-[11px]" style={{ color: '#9ca3af' }}>AI generuoja...</span>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditError && !aiVarEditLoading && (
+                                      <div>
+                                        <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                          {aiVarEditError}
+                                        </div>
+                                        <button
+                                          onClick={() => setAiVarEditError(null)}
+                                          className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                          style={{ color: '#9ca3af' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                          Grįžti
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditResult && !aiVarEditLoading && (
+                                      <div>
+                                        <div
+                                          className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                          style={{ color: '#3d3935', lineHeight: '1.6', background: '#faf5ff', border: '1px solid #e9d5ff' }}
+                                        >
+                                          {aiVarEditResult}
+                                        </div>
+                                        <div className="flex justify-end mt-2 gap-1.5">
+                                          <button
+                                            onClick={() => { setAiVarEditResult(null); }}
+                                            className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                            style={{ color: '#ef4444' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                          >
+                                            Atmesti
+                                          </button>
+                                          <button
+                                            onClick={async () => {
+                                              const key = editingVariable.key;
+                                              const value = aiVarEditResult!;
+                                              setAiVarEditResult(null);
+                                              setAiVarEditMode(false);
+                                              await handleVariableSave(key, value);
+                                            }}
+                                            className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            style={{ background: '#8b5cf6', color: 'white' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#7c3aed'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = '#8b5cf6'}
+                                          >
+                                            Priimti
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {popupPlacement === 'above' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderTop: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                          }} />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            ) : (
+            <div
+              className="flex-1 overflow-y-auto px-6 py-4 relative"
+              style={{
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)'
+              }}
+            >
+              {/* Section 1: Offer Data (AI-generated YAML variables) */}
+              <div className="mb-4">
+                <button
+                  onClick={() => setSectionCollapsed(prev => ({ ...prev, offerData: !prev.offerData }))}
+                  className="w-full flex items-center justify-between py-2 mb-2 transition-colors"
+                  style={{ color: '#3d3935' }}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>
+                    Pasiūlymo duomenys
+                  </span>
+                  {sectionCollapsed.offerData ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />}
+                </button>
+
+                {!sectionCollapsed.offerData && (
+                  <div>
+                    {isStreamingArtifact ? (
+                      <div>
+                        <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                          {renderInteractiveYAML(artifactStreamContent)}
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
+                          <span className="text-xs" style={{ color: '#6b7280' }}>Generuojamas pasiūlymas...</span>
+                        </div>
+                      </div>
+                    ) : currentConversation?.artifact ? (
+                      <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+                        {renderInteractiveYAML(currentConversation.artifact.content)}
+                      </div>
+                    ) : (
+                      <p className="text-xs py-4 text-center" style={{ color: '#9ca3af' }}>
+                        Pasiūlymo duomenys bus rodomi po generavimo.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Fade divider */}
+              <div className="my-3" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 30%, #e5e2dd 70%, transparent)' }} />
+
+              {/* Section 2: Object & Water Parameters */}
+              <div className="mb-4">
+                <button
+                  onClick={() => setSectionCollapsed(prev => ({ ...prev, objectParams: !prev.objectParams }))}
+                  className="w-full flex items-center justify-between py-2 mb-2 transition-colors"
+                  style={{ color: '#3d3935' }}
+                >
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>
+                    Objekto ir vandens parametrai
+                  </span>
+                  {sectionCollapsed.objectParams ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />}
+                </button>
+
+                {!sectionCollapsed.objectParams && (
+                  <div className="space-y-3">
+                    {/* Object sentence */}
+                    {OFFER_PARAMETER_DEFINITIONS.filter(p => p.group === 'object').map((param) => (
+                      <div key={param.key}>
+                        <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>{param.label}</label>
+                        <input
+                          type="text"
+                          value={offerParameters[param.key] || ''}
+                          onChange={(e) => {
+                            const updated = { ...offerParameters, [param.key]: e.target.value };
+                            setOfferParameters(updated);
+                            if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                          }}
+                          className="w-full px-3 py-2 text-sm rounded-md transition-all focus:outline-none"
+                          style={{
+                            background: '#ffffff',
+                            borderLeft: '3px solid #d1d5db',
+                            color: '#1D1D1F',
+                            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
+                          }}
+                          onFocus={(e) => {
+                            e.currentTarget.style.borderLeftColor = '#3b82f6';
+                            e.currentTarget.style.background = '#f0f7ff';
+                          }}
+                          onBlur={(e) => {
+                            e.currentTarget.style.borderLeftColor = '#d1d5db';
+                            e.currentTarget.style.background = '#ffffff';
+                          }}
+                          placeholder={param.defaultValue || 'Įveskite...'}
+                        />
+                      </div>
+                    ))}
+
+                    {/* Contamination & After Cleaning - compact table */}
+                    <div className="mt-2">
+                      <div className="grid grid-cols-3 gap-1 mb-1">
+                        <div className="text-[10px] font-medium" style={{ color: '#9ca3af' }}></div>
+                        <div className="text-[10px] font-medium text-center" style={{ color: '#9ca3af' }}>Užterštumo</div>
+                        <div className="text-[10px] font-medium text-center" style={{ color: '#9ca3af' }}>Po valymo</div>
+                      </div>
+                      {['BDS', 'SM', 'N', 'P'].map((param) => {
+                        const contKey = `${param}_reglamentORprovided`;
+                        const afterKey = `${param}_aftercleaning`;
+                        const contDef = OFFER_PARAMETER_DEFINITIONS.find(p => p.key === contKey);
+                        const afterDef = OFFER_PARAMETER_DEFINITIONS.find(p => p.key === afterKey);
+                        return (
+                          <div key={param} className="grid grid-cols-3 gap-1 mb-1 items-center">
+                            <div className="text-[11px] font-medium" style={{ color: '#6b7280' }}>{contDef?.label || param}</div>
+                            <input
+                              type="text"
+                              value={offerParameters[contKey] || ''}
+                              onChange={(e) => {
+                                const updated = { ...offerParameters, [contKey]: e.target.value };
+                                setOfferParameters(updated);
+                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                              }}
+                              className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
+                              style={{
+                                background: '#ffffff',
+                                borderLeft: '2px solid #d1d5db',
+                                color: '#1D1D1F'
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#3b82f6';
+                                e.currentTarget.style.background = '#f0f7ff';
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#d1d5db';
+                                e.currentTarget.style.background = '#ffffff';
+                              }}
+                            />
+                            <input
+                              type="text"
+                              value={offerParameters[afterKey] || ''}
+                              onChange={(e) => {
+                                const updated = { ...offerParameters, [afterKey]: e.target.value };
+                                setOfferParameters(updated);
+                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                              }}
+                              className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
+                              style={{
+                                background: '#ffffff',
+                                borderLeft: '2px solid #d1d5db',
+                                color: '#1D1D1F'
+                              }}
+                              onFocus={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#3b82f6';
+                                e.currentTarget.style.background = '#f0f7ff';
+                              }}
+                              onBlur={(e) => {
+                                e.currentTarget.style.borderLeftColor = '#d1d5db';
+                                e.currentTarget.style.background = '#ffffff';
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Fade divider */}
+              <div className="my-3" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 30%, #e5e2dd 70%, transparent)' }} />
+
+              {/* Section 3: Team (Economist & Manager) */}
+              {!isStreamingArtifact && currentConversation?.artifact && (
+                <div className="mb-4">
+                  <span className="text-xs font-semibold uppercase tracking-wider block py-2 mb-2" style={{ color: '#6b7280' }}>
+                    Komanda
+                  </span>
+                  <div className="space-y-2">
+                    {/* Economist Selection */}
+                    <div>
+                      <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>Ekonomistas</label>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowEconomistDropdown(!showEconomistDropdown)}
+                          className="w-full px-3 py-2 text-sm rounded-md transition-all flex items-center justify-between"
+                          style={{
+                            borderLeft: '3px solid ' + (selectedEconomist ? '#10b981' : '#d1d5db'),
+                            background: 'white',
+                            color: selectedEconomist ? '#3d3935' : '#8a857f'
+                          }}
+                          onMouseEnter={(e) => { if (!selectedEconomist) e.currentTarget.style.borderLeftColor = '#3b82f6'; e.currentTarget.style.background = '#f0f7ff'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = selectedEconomist ? '#10b981' : '#d1d5db'; e.currentTarget.style.background = 'white'; }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <User className="w-3.5 h-3.5" />
+                            <span>{selectedEconomist ? (selectedEconomist.full_name || selectedEconomist.email) : 'Pasirinkti...'}</span>
+                          </div>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+
+                        {showEconomistDropdown && (
+                          <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                            {economists.length === 0 ? (
+                              <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>Nerasta ekonomistų</div>
+                            ) : (
+                              economists.map((economist) => (
+                                <button
+                                  key={economist.id}
+                                  onClick={() => { setSelectedEconomist(economist); setShowEconomistDropdown(false); }}
+                                  className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                                  style={{ color: '#3d3935' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                >
+                                  <div>
+                                    <div className="font-medium">{economist.full_name || economist.display_name || economist.email}</div>
+                                    {economist.kodas && <div className="text-xs" style={{ color: '#8a857f' }}>Kodas: {economist.kodas}</div>}
+                                  </div>
+                                  {selectedEconomist?.id === economist.id && <Check className="w-4 h-4" style={{ color: '#10b981' }} />}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Manager Selection */}
+                    <div>
+                      <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>Vadybininkas</label>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowManagerDropdown(!showManagerDropdown)}
+                          className="w-full px-3 py-2 text-sm rounded-md transition-all flex items-center justify-between"
+                          style={{
+                            borderLeft: '3px solid ' + (selectedManager ? '#10b981' : '#d1d5db'),
+                            background: 'white',
+                            color: selectedManager ? '#3d3935' : '#8a857f'
+                          }}
+                          onMouseEnter={(e) => { if (!selectedManager) e.currentTarget.style.borderLeftColor = '#3b82f6'; e.currentTarget.style.background = '#f0f7ff'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.borderLeftColor = selectedManager ? '#10b981' : '#d1d5db'; e.currentTarget.style.background = 'white'; }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <User className="w-3.5 h-3.5" />
+                            <span>{selectedManager ? (selectedManager.full_name || selectedManager.email) : 'Pasirinkti...'}</span>
+                          </div>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+
+                        {showManagerDropdown && (
+                          <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                            {managers.length === 0 ? (
+                              <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>Nerasta vadybininkų</div>
+                            ) : (
+                              managers.map((manager) => (
+                                <button
+                                  key={manager.id}
+                                  onClick={() => { setSelectedManager(manager); setShowManagerDropdown(false); }}
+                                  className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
+                                  style={{ color: '#3d3935' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
+                                  onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
+                                >
+                                  <div>
+                                    <div className="font-medium">{manager.full_name || manager.display_name || manager.email}</div>
+                                    {manager.kodas && <div className="text-xs" style={{ color: '#8a857f' }}>Kodas: {manager.kodas}</div>}
+                                  </div>
+                                  {selectedManager?.id === manager.id && <Check className="w-4 h-4" style={{ color: '#10b981' }} />}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* Global Template Editor Modal — visual WYSIWYG */}
+      {showTemplateEditor && (() => {
+        // Render template for editing — variable chips but no page-break processing
+        const tpl = getDefaultTemplate();
+        const rendered = renderTemplateForEditor(tpl);
+        const editorSrcdoc = rendered.replace(
+          '</style>',
+          `
+          /* Preview host overrides */
+          html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
+          body.c47.doc-content {
+            max-width: 595px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 36pt;
+          }
+          body:focus { outline: none; }
+          .template-var { cursor: default; border-radius: 3px; }
+          .template-var.unfilled { cursor: text; }
+          .template-var.filled { background: rgba(59,130,246,0.04); box-shadow: 0 0 0 1px rgba(59,130,246,0.12); padding: 0 2px; border-radius: 3px; }
+          </style>`
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowTemplateEditor(false)}>
+            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden" style={{ background: '#ffffff', height: '88vh' }} onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium" style={{ color: '#3d3935' }}>Redaguoti šabloną</span>
+                  {isGlobalTemplateCustomized() && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>Pakeistas</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {isGlobalTemplateCustomized() && (
+                    <button
+                      onClick={() => {
+                        resetGlobalTemplate();
+                        setTemplateVersion(v => v + 1);
+                        setShowTemplateEditor(false);
+                      }}
+                      className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
+                      style={{ color: '#8a857f' }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      Atkurti pradinį
                     </button>
                   )}
                   <button
-                    onClick={() => setShowArtifact(false)}
-                    className="p-1.5 rounded-lg transition-colors"
+                    onClick={() => setShowTemplateEditor(false)}
+                    className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
                     style={{ color: '#8a857f' }}
                     onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
-                    <X className="w-4 h-4" />
+                    Atšaukti
                   </button>
-                </div>
-              </div>
-              {currentConversation?.artifact && !isStreamingArtifact && (
-                <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
-                  Versija {currentConversation.artifact.version}
-                </p>
-              )}
-            </div>
-
-            {/* Content */}
-            <div
-              className="flex-1 overflow-y-auto px-6 py-6 relative"
-              style={{
-                maskImage: 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 24px, black calc(100% - 24px), transparent 100%)'
-              }}
-            >
-              {isStreamingArtifact ? (
-                <div>
-                  <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                    {renderInteractiveYAML(artifactStreamContent)}
-                  </div>
-                  <div className="mt-3 flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
-                    <span className="text-xs" style={{ color: '#6b7280' }}>Generuojamas pasiūlymas...</span>
-                  </div>
-                </div>
-              ) : currentConversation?.artifact ? (
-                <div>
-                  <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                    {renderInteractiveYAML(currentConversation.artifact.content)}
-                  </div>
-                  <div className="mt-6 p-3 rounded-lg" style={{ background: '#f9fafb', border: '1px solid #e5e7eb' }}>
-                    <p className="text-xs" style={{ color: '#6b7280' }}>
-                      <strong>Patarimas:</strong> Spustelėkite ant kintamojo, kad įterptumėte nuorodą į pokalbį. Tada galite paprašyti Claude pakeisti tik tą reikšmę.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-
-            {/* Footer - Economist Selection & Send Button */}
-            {!isStreamingArtifact && currentConversation?.artifact && (
-              <div className="px-6 py-4">
-                <div className="space-y-3">
-                  {/* Economist Selection */}
-                  <div>
-                    <label className="text-xs font-medium mb-2 block" style={{ color: '#6b7280' }}>
-                      Select Economist
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowEconomistDropdown(!showEconomistDropdown)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-between"
-                        style={{
-                          borderColor: '#e8e5e0',
-                          background: 'white',
-                          color: selectedEconomist ? '#3d3935' : '#8a857f'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#5a5550'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8e5e0'}
-                      >
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4" />
-                          <span>{selectedEconomist ? (selectedEconomist.full_name || selectedEconomist.email) : 'Select economist...'}</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-
-                      {/* Dropdown */}
-                      {showEconomistDropdown && (
-                        <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
-                          {economists.length === 0 ? (
-                            <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
-                              No economists found
-                            </div>
-                          ) : (
-                            economists.map((economist) => (
-                              <button
-                                key={economist.id}
-                                onClick={() => {
-                                  setSelectedEconomist(economist);
-                                  setShowEconomistDropdown(false);
-                                }}
-                                className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                                style={{ color: '#3d3935' }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                              >
-                                <div>
-                                  <div className="font-medium">{economist.full_name || economist.display_name || economist.email}</div>
-                                  {economist.kodas && (
-                                    <div className="text-xs" style={{ color: '#8a857f' }}>Code: {economist.kodas}</div>
-                                  )}
-                                </div>
-                                {selectedEconomist?.id === economist.id && (
-                                  <Check className="w-4 h-4" style={{ color: '#10b981' }} />
-                                )}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Manager Selection */}
-                  <div>
-                    <label className="text-xs font-medium mb-2 block" style={{ color: '#6b7280' }}>
-                      Select Manager (Vadybininkas)
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowManagerDropdown(!showManagerDropdown)}
-                        className="w-full px-3 py-2 text-sm rounded-lg border transition-colors flex items-center justify-between"
-                        style={{
-                          borderColor: '#e8e5e0',
-                          background: 'white',
-                          color: selectedManager ? '#3d3935' : '#8a857f'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.borderColor = '#5a5550'}
-                        onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e8e5e0'}
-                      >
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4" />
-                          <span>{selectedManager ? (selectedManager.full_name || selectedManager.email) : 'Select manager...'}</span>
-                        </div>
-                        <ChevronDown className="w-4 h-4" />
-                      </button>
-
-                      {/* Dropdown */}
-                      {showManagerDropdown && (
-                        <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
-                          {managers.length === 0 ? (
-                            <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>
-                              No managers found
-                            </div>
-                          ) : (
-                            managers.map((manager) => (
-                              <button
-                                key={manager.id}
-                                onClick={() => {
-                                  setSelectedManager(manager);
-                                  setShowManagerDropdown(false);
-                                }}
-                                className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                                style={{ color: '#3d3935' }}
-                                onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
-                                onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                              >
-                                <div>
-                                  <div className="font-medium">{manager.full_name || manager.display_name || manager.email}</div>
-                                  {manager.kodas && (
-                                    <div className="text-xs" style={{ color: '#8a857f' }}>Code: {manager.kodas}</div>
-                                  )}
-                                </div>
-                                {selectedManager?.id === manager.id && (
-                                  <Check className="w-4 h-4" style={{ color: '#10b981' }} />
-                                )}
-                              </button>
-                            ))
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Send Button */}
                   <button
-                    onClick={handleSendToWebhook}
-                    disabled={!selectedEconomist || !selectedManager || sendingWebhook}
-                    className="w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                    style={{
-                      background: selectedEconomist && !sendingWebhook ? '#5a5550' : '#d4cfc8',
-                      color: 'white'
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedEconomist && !sendingWebhook) {
-                        e.currentTarget.style.background = '#3d3935';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (selectedEconomist && !sendingWebhook) {
-                        e.currentTarget.style.background = '#5a5550';
-                      }
-                    }}
+                    onClick={handleSaveGlobalTemplate}
+                    className="text-[11px] px-4 py-1.5 rounded-md font-medium transition-colors"
+                    style={{ background: '#3d3935', color: 'white' }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
                   >
-                    {sendingWebhook ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                        <span>Generuojama...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        <span>Generuoti</span>
-                      </>
-                    )}
+                    Išsaugoti
                   </button>
                 </div>
               </div>
-            )}
+              {/* Hint bar */}
+              <div className="px-5 py-1.5 flex-shrink-0" style={{ background: '#fafaf8', borderBottom: '1px solid #f0ede8' }}>
+                <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                  Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
+                </span>
+              </div>
+              {/* Visual editor iframe */}
+              <div className="flex-1 overflow-auto" style={{ background: '#f5f4f2' }}>
+                <div style={{ width: '595px', margin: '24px auto' }}>
+                  <iframe
+                    ref={templateEditorIframeRef}
+                    srcDoc={editorSrcdoc}
+                    title="Šablono redaktorius"
+                    sandbox="allow-same-origin"
+                    scrolling="no"
+                    style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
+                    onLoad={() => {
+                      const doc = templateEditorIframeRef.current?.contentDocument;
+                      if (doc) {
+                        doc.body.contentEditable = 'true';
+                        // Auto-size iframe to content
+                        const h = doc.body.scrollHeight;
+                        if (templateEditorIframeRef.current) {
+                          templateEditorIframeRef.current.style.height = h + 'px';
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Prompt Modal */}
       {showPromptModal && (

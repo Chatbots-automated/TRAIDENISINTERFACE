@@ -19,6 +19,10 @@ export interface AppUser {
   display_name?: string;
   is_admin: boolean;
   created_at: string;
+  full_name?: string;
+  phone?: string;
+  kodas?: string;
+  role?: string;
 }
 
 export interface ProjectMember {

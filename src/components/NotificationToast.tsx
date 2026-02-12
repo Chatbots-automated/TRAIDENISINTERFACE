@@ -94,6 +94,9 @@ export default function NotificationToast({
         style={{
           width: '35px',
           height: '35px',
+          minWidth: '35px',
+          minHeight: '35px',
+          flexShrink: 0,
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',

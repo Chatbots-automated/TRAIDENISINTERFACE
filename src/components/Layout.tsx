@@ -27,6 +27,7 @@ interface LayoutProps {
   viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
   onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
+  forceCollapsed?: boolean;
   sdkUnreadCount?: number;
 }
 
@@ -38,10 +39,18 @@ export default function Layout({
   viewMode = 'sdk',
   onViewModeChange,
   onSidebarCollapseChange,
+  forceCollapsed,
   sdkUnreadCount = 0
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // External control: force collapse when requested (e.g., artifact panel open)
+  useEffect(() => {
+    if (forceCollapsed !== undefined && forceCollapsed !== sidebarCollapsed) {
+      setSidebarCollapsed(forceCollapsed);
+    }
+  }, [forceCollapsed]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
