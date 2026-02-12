@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Send,
@@ -157,6 +157,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     y: number;
     editValue: string;
   } | null>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [popupPlacement, setPopupPlacement] = useState<'below' | 'above'>('below');
 
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
@@ -205,6 +207,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Auto-exit document edit mode when switching conversations or tabs
   useEffect(() => { setDocEditMode(false); }, [currentConversation?.id, artifactTab]);
+
+  // Smart popup positioning: measure after render, flip above if overflowing container
+  useLayoutEffect(() => {
+    if (!editingVariable) {
+      setPopupPlacement('below');
+      return;
+    }
+    const popup = popupRef.current;
+    if (!popup) return;
+    const container = popup.offsetParent as HTMLElement;
+    if (!container) return;
+
+    const containerHeight = container.clientHeight;
+    const popupHeight = popup.offsetHeight;
+    const belowBottom = editingVariable.y + 8 + popupHeight;
+    const aboveTop = editingVariable.y - 8 - popupHeight;
+
+    if (belowBottom > containerHeight && aboveTop > 0) {
+      setPopupPlacement('above');
+    } else {
+      setPopupPlacement('below');
+    }
+  }, [editingVariable]);
 
   const loadEconomists = async () => {
     try {
@@ -1684,6 +1709,54 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   };
 
   /**
+   * Replace a single key's value in a YAML string without affecting other keys.
+   * Handles both simple (key: value) and block scalar (key: |\n  line1\n  line2) formats.
+   */
+  const replaceYAMLValue = (yamlContent: string, targetKey: string, newValue: string): string => {
+    const lines = yamlContent.split('\n');
+    const result: string[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Check if this line starts with our target key
+      const colonIndex = trimmed.indexOf(':');
+      if (colonIndex > 0 && trimmed.substring(0, colonIndex).trim() === targetKey) {
+        const rawValue = trimmed.substring(colonIndex + 1).trim();
+
+        if (rawValue === '|' || rawValue === '>') {
+          // Block scalar — skip all indented continuation lines
+          i++;
+          while (i < lines.length && (lines[i].startsWith('  ') || lines[i].startsWith('\t') || lines[i].trim() === '')) {
+            i++;
+          }
+        } else {
+          // Simple key: value — skip this line
+          i++;
+        }
+
+        // Write the new value
+        if (newValue.includes('\n')) {
+          result.push(`${targetKey}: |`);
+          for (const valueLine of newValue.split('\n')) {
+            result.push(`  ${valueLine}`);
+          }
+        } else {
+          result.push(`${targetKey}: ${newValue}`);
+        }
+        continue;
+      }
+
+      result.push(line);
+      i++;
+    }
+
+    return result.join('\n');
+  };
+
+  /**
    * Merge all variable sources into a single Record for the document preview.
    * Sources: YAML artifact content + offer parameters + team info.
    */
@@ -1791,8 +1864,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
-  /** Save the current editing variable value. */
-  const handleVariableSave = (key: string, value: string) => {
+  /** Save the current editing variable value — surgical replacement for YAML keys. */
+  const handleVariableSave = async (key: string, value: string) => {
     const category = categorizeVariable(key);
 
     if (category === 'offer') {
@@ -1815,8 +1888,31 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         saveOfferParameters(currentConversation.id, updated);
       }
     } else if (category === 'yaml') {
-      setInputValue(`Pakeisk {{${key}}} į: ${value}`);
-      textareaRef.current?.focus();
+      // Surgical replacement: directly modify YAML without AI round-trip
+      if (currentConversation?.artifact) {
+        try {
+          const currentArtifact = currentConversation.artifact;
+          const updatedContent = replaceYAMLValue(currentArtifact.content, key, value);
+          const diff = calculateDiff(currentArtifact.content, updatedContent);
+          const newArtifact: CommercialOfferArtifact = {
+            ...currentArtifact,
+            content: updatedContent,
+            version: currentArtifact.version + 1,
+            updated_at: new Date().toISOString(),
+            diff_history: [...currentArtifact.diff_history, {
+              version: currentArtifact.version + 1,
+              timestamp: new Date().toISOString(),
+              changes: diff
+            }]
+          };
+          await updateConversationArtifact(currentConversation.id, newArtifact);
+          setCurrentConversation({ ...currentConversation, artifact: newArtifact });
+          addNotification('success', 'Kintamasis atnaujintas', `„${key}" reikšmė pakeista.`);
+        } catch (err) {
+          console.error('[Surgical Edit] Error:', err);
+          addNotification('error', 'Klaida', 'Nepavyko atnaujinti kintamojo.');
+        }
+      }
     }
 
     setEditingVariable(null);
@@ -2671,25 +2767,31 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                         }}
                       />
 
-                      {/* Popup card */}
+                      {/* Popup card — smart positioning: flips above when overflowing */}
                       <div
+                        ref={popupRef}
                         style={{
                           position: 'absolute',
                           left: Math.min(Math.max(editingVariable.x - 130, 8), 260),
-                          top: editingVariable.y + 8,
+                          top: popupPlacement === 'below'
+                            ? editingVariable.y + 8
+                            : editingVariable.y - 8,
+                          transform: popupPlacement === 'above' ? 'translateY(-100%)' : undefined,
                           zIndex: 50,
                           width: '264px',
                           filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
                         }}
                       >
-                        {/* Pointer triangle */}
-                        <div style={{
-                          width: 0, height: 0,
-                          borderLeft: '7px solid transparent',
-                          borderRight: '7px solid transparent',
-                          borderBottom: '7px solid #ffffff',
-                          marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
-                        }} />
+                        {/* Pointer triangle — points toward the variable */}
+                        {popupPlacement === 'below' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderBottom: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                          }} />
+                        )}
 
                         <div style={{
                           background: '#ffffff',
@@ -2937,7 +3039,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                                   onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                 />
                                 <div className="flex items-center justify-between mt-2">
-                                  <span className="text-[9px]" style={{ color: '#c0bbb5' }}>Siųsti per čatą</span>
+                                  <span className="text-[9px]" style={{ color: '#c0bbb5' }}>Tiesioginis pakeitimas</span>
                                   <div className="flex gap-1.5">
                                     <button
                                       onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
@@ -2955,7 +3057,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                                       onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
                                       onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
                                     >
-                                      Siųsti į čatą
+                                      Išsaugoti
                                     </button>
                                   </div>
                                 </div>
@@ -2963,6 +3065,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                             )}
                           </div>
                         </div>
+                        {popupPlacement === 'above' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderTop: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                          }} />
+                        )}
                       </div>
                     </>
                   );
