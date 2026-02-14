@@ -135,6 +135,19 @@ class DirectusQueryBuilder<T = any> {
     return this;
   }
 
+  not(column: string, operator: string, value: any): this {
+    if (operator === 'is' && value === null) {
+      this.filters.push({ field: column, operator: '_nnull', value: true });
+    } else if (operator === 'eq') {
+      this.filters.push({ field: column, operator: '_neq', value });
+    } else if (operator === 'in') {
+      this.filters.push({ field: column, operator: '_nin', value });
+    } else {
+      this.filters.push({ field: column, operator: '_neq', value });
+    }
+    return this;
+  }
+
   in(column: string, values: any[]): this {
     this.filters.push({ field: column, operator: '_in', value: values });
     return this;
@@ -177,8 +190,8 @@ class DirectusQueryBuilder<T = any> {
       if (Array.isArray(f.value)) {
         // _in operator: filter[field][_in]=val1,val2
         parts.push(`filter[${f.field}][${f.operator}]=${f.value.map(v => encodeURIComponent(v)).join(',')}`);
-      } else if (f.operator === '_null') {
-        parts.push(`filter[${f.field}][_null]=true`);
+      } else if (f.operator === '_null' || f.operator === '_nnull') {
+        parts.push(`filter[${f.field}][${f.operator}]=true`);
       } else {
         parts.push(`filter[${f.field}][${f.operator}]=${encodeURIComponent(f.value)}`);
       }
