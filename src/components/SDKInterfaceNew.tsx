@@ -90,7 +90,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const { conversationId: urlConversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
   const session = useRef(loadSession()).current;
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(session.sidebarCollapsed ?? false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversations, setConversations] = useState<SDKConversation[]>([]);
   const [currentConversation, setCurrentConversation] = useState<SDKConversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -2437,7 +2437,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-base-content/15 bg-base-100 text-base-content">
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-base-content/10 bg-base-content/[0.03] text-base-content">
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
