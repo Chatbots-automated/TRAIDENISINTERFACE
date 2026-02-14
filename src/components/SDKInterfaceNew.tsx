@@ -1247,19 +1247,26 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   };
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || loading || !systemPrompt) return;
+  const handleSend = async (overrideMessage?: string) => {
+    const messageText = overrideMessage ?? inputValue.trim();
+    if (!messageText || loading || !systemPrompt) return;
 
     // If no conversation exists, create one first
     let conversation = currentConversation;
     if (!conversation) {
       try {
         setCreatingConversation(true);
+        // Generate composite code for conversation title
+        const _now = new Date();
+        const _yy = String(_now.getFullYear()).slice(-2);
+        const _mm = String(_now.getMonth() + 1).padStart(2, '0');
+        const _dd = String(_now.getDate()).padStart(2, '0');
+        const _autoTitle = `U${selectedManager?.kodas || ''}${selectedEconomist?.kodas || ''}${user.kodas || ''}${_yy}/${_mm}/${_dd}`;
         const { data: conversationId, error: createError } = await createSDKConversation(
           projectId,
           user.id,
           user.email,
-          'Naujas pokalbis'
+          _autoTitle
         );
         if (createError) {
           console.error('Error creating conversation:', createError);
@@ -1293,7 +1300,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     const userMessage: SDKMessage = {
       role: 'user',
-      content: inputValue.trim(),
+      content: messageText,
       timestamp: new Date().toISOString()
     };
 
@@ -2420,11 +2427,22 @@ Vartotojo instrukcija: ${instruction}`;
           {!currentConversation || currentConversation.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center">
               <h1 className="text-xl font-medium text-base-content/70 mb-1">
-                Pradėkite pokalbį
+                Pradėkite projektą
               </h1>
-              <p className="text-sm text-base-content/30">
-                Klauskite bet ko apie šį projektą
+              <p className="text-sm text-base-content/30 mb-6">
+                Kurkite standartinį projektą šitame puslapyje
               </p>
+              <div className="flex gap-3">
+                {['HNVN10', 'HNVN12'].map((system) => (
+                  <button
+                    key={system}
+                    onClick={() => handleSend(`Sukomplektuokime naują pasiūlymą, bus reikalinga ${system} sistema`)}
+                    className="px-4 py-2.5 rounded-2xl border border-base-content/10 bg-base-content/[0.06] text-sm text-base-content hover:bg-base-content/[0.1] transition-colors cursor-pointer"
+                  >
+                    {system}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-4">
@@ -2448,7 +2466,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-base-content/10 bg-base-content/[0.03] text-base-content">
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-base-content/10 bg-base-content/[0.06] text-base-content">
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
