@@ -511,7 +511,15 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       </tr>
                     ) : (
                       <tr>
-                        <td className="font-medium">{userData.display_name || userData.full_name || userData.email}</td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white text-sm font-medium"
+                              style={{ background: `hsl(${(userData.email || '').charCodeAt(0) * 7 % 360}, 60%, 55%)` }}>
+                              {(userData.display_name || userData.full_name || userData.email || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-medium">{userData.display_name || userData.full_name || userData.email}</span>
+                          </div>
+                        </td>
                         <td className="text-base-content/70">{userData.email}</td>
                         <td className="text-sm text-base-content/60">{userData.role || '—'}</td>
                         <td>

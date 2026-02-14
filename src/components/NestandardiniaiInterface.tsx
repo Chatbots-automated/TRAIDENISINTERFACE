@@ -3,7 +3,6 @@ import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Se
 import { appLogger } from '../lib/appLogger';
 import { fetchProjects, searchProjects, VectorStoreProject } from '../lib/nestandardiniaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
-import { colors } from '../lib/designSystem';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
 
@@ -603,201 +602,128 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
+    <div className="h-full flex flex-col bg-base-200/50">
       {/* Notification Container */}
       <NotificationContainer notifications={notifications} onRemove={removeNotification} />
 
       {/* Header */}
-      <div className="px-6 py-4 border-b" style={{ borderColor: '#f0ede8', background: 'white' }}>
+      <div className="px-6 py-5 border-b border-base-content/10 bg-base-100/80">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-xl font-semibold mb-1" style={{ color: '#3d3935' }}>
+          <h1 className="text-2xl font-semibold text-base-content">
             Nestandartiniai Projektai
           </h1>
-          <p className="text-sm" style={{ color: '#8a857f' }}>
+          <p className="text-sm mt-1 text-base-content/60">
             Tvarkykite užklausas, sprendimus ir paieškos rezultatus
           </p>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-5xl mx-auto">
-              {/* Card hover styles */}
-              <style>{`
-                .card-wrapper:not(.selected):not(.dimmed):hover {
-                  box-shadow: ${colors.shadow.tealGlow} !important;
-                  border-color: ${colors.accent.tealLight} !important;
-                }
-              `}</style>
-
               {/* Three Cards */}
-              <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-3 gap-4 mb-6">
                 {/* Card 1: New Request */}
-                <div
-                  className={`card-wrapper rounded-xl transition-all duration-300 ${
+                <button
+                  onClick={() => handleCardSelect('new-request')}
+                  className={`group text-left rounded-xl border transition-all duration-200 p-5 ${
                     selectedCard === 'new-request'
-                      ? 'selected scale-105 z-10'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20 scale-[1.02]'
                       : selectedCard
-                        ? 'dimmed opacity-50 scale-95'
-                        : ''
+                        ? 'border-base-content/10 bg-base-100 opacity-50 scale-[0.98]'
+                        : 'border-base-content/10 bg-base-100 hover:border-primary/30 hover:shadow-md'
                   }`}
-                  style={{
-                    background: colors.bg.white,
-                    border: selectedCard === 'new-request'
-                      ? `2px solid ${colors.border.dark}`
-                      : `1px solid ${colors.border.default}`,
-                    transform: selectedCard === 'new-request' ? 'translateY(-4px)' : undefined,
-                    boxShadow: selectedCard === 'new-request'
-                      ? colors.shadow.lg
-                      : colors.shadow.sm
-                  }}
                 >
-                  <button
-                    onClick={() => handleCardSelect('new-request')}
-                    className={`w-full p-4 rounded-xl text-left transition-all duration-200 ${
-                      !selectedCard ? 'hover:scale-[0.99]' : ''
-                    }`}
-                    style={{
-                      background: 'transparent'
-                    }}
-                  >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-2"
-                       style={{ background: selectedCard === 'new-request' ? colors.interactive.iconBgActive : colors.interactive.iconBg }}>
-                    <Upload className="w-5 h-5" style={{ color: selectedCard === 'new-request' ? colors.bg.white : colors.text.secondary }} />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                    selectedCard === 'new-request' ? 'bg-primary text-primary-content' : 'bg-base-200 text-base-content/60'
+                  }`}>
+                    <Upload className="w-5 h-5" />
                   </div>
-                  <h3 className="font-semibold mb-0.5" style={{ color: colors.text.primary, fontSize: '14px' }}>
+                  <h3 className="font-semibold text-sm text-base-content mb-1">
                     Pateikti naują užklausą
                   </h3>
-                  <p className="text-xs leading-tight" style={{ color: colors.text.tertiary }}>
+                  <p className="text-xs text-base-content/50 leading-relaxed">
                     Įveskite užklausos tekstą ir įkelkite dokumentus
                   </p>
-                  </button>
-                </div>
+                </button>
 
                 {/* Card 2: Upload Solution */}
-                <div
-                  className={`card-wrapper rounded-xl transition-all duration-300 ${
+                <button
+                  onClick={() => handleCardSelect('upload-solution')}
+                  className={`group text-left rounded-xl border transition-all duration-200 p-5 ${
                     selectedCard === 'upload-solution'
-                      ? 'selected scale-105 z-10'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20 scale-[1.02]'
                       : selectedCard
-                        ? 'dimmed opacity-50 scale-95'
-                        : ''
+                        ? 'border-base-content/10 bg-base-100 opacity-50 scale-[0.98]'
+                        : 'border-base-content/10 bg-base-100 hover:border-primary/30 hover:shadow-md'
                   }`}
-                  style={{
-                    background: colors.bg.white,
-                    border: selectedCard === 'upload-solution'
-                      ? `2px solid ${colors.border.dark}`
-                      : `1px solid ${colors.border.default}`,
-                    transform: selectedCard === 'upload-solution' ? 'translateY(-4px)' : undefined,
-                    boxShadow: selectedCard === 'upload-solution'
-                      ? colors.shadow.lg
-                      : colors.shadow.sm
-                  }}
                 >
-                  <button
-                    onClick={() => handleCardSelect('upload-solution')}
-                    className={`w-full p-4 rounded-xl text-left transition-all duration-200 ${
-                      !selectedCard ? 'hover:scale-[0.99]' : ''
-                    }`}
-                    style={{
-                      background: 'transparent'
-                    }}
-                  >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-2"
-                       style={{ background: selectedCard === 'upload-solution' ? colors.interactive.iconBgActive : colors.interactive.iconBg }}>
-                    <Coins className="w-5 h-5" style={{ color: selectedCard === 'upload-solution' ? colors.bg.white : colors.text.secondary }} />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                    selectedCard === 'upload-solution' ? 'bg-primary text-primary-content' : 'bg-base-200 text-base-content/60'
+                  }`}>
+                    <Coins className="w-5 h-5" />
                   </div>
-                  <h3 className="font-semibold mb-0.5" style={{ color: colors.text.primary, fontSize: '14px' }}>
+                  <h3 className="font-semibold text-sm text-base-content mb-1">
                     Pateikti sprendimą užklausai
                   </h3>
-                  <p className="text-xs leading-tight" style={{ color: colors.text.tertiary }}>
+                  <p className="text-xs text-base-content/50 leading-relaxed">
                     Įkelti komercinį pasiūlymą projektui
                   </p>
-                  </button>
-                </div>
+                </button>
 
                 {/* Card 3: Find Similar */}
-                <div
-                  className={`card-wrapper rounded-xl transition-all duration-300 ${
+                <button
+                  onClick={() => handleCardSelect('find-similar')}
+                  className={`group text-left rounded-xl border transition-all duration-200 p-5 ${
                     selectedCard === 'find-similar'
-                      ? 'selected scale-105 z-10'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20 scale-[1.02]'
                       : selectedCard
-                        ? 'dimmed opacity-50 scale-95'
-                        : ''
+                        ? 'border-base-content/10 bg-base-100 opacity-50 scale-[0.98]'
+                        : 'border-base-content/10 bg-base-100 hover:border-primary/30 hover:shadow-md'
                   }`}
-                  style={{
-                    background: colors.bg.white,
-                    border: selectedCard === 'find-similar'
-                      ? `2px solid ${colors.border.dark}`
-                      : `1px solid ${colors.border.default}`,
-                    transform: selectedCard === 'find-similar' ? 'translateY(-4px)' : undefined,
-                    boxShadow: selectedCard === 'find-similar'
-                      ? colors.shadow.lg
-                      : colors.shadow.sm
-                  }}
                 >
-                  <button
-                    onClick={() => handleCardSelect('find-similar')}
-                    className={`w-full p-4 rounded-xl text-left transition-all duration-200 ${
-                      !selectedCard ? 'hover:scale-[0.99]' : ''
-                    }`}
-                    style={{
-                      background: 'transparent'
-                    }}
-                  >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-2"
-                       style={{ background: selectedCard === 'find-similar' ? colors.interactive.iconBgActive : colors.interactive.iconBg }}>
-                    <Search className="w-5 h-5" style={{ color: selectedCard === 'find-similar' ? colors.bg.white : colors.text.secondary }} />
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${
+                    selectedCard === 'find-similar' ? 'bg-primary text-primary-content' : 'bg-base-200 text-base-content/60'
+                  }`}>
+                    <Search className="w-5 h-5" />
                   </div>
-                  <h3 className="font-semibold mb-0.5" style={{ color: colors.text.primary, fontSize: '14px' }}>
+                  <h3 className="font-semibold text-sm text-base-content mb-1">
                     Rasti panašius
                   </h3>
-                  <p className="text-xs leading-tight" style={{ color: colors.text.tertiary }}>
+                  <p className="text-xs text-base-content/50 leading-relaxed">
                     Ieškoti panašių gaminių ir dokumentų
                   </p>
-                  </button>
-                </div>
+                </button>
               </div>
 
-              {/* Loader when waiting for card selection */}
+              {/* Waiting state */}
               {!selectedCard && (
-                <div className="py-12 text-center">
-                  <div className="animate-spin rounded-full h-10 w-10 border-3 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
-                  <p className="text-sm" style={{ color: '#8a857f' }}>
+                <div className="py-16 text-center">
+                  <span className="loading loading-spinner loading-lg text-primary"></span>
+                  <p className="text-sm mt-4 text-base-content/50">
                     Pasirinkite operaciją
                   </p>
                 </div>
               )}
 
-              {/* Options Area - Appears with fade-in animation */}
+              {/* Options Area - Appears with animation */}
               {selectedCard && (
-                <div
-                  className="max-w-4xl mx-auto space-y-3"
-                  style={{
-                    animation: 'fadeIn 0.3s ease-in-out'
-                  }}
-                >
-                  <style>{`
-                    @keyframes fadeIn {
-                      from { opacity: 0; transform: translateY(-10px); }
-                      to { opacity: 1; transform: translateY(0); }
-                    }
-                  `}</style>
+                <div className="max-w-4xl mx-auto space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
 
                   {/* New Request Options */}
                   {selectedCard === 'new-request' && (
                     <>
                       {/* Description */}
-                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-                        <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
-                        <div style={{ color: '#5a5550' }}>
+                      <div className="alert alert-soft alert-info text-xs">
+                        <Info className="w-4 h-4 flex-shrink-0" />
+                        <div>
                           <strong>Pateikite naują užklausą į duombazę</strong> – įveskite užklausos pavadinimą, susirašinėjimą su užsakovu ir, pasirinktinai, priedus.
                         </div>
                       </div>
 
                       {/* Request Name Input */}
                       <div>
-                        <label className="text-xs font-semibold block mb-1.5" style={{ color: '#5a5550' }}>
+                        <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
                           Užklausos pavadinimas
                         </label>
                         <input
@@ -805,69 +731,53 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                           value={requestName}
                           onChange={(e) => setRequestName(e.target.value)}
                           placeholder="Pvz.: Įmonės pavadinimas + užklausa + 1"
-                          className="w-full px-3 py-2 text-sm border rounded-lg"
-                          style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
+                          className="input input-sm w-full"
                         />
-                        <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
+                        <p className="text-xs mt-1 text-base-content/40">
                           Rekomenduojama: Įmonės pavadinimas + užklausos aprašymas + indeksas (1, 2, 3...)
                         </p>
                       </div>
 
                       {/* Two-column layout for EML and Documents */}
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-4">
                         {/* EML File Upload */}
                         <div>
-                          <label className="text-xs font-semibold block mb-1.5" style={{ color: '#5a5550' }}>
+                          <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
                             Pokalbis su užsakovu (.eml)
                           </label>
 
                           {!selectedEmlFile ? (
                             <button
                               onClick={() => emlInputRef.current?.click()}
-                              className="w-full px-3 py-4 text-xs border-2 border-dashed rounded-lg transition-all hover:border-solid"
-                              style={{
-                                borderColor: '#e8e5e0',
-                                background: '#fafaf9',
-                                color: '#5a5550'
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#5a5550';
-                                e.currentTarget.style.background = '#f5f4f2';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = '#e8e5e0';
-                                e.currentTarget.style.background = '#fafaf9';
-                              }}
+                              className="w-full px-3 py-5 text-xs border-2 border-dashed border-base-content/15 rounded-lg bg-base-100 hover:border-primary/40 hover:bg-primary/5 transition-all"
                             >
                               <div className="flex flex-col items-center gap-1.5">
-                                <Upload className="w-5 h-5" style={{ color: '#8a857f' }} />
-                                <span className="font-medium text-xs">Pasirinkite .eml failą</span>
-                                <span className="text-xs" style={{ color: '#8a857f' }}>
-                                  El. pašto susirašinėjimas
-                                </span>
+                                <Upload className="w-5 h-5 text-base-content/30" />
+                                <span className="font-medium text-base-content/60">Pasirinkite .eml failą</span>
+                                <span className="text-base-content/40">El. pašto susirašinėjimas</span>
                               </div>
                             </button>
                           ) : (
-                            <div className="border rounded-lg p-2.5" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                            <div className="border border-base-content/10 rounded-lg p-3 bg-base-100">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <div className="p-1.5 rounded flex-shrink-0" style={{ background: '#f0ede8' }}>
-                                    <FileText className="w-4 h-4" style={{ color: '#5a5550' }} />
+                                  <div className="p-1.5 rounded bg-base-200 flex-shrink-0">
+                                    <FileText className="w-4 h-4 text-base-content/60" />
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
+                                    <p className="text-xs font-medium text-base-content truncate">
                                       {selectedEmlFile.name}
                                     </p>
-                                    <p className="text-xs" style={{ color: '#8a857f' }}>
+                                    <p className="text-xs text-base-content/40">
                                       {(selectedEmlFile.size / 1024).toFixed(1)} KB
                                     </p>
                                   </div>
                                 </div>
                                 <button
                                   onClick={removeEmlFile}
-                                  className="p-1 rounded hover:bg-gray-100 flex-shrink-0"
+                                  className="btn btn-circle btn-text btn-xs"
                                 >
-                                  <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                                  <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -884,29 +794,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
                         {/* Document Upload Area */}
                         <div>
-                          <label className="text-xs font-semibold block mb-1.5" style={{ color: '#5a5550' }}>
+                          <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
                             Dokumentai {selectedDocuments.length > 0 && `(${selectedDocuments.length})`}
                           </label>
                           <div
                             onDrop={handleDocumentsDrop}
                             onDragOver={handleDragOver}
                             onClick={() => documentsInputRef.current?.click()}
-                            className="border-2 border-dashed rounded-lg px-3 py-4 text-center cursor-pointer transition-all"
-                            style={{ borderColor: '#e8e5e0', background: 'white' }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.borderColor = '#5a5550';
-                              e.currentTarget.style.background = '#faf9f7';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.borderColor = '#e8e5e0';
-                              e.currentTarget.style.background = 'white';
-                            }}
+                            className="border-2 border-dashed border-base-content/15 rounded-lg px-3 py-5 text-center cursor-pointer bg-base-100 hover:border-primary/40 hover:bg-primary/5 transition-all"
                           >
-                            <Upload className="w-5 h-5 mx-auto mb-1.5" style={{ color: '#8a857f' }} />
-                            <p className="text-xs font-medium mb-0.5" style={{ color: '#3d3935' }}>
+                            <Upload className="w-5 h-5 mx-auto mb-1.5 text-base-content/30" />
+                            <p className="text-xs font-medium text-base-content/60 mb-0.5">
                               Nuvilkite dokumentus
                             </p>
-                            <p className="text-xs" style={{ color: '#8a857f' }}>
+                            <p className="text-xs text-base-content/40">
                               PDF, DOC, PNG, JPG, BMP
                             </p>
                           </div>
@@ -926,16 +827,16 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       {selectedDocuments.length > 0 && (
                         <div className="space-y-1.5">
                           {selectedDocuments.map((doc, index) => (
-                            <div key={index} className="flex items-center justify-between p-2 rounded-lg border" style={{ borderColor: '#e8e5e0', background: 'white' }}>
+                            <div key={index} className="flex items-center justify-between p-2.5 rounded-lg border border-base-content/10 bg-base-100">
                               <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#f0ede8' }}>
-                                  <FileText className="w-4 h-4" style={{ color: '#5a5550' }} />
+                                <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0 bg-base-200">
+                                  <FileText className="w-4 h-4 text-base-content/60" />
                                 </div>
                                 <div className="text-left flex-1 min-w-0">
-                                  <p className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
+                                  <p className="text-xs font-medium text-base-content truncate">
                                     {doc.name}
                                   </p>
-                                  <p className="text-xs" style={{ color: '#8a857f' }}>
+                                  <p className="text-xs text-base-content/40">
                                     {(doc.size / (1024 * 1024)).toFixed(2)} MB
                                   </p>
                                 </div>
@@ -945,24 +846,20 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                   e.stopPropagation();
                                   removeDocument(index);
                                 }}
-                                className="p-1 rounded hover:bg-gray-100 flex-shrink-0"
+                                className="btn btn-circle btn-text btn-xs"
                               >
-                                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      {/* Submit Button with animated states */}
+                      {/* Submit Button */}
                       <button
                         onClick={handleSubmit}
                         disabled={!requestName.trim() || !requestText.trim() || uploading || uploadSuccess}
-                        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed relative overflow-hidden"
-                        style={{
-                          background: uploadSuccess ? '#10b981' : (requestName.trim() && requestText.trim() && !uploading) ? '#3d3935' : '#e8e5e0',
-                          color: (requestName.trim() && requestText.trim()) || uploading || uploadSuccess ? 'white' : '#8a857f'
-                        }}
+                        className={`btn w-full ${uploadSuccess ? 'btn-success' : 'btn-primary'} relative overflow-hidden`}
                       >
                         <span className={`flex items-center justify-center gap-2 transition-opacity duration-300 ${uploading || uploadSuccess ? 'opacity-0' : 'opacity-100'}`}>
                           Pateikti Užklausą
@@ -971,27 +868,17 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                         {/* Loader state */}
                         {uploading && (
                           <span className="absolute inset-0 flex items-center justify-center">
-                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span className="loading loading-spinner loading-sm"></span>
                           </span>
                         )}
 
                         {/* Success state */}
                         {uploadSuccess && !uploading && (
-                          <span className="absolute inset-0 flex items-center justify-center animate-fade-in">
-                            <Check className="w-4 h-4" />
+                          <span className="absolute inset-0 flex items-center justify-center">
+                            <Check className="w-5 h-5" />
                           </span>
                         )}
                       </button>
-
-                      <style>{`
-                        @keyframes fade-in {
-                          from { opacity: 0; transform: scale(0.95); }
-                          to { opacity: 1; transform: scale(1); }
-                        }
-                        .animate-fade-in {
-                          animation: fade-in 0.3s ease-out;
-                        }
-                      `}</style>
                     </>
                   )}
 
@@ -999,21 +886,21 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   {selectedCard === 'upload-solution' && (
                     <>
                       {/* Description */}
-                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-                        <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
-                        <div style={{ color: '#5a5550' }}>
+                      <div className="alert alert-soft alert-info text-xs">
+                        <Info className="w-4 h-4 flex-shrink-0" />
+                        <div>
                           <strong>Pasirinkite esamą projektą</strong> ir įkelkite komercinį pasiūlymą arba sprendimo dokumentą (PDF, Word, Excel).
                         </div>
                       </div>
 
                       {/* Project Selection */}
                       <div>
-                        <label className="text-xs font-semibold block mb-1.5" style={{ color: '#5a5550' }}>
+                        <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
                           Pasirinkite projektą
                         </label>
                         <div className="relative" ref={projectDropdownRef}>
                           <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a857f' }} />
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-base-content/40" />
                             <input
                               type="text"
                               value={selectedProject ? selectedProject.project_name : projectSearchQuery}
@@ -1036,8 +923,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                 setShowProjectDropdown(true);
                               }}
                               placeholder="Ieškokite pagal projekto pavadinimą..."
-                              className="w-full pl-8 pr-8 py-2 text-sm border rounded-lg"
-                              style={{ borderColor: '#e8e5e0', background: 'white', color: '#3d3935' }}
+                              className="input input-sm w-full pl-9 pr-9"
                             />
                             {selectedProject ? (
                               <button
@@ -1046,24 +932,24 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                   setProjectSearchQuery('');
                                   loadProjects();
                                 }}
-                                className="absolute right-3 top-1/2 transform -translate-y-1/2"
+                                className="absolute right-2 top-1/2 transform -translate-y-1/2 btn btn-circle btn-text btn-xs"
                               >
-                                <X className="w-5 h-5" style={{ color: '#8a857f' }} />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             ) : (
-                              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5" style={{ color: '#8a857f' }} />
+                              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-base-content/40" />
                             )}
                           </div>
 
                           {/* Dropdown */}
                           {showProjectDropdown && !selectedProject && (
-                            <div className="absolute z-10 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-60 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
+                            <div className="absolute z-10 w-full mt-1 bg-base-100 border border-base-content/10 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                               {loadingProjects ? (
                                 <div className="p-4 text-center">
-                                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-gray-200 border-t-blue-500 mx-auto"></div>
+                                  <span className="loading loading-spinner loading-sm text-primary"></span>
                                 </div>
                               ) : projects.length === 0 ? (
-                                <div className="p-4 text-center text-sm" style={{ color: '#8a857f' }}>
+                                <div className="p-4 text-center text-sm text-base-content/50">
                                   Projektų nerasta
                                 </div>
                               ) : (
@@ -1075,8 +961,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                         setSelectedProject(project);
                                         setShowProjectDropdown(false);
                                       }}
-                                      className="w-full text-left px-3 py-2.5 hover:bg-gray-50 rounded text-sm transition-colors"
-                                      style={{ color: '#3d3935' }}
+                                      className="w-full text-left px-3 py-2.5 hover:bg-base-200 rounded text-sm text-base-content transition-colors"
                                     >
                                       {project.project_name}
                                     </button>
@@ -1092,35 +977,26 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       {selectedProject && (
                         <>
                           <div>
-                            <label className="text-xs font-semibold block mb-1.5" style={{ color: '#5a5550' }}>
+                            <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
                               Įkelti dokumentą
                             </label>
                             <div
                               onDrop={handleFileDrop}
                               onDragOver={handleDragOver}
                               onClick={triggerFileUpload}
-                              className="border-2 border-dashed rounded-lg px-3 py-4 text-center cursor-pointer transition-all"
-                              style={{ borderColor: '#e8e5e0', background: 'white' }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#5a5550';
-                                e.currentTarget.style.background = '#faf9f7';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = '#e8e5e0';
-                                e.currentTarget.style.background = 'white';
-                              }}
+                              className="border-2 border-dashed border-base-content/15 rounded-lg px-3 py-5 text-center cursor-pointer bg-base-100 hover:border-primary/40 hover:bg-primary/5 transition-all"
                             >
                               {selectedFile ? (
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: '#f0ede8' }}>
-                                      <FileText className="w-4 h-4" style={{ color: '#5a5550' }} />
+                                    <div className="w-8 h-8 rounded flex items-center justify-center bg-base-200">
+                                      <FileText className="w-4 h-4 text-base-content/60" />
                                     </div>
                                     <div className="text-left">
-                                      <p className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                                      <p className="text-xs font-medium text-base-content">
                                         {selectedFile.name}
                                       </p>
-                                      <p className="text-xs" style={{ color: '#8a857f' }}>
+                                      <p className="text-xs text-base-content/40">
                                         {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
                                       </p>
                                     </div>
@@ -1131,18 +1007,18 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                       setSelectedFile(null);
                                       if (fileInputRef.current) fileInputRef.current.value = '';
                                     }}
-                                    className="p-1 rounded hover:bg-gray-100"
+                                    className="btn btn-circle btn-text btn-xs"
                                   >
-                                    <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                                    <X className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               ) : (
                                 <>
-                                  <Upload className="w-5 h-5 mx-auto mb-1.5" style={{ color: '#8a857f' }} />
-                                  <p className="text-xs font-medium mb-0.5" style={{ color: '#3d3935' }}>
+                                  <Upload className="w-5 h-5 mx-auto mb-1.5 text-base-content/30" />
+                                  <p className="text-xs font-medium text-base-content/60 mb-0.5">
                                     Nuvilkite failą arba spustelėkite
                                   </p>
-                                  <p className="text-xs" style={{ color: '#8a857f' }}>
+                                  <p className="text-xs text-base-content/40">
                                     PDF, Word, Excel, TXT
                                   </p>
                                 </>
@@ -1161,11 +1037,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                           <button
                             onClick={handleSubmit}
                             disabled={!selectedFile}
-                            className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                            style={{
-                              background: selectedFile ? '#3d3935' : '#e8e5e0',
-                              color: selectedFile ? 'white' : '#8a857f'
-                            }}
+                            className="btn btn-primary w-full"
                           >
                             Įkelti Komercinį Pasiūlymą
                           </button>
@@ -1178,44 +1050,35 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                   {selectedCard === 'find-similar' && (
                     <>
                       {/* Description */}
-                      <div className="flex items-start gap-2.5 px-3 py-2.5 rounded-lg text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-                        <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#5a5550' }} />
-                        <div style={{ color: '#5a5550' }}>
+                      <div className="alert alert-soft alert-info text-xs">
+                        <Info className="w-4 h-4 flex-shrink-0" />
+                        <div>
                           <strong>Įkelkite .eml formato failą</strong> – sistema ras panašius gaminius ir pateiks susijusius dokumentus, įskaitant PDF ir komercinius pasiūlymus.
                         </div>
                       </div>
 
                       {/* Upload Area */}
                       <div>
-                        <label className="text-xs font-semibold block mb-1.5" style={{ color: '#5a5550' }}>
+                        <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
                           Pasirinkite failą
                         </label>
                         <div
                           onDrop={handleFileDrop}
                           onDragOver={handleDragOver}
                           onClick={triggerFileUpload}
-                          className="border-2 border-dashed rounded-lg px-3 py-4 text-center cursor-pointer transition-all"
-                          style={{ borderColor: '#e8e5e0', background: 'white' }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = '#5a5550';
-                            e.currentTarget.style.background = '#faf9f7';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = '#e8e5e0';
-                            e.currentTarget.style.background = 'white';
-                          }}
+                          className="border-2 border-dashed border-base-content/15 rounded-lg px-3 py-5 text-center cursor-pointer bg-base-100 hover:border-primary/40 hover:bg-primary/5 transition-all"
                         >
                           {selectedFile ? (
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded flex items-center justify-center" style={{ background: '#f0ede8' }}>
-                                  <FileArchive className="w-4 h-4" style={{ color: '#5a5550' }} />
+                                <div className="w-8 h-8 rounded flex items-center justify-center bg-base-200">
+                                  <FileArchive className="w-4 h-4 text-base-content/60" />
                                 </div>
                                 <div className="text-left">
-                                  <p className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                                  <p className="text-xs font-medium text-base-content">
                                     {selectedFile.name}
                                   </p>
-                                  <p className="text-xs" style={{ color: '#8a857f' }}>
+                                  <p className="text-xs text-base-content/40">
                                     {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
                                   </p>
                                 </div>
@@ -1226,18 +1089,18 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                   setSelectedFile(null);
                                   if (fileInputRef.current) fileInputRef.current.value = '';
                                 }}
-                                className="p-1 rounded hover:bg-gray-100"
+                                className="btn btn-circle btn-text btn-xs"
                               >
-                                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+                                <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ) : (
                             <>
-                              <Upload className="w-5 h-5 mx-auto mb-1.5" style={{ color: '#8a857f' }} />
-                              <p className="text-xs font-medium mb-0.5" style={{ color: '#3d3935' }}>
+                              <Upload className="w-5 h-5 mx-auto mb-1.5 text-base-content/30" />
+                              <p className="text-xs font-medium text-base-content/60 mb-0.5">
                                 Nuvilkite .eml failą arba spustelėkite
                               </p>
-                              <p className="text-xs" style={{ color: '#8a857f' }}>
+                              <p className="text-xs text-base-content/40">
                                 Reikalingas .eml formatas
                               </p>
                             </>
@@ -1257,11 +1120,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                       <button
                         onClick={handleSubmit}
                         disabled={!selectedFile}
-                        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{
-                          background: selectedFile ? '#3d3935' : '#e8e5e0',
-                          color: selectedFile ? 'white' : '#8a857f'
-                        }}
+                        className="btn btn-primary w-full"
                       >
                         Rasti Panašius Gaminius
                       </button>

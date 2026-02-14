@@ -173,9 +173,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-2xl font-semibold text-base-content">Dokumentai</h2>
-            <p className="text-sm mt-1 text-base-content/60">
-              Duomenų bazės lentelės
-            </p>
           </div>
 
           <div className="flex items-center gap-2">
