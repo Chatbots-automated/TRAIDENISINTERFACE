@@ -61,11 +61,8 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
               filter: url("#${filterId}");
               scale: 0.25;
               transform-origin: 250px 250px;
-            }
-
-            ${isAnimated ? `
-            .${cls('robotic-arm')} {
               animation: ${cls('robotic-rotate')} 31s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
 
             @keyframes ${cls('robotic-rotate')} {
@@ -89,18 +86,20 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
             .${cls('robotic-arm1')} {
               transform-origin: 300px 200px;
               animation: ${cls('robotic-rotate')} 23s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
 
             .${cls('robotic-arm2')} {
               transform-origin: 400px 200px;
               animation: ${cls('robotic-rotate')} 17s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
 
             .${cls('robotic-arm3')} {
               transform-origin: 490px 200px;
               animation: ${cls('robotic-rotate')} 11s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
-            ` : ''}
           `}
         </style>
 

@@ -1066,8 +1066,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         await handleArtifactGeneration(responseContent, conversation);
       }
 
-      setStreamingContent('');
-
       // Filter out empty thinking blocks early (declare before any usage to avoid TDZ error)
       const filteredContent = finalMessage.content.filter((block: any) => {
         if (block.type === 'thinking') {
@@ -1564,6 +1562,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setStreamingContent('');
     } finally {
       setLoading(false);
+      setStreamingContent('');
       setIsToolUse(false);
     }
   };
