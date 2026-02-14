@@ -108,7 +108,7 @@ export default function Layout({
         fixed inset-y-0 left-0 z-50 macos-sidebar transform transition-all duration-300 ease-out
         lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${sidebarCollapsed ? 'w-16 sidebar-collapsed' : 'w-64'}
+        ${sidebarCollapsed ? 'w-16 sidebar-collapsed' : 'w-52'}
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
