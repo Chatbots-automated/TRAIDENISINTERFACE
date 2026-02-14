@@ -519,31 +519,14 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       </tr>
                     ) : (
                       <tr>
-                        <td>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{
-                              background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
-                            }}>
-                              {userData.is_admin ? (
-                                <Shield className="w-4 h-4" style={{ color: colors.interactive.accent }} />
-                              ) : (
-                                <UserIcon className="w-4 h-4" style={{ color: colors.text.secondary }} />
-                              )}
-                            </div>
-                            <span className="font-medium">{userData.display_name || userData.full_name || userData.email}</span>
-                          </div>
-                        </td>
-                        <td>{userData.email}</td>
-                        <td>
-                          {userData.role && (
-                            <span className="badge badge-soft badge-primary text-xs">{userData.role}</span>
-                          )}
-                        </td>
+                        <td className="font-medium">{userData.display_name || userData.full_name || userData.email}</td>
+                        <td className="text-base-content/70">{userData.email}</td>
+                        <td className="text-sm text-base-content/60">{userData.role || '—'}</td>
                         <td>
                           {userData.is_admin ? (
                             <span className="badge badge-soft badge-success text-xs">Admin</span>
                           ) : (
-                            <span className="badge badge-soft badge-info text-xs">User</span>
+                            <span className="text-sm text-base-content/50">User</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap">{new Date(userData.created_at).toLocaleDateString()}</td>
