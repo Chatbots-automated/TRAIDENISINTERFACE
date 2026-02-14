@@ -2397,55 +2397,32 @@ Vartotojo instrukcija: ${instruction}`;
           className="flex-1 overflow-y-auto px-6 py-8 bg-base-100"
         >
           {!currentConversation || currentConversation.messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto">
-              {/* Logo */}
-              <div className="w-14 h-14 mb-6">
-                <img
-                  src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
-                  alt="Traidenis"
-                  className="w-14 h-14 object-contain rounded-2xl shadow-sm"
-                />
+            <div className="h-full flex flex-col items-center justify-center">
+              <div className="text-center mb-8">
+                <h1 className="text-3xl font-semibold text-base-content mb-2">
+                  Pradėkite pokalbį
+                </h1>
+                <p className="text-base text-base-content/40">
+                  Traidenis komercinių pasiūlymų asistentas
+                </p>
               </div>
-              {/* Greeting */}
-              <h2 className="text-2xl font-semibold text-base-content mb-2">
-                Kaip galiu padėti?
-              </h2>
-              <p className="text-sm text-base-content/40 mb-8">
-                Traidenis komercinių pasiūlymų asistentas
-              </p>
-              {/* Suggestion cards */}
-              <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
+              {/* Quick action pills */}
+              <div className="flex flex-col items-center gap-2">
                 <button
                   onClick={() => setInputValue('Noriu paruošti komercinį pasiūlymą')}
-                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
+                  className="px-5 py-2.5 rounded-full border border-base-content/10 text-sm text-base-content/70 hover:bg-base-200/60 hover:border-base-content/20 transition-all"
                 >
-                  <p className="text-sm font-medium text-base-content mb-1">Komercinis pasiūlymas</p>
-                  <p className="text-xs text-base-content/40">Paruošti naują komercinį pasiūlymą klientui</p>
+                  Paruošti komercinį pasiūlymą
                 </button>
                 <button
-                  onClick={() => setInputValue('Kokios valymo sistemos tinkamos 50 gyventojų namui?')}
-                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
+                  onClick={() => setInputValue('Padėk parinkti tinkamą valymo sistemą')}
+                  className="px-5 py-2.5 rounded-full border border-base-content/10 text-sm text-base-content/70 hover:bg-base-200/60 hover:border-base-content/20 transition-all"
                 >
-                  <p className="text-sm font-medium text-base-content mb-1">Produkto parinkimas</p>
-                  <p className="text-xs text-base-content/40">Padėsiu parinkti tinkamą valymo sistemą</p>
-                </button>
-                <button
-                  onClick={() => setInputValue('Paaiškink NubiSave sistemos veikimo principą')}
-                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
-                >
-                  <p className="text-sm font-medium text-base-content mb-1">Techninė informacija</p>
-                  <p className="text-xs text-base-content/40">Sužinokite apie sistemos specifikacijas</p>
-                </button>
-                <button
-                  onClick={() => setInputValue('Palygink NubiSave ir BioSave sistemas')}
-                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
-                >
-                  <p className="text-sm font-medium text-base-content mb-1">Sistemų palyginimas</p>
-                  <p className="text-xs text-base-content/40">Palyginti skirtingų modelių savybes</p>
+                  Parinkti valymo sistemą
                 </button>
               </div>
               {loadingPrompt && (
-                <div className="mt-6 flex items-center gap-2 text-base-content/30">
+                <div className="mt-8 flex items-center gap-2 text-base-content/25">
                   <span className="loading loading-spinner loading-xs"></span>
                   <span className="text-xs">Kraunamos instrukcijos...</span>
                 </div>
@@ -2636,7 +2613,13 @@ Vartotojo instrukcija: ${instruction}`;
           /* Regular Input Box */
           <div className="px-6 py-4 bg-base-100">
             <div className="max-w-4xl mx-auto">
-              <div className="relative">
+              <div className="relative flex items-center gap-2 rounded-full border border-base-content/15 bg-base-200/40 px-3 py-1.5 transition-all focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15 focus-within:bg-base-100">
+                <button
+                  className="flex-shrink-0 p-2 rounded-full text-base-content/35 hover:text-base-content/60 hover:bg-base-content/5 transition-colors"
+                  disabled={loading}
+                >
+                  <Paperclip className="w-4 h-4" />
+                </button>
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
@@ -2644,28 +2627,20 @@ Vartotojo instrukcija: ${instruction}`;
                   onKeyDown={handleKeyDown}
                   placeholder="Parašykite žinutę..."
                   rows={1}
-                  className="input w-full px-4 py-3.5 pr-24 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary/40"
+                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/35 resize-none py-2 focus:outline-none"
                   disabled={loading || !systemPrompt}
                 />
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  <button
-                    className="btn btn-circle btn-text btn-sm text-base-content/40"
-                    disabled={loading}
-                  >
-                    <Paperclip className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleSend}
-                    disabled={!inputValue.trim() || loading || !systemPrompt}
-                    className={`p-2.5 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-                      inputValue.trim() && !loading
-                        ? 'bg-primary text-primary-content hover:opacity-90'
-                        : 'bg-base-200 text-base-content/30'
-                    }`}
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-                </div>
+                <button
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || loading || !systemPrompt}
+                  className={`flex-shrink-0 p-2 rounded-full transition-all disabled:opacity-25 disabled:cursor-not-allowed ${
+                    inputValue.trim() && !loading
+                      ? 'bg-primary text-primary-content hover:opacity-90'
+                      : 'text-base-content/30'
+                  }`}
+                >
+                  <Send className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
