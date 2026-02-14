@@ -76,18 +76,16 @@ export const shareConversation = async (
 
 /**
  * Get conversations shared with a specific user
+ * Uses separate queries instead of relational embedding for Directus compatibility
  */
 export const getSharedConversations = async (
   userId: string
 ): Promise<{ data: SharedConversation[] | null; error: any }> => {
   try {
-    const { data, error } = await dbAdmin
+    // Step 1: Get shared conversation records
+    const { data: shares, error } = await dbAdmin
       .from('shared_conversations')
-      .select(`
-        *,
-        conversation:sdk_conversations(*),
-        shared_by:app_users!shared_conversations_shared_by_user_id_fkey(email, display_name)
-      `)
+      .select('*')
       .eq('shared_with_user_id', userId)
       .order('shared_at', { ascending: false });
 
@@ -96,18 +94,40 @@ export const getSharedConversations = async (
       throw error;
     }
 
-    // Transform the data to match our interface
-    const transformedData = data?.map((item: any) => ({
-      id: item.id,
-      conversation_id: item.conversation_id,
-      shared_with_user_id: item.shared_with_user_id,
-      shared_by_user_id: item.shared_by_user_id,
-      shared_at: item.shared_at,
-      is_read: item.is_read,
-      conversation: item.conversation,
-      shared_by_email: item.shared_by?.email,
-      shared_by_name: item.shared_by?.display_name
-    })) || [];
+    if (!shares || shares.length === 0) {
+      return { data: [], error: null };
+    }
+
+    // Step 2: Fetch related conversations and users
+    const transformedData: SharedConversation[] = [];
+
+    for (const share of shares) {
+      // Get the conversation
+      const { data: conversation } = await dbAdmin
+        .from('sdk_conversations')
+        .select('*')
+        .eq('id', share.conversation_id)
+        .single();
+
+      // Get the sharing user info
+      const { data: sharedByUser } = await dbAdmin
+        .from('app_users')
+        .select('email, display_name')
+        .eq('id', share.shared_by_user_id)
+        .single();
+
+      transformedData.push({
+        id: share.id,
+        conversation_id: share.conversation_id,
+        shared_with_user_id: share.shared_with_user_id,
+        shared_by_user_id: share.shared_by_user_id,
+        shared_at: share.shared_at,
+        is_read: share.is_read,
+        conversation: conversation || undefined,
+        shared_by_email: sharedByUser?.email,
+        shared_by_name: sharedByUser?.display_name
+      });
+    }
 
     return { data: transformedData, error: null };
   } catch (error) {
@@ -136,10 +156,7 @@ export const getSharedConversationDetails = async (
     // Get all shares for this conversation
     const { data: shares, error: sharesError } = await dbAdmin
       .from('shared_conversations')
-      .select(`
-        *,
-        shared_with:app_users!shared_conversations_shared_with_user_id_fkey(id, email, display_name)
-      `)
+      .select('*')
       .eq('conversation_id', conversationId);
 
     if (sharesError) throw sharesError;
@@ -153,11 +170,23 @@ export const getSharedConversationDetails = async (
 
     if (ownerError) throw ownerError;
 
-    const sharedWith = shares?.map((share: any) => ({
-      id: share.shared_with.id,
-      email: share.shared_with.email,
-      display_name: share.shared_with.display_name
-    })) || [];
+    // Get shared-with user details for each share record
+    const sharedWith: Array<{ id: string; email: string; display_name: string }> = [];
+    for (const share of (shares || [])) {
+      const { data: sharedUser } = await dbAdmin
+        .from('app_users')
+        .select('id, email, display_name')
+        .eq('id', share.shared_with_user_id)
+        .single();
+
+      if (sharedUser) {
+        sharedWith.push({
+          id: sharedUser.id,
+          email: sharedUser.email,
+          display_name: sharedUser.display_name
+        });
+      }
+    }
 
     const details: SharedConversationDetails = {
       conversation,
@@ -276,15 +305,18 @@ export const getUnreadSharedCount = async (
   userId: string
 ): Promise<{ data: number; error: any }> => {
   try {
-    const { count, error } = await dbAdmin
+    // Directus doesn't support head-only count queries the same way,
+    // so we fetch IDs only and count client-side
+    const { data, error } = await dbAdmin
       .from('shared_conversations')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
       .eq('shared_with_user_id', userId)
       .eq('is_read', false);
 
     if (error) throw error;
 
-    return { data: count || 0, error: null };
+    const count = Array.isArray(data) ? data.length : 0;
+    return { data: count, error: null };
   } catch (error) {
     console.error('Error in getUnreadSharedCount:', error);
     return { data: 0, error };

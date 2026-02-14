@@ -32,7 +32,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const loadDocuments = async () => {
     try {
       setLoading(true);
-      // TODO: Implement PostgREST query to fetch documents
+      // TODO: Implement Directus API query to fetch documents
       // For now, just set empty array
       setDocuments([]);
     } catch (error) {
