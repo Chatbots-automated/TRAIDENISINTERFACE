@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Send,
+  ArrowUp,
   Loader2,
   AlertCircle,
   Paperclip,
@@ -2394,42 +2394,19 @@ Vartotojo instrukcija: ${instruction}`;
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-6 py-8 bg-base-100"
+          className="flex-1 overflow-y-auto px-4 py-6 bg-base-100"
         >
           {!currentConversation || currentConversation.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center">
-              <div className="text-center mb-8">
-                <h1 className="text-3xl font-semibold text-base-content mb-2">
-                  Pradėkite pokalbį
-                </h1>
-                <p className="text-base text-base-content/40">
-                  Traidenis komercinių pasiūlymų asistentas
-                </p>
-              </div>
-              {/* Quick action pills */}
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  onClick={() => setInputValue('Noriu paruošti komercinį pasiūlymą')}
-                  className="px-5 py-2.5 rounded-full border border-base-content/10 text-sm text-base-content/70 hover:bg-base-200/60 hover:border-base-content/20 transition-all"
-                >
-                  Paruošti komercinį pasiūlymą
-                </button>
-                <button
-                  onClick={() => setInputValue('Padėk parinkti tinkamą valymo sistemą')}
-                  className="px-5 py-2.5 rounded-full border border-base-content/10 text-sm text-base-content/70 hover:bg-base-200/60 hover:border-base-content/20 transition-all"
-                >
-                  Parinkti valymo sistemą
-                </button>
-              </div>
-              {loadingPrompt && (
-                <div className="mt-8 flex items-center gap-2 text-base-content/25">
-                  <span className="loading loading-spinner loading-xs"></span>
-                  <span className="text-xs">Kraunamos instrukcijos...</span>
-                </div>
-              )}
+              <h1 className="text-xl font-medium text-base-content/70 mb-1">
+                Pradėkite pokalbį
+              </h1>
+              <p className="text-sm text-base-content/30">
+                Klauskite bet ko apie šį projektą
+              </p>
             </div>
           ) : (
-            <div className="max-w-4xl mx-auto space-y-4">
+            <div className="max-w-3xl mx-auto space-y-4">
               {currentConversation.messages.map((message, index) => {
                 // Skip silent messages (button clicks)
                 if (message.isSilent) {
@@ -2449,8 +2426,8 @@ Vartotojo instrukcija: ${instruction}`;
                   <div key={`${message.timestamp}-${index}`}>
                     {message.role === 'user' ? (
                       // User message - dark bubble on right
-                      <div className="flex justify-end mb-6">
-                        <div className="max-w-[75%] px-4 py-2.5 rounded-3xl bg-base-content text-base-100">
+                      <div className="flex justify-end mb-4">
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-base-content text-base-100">
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2458,7 +2435,7 @@ Vartotojo instrukcija: ${instruction}`;
                       </div>
                     ) : (
                       // Assistant message - plain text with reaction buttons
-                      <div className="mb-8 group">
+                      <div className="mb-6 group">
                         <MessageContent content={
                           contentString.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')
                         } />
@@ -2576,8 +2553,8 @@ Vartotojo instrukcija: ${instruction}`;
 
         {/* Error Display - Always visible when error exists */}
         {error && (
-          <div className="px-6 pb-2">
-            <div className="max-w-4xl mx-auto">
+          <div className="px-4 pb-2">
+            <div className="max-w-3xl mx-auto">
               <div className="alert alert-soft alert-error text-sm">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1">{error}</span>
@@ -2589,8 +2566,8 @@ Vartotojo instrukcija: ${instruction}`;
         {/* Input Box or Read-Only Banner */}
         {isReadOnly && conversationDetails ? (
           /* Read-Only Mode Banner */
-          <div className="px-6 py-4 border-t border-warning/30 bg-warning/10">
-            <div className="max-w-4xl mx-auto">
+          <div className="px-4 py-4 border-t border-warning/30 bg-warning/10">
+            <div className="max-w-3xl mx-auto">
               <div className="alert alert-soft alert-warning text-sm">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <div className="flex-1">
@@ -2611,35 +2588,35 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
         ) : (
           /* Regular Input Box */
-          <div className="px-6 py-4 bg-base-100">
-            <div className="max-w-4xl mx-auto">
-              <div className="relative flex items-center gap-2 rounded-full border border-base-content/15 bg-base-200/40 px-3 py-1.5 transition-all focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15 focus-within:bg-base-100">
+          <div className="px-4 py-4 pb-6 bg-base-100">
+            <div className="max-w-3xl mx-auto">
+              <div className="relative flex items-end gap-2 rounded-2xl border border-base-content/12 bg-base-200/30 px-4 py-2 transition-all focus-within:border-base-content/25 focus-within:bg-base-100 focus-within:shadow-sm">
                 <button
-                  className="flex-shrink-0 p-2 rounded-full text-base-content/35 hover:text-base-content/60 hover:bg-base-content/5 transition-colors"
+                  className="flex-shrink-0 p-1.5 mb-0.5 rounded-lg text-base-content/30 hover:text-base-content/60 transition-colors"
                   disabled={loading}
                 >
-                  <Paperclip className="w-4 h-4" />
+                  <Paperclip className="w-5 h-5" />
                 </button>
                 <textarea
                   ref={textareaRef}
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Parašykite žinutę..."
+                  placeholder="Klauskite bet ko..."
                   rows={1}
-                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/35 resize-none py-2 focus:outline-none"
+                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 resize-none py-1.5 focus:outline-none leading-relaxed"
                   disabled={loading || !systemPrompt}
                 />
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim() || loading || !systemPrompt}
-                  className={`flex-shrink-0 p-2 rounded-full transition-all disabled:opacity-25 disabled:cursor-not-allowed ${
+                  className={`flex-shrink-0 w-8 h-8 mb-0.5 flex items-center justify-center rounded-full transition-all disabled:cursor-not-allowed ${
                     inputValue.trim() && !loading
-                      ? 'bg-primary text-primary-content hover:opacity-90'
-                      : 'text-base-content/30'
+                      ? 'bg-base-content text-base-100 hover:opacity-80'
+                      : 'bg-base-content/10 text-base-content/25'
                   }`}
                 >
-                  <Send className="w-4 h-4" />
+                  <ArrowUp className="w-4 h-4" strokeWidth={2.5} />
                 </button>
               </div>
             </div>
