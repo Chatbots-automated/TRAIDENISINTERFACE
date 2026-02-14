@@ -173,11 +173,11 @@
     border-right: 0.5px solid rgba(0, 0, 0, 0.1);
   }
 
-  /* Sidebar collapsed: center menu items */
-  .macos-sidebar.w-16 .menu li > a,
-  .macos-sidebar.w-16 .menu li > button {
-    justify-content: center;
-    padding-inline: 0;
+  /* Sidebar collapsed: center menu items (override FlyonUI defaults) */
+  .sidebar-collapsed .menu li > a,
+  .sidebar-collapsed .menu li > button {
+    justify-content: center !important;
+    padding-inline: 0 !important;
   }
 
   /* Legacy vf sidebar (mapped to macOS glassmorphism) */

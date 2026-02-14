@@ -99,7 +99,7 @@ export default function Layout({
         fixed inset-y-0 left-0 z-50 macos-sidebar transform transition-all duration-300 ease-out
         lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${sidebarCollapsed ? 'w-16' : 'w-64'}
+        ${sidebarCollapsed ? 'w-16 sidebar-collapsed' : 'w-64'}
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
@@ -323,35 +323,39 @@ export default function Layout({
 
             {/* Collapsed settings button - for all users */}
             {sidebarCollapsed && (
-              <ul className="menu px-1">
-                <li>
-                  <button
-                    onClick={() => setSettingsOpen(true)}
-                    className="justify-center"
-                    title="Settings"
-                  >
-                    <Settings className="w-4 h-4" />
-                  </button>
-                </li>
-              </ul>
+              <div className="px-2 pb-1">
+                <button
+                  onClick={() => setSettingsOpen(true)}
+                  className="w-full flex items-center justify-center py-2 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
+                  title="Settings"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
             )}
 
             {/* Collapse Toggle Button - At bottom for all users */}
-            <ul className="menu px-1 hidden lg:block">
-              <li>
+            {sidebarCollapsed ? (
+              <div className="px-2 pb-1 hidden lg:block">
                 <button
-                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  className={sidebarCollapsed ? 'justify-center' : 'justify-end'}
-                  title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="w-full flex items-center justify-center py-2 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
+                  title="Expand sidebar"
                 >
-                  {sidebarCollapsed ? (
-                    <ChevronsRight className="w-4 h-4" />
-                  ) : (
-                    <ChevronsLeft className="w-4 h-4" />
-                  )}
+                  <ChevronsRight className="w-4 h-4" />
                 </button>
-              </li>
-            </ul>
+              </div>
+            ) : (
+              <div className="px-2 pb-1 hidden lg:block">
+                <button
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="w-full flex items-center justify-end py-2 pr-4 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
+                  title="Collapse sidebar"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* User Info - Absolute Bottom */}
             <div className={`py-3 bg-macos-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
