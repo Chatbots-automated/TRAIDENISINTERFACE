@@ -24,12 +24,12 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
         flexShrink: 0
       }}
     >
-      <svg viewBox="100 100 300 300" overflow="hidden" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <svg viewBox="50 50 400 400" style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
         <defs>
-          <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
+          <filter id={filterId} x="-100%" y="-100%" width="400%" height="400%">
             <feGaussianBlur
               in="SourceGraphic"
-              stdDeviation="17"
+              stdDeviation="12"
               result="blur"
             />
             <feColorMatrix

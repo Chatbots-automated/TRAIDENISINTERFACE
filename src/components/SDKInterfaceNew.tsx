@@ -2330,7 +2330,7 @@ Vartotojo instrukcija: ${instruction}`;
                         )}
                         {/* Date - hidden on hover/active, replaced by actions */}
                         {!isActive && !isRenaming && (
-                          <span className="text-sm font-normal text-base-content/25 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                          <span className="text-[13px] font-normal whitespace-nowrap flex-shrink-0 group-hover:hidden" style={{ color: '#b0b0b0' }}>
                             {formatLtDate(conv.last_message_at)}
                           </span>
                         )}
@@ -2390,7 +2390,7 @@ Vartotojo instrukcija: ${instruction}`;
                           </p>
                         </div>
                         {!isActive && (
-                          <span className="text-sm font-normal text-base-content/25 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                          <span className="text-[13px] font-normal whitespace-nowrap flex-shrink-0 group-hover:hidden" style={{ color: '#b0b0b0' }}>
                             {formatLtDate(sharedConv.shared_at)}
                           </span>
                         )}
@@ -2573,7 +2573,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-3xl text-base-content" style={{ background: '#f4f4f5' }}>
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-3xl text-base-content" style={{ background: '#f8f8f9' }}>
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2678,7 +2678,7 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Static loader when idle with conversation history */}
               {!loading && currentConversation && currentConversation.messages.length > 0 && (
                 <div className="flex justify-start -ml-1">
-                  <RoboticArmLoader isAnimated={false} size={40} />
+                  <RoboticArmLoader isAnimated={false} size={48} />
                 </div>
               )}
 
@@ -2724,7 +2724,7 @@ Vartotojo instrukcija: ${instruction}`;
           /* Regular Input Box */
           <div className="px-4 py-4 pb-6 bg-base-100">
             <div className="max-w-3xl mx-auto">
-              <div className="relative flex items-end gap-2 rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f4f4f5' }}>
+              <div className="relative flex items-end gap-2 rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f8f8f9' }}>
                 <button
                   className="flex-shrink-0 p-1.5 mb-0.5 rounded-lg text-base-content/30 hover:text-base-content/60 transition-colors"
                   disabled={loading}
