@@ -43,7 +43,16 @@ export default function Layout({
   sdkUnreadCount = 0
 }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsedRaw] = useState(() => {
+    try { return localStorage.getItem('traidenis_sidebar_collapsed') === 'true'; } catch { return false; }
+  });
+  const setSidebarCollapsed = (val: boolean | ((prev: boolean) => boolean)) => {
+    setSidebarCollapsedRaw(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      try { localStorage.setItem('traidenis_sidebar_collapsed', String(next)); } catch {}
+      return next;
+    });
+  };
 
   // External control: force collapse when requested (e.g., artifact panel open)
   useEffect(() => {
