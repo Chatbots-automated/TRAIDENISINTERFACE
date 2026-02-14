@@ -79,6 +79,17 @@ interface SDKInterfaceNewProps {
 const LT_MONTHS_SHORT = ['Sau', 'Vas', 'Kov', 'Bal', 'Geg', 'Bir', 'Lie', 'Rgp', 'Rgs', 'Spa', 'Lap', 'Gru'];
 function formatLtDate(dateStr: string): string {
   const d = new Date(dateStr);
+  const now = new Date();
+  // If today, show relative time
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'Ką tik';
+    if (diffMin < 60) return `Prieš ${diffMin} min.`;
+    const diffHrs = Math.floor(diffMin / 60);
+    if (diffHrs === 1) return 'Prieš 1 valandą';
+    return `Prieš ${diffHrs} val.`;
+  }
   return `${LT_MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
 }
 
@@ -674,7 +685,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Set as current conversation with read-only flag
       setCurrentConversation(data);
       setIsReadOnly(true);
-      setShowArtifact(false);
+      setShowArtifact(!!data.artifact);
       setError(null);
 
       // Reload shared conversations to update unread count
@@ -1161,12 +1172,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
           setCurrentConversation(updatedConversation);
 
-          // Optimistically update conversations list
+          // Optimistically update conversations list and re-sort newest first
           setConversations(prev => prev.map(conv =>
             conv.id === updatedConversation.id
               ? { ...conv, last_message_at: updatedConversation.last_message_at, message_count: updatedConversation.messages.length }
               : conv
-          ));
+          ).sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()));
 
           setLoading(false);
           setDisplayButtons(null); // Don't use separate state
@@ -2220,7 +2231,7 @@ Vartotojo instrukcija: ${instruction}`;
           <div className="flex items-center gap-2">
             <Pencil className="w-4 h-4 text-base-content/40" />
             <span className="text-sm font-medium text-base-content">
-              Dokumentas
+              Komercinis
             </span>
           </div>
           <p className="text-xs text-base-content/40 mt-1 ml-6">
@@ -2319,16 +2330,16 @@ Vartotojo instrukcija: ${instruction}`;
                         )}
                         {/* Date - hidden on hover/active, replaced by actions */}
                         {!isActive && !isRenaming && (
-                          <span className="text-xs font-normal text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                          <span className="text-sm font-normal text-base-content/25 whitespace-nowrap flex-shrink-0 group-hover:hidden">
                             {formatLtDate(conv.last_message_at)}
                           </span>
                         )}
                         {/* Action icons - visible on hover or when active */}
                         {!isRenaming && (
-                          <div className={`items-center gap-0.5 flex-shrink-0 ${isActive ? 'flex' : 'hidden group-hover:flex'}`}>
+                          <div className="items-center gap-0.5 flex-shrink-0 hidden group-hover:flex">
                             <button
                               onClick={(e) => handleStartRename(conv.id, conv.title, e)}
-                              className="p-1 rounded transition-colors text-base-content/30 hover:text-base-content/60 hover:bg-base-content/5"
+                              className="p-1 rounded transition-colors text-base-content/30 hover:text-primary hover:bg-primary/10"
                             >
                               <Pencil className="w-3 h-3" />
                             </button>
@@ -2374,13 +2385,12 @@ Vartotojo instrukcija: ${instruction}`;
                           <div className="w-2 h-2 rounded-full flex-shrink-0 bg-primary" />
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate text-base-content">{sharedConv.conversation?.title}</p>
-                          <p className="text-[11px] truncate text-base-content/35">
-                            {sharedConv.shared_by_name || sharedConv.shared_by_email}
+                          <p className="text-sm truncate text-base-content">
+                            {sharedConv.conversation?.title}: {sharedConv.shared_by_name || sharedConv.shared_by_email}
                           </p>
                         </div>
                         {!isActive && (
-                          <span className="text-xs font-normal text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                          <span className="text-sm font-normal text-base-content/25 whitespace-nowrap flex-shrink-0 group-hover:hidden">
                             {formatLtDate(sharedConv.shared_at)}
                           </span>
                         )}
@@ -2410,7 +2420,7 @@ Vartotojo instrukcija: ${instruction}`;
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   <span className="text-sm font-medium">
-                    Dokumentas
+                    Komercinis
                     {isStreamingArtifact && <span className="ml-1">●</span>}
                   </span>
                 </div>
@@ -2563,7 +2573,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl text-base-content" style={{ background: '#ececed' }}>
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-3xl text-base-content" style={{ background: '#f4f4f5' }}>
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2714,7 +2724,7 @@ Vartotojo instrukcija: ${instruction}`;
           /* Regular Input Box */
           <div className="px-4 py-4 pb-6 bg-base-100">
             <div className="max-w-3xl mx-auto">
-              <div className="relative flex items-end gap-2 rounded-2xl border border-base-content/12 bg-base-200/30 px-4 py-2 transition-all focus-within:border-base-content/25 focus-within:bg-base-100 focus-within:shadow-sm">
+              <div className="relative flex items-end gap-2 rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f4f4f5' }}>
                 <button
                   className="flex-shrink-0 p-1.5 mb-0.5 rounded-lg text-base-content/30 hover:text-base-content/60 transition-colors"
                   disabled={loading}
@@ -2794,7 +2804,7 @@ Vartotojo instrukcija: ${instruction}`;
                     >
                       <Download className="w-3.5 h-3.5" />
                     </button>
-                    {artifactTab === 'preview' && (
+                    {artifactTab === 'preview' && !isReadOnly && (
                       <button
                         onClick={() => setDocEditMode(prev => !prev)}
                         className={`btn btn-circle btn-text btn-xs ${docEditMode ? 'text-primary bg-primary/10' : 'text-base-content/40 hover:text-base-content/70'}`}
