@@ -247,8 +247,8 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
 
         {/* Messages */}
         {error && (
-          <div className="mx-6 mt-4 flex items-center gap-3 p-3 rounded-lg text-sm" style={{ background: colors.status.error, color: colors.status.errorText, border: `1px solid ${colors.status.errorBorder}` }}>
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <div className="alert alert-soft alert-error mx-6 mt-4 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span className="flex-1">{error}</span>
             <button
               onClick={() => setError(null)}
@@ -260,8 +260,8 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
         )}
 
         {success && (
-          <div className="mx-6 mt-4 flex items-center gap-3 p-3 rounded-lg text-sm" style={{ background: colors.status.success, color: colors.status.successText, border: `1px solid ${colors.status.successBorder}` }}>
-            <Check className="w-5 h-5 flex-shrink-0" />
+          <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
+            <Check className="w-4 h-4 flex-shrink-0" />
             <span>{success}</span>
           </div>
         )}

@@ -134,13 +134,9 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
 
             {/* Error Message */}
             {error && (
-              <div className="flex items-start space-x-2 p-3 rounded-lg" style={{
-                background: colors.status.error,
-                color: colors.status.errorText,
-                border: `1px solid ${colors.status.errorBorder}`
-              }}>
-                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-                <span className="text-sm">{error}</span>
+              <div className="alert alert-soft alert-error text-sm">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{error}</span>
               </div>
             )}
 

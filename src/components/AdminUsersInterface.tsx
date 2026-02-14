@@ -408,27 +408,19 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
       {/* Messages */}
       {error && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-          background: colors.status.error,
-          color: colors.status.errorText,
-          border: `1px solid ${colors.status.errorBorder}`
-        }}>
-          <AlertCircle className="w-5 h-5" />
-          <span className="text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto text-macos-red/60 hover:text-macos-red transition-colors">
+        <div className="alert alert-soft alert-error mx-6 mt-4 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100 transition-opacity">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {success && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-          background: colors.status.success,
-          color: colors.status.successText,
-          border: `1px solid ${colors.status.successBorder}`
-        }}>
-          <Check className="w-5 h-5" />
-          <span className="text-sm">Operation completed successfully!</span>
+        <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
+          <Check className="w-4 h-4 flex-shrink-0" />
+          <span>Operation completed successfully!</span>
         </div>
       )}
 

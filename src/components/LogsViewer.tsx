@@ -74,7 +74,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
   const getLevelBadgeClass = (level: string) => {
     switch (level) {
       case 'debug': return 'badge badge-soft text-xs';
-      case 'info': return 'badge badge-soft badge-info text-xs';
+      case 'info': return 'badge badge-soft badge-success text-xs';
       case 'warn': return 'badge badge-soft badge-warning text-xs';
       case 'error': return 'badge badge-soft badge-error text-xs';
       case 'critical': return 'badge badge-error text-xs';
