@@ -2573,7 +2573,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-3xl text-base-content" style={{ background: '#f8f8f9' }}>
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-3xl text-base-content" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2668,17 +2668,10 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
               )}
 
-              {/* Animated loader - always at bottom of all content when loading */}
-              {loading && (
+              {/* Loader - single instance, toggles between animated/static */}
+              {(loading || (currentConversation && currentConversation.messages.length > 0)) && (
                 <div className="flex justify-start -ml-1">
-                  <RoboticArmLoader isAnimated={true} size={48} />
-                </div>
-              )}
-
-              {/* Static loader when idle with conversation history */}
-              {!loading && currentConversation && currentConversation.messages.length > 0 && (
-                <div className="flex justify-start -ml-1">
-                  <RoboticArmLoader isAnimated={false} size={48} />
+                  <RoboticArmLoader isAnimated={loading} size={48} />
                 </div>
               )}
 
