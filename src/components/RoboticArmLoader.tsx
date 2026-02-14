@@ -19,7 +19,9 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
         height: `${size}px`,
         display: 'inline-block',
         flexShrink: 0,
-        position: 'relative'
+        position: 'relative',
+        transform: isAnimated ? 'scale(1)' : 'scale(1.6)',
+        transition: 'transform 0.6s ease-out',
       }}
     >
       <svg viewBox="50 50 400 400" style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
