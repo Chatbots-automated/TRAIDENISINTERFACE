@@ -1,94 +1,71 @@
 import { db } from './database';
 import { appLogger } from './appLogger';
 
-export interface NestandardinisProject {
-  id: string;
-  subject_line: string;
-  created_at: string;
-  updated_at: string;
-  project_metadata?: Record<string, any>;
-}
-
-interface VectorStoreRow {
+export interface VectorStoreProject {
   id: number;
-  komercinis_id: string;
   project_name: string;
   klientas: string;
   pateikimo_data: string;
+  komercinis_id: string;
   uzklausos_path: string;
   komercinis_path: string;
 }
 
-/**
- * Map n8n_vector_store row to NestandardinisProject interface
- */
-const mapToProject = (row: VectorStoreRow): NestandardinisProject => ({
-  id: row.komercinis_id || String(row.id),
-  subject_line: row.project_name,
-  created_at: row.pateikimo_data || '',
-  updated_at: row.pateikimo_data || '',
-  project_metadata: {
-    klientas: row.klientas,
-    uzklausos_path: row.uzklausos_path,
-    komercinis_path: row.komercinis_path,
-    pateikimo_data: row.pateikimo_data
-  }
-});
+const VECTOR_STORE_SELECT = 'id, project_name, klientas, pateikimo_data, komercinis_id, uzklausos_path, komercinis_path';
 
 /**
- * Deduplicate by project_name, keeping the most recent entry
+ * Deduplicate by project_name, keeping the first (most recent) entry
  */
-const deduplicateByProjectName = (projects: NestandardinisProject[]): NestandardinisProject[] => {
-  const seen = new Map<string, NestandardinisProject>();
-  for (const project of projects) {
-    if (!seen.has(project.subject_line)) {
-      seen.set(project.subject_line, project);
+const deduplicateByProjectName = (rows: VectorStoreProject[]): VectorStoreProject[] => {
+  const seen = new Map<string, VectorStoreProject>();
+  for (const row of rows) {
+    if (!seen.has(row.project_name)) {
+      seen.set(row.project_name, row);
     }
   }
   return Array.from(seen.values());
 };
 
 /**
- * Fetch all nestandartiniai projects from n8n_vector_store
+ * Fetch all projects from n8n_vector_store
  */
-export const fetchNestandardiniaiProjects = async (): Promise<NestandardinisProject[]> => {
+export const fetchProjects = async (): Promise<VectorStoreProject[]> => {
   try {
     const { data, error } = await db
       .from('n8n_vector_store')
-      .select('id, komercinis_id, project_name, klientas, pateikimo_data, uzklausos_path, komercinis_path')
+      .select(VECTOR_STORE_SELECT)
       .not('project_name', 'is', null)
       .order('pateikimo_data', { ascending: false });
 
     if (error) {
-      console.error('Error fetching nestandartiniai projects:', error);
+      console.error('Error fetching projects:', error);
       await appLogger.logError({
-        action: 'fetch_nestandartiniai_projects_error',
+        action: 'fetch_projects_error',
         error: error.message,
         metadata: { db_error: error }
       });
       throw error;
     }
 
-    const mapped = (data || []).map(mapToProject);
-    return deduplicateByProjectName(mapped);
+    return deduplicateByProjectName(data || []);
   } catch (error: any) {
-    console.error('Error in fetchNestandardiniaiProjects:', error);
+    console.error('Error in fetchProjects:', error);
     throw error;
   }
 };
 
 /**
- * Search projects by project_name (for autocomplete/search)
+ * Search projects by project_name
  */
-export const searchProjectsBySubjectLine = async (query: string): Promise<NestandardinisProject[]> => {
+export const searchProjects = async (query: string): Promise<VectorStoreProject[]> => {
   try {
     if (!query.trim()) {
-      return await fetchNestandardiniaiProjects();
+      return await fetchProjects();
     }
 
     const { data, error } = await db
       .from('n8n_vector_store')
-      .select('id, komercinis_id, project_name, klientas, pateikimo_data, uzklausos_path, komercinis_path')
+      .select(VECTOR_STORE_SELECT)
       .not('project_name', 'is', null)
       .ilike('project_name', `%${query}%`)
       .order('pateikimo_data', { ascending: false })
@@ -99,32 +76,30 @@ export const searchProjectsBySubjectLine = async (query: string): Promise<Nestan
       throw error;
     }
 
-    const mapped = (data || []).map(mapToProject);
-    return deduplicateByProjectName(mapped).slice(0, 20);
+    return deduplicateByProjectName(data || []).slice(0, 20);
   } catch (error: any) {
-    console.error('Error in searchProjectsBySubjectLine:', error);
+    console.error('Error in searchProjects:', error);
     throw error;
   }
 };
 
 /**
- * Get a single project by komercinis_id
+ * Get a single project by id
  */
-export const getProjectById = async (projectId: string): Promise<NestandardinisProject | null> => {
+export const getProjectById = async (projectId: number): Promise<VectorStoreProject | null> => {
   try {
     const { data, error } = await db
       .from('n8n_vector_store')
-      .select('id, komercinis_id, project_name, klientas, pateikimo_data, uzklausos_path, komercinis_path')
-      .eq('komercinis_id', projectId)
-      .limit(1);
+      .select(VECTOR_STORE_SELECT)
+      .eq('id', projectId)
+      .single();
 
     if (error) {
       console.error('Error fetching project:', error);
       throw error;
     }
 
-    if (!data || data.length === 0) return null;
-    return mapToProject(data[0]);
+    return data || null;
   } catch (error: any) {
     console.error('Error in getProjectById:', error);
     throw error;
