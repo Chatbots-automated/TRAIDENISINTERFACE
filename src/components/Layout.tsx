@@ -112,8 +112,8 @@ export default function Layout({
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={`flex items-center justify-between p-4`}>
-            <div className="flex items-center space-x-3 min-w-0">
+          <div className={`flex items-center justify-between ${sidebarCollapsed ? 'p-4' : 'px-3 py-3'}`}>
+            <div className="flex items-center space-x-2.5 min-w-0">
               <div className="w-8 h-8 flex-shrink-0">
                 <img
                   src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
@@ -180,7 +180,7 @@ export default function Layout({
                   title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
                 >
                   <FlaskConical className="w-4 h-4" />
-                  {!sidebarCollapsed && <span className="whitespace-nowrap">Nestandartiniai Projektai</span>}
+                  {!sidebarCollapsed && <span className="truncate">Nestandartiniai Projektai</span>}
                 </button>
               </li>
             </ul>
@@ -286,12 +286,12 @@ export default function Layout({
                             <span>Naujokas</span>
                           </div>
                           <div
-                            className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${
+                            className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
                               naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
                             }`}
                           >
                             <div
-                              className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
+                              className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
                                 naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
                               }`}
                             />
@@ -359,7 +359,7 @@ export default function Layout({
               <div className="px-2 pb-1 hidden lg:block">
                 <button
                   onClick={() => setSidebarCollapsed(true)}
-                  className="w-full flex items-center justify-end py-2 pr-4 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
+                  className="w-full flex items-center justify-end py-2 pr-3 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
                   title="Collapse sidebar"
                 >
                   <ChevronsLeft className="w-4 h-4" />
@@ -368,8 +368,8 @@ export default function Layout({
             )}
 
             {/* User Info - Absolute Bottom */}
-            <div className={`py-3 bg-macos-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
-              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'}`}>
+            <div className={`py-3 bg-macos-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
+              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-2.5'}`}>
                 <div className="w-8 h-8 bg-gradient-to-br from-macos-blue to-macos-purple rounded-full flex items-center justify-center flex-shrink-0 shadow-macos-sm">
                   <span className="text-white text-sm font-medium">
                     {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
