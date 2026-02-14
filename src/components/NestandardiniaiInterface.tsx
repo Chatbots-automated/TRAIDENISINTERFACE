@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, X, AlertCircle, Check, File, FileArchive, Loader2, Search, ChevronDown, Coins, Download, Info } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
-import { fetchNestandardiniaiProjects, searchProjectsBySubjectLine, NestandardinisProject } from '../lib/nestandardiniaiService';
+import { fetchProjects, searchProjects, VectorStoreProject } from '../lib/nestandardiniaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
 import { colors } from '../lib/designSystem';
 import type { AppUser } from '../types';
@@ -50,8 +50,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   const emlInputRef = useRef<HTMLInputElement>(null);
 
   // Project selection state
-  const [projects, setProjects] = useState<NestandardinisProject[]>([]);
-  const [selectedProject, setSelectedProject] = useState<NestandardinisProject | null>(null);
+  const [projects, setProjects] = useState<VectorStoreProject[]>([]);
+  const [selectedProject, setSelectedProject] = useState<VectorStoreProject | null>(null);
   const [projectSearchQuery, setProjectSearchQuery] = useState('');
   const [showProjectDropdown, setShowProjectDropdown] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -92,7 +92,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   const loadProjects = async () => {
     setLoadingProjects(true);
     try {
-      const projectsData = await fetchNestandardiniaiProjects();
+      const projectsData = await fetchProjects();
       setProjects(projectsData);
     } catch (error) {
       console.error('Error loading projects:', error);
@@ -110,7 +110,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     }
 
     try {
-      const results = await searchProjectsBySubjectLine(query);
+      const results = await searchProjects(query);
       setProjects(results);
     } catch (error) {
       console.error('Error searching projects:', error);
@@ -396,7 +396,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedDocuments.reduce((sum, doc) => sum + doc.size, 0) + (selectedEmlFile?.size || 0),
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine || requestName,
+        project_name: responseData.subjectLine || requestName,
         upload_action: 'new-request',
         document_count: selectedDocuments.length,
         has_eml_file: !!selectedEmlFile
@@ -465,7 +465,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        subject_line: responseData.subjectLine || selectedFile.name,
+        project_name: responseData.subjectLine || selectedFile.name,
         upload_action: 'find-similar'
       }
     });
@@ -482,8 +482,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        nestandartinis_project_id: selectedProject.id,
-        project_subject: selectedProject.subject_line,
+        vector_store_id: selectedProject.id,
+        project_name: selectedProject.project_name,
         file_type: selectedFile.type
       }
     });
@@ -498,8 +498,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('action', 'upload-solution');
-    formData.append('nestandartiniaiProjectId', selectedProject.id);
-    formData.append('projectSubjectLine', selectedProject.subject_line);
+    formData.append('vectorStoreId', String(selectedProject.id));
+    formData.append('projectName', selectedProject.project_name);
     formData.append('filename', selectedFile.name);
     formData.append('mimeType', selectedFile.type || 'application/octet-stream');
     formData.append('userId', user.id);
@@ -524,7 +524,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
     } catch {
       // Plain text response (e.g., "Success")
       responseData = {
-        subjectLine: selectedProject.subject_line,
+        subjectLine: selectedProject.project_name,
         description: responseText || 'Komercinis pasiūlymas sėkmingai įkeltas',
         message: responseText || 'Success'
       };
@@ -538,8 +538,8 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       fileSize: selectedFile.size,
       metadata: {
         project_id: projectId,
-        nestandartinis_project_id: selectedProject.id,
-        project_subject: selectedProject.subject_line
+        vector_store_id: selectedProject.id,
+        project_name: selectedProject.project_name
       }
     });
   };
@@ -1016,7 +1016,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                             <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 w-4 h-4" style={{ color: '#8a857f' }} />
                             <input
                               type="text"
-                              value={selectedProject ? selectedProject.subject_line : projectSearchQuery}
+                              value={selectedProject ? selectedProject.project_name : projectSearchQuery}
                               onChange={(e) => {
                                 if (!selectedProject) {
                                   handleProjectSearch(e.target.value);
@@ -1078,7 +1078,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                                       className="w-full text-left px-3 py-2.5 hover:bg-gray-50 rounded text-sm transition-colors"
                                       style={{ color: '#3d3935' }}
                                     >
-                                      {project.subject_line}
+                                      {project.project_name}
                                     </button>
                                   ))}
                                 </div>

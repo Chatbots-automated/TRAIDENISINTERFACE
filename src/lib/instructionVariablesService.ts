@@ -126,20 +126,14 @@ export const getPromptTemplate = async (): Promise<string> => {
  */
 export const savePromptTemplate = async (template: string): Promise<{ success: boolean; error?: any }> => {
   try {
-    // Use upsert to insert or update in one operation
+    // Update the template record by ID (always id=1)
     const { error } = await dbAdmin
       .from('prompt_template')
-      .upsert(
-        {
-          id: 1,
-          template_content: template,
-          updated_at: new Date().toISOString()
-        },
-        {
-          onConflict: 'id',
-          ignoreDuplicates: false
-        }
-      );
+      .update({
+        template_content: template,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', 1);
 
     if (error) {
       console.error('[savePromptTemplate] Error saving template:', error);
@@ -435,7 +429,7 @@ After you output the \`<commercial_offer>\` tags:
 **Parameters:**
 - \`table\` (required): "products", "pricing", or "price_multiplier"
 - \`select\` (optional): Columns to select (default: "*")
-- \`filter\` (optional): PostgREST format filter (e.g., "productCode=eq.HNVN13.18.0")
+- \`filter\` (optional): Filter expression (e.g., "productCode=eq.HNVN13.18.0")
 - \`order\` (optional): Order by column (e.g., "created.desc")
 - \`limit\` (optional): Max rows (default: 100)
 

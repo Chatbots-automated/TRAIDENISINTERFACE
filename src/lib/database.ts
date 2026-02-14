@@ -1,24 +1,29 @@
 /**
- * PostgREST-based database client
+ * Directus-based database client
+ * All data queries go through the Directus REST API at sql.traidenis.org
  */
 
-import { createClient } from './postgrest';
+import { createClient } from './directus';
 import { appLogger } from './appLogger';
 
-const postgrestUrl = import.meta.env.VITE_POSTGREST_URL || 'http://localhost:3000';
-const postgrestAnonKey = import.meta.env.VITE_POSTGREST_ANON_KEY || 'anon';
+const directusUrl = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
+const directusToken = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 
-if (!postgrestUrl) {
-  throw new Error('Missing VITE_POSTGREST_URL environment variable');
+if (!directusUrl) {
+  throw new Error('Missing VITE_DIRECTUS_URL environment variable');
 }
 
-// Main client (using anon role)
-export const db = createClient(postgrestUrl, postgrestAnonKey);
+if (!directusToken) {
+  console.warn('[Directus] No VITE_DIRECTUS_TOKEN found - API requests may fail. Set it in Netlify environment variables.');
+}
 
-// Admin client (same as main client for PostgREST - permissions controlled by DB roles)
-export const dbAdmin = createClient(postgrestUrl, postgrestAnonKey);
+// Main client
+export const db = createClient(directusUrl, directusToken);
 
-console.log('[PostgREST] Client configured at:', postgrestUrl);
+// Admin client (same token - permissions are controlled by Directus roles)
+export const dbAdmin = createClient(directusUrl, directusToken);
+
+console.log('[Directus] Client configured at:', directusUrl);
 
 // ============================================================================
 // Auth helpers (using local password-based authentication)
@@ -511,7 +516,6 @@ export const deleteChatThread = async (threadId: string) => {
       .from('chat_items')
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', threadId)
-      .eq('type', 'thread')
       ;
 
     if (error) {
@@ -533,7 +537,6 @@ export const updateChatThreadTitle = async (threadId: string, title: string) => 
       .from('chat_items')
       .update({ title })
       .eq('id', threadId)
-      .eq('type', 'thread')
       ;
 
     if (error) {
