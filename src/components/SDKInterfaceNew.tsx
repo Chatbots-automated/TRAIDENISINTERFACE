@@ -2097,44 +2097,44 @@ Vartotojo instrukcija: ${instruction}`;
       <div
         className="flex-shrink-0 border-r border-base-content/10 transition-all duration-300 flex flex-col bg-base-200/40"
         style={{
-          width: sidebarCollapsed ? '0px' : '260px',
+          width: sidebarCollapsed ? '0px' : '320px',
           overflow: sidebarCollapsed ? 'hidden' : 'visible',
           opacity: sidebarCollapsed ? 0 : 1
         }}
       >
         {/* Project Header */}
-        <div className="p-4 flex items-center justify-between">
+        <div className="px-4 py-3 flex items-center justify-between border-b border-base-content/5">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
-            <FileText className="w-5 h-5 flex-shrink-0 text-base-content/70" />
+            <FileText className="w-5 h-5 flex-shrink-0 text-base-content/50" />
             <span className="font-semibold truncate text-base-content">
               Standartinis
             </span>
           </div>
           <button
             onClick={() => setSidebarCollapsed(true)}
-            className="btn btn-circle btn-text btn-xs text-base-content/50"
+            className="btn btn-circle btn-text btn-xs text-base-content/40"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
         </div>
 
         {/* Instructions Section */}
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-base-content">
-              Instrukcijos
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setShowPromptModal(true)}
-                className="btn btn-circle btn-text btn-xs text-base-content/50"
-                title="Peržiūrėti prompt"
-              >
-                <Eye className="w-4 h-4" />
-              </button>
+        <div className="mx-3 my-3 p-3 rounded-xl bg-base-100 border border-base-content/5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Eye className="w-4 h-4 text-base-content/40" />
+              <span className="text-sm font-medium text-base-content">
+                Instrukcijos
+              </span>
             </div>
+            <button
+              onClick={() => setShowPromptModal(true)}
+              className="text-[11px] text-primary hover:underline"
+            >
+              Peržiūrėti
+            </button>
           </div>
-          <p className="text-xs text-base-content/50">
+          <p className="text-xs text-base-content/40 mt-1 ml-6">
             Sistemos instrukcijos komerciniam pasiūlymui
           </p>
         </div>
@@ -2188,7 +2188,7 @@ Vartotojo instrukcija: ${instruction}`;
 
           {/* Conversations List */}
           {sidebarView === 'conversations' && (
-            <div className="flex-1 overflow-y-auto px-2">
+            <div className="flex-1 overflow-y-auto px-2 py-1">
               {loadingConversations ? (
                 <div className="p-4 text-center">
                   <span className="loading loading-spinner loading-sm text-primary"></span>
@@ -2199,30 +2199,35 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
               ) : (
                 <div className="space-y-0.5">
-                  {conversations.map((conv) => (
-                    <div
-                      key={conv.id}
-                      onClick={() => handleSelectOwnedConversation(conv.id)}
-                      className={`group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150 ${
-                        currentConversation?.id === conv.id && !isReadOnly
-                          ? 'bg-primary/10'
-                          : 'hover:bg-base-content/5'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate text-base-content">{conv.title}</p>
-                        <p className="text-xs text-base-content/40">
-                          {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
-                        </p>
-                      </div>
-                      <button
-                        onClick={(e) => handleDeleteConversation(conv.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all text-error hover:bg-error/10"
+                  {conversations.map((conv) => {
+                    const isActive = currentConversation?.id === conv.id && !isReadOnly;
+                    return (
+                      <div
+                        key={conv.id}
+                        onClick={() => handleSelectOwnedConversation(conv.id)}
+                        className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
+                          isActive
+                            ? 'bg-primary/10'
+                            : 'hover:bg-base-content/5'
+                        }`}
                       >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
+                        <p className="flex-1 min-w-0 text-sm truncate text-base-content">{conv.title}</p>
+                        {/* Date - hidden on hover, replaced by actions */}
+                        <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                          {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
+                        </span>
+                        {/* Action icons - visible on hover */}
+                        <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={(e) => handleDeleteConversation(conv.id, e)}
+                            className="p-1 rounded transition-colors text-base-content/30 hover:text-error hover:bg-error/10"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2238,30 +2243,33 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
               ) : (
                 <div className="space-y-0.5">
-                  {sharedConversations.map((sharedConv) => (
-                    <div
-                      key={sharedConv.id}
-                      onClick={() => handleSelectSharedConversation(sharedConv)}
-                      className={`group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all duration-150 ${
-                        currentConversation?.id === sharedConv.conversation_id && isReadOnly
-                          ? 'bg-primary/10'
-                          : 'hover:bg-base-content/5'
-                      } ${!sharedConv.is_read ? 'ring-1 ring-orange-400' : ''}`}
-                    >
-                      {!sharedConv.is_read && (
-                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-orange-400" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate text-base-content">{sharedConv.conversation?.title}</p>
-                        <p className="text-xs truncate text-base-content/50">
-                          Bendrino: {sharedConv.shared_by_name || sharedConv.shared_by_email}
-                        </p>
-                        <p className="text-xs text-base-content/40">
+                  {sharedConversations.map((sharedConv) => {
+                    const isActive = currentConversation?.id === sharedConv.conversation_id && isReadOnly;
+                    return (
+                      <div
+                        key={sharedConv.id}
+                        onClick={() => handleSelectSharedConversation(sharedConv)}
+                        className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
+                          isActive
+                            ? 'bg-primary/10'
+                            : 'hover:bg-base-content/5'
+                        }`}
+                      >
+                        {!sharedConv.is_read && (
+                          <div className="w-2 h-2 rounded-full flex-shrink-0 bg-primary" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate text-base-content">{sharedConv.conversation?.title}</p>
+                          <p className="text-[11px] truncate text-base-content/35">
+                            {sharedConv.shared_by_name || sharedConv.shared_by_email}
+                          </p>
+                        </div>
+                        <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0">
                           {new Date(sharedConv.shared_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
-                        </p>
+                        </span>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
