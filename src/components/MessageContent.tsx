@@ -8,6 +8,7 @@ interface MessageContentProps {
 interface ToolCall {
   name: string;
   parameters: string;
+  result?: string;
   fullXml: string;
 }
 
@@ -50,7 +51,7 @@ export default function MessageContent({ content }: MessageContentProps) {
 
     // Find all function_calls blocks
     while ((match = functionCallsRegex.exec(text)) !== null) {
-      const invokeRegex = /<invoke name="([^"]+)">\s*<parameter name="[^"]+">([^<]*)<\/parameter>\s*<\/invoke>/g;
+      const invokeRegex = /<invoke name="([^"]+)">\s*<parameter name="[^"]+">([^<]*)<\/parameter>(?:\s*<result>([^<]*)<\/result>)?\s*<\/invoke>/g;
       const toolCalls: ToolCall[] = [];
       let invokeMatch;
 
@@ -60,9 +61,16 @@ export default function MessageContent({ content }: MessageContentProps) {
           .replace(/&lt;/g, '<')
           .replace(/&gt;/g, '>')
           .replace(/&amp;/g, '&');
+        const rawResult = invokeMatch[3]
+          ? invokeMatch[3]
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&amp;/g, '&')
+          : undefined;
         toolCalls.push({
           name: invokeMatch[1],
           parameters: rawParam,
+          result: rawResult,
           fullXml: invokeMatch[0]
         });
       }
@@ -231,14 +239,15 @@ export default function MessageContent({ content }: MessageContentProps) {
 }
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
-  const [showAll, setShowAll] = useState(false);
-  const [showOutputs, setShowOutputs] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
-  const displayLimit = 4;
-  const displayedCalls = showAll ? toolCalls : toolCalls.slice(0, displayLimit);
-  const hiddenCount = toolCalls.length - displayLimit;
+  // Filter out display_buttons tool - it's an internal UI mechanism
+  const visibleCalls = toolCalls.filter(c => c.name !== 'display_buttons');
+  if (visibleCalls.length === 0) return null;
 
-  // Format tool name for display (e.g. "search_documents" -> "Search Documents")
+  const allCompleted = visibleCalls.every(c => c.result);
+  const completedCount = visibleCalls.filter(c => c.result).length;
+
   const formatToolName = (name: string): string => {
     return name
       .split('_')
@@ -246,112 +255,199 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       .join(' ');
   };
 
-  // Extract a readable summary from parameter text for the pill display
-  const truncateParam = (text: string, maxLen: number = 70): string => {
-    const cleaned = text.replace(/\s+/g, ' ').trim();
-    // Try to parse JSON and extract the most readable value
+  const getToolDescription = (call: ToolCall): string => {
     try {
-      const parsed = JSON.parse(cleaned);
+      const parsed = JSON.parse(call.parameters);
       if (typeof parsed === 'object' && parsed !== null) {
-        // Pick the first string value that looks meaningful
-        const values = Object.values(parsed);
-        const readable = values.find(v => typeof v === 'string' && (v as string).length > 2) as string | undefined;
-        if (readable) {
-          return readable.length <= maxLen ? readable : readable.slice(0, maxLen) + '…';
-        }
+        // Find the most readable string value
+        const readable = Object.values(parsed).find(v => typeof v === 'string' && (v as string).length > 2) as string | undefined;
+        if (readable && readable.length <= 60) return readable;
+        if (readable) return readable.slice(0, 57) + '...';
       }
     } catch {
-      // Not JSON, use as-is
+      // Not JSON
     }
-    if (cleaned.length <= maxLen) return cleaned;
-    return cleaned.slice(0, maxLen) + '…';
+    const cleaned = call.parameters.replace(/\s+/g, ' ').trim();
+    if (cleaned === '{}' || !cleaned) return '';
+    if (cleaned.length <= 60) return cleaned;
+    return cleaned.slice(0, 57) + '...';
+  };
+
+  const formatResult = (text: string): string => {
+    try {
+      const parsed = JSON.parse(text);
+      // For objects, show a compact summary
+      if (typeof parsed === 'object' && parsed !== null) {
+        const str = JSON.stringify(parsed, null, 2);
+        if (str.length > 300) return str.slice(0, 297) + '...';
+        return str;
+      }
+      return String(parsed);
+    } catch {
+      if (text.length > 300) return text.slice(0, 297) + '...';
+      return text;
+    }
+  };
+
+  // Generate task group heading from tool names
+  const getGroupHeading = (): string => {
+    if (!allCompleted) {
+      return visibleCalls.length === 1
+        ? `Vykdoma: ${formatToolName(visibleCalls[0].name)}`
+        : `Vykdomi ${visibleCalls.length} veiksmai...`;
+    }
+    return visibleCalls.length === 1
+      ? formatToolName(visibleCalls[0].name)
+      : `${visibleCalls.length} veiksmai atlikti`;
   };
 
   return (
-    <div className="my-3 ml-1">
-      {/* Tree structure with vertical line */}
-      <div className="relative pl-5">
-        {/* Vertical connecting line */}
-        <div
-          className="absolute left-[5px] top-1 bottom-1 w-[1.5px]"
-          style={{ background: '#d4d1cc' }}
-        />
+    <div className="my-3">
+      {/* Breathe animation style */}
+      {!allCompleted && (
+        <style>{`
+          @keyframes tool-breathe {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+          }
+        `}</style>
+      )}
 
-        <div className="space-y-1.5">
-          {displayedCalls.map((call, idx) => (
-            <div key={idx} className="relative flex items-center gap-2.5 min-h-[28px]">
-              {/* Branch connector */}
-              <div
-                className="absolute left-[-15px] top-1/2 w-[12px] h-[1.5px]"
-                style={{ background: '#d4d1cc' }}
-              />
-              {/* Tool name label */}
-              <span
-                className="text-sm font-semibold flex-shrink-0"
-                style={{ color: '#8a857f' }}
-              >
-                {formatToolName(call.name)}
-              </span>
-              {/* Parameter pill */}
-              <code
-                className="px-2 py-0.5 rounded text-xs truncate max-w-[400px]"
-                style={{
-                  background: '#f0ede8',
-                  color: '#5a5550',
-                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace'
-                }}
-              >
-                {truncateParam(call.parameters)}
-              </code>
-              {/* Show tool outputs button - only on first tool */}
-              {idx === 0 && (
-                <button
-                  onClick={() => setShowOutputs(!showOutputs)}
-                  className="flex-shrink-0 px-2.5 py-0.5 rounded text-xs transition-colors"
-                  style={{
-                    background: showOutputs ? '#e8e5e0' : 'transparent',
-                    color: '#8a857f',
-                    border: '1px solid #e8e5e0'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = showOutputs ? '#e8e5e0' : 'transparent'}
-                >
-                  {showOutputs ? 'Hide outputs' : 'Show tool outputs'}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Show more button */}
-        {hiddenCount > 0 && !showAll && (
-          <button
-            onClick={() => setShowAll(true)}
-            className="relative mt-2 text-sm transition-colors"
-            style={{ color: '#8a857f' }}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
-            onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+      {/* Task group container */}
+      <div
+        className="rounded-xl overflow-hidden"
+        style={{
+          border: '1px solid #e8e5e0',
+          background: '#faf9f7',
+        }}
+      >
+        {/* Header - clickable */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 transition-colors cursor-pointer"
+          style={{ background: expanded ? '#f5f3f0' : '#faf9f7' }}
+          onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3f0'}
+          onMouseLeave={(e) => e.currentTarget.style.background = expanded ? '#f5f3f0' : '#faf9f7'}
+        >
+          {/* Status icon with breathe */}
+          <span
+            className="text-sm flex-shrink-0"
+            style={{
+              color: allCompleted ? '#8a857f' : '#6366f1',
+              animation: allCompleted ? 'none' : 'tool-breathe 2s ease-in-out infinite',
+            }}
           >
-            Show {hiddenCount} more
-          </button>
+            ✦
+          </span>
+
+          {/* Heading */}
+          <span className="text-[13px] font-medium flex-1 text-left" style={{ color: '#3d3935' }}>
+            {getGroupHeading()}
+          </span>
+
+          {/* Count badge */}
+          {visibleCalls.length > 1 && (
+            <span
+              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+              style={{
+                background: allCompleted ? '#e8e5e0' : 'rgba(99, 102, 241, 0.1)',
+                color: allCompleted ? '#8a857f' : '#6366f1',
+              }}
+            >
+              {completedCount}/{visibleCalls.length}
+            </span>
+          )}
+
+          {/* Expand icon */}
+          {expanded ? (
+            <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#a09b95' }} />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#a09b95' }} />
+          )}
+        </button>
+
+        {/* Expanded tool tree */}
+        {expanded && (
+          <div className="px-3.5 pb-3 pt-1">
+            <div className="relative pl-5">
+              {/* Vertical chain line */}
+              {visibleCalls.length > 1 && (
+                <div
+                  className="absolute"
+                  style={{
+                    left: '5px',
+                    top: '8px',
+                    bottom: '8px',
+                    width: '1.5px',
+                    background: 'linear-gradient(to bottom, #d4d1cc, #e8e5e0)',
+                  }}
+                />
+              )}
+
+              {visibleCalls.map((call, idx) => (
+                <div key={idx} className="relative" style={{ padding: '4px 0' }}>
+                  {/* Chain dot */}
+                  <div
+                    className="absolute rounded-full"
+                    style={{
+                      left: '-16px',
+                      width: '7px',
+                      height: '7px',
+                      top: '11px',
+                      border: call.result ? '1.5px solid #8a857f' : '1.5px solid #6366f1',
+                      background: call.result ? '#e8e5e0' : '#eef2ff',
+                    }}
+                  />
+
+                  {/* Tool row */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Status */}
+                    <span className="text-[11px] flex-shrink-0" style={{ color: call.result ? '#22c55e' : '#6366f1', width: '14px' }}>
+                      {call.result ? '✓' : '⟳'}
+                    </span>
+
+                    {/* Tool name */}
+                    <span className="text-xs font-medium flex-shrink-0" style={{ color: '#5a5550' }}>
+                      {formatToolName(call.name)}
+                    </span>
+
+                    {/* Parameter description */}
+                    {getToolDescription(call) && (
+                      <code
+                        className="px-1.5 py-0.5 rounded text-[11px] truncate max-w-[280px]"
+                        style={{
+                          background: '#f0ede8',
+                          color: '#8a857f',
+                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
+                        }}
+                      >
+                        {getToolDescription(call)}
+                      </code>
+                    )}
+                  </div>
+
+                  {/* Result preview */}
+                  {call.result && (
+                    <div
+                      className="mt-1 ml-5 px-2.5 py-1.5 rounded-md text-[11px] font-mono overflow-hidden"
+                      style={{
+                        background: '#f0ede8',
+                        color: '#5a5550',
+                        maxHeight: '80px',
+                        overflowY: 'auto',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {formatResult(call.result)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
-
-      {/* Expanded tool outputs */}
-      {showOutputs && (
-        <div className="mt-2 ml-5 space-y-1.5">
-          {toolCalls.map((call, idx) => (
-            <div key={idx} className="px-3 py-2 rounded text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-              <div className="font-semibold mb-1" style={{ color: '#3d3935' }}>
-                {formatToolName(call.name)}
-              </div>
-              <pre className="whitespace-pre-wrap break-words font-mono text-[11px]" style={{ color: '#5a5550' }}>
-                {call.parameters}
-              </pre>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

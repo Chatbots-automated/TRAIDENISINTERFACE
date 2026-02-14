@@ -1060,11 +1060,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Use authoritative tool uses
       const finalToolUses = authoritative_toolUses;
 
-      // Check for artifacts
-      if (responseContent.includes('<commercial_offer') || conversation.artifact) {
-        await handleArtifactGeneration(responseContent, conversation);
-      }
-
       // Filter out empty thinking blocks early (declare before any usage to avoid TDZ error)
       const filteredContent = finalMessage.content.filter((block: any) => {
         if (block.type === 'thinking') {
@@ -1079,17 +1074,26 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log(`[Content Filter] Filtered blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
 
       // Build tool call XML from this round for persistence in chat history
-      const buildToolXml = (tools: Array<{ id: string; name: string; input: any }>): string => {
-        if (tools.length === 0) return '';
-        const invokeBlocks = tools.map(tu => {
+      // Includes results and filters out display_buttons (internal UI mechanism)
+      const buildToolXml = (tools: Array<{ id: string; name: string; input: any }>, results?: Array<{ tool_use_id: string; content: string }>): string => {
+        const filtered = tools.filter(t => t.name !== 'display_buttons');
+        if (filtered.length === 0) return '';
+        const invokeBlocks = filtered.map(tu => {
           const paramStr = typeof tu.input === 'string' ? tu.input : JSON.stringify(tu.input);
           const safeParam = paramStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          return '  <invoke name="' + tu.name + '">\n    <parameter name="input">' + safeParam + '</parameter' + '>\n  </invoke' + '>';
+          let block = '  <invoke name="' + tu.name + '">\n    <parameter name="input">' + safeParam + '</parameter' + '>';
+          if (results) {
+            const toolResult = results.find(r => r.tool_use_id === tu.id);
+            if (toolResult) {
+              const safeResult = toolResult.content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              block += '\n    <result>' + safeResult + '</result>';
+            }
+          }
+          block += '\n  </invoke' + '>';
+          return block;
         });
         return '\n\n<function_calls' + '>\n' + invokeBlocks.join('\n') + '\n</function_calls' + '>\n';
       };
-      const roundToolXml = buildToolXml(finalToolUses);
-      const newAccumulatedToolXml = accumulatedToolXml + (responseContent ? responseContent : '') + roundToolXml;
 
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
@@ -1121,6 +1125,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             }
           })
         );
+
+        // Build XML with results now that we have them (filters out display_buttons)
+        const roundToolXml = buildToolXml(finalToolUses, toolResults);
+        const newAccumulatedToolXml = accumulatedToolXml + (responseContent ? responseContent : '') + roundToolXml;
+
+        // Update streaming content immediately so tool tree shows live during gap
+        setStreamingContent(newAccumulatedToolXml);
 
         // Check if any tool result contains display_buttons marker (should pause conversation)
         const buttonResult = toolResults.find(result => {
@@ -2593,8 +2604,8 @@ Vartotojo instrukcija: ${instruction}`;
                           contentString.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')
                         } />
 
-                      {/* Interactive Buttons (inline with message) */}
-                      {message.buttons && message.buttons.length > 0 && (
+                      {/* Interactive Buttons - hidden completely after selection */}
+                      {message.buttons && message.buttons.length > 0 && message.selectedButtonId === undefined && (
                         <div className="mt-4">
                           {message.buttonsMessage && (
                             <p className="text-sm mb-2" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>
@@ -2602,30 +2613,19 @@ Vartotojo instrukcija: ${instruction}`;
                             </p>
                           )}
                           <div className="flex flex-wrap gap-2">
-                            {message.buttons.map(button => {
-                              const isSelected = message.selectedButtonId === button.id;
-                              const hasSelection = message.selectedButtonId !== undefined && message.selectedButtonId !== null;
-                              return (
-                                <button
-                                  key={button.id}
-                                  onClick={() => handleButtonClick(button.id, button.value, index)}
-                                  className={`px-4 py-2.5 rounded-3xl text-[15px] leading-relaxed transition-all ${
-                                    isSelected
-                                      ? 'text-primary font-medium'
-                                      : hasSelection
-                                        ? 'text-base-content/30 cursor-not-allowed'
-                                        : 'text-base-content hover:bg-base-content/[0.1] cursor-pointer'
-                                  }`}
-                                  style={{
-                                    background: isSelected ? 'rgba(var(--color-primary-raw, 99, 102, 241), 0.08)' : '#f8f8f9',
-                                    border: isSelected ? '2px solid var(--color-primary)' : '1px solid #e5e5e6',
-                                  }}
-                                  disabled={hasSelection}
-                                >
-                                  {button.label}
-                                </button>
-                              );
-                            })}
+                            {message.buttons.map(button => (
+                              <button
+                                key={button.id}
+                                onClick={() => handleButtonClick(button.id, button.value, index)}
+                                className="px-4 py-2.5 rounded-3xl text-[15px] leading-relaxed transition-all text-base-content hover:bg-base-content/[0.1] cursor-pointer"
+                                style={{
+                                  background: '#f8f8f9',
+                                  border: '1px solid #e5e5e6',
+                                }}
+                              >
+                                {button.label}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -2639,17 +2639,18 @@ Vartotojo instrukcija: ${instruction}`;
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
-                        {message.thinking && (
-                          <details className="ml-2">
-                            <summary className="text-xs cursor-pointer px-2 py-1 rounded-lg text-base-content/40 hover:bg-base-200 transition-colors">
-                              Mąstymas
-                            </summary>
-                            <div className="mt-2 text-xs whitespace-pre-wrap px-4 py-3 rounded-lg text-base-content/50 bg-base-200/50 border border-base-content/10">
-                              {message.thinking}
-                            </div>
-                          </details>
-                        )}
                       </div>
+                      {/* Thinking section - outside hover opacity div so it doesn't fade when expanded */}
+                      {message.thinking && (
+                        <details className="mt-1">
+                          <summary className="text-xs cursor-pointer px-2 py-1 rounded-lg text-base-content/40 hover:bg-base-200 transition-colors inline-flex items-center gap-1">
+                            Mąstymas
+                          </summary>
+                          <div className="mt-2 text-xs whitespace-pre-wrap px-4 py-3 rounded-lg text-base-content/50 bg-base-200/50 border border-base-content/10">
+                            {message.thinking}
+                          </div>
+                        </details>
+                      )}
                     </div>
                   )}
                   </div>
