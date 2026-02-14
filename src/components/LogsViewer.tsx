@@ -71,36 +71,14 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
     }
   };
 
-  const getLevelStyle = (level: string) => {
+  const getLevelBadgeClass = (level: string) => {
     switch (level) {
-      case 'debug':
-      case 'info':
-        return { background: colors.bg.secondary, color: colors.text.secondary, border: `1px solid ${colors.border.default}` };
-      case 'warn':
-        return { background: '#fef9ee', color: '#92400e', border: '1px solid #fde68a' };
-      case 'error':
-        return { background: colors.status.error, color: colors.status.errorText, border: `1px solid ${colors.status.errorBorder}` };
-      case 'critical':
-        return { background: colors.status.errorText, color: '#ffffff', border: `1px solid ${colors.status.errorText}` };
-      default:
-        return { background: colors.bg.secondary, color: colors.text.secondary, border: `1px solid ${colors.border.default}` };
-    }
-  };
-
-  const getCategoryStyle = (category: string) => {
-    switch (category) {
-      case 'auth':
-      case 'user_management':
-        return { background: colors.interactive.accentLight, color: colors.interactive.accent, border: `1px solid ${colors.interactive.accent}33` };
-      case 'chat':
-      case 'document':
-      case 'api':
-        return { background: colors.bg.secondary, color: colors.text.secondary, border: `1px solid ${colors.border.default}` };
-      case 'error':
-        return { background: colors.status.error, color: colors.status.errorText, border: `1px solid ${colors.status.errorBorder}` };
-      case 'system':
-      default:
-        return { background: colors.bg.secondary, color: colors.text.secondary, border: `1px solid ${colors.border.default}` };
+      case 'debug': return 'badge badge-soft text-xs';
+      case 'info': return 'badge badge-soft badge-info text-xs';
+      case 'warn': return 'badge badge-soft badge-warning text-xs';
+      case 'error': return 'badge badge-soft badge-error text-xs';
+      case 'critical': return 'badge badge-error text-xs';
+      default: return 'badge badge-soft text-xs';
     }
   };
 
@@ -257,18 +235,12 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
                           )}
                         </td>
                         <td>
-                          <span className="badge badge-soft text-xs" style={getLevelStyle(log.level)}>
+                          <span className={getLevelBadgeClass(log.level)}>
                             {log.level.toUpperCase()}
                           </span>
                         </td>
-                        <td>
-                          <span className="badge badge-soft text-xs" style={getCategoryStyle(log.category)}>
-                            {log.category}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="badge badge-soft badge-info text-xs">{log.action}</span>
-                        </td>
+                        <td className="text-xs text-base-content/70">{log.category.replace('_', ' ')}</td>
+                        <td className="text-xs font-mono text-base-content/60">{log.action}</td>
                         <td className="max-w-xs truncate text-xs" title={log.message}>{log.message}</td>
                         <td className="text-xs whitespace-nowrap">{log.user_email || '—'}</td>
                         <td className="text-xs whitespace-nowrap">{formatTimestamp(log.timestamp)}</td>
