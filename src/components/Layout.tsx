@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NavLink } from 'react-router-dom';
 import { signOut } from '../lib/database';
 import {
   Menu,
@@ -228,140 +227,79 @@ export default function Layout({
               </ul>
             )}
 
-            {/* Admin Settings Dropdown */}
-            {user.is_admin && !sidebarCollapsed && (
-              <div className="relative" ref={settingsDropdownRef}>
-                {/* Dropup Menu */}
-                {settingsDropdownOpen && (
-                  <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
-                    <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
-                      <li>
-                        <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
-                          <Settings className="w-4 h-4" />
-                          <span>Settings</span>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                          className="text-error hover:bg-error/10"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Sign Out</span>
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                )}
-
-                {/* Settings Button */}
-                <ul className="menu px-2">
-                  <li>
-                    <button onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}>
-                      <Settings className="w-4 h-4" />
-                      <span className="whitespace-nowrap">Settings</span>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {/* Settings Dropdown Button - Only for non-admins */}
-            {!user.is_admin && !sidebarCollapsed && (
-              <div className="relative" ref={settingsDropdownRef}>
-                {/* Dropup Menu */}
-                {settingsDropdownOpen && (
-                  <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
-                    <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
-                      {/* Naujokas Mode Toggle */}
-                      <li>
-                        <div
-                          onClick={() => onToggleNaujokas?.()}
-                          className="flex items-center justify-between cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">🎓</span>
-                            <span>Naujokas</span>
-                          </div>
+            {/* Settings & Collapse - unified structure for both states */}
+            <div className="relative" ref={settingsDropdownRef}>
+              {/* Dropup Menu - only in expanded state */}
+              {!sidebarCollapsed && settingsDropdownOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
+                  <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
+                    {!user.is_admin && (
+                      <>
+                        <li>
                           <div
-                            className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                              naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
-                            }`}
+                            onClick={() => onToggleNaujokas?.()}
+                            className="flex items-center justify-between cursor-pointer"
                           >
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">🎓</span>
+                              <span>Naujokas</span>
+                            </div>
                             <div
-                              className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
-                                naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                              className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
+                                naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
                               }`}
-                            />
+                            >
+                              <div
+                                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
+                                  naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                                }`}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      </li>
-                      <li className="divider my-1"></li>
-                      <li>
-                        <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
-                          <Settings className="w-4 h-4" />
-                          <span>Settings</span>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                          className="text-error hover:bg-error/10"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Sign Out</span>
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                )}
+                        </li>
+                        <li className="divider my-1"></li>
+                      </>
+                    )}
+                    <li>
+                      <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
+                        <Settings className="w-4 h-4" />
+                        <span>Settings</span>
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
+                        className="text-error hover:bg-error/10"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              )}
 
-                {/* Settings Button */}
-                <ul className="menu px-2">
-                  <li>
-                    <button onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}>
-                      <Settings className="w-4 h-4" />
-                      <span className="whitespace-nowrap">Settings</span>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {/* Collapsed settings + collapse toggle - use menu pattern to match top nav */}
-            {sidebarCollapsed && (
+              {/* Bottom controls - same DOM structure in both states */}
               <ul className="menu px-2 pb-1">
                 <li>
                   <button
-                    onClick={() => setSettingsOpen(true)}
-                    title="Settings"
+                    onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
+                    title={sidebarCollapsed ? 'Settings' : undefined}
                   >
                     <Settings className="w-4 h-4" />
+                    {!sidebarCollapsed && <span className="whitespace-nowrap">Settings</span>}
                   </button>
                 </li>
                 <li className="hidden lg:flex">
                   <button
-                    onClick={() => setSidebarCollapsed(false)}
-                    title="Expand sidebar"
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                    title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   >
-                    <ChevronsRight className="w-4 h-4" />
+                    {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
                   </button>
                 </li>
               </ul>
-            )}
-
-            {/* Collapse Toggle Button - expanded state */}
-            {!sidebarCollapsed && (
-              <div className="px-2 pb-1 hidden lg:block">
-                <button
-                  onClick={() => setSidebarCollapsed(true)}
-                  className="w-full flex items-center justify-end py-2 pr-3 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
-                  title="Collapse sidebar"
-                >
-                  <ChevronsLeft className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            </div>
 
             {/* User Info - Absolute Bottom */}
             <div className="py-3 bg-macos-gray-50/50 px-3">
