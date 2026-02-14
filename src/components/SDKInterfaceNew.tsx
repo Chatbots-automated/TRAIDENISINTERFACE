@@ -64,7 +64,8 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor } from '../lib/documentTemplateService';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta } from '../lib/documentTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, type GlobalTemplateVersion } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -179,6 +180,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateVersion, setTemplateVersion] = useState(0);
   // Global template editor
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [templateVersionHistory, setTemplateVersionHistory] = useState<GlobalTemplateVersion[]>([]);
+  const [showTemplateVersions, setShowTemplateVersions] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
@@ -229,6 +233,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadManagers();
     loadSharedConversations();
     loadShareableUsers();
+    // Hydrate global template cache from DB so all users share the same template
+    loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
   }, []);
 
   // Sync URL ↔ currentConversation
@@ -1963,6 +1969,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
+    setShowTemplateVersions(false);
+    // Fetch version history in the background
+    getGlobalTemplateVersions(30).then(setTemplateVersionHistory).catch(() => {});
   };
 
   /**
@@ -1986,10 +1995,37 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Clean up editor artifacts
     html = html.replace(/\s*contenteditable="(true|false)"/gi, '');
 
-    saveGlobalTemplate(html);
+    const userName = user.full_name || user.email;
+    saveGlobalTemplate(html, user.id, userName);
     setTemplateVersion(v => v + 1);
     setShowTemplateEditor(false);
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
+  };
+
+  /** Revert the global template to a specific version from history. */
+  const handleRevertTemplate = async (versionId: string) => {
+    setTemplateSaving(true);
+    try {
+      const userName = user.full_name || user.email;
+      const result = await revertToVersion(versionId, user.id, userName);
+      if (result) {
+        // Reload from DB to refresh cache
+        await loadGlobalTemplateFromDb();
+        setTemplateVersion(v => v + 1);
+        // Refresh version history
+        const versions = await getGlobalTemplateVersions(30);
+        setTemplateVersionHistory(versions);
+        setShowTemplateVersions(false);
+        setShowTemplateEditor(false);
+        addNotification('success', 'Šablonas atkurtas', 'Globalus šablonas sėkmingai grąžintas į ankstesnę versiją.');
+      } else {
+        addNotification('error', 'Klaida', 'Nepavyko atkurti šablono versijos.');
+      }
+    } catch {
+      addNotification('error', 'Klaida', 'Nepavyko atkurti šablono versijos.');
+    } finally {
+      setTemplateSaving(false);
+    }
   };
 
   /** Save the current editing variable value — surgical replacement for YAML keys. */
@@ -3614,8 +3650,13 @@ Vartotojo instrukcija: ${instruction}`;
           .template-var.filled { background: rgba(59,130,246,0.04); box-shadow: 0 0 0 1px rgba(59,130,246,0.12); padding: 0 2px; border-radius: 3px; }
           </style>`
         );
+        const meta = getGlobalTemplateMeta();
+        const lastEditedFirstName = meta?.updated_by_name
+          ? meta.updated_by_name.split(' ')[0]
+          : null;
+        const versionNum = meta?.version ?? null;
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTemplateEditor(false)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}>
             <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100" style={{ height: '88vh' }} onClick={(e) => e.stopPropagation()}>
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 flex-shrink-0 border-b border-base-content/10">
@@ -3624,12 +3665,24 @@ Vartotojo instrukcija: ${instruction}`;
                   {isGlobalTemplateCustomized() && (
                     <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/15 text-warning-content">Pakeistas</span>
                   )}
+                  {versionNum !== null && (
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-base-content/5 text-base-content/40">v{versionNum}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Version history / undo button */}
+                  <button
+                    onClick={() => setShowTemplateVersions(!showTemplateVersions)}
+                    className={`btn btn-soft btn-xs ${showTemplateVersions ? 'btn-active' : ''}`}
+                    title="Versijų istorija"
+                  >
+                    Istorija
+                  </button>
                   {isGlobalTemplateCustomized() && (
                     <button
                       onClick={() => {
-                        resetGlobalTemplate();
+                        const userName = user.full_name || user.email;
+                        resetGlobalTemplate(user.id, userName);
                         setTemplateVersion(v => v + 1);
                         setShowTemplateEditor(false);
                       }}
@@ -3639,7 +3692,7 @@ Vartotojo instrukcija: ${instruction}`;
                     </button>
                   )}
                   <button
-                    onClick={() => setShowTemplateEditor(false)}
+                    onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
                     className="btn btn-soft btn-xs"
                   >
                     Atšaukti
@@ -3652,35 +3705,86 @@ Vartotojo instrukcija: ${instruction}`;
                   </button>
                 </div>
               </div>
-              {/* Hint bar */}
-              <div className="px-5 py-1.5 flex-shrink-0 bg-base-200/50 border-b border-base-content/5">
+              {/* Info bar: last edited by + hint */}
+              <div className="px-5 py-1.5 flex-shrink-0 bg-base-200/50 border-b border-base-content/5 flex items-center justify-between">
                 <span className="text-[10px] text-base-content/40">
                   Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
                 </span>
+                {lastEditedFirstName && (
+                  <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
+                    Paskutinį kartą redagavo: <span className="text-base-content/50 font-medium">{lastEditedFirstName}</span>
+                    {meta?.updated_at && (
+                      <> &middot; {new Date(meta.updated_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                    )}
+                  </span>
+                )}
               </div>
-              {/* Visual editor iframe */}
-              <div className="flex-1 overflow-auto bg-base-200/30">
-                <div style={{ width: '595px', margin: '24px auto' }}>
-                  <iframe
-                    ref={templateEditorIframeRef}
-                    srcDoc={editorSrcdoc}
-                    title="Šablono redaktorius"
-                    sandbox="allow-same-origin"
-                    scrolling="no"
-                    style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
-                    onLoad={() => {
-                      const doc = templateEditorIframeRef.current?.contentDocument;
-                      if (doc) {
-                        doc.body.contentEditable = 'true';
-                        // Auto-size iframe to content
-                        const h = doc.body.scrollHeight;
-                        if (templateEditorIframeRef.current) {
-                          templateEditorIframeRef.current.style.height = h + 'px';
+              {/* Main content area: editor + optional version sidebar */}
+              <div className="flex-1 flex min-h-0 overflow-hidden">
+                {/* Visual editor iframe */}
+                <div className={`flex-1 overflow-auto bg-base-200/30 ${showTemplateVersions ? 'border-r border-base-content/5' : ''}`}>
+                  <div style={{ width: '595px', margin: '24px auto' }}>
+                    <iframe
+                      ref={templateEditorIframeRef}
+                      srcDoc={editorSrcdoc}
+                      title="Šablono redaktorius"
+                      sandbox="allow-same-origin"
+                      scrolling="no"
+                      style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
+                      onLoad={() => {
+                        const doc = templateEditorIframeRef.current?.contentDocument;
+                        if (doc) {
+                          doc.body.contentEditable = 'true';
+                          // Auto-size iframe to content
+                          const h = doc.body.scrollHeight;
+                          if (templateEditorIframeRef.current) {
+                            templateEditorIframeRef.current.style.height = h + 'px';
+                          }
                         }
-                      }
-                    }}
-                  />
+                      }}
+                    />
+                  </div>
                 </div>
+                {/* Version history sidebar */}
+                {showTemplateVersions && (
+                  <div className="w-72 flex-shrink-0 overflow-auto bg-base-100">
+                    <div className="px-4 py-3 border-b border-base-content/5">
+                      <span className="text-xs font-medium text-base-content/70">Versijų istorija</span>
+                    </div>
+                    {templateVersionHistory.length === 0 ? (
+                      <div className="px-4 py-6 text-center">
+                        <span className="text-xs text-base-content/30">Nėra ankstesnių versijų</span>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-base-content/5">
+                        {templateVersionHistory.map((v) => {
+                          const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
+                          return (
+                            <div key={v.id} className="px-4 py-3 hover:bg-base-content/[0.02] transition-colors">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-base-content/60">v{v.version_number}</span>
+                                <button
+                                  onClick={() => handleRevertTemplate(v.id)}
+                                  disabled={templateSaving}
+                                  className="btn btn-soft btn-xs"
+                                  title="Atkurti šią versiją"
+                                >
+                                  {templateSaving ? '...' : 'Atkurti'}
+                                </button>
+                              </div>
+                              <div className="mt-1 text-[10px] text-base-content/40">
+                                {v.change_description || 'Šablono pakeitimas'}
+                              </div>
+                              <div className="mt-1 text-[10px] text-base-content/30">
+                                {firstName} &middot; {new Date(v.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

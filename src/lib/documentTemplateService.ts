@@ -7,9 +7,63 @@
  *
  * Unfilled placeholders are highlighted with a yellow background so the user
  * can see what's still missing.
+ *
+ * The global template is stored in the database (global_template table) and
+ * cached in memory for synchronous access.  On first load the cache is
+ * hydrated from the DB; subsequent reads are instant.
  */
 
 import { COMMERCIAL_OFFER_TEMPLATE } from '../templates/commercialOfferTemplate';
+import {
+  getGlobalTemplate,
+  saveGlobalTemplateToDb,
+  resetGlobalTemplateInDb,
+  type GlobalTemplate,
+} from './globalTemplateService';
+
+// ---------------------------------------------------------------------------
+// In-memory cache — keeps synchronous callers working while data lives in DB
+// ---------------------------------------------------------------------------
+
+let _cachedHtml: string | null = null;
+let _cachedMeta: GlobalTemplate | null = null;
+let _cacheLoaded = false;
+
+/**
+ * Load the global template from the database into the in-memory cache.
+ * Must be called once on app startup (e.g. in useEffect).
+ * Returns the full GlobalTemplate metadata (updated_by_name, version, etc.).
+ */
+export async function loadGlobalTemplateFromDb(): Promise<GlobalTemplate | null> {
+  try {
+    const tpl = await getGlobalTemplate();
+    if (tpl) {
+      _cachedHtml = tpl.html_content;
+      _cachedMeta = tpl;
+    } else {
+      _cachedHtml = null;
+      _cachedMeta = null;
+    }
+    _cacheLoaded = true;
+    return tpl;
+  } catch (err) {
+    console.error('[DocumentTemplate] Error loading from DB:', err);
+    _cacheLoaded = true; // mark loaded even on error so we don't hang
+    return null;
+  }
+}
+
+/**
+ * Get cached metadata about the global template (version, updated_by, etc.).
+ * Returns null if no customised template exists.
+ */
+export function getGlobalTemplateMeta(): GlobalTemplate | null {
+  return _cachedMeta;
+}
+
+// ---------------------------------------------------------------------------
+// Template variable helpers
+// ---------------------------------------------------------------------------
 
 /**
  * Extract all {{variable_key}} placeholder names from the template.
@@ -106,40 +160,62 @@ export function renderTemplateForEditor(template: string): string {
   });
 }
 
-const GLOBAL_TEMPLATE_KEY = 'traidenis_global_template';
+// ---------------------------------------------------------------------------
+// Synchronous getters / setters (cache-backed, DB-synced)
+// ---------------------------------------------------------------------------
 
 /**
- * Returns the global template HTML.
- * Reads from localStorage first (user-edited version), falls back to
- * the hardcoded default.
+ * Returns the global template HTML (synchronous).
+ * Uses the in-memory cache (populated by loadGlobalTemplateFromDb).
+ * Falls back to the hardcoded default if cache is empty.
  */
 export function getDefaultTemplate(): string {
-  try {
-    const stored = localStorage.getItem(GLOBAL_TEMPLATE_KEY);
-    if (stored) return stored;
-  } catch { /* ignore */ }
+  if (_cachedHtml) return _cachedHtml;
   return COMMERCIAL_OFFER_TEMPLATE;
 }
 
 /**
- * Save a user-edited global template to localStorage.
+ * Save a user-edited global template.
+ * Updates the in-memory cache immediately and persists to DB async.
  */
-export function saveGlobalTemplate(html: string): void {
-  localStorage.setItem(GLOBAL_TEMPLATE_KEY, html);
+export function saveGlobalTemplate(
+  html: string,
+  userId?: string,
+  userName?: string
+): void {
+  // Update cache immediately for synchronous consumers
+  _cachedHtml = html;
+
+  // Persist to database (fire-and-forget for the synchronous API;
+  // the caller can also use saveGlobalTemplateToDb directly for await)
+  if (userId && userName) {
+    saveGlobalTemplateToDb(html, userId, userName).then((result) => {
+      if (result) _cachedMeta = result;
+    }).catch(err => console.error('[DocumentTemplate] DB save error:', err));
+  }
 }
 
 /**
  * Reset the global template back to the hardcoded default.
+ * Updates cache immediately and persists to DB async.
  */
-export function resetGlobalTemplate(): void {
-  localStorage.removeItem(GLOBAL_TEMPLATE_KEY);
+export function resetGlobalTemplate(userId?: string, userName?: string): void {
+  _cachedHtml = null;
+  _cachedMeta = null;
+
+  if (userId && userName) {
+    resetGlobalTemplateInDb(userId, userName).then((result) => {
+      if (result) _cachedMeta = result;
+    }).catch(err => console.error('[DocumentTemplate] DB reset error:', err));
+  }
 }
 
 /**
  * Check whether the global template has been customized.
  */
 export function isGlobalTemplateCustomized(): boolean {
-  return localStorage.getItem(GLOBAL_TEMPLATE_KEY) !== null;
+  if (!_cacheLoaded) return false;
+  return _cachedHtml !== null && _cachedHtml !== COMMERCIAL_OFFER_TEMPLATE;
 }
 
 /**
