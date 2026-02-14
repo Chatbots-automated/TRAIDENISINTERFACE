@@ -78,6 +78,9 @@ export default {
       },
     },
   },
+  flyonui: {
+    themes: ['light'],
+  },
   plugins: [
     flyonui,
   ],

@@ -174,7 +174,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           <div>
             <h2 className="text-2xl font-semibold text-base-content">Dokumentai</h2>
             <p className="text-sm mt-1 text-base-content/60">
-              Duomen&#x173; baz&#x117;s lentel&#x117;s
+              Duomenų bazės lentelės
             </p>
           </div>
 
@@ -230,7 +230,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
             <input
               type="text"
-              placeholder="Ie\u0161koti..."
+              placeholder="Ieškoti..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="input input-sm w-full pl-9"
@@ -261,12 +261,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <div className="text-center">
               <Database className="w-12 h-12 mx-auto mb-4 text-base-content/20" />
               <h3 className="text-lg font-medium mb-2 text-base-content">
-                {searchQuery ? 'Nieko nerasta' : 'N\u0117ra duomen\u0173'}
+                {searchQuery ? 'Nieko nerasta' : 'Nėra duomenų'}
               </h3>
               <p className="text-sm text-base-content/60">
                 {searchQuery
-                  ? 'Pakeiskite paie\u0161kos u\u017eklaus\u0105'
-                  : `Lentel\u0117 ${selectedTable} tu\u0161\u010dia`
+                  ? 'Pakeiskite paieškos užklausą'
+                  : `Lentelė ${selectedTable} tuščia`
                 }
               </p>
             </div>
@@ -326,8 +326,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <div className="px-4 py-2 text-xs border-t border-base-content/10 flex items-center justify-between bg-base-200/50 text-base-content/50">
               <span>
                 {searchQuery
-                  ? `${sortedData.length} i\u0161 ${currentData.length} \u012Fra\u0161\u0173`
-                  : `${sortedData.length} \u012Fra\u0161\u0173`
+                  ? `${sortedData.length} iš ${currentData.length} įrašų`
+                  : `${sortedData.length} įrašų`
                 }
               </span>
               <span className="font-mono text-base-content/30">
