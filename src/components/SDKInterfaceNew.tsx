@@ -39,6 +39,7 @@ import {
   addMessageToConversation,
   updateConversationArtifact,
   deleteSDKConversation,
+  renameSDKConversation,
   updateMessageButtonSelection,
   calculateDiff,
   type SDKConversation,
@@ -79,6 +80,19 @@ const LT_MONTHS_SHORT = ['Sau', 'Vas', 'Kov', 'Bal', 'Geg', 'Bir', 'Lie', 'Rgp',
 function formatLtDate(dateStr: string): string {
   const d = new Date(dateStr);
   return `${LT_MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+}
+
+// Per-conversation team selection persistence
+const TEAM_STORAGE_PREFIX = 'traidenis_team_';
+function saveTeamSelection(conversationId: string, managerId: string | null, economistId: string | null) {
+  try { localStorage.setItem(`${TEAM_STORAGE_PREFIX}${conversationId}`, JSON.stringify({ managerId, economistId })); } catch {}
+}
+function loadTeamSelection(conversationId: string): { managerId: string | null; economistId: string | null } {
+  try {
+    const raw = localStorage.getItem(`${TEAM_STORAGE_PREFIX}${conversationId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { managerId: null, economistId: null };
 }
 
 // Session persistence keys
@@ -293,14 +307,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   }, [loading]);
 
-  // Load offer parameters when conversation changes
+  // Load offer parameters, team selection, and refresh template when conversation changes
   useEffect(() => {
     if (currentConversation?.id) {
       setOfferParameters(loadOfferParameters(currentConversation.id));
+      // Restore per-conversation team selection
+      const team = loadTeamSelection(currentConversation.id);
+      setSelectedEconomist(team.economistId ? economists.find(e => e.id === team.economistId) || null : null);
+      setSelectedManager(team.managerId ? managers.find(m => m.id === team.managerId) || null : null);
     } else {
       setOfferParameters(getDefaultOfferParameters());
+      setSelectedEconomist(null);
+      setSelectedManager(null);
     }
+    // Bump template version so DocumentPreview re-reads the current global template
+    setTemplateVersion(v => v + 1);
   }, [currentConversation?.id]);
+
+  // Persist team selection whenever manager/economist changes for current conversation
+  const skipTeamSave = useRef(true); // skip the initial load trigger
+  useEffect(() => {
+    if (skipTeamSave.current) { skipTeamSave.current = false; return; }
+    if (currentConversation?.id) {
+      saveTeamSelection(currentConversation.id, selectedManager?.id || null, selectedEconomist?.id || null);
+    }
+  }, [selectedManager?.id, selectedEconomist?.id]);
+
+  // Re-arm skip flag when conversation changes (the load useEffect above sets the values)
+  useEffect(() => { skipTeamSave.current = true; }, [currentConversation?.id]);
 
   // Auto-collapse both sidebars when artifact panel opens, restore when closed
   useEffect(() => {
@@ -424,20 +458,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleCreateConversation = async () => {
     try {
       setCreatingConversation(true);
-      // Generate composite code for conversation title: U + codes + yy/mm/dd
-      const now = new Date();
-      const yy = String(now.getFullYear()).slice(-2);
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      const mgrCode = selectedManager?.kodas || '';
-      const econCode = selectedEconomist?.kodas || '';
-      const techCode = user.kodas || '';
-      const compositeTitle = `U${mgrCode}${econCode}${techCode}${yy}/${mm}/${dd}`;
       const { data: conversationId, error: createError } = await createSDKConversation(
         projectId,
         user.id,
         user.email,
-        compositeTitle
+        'Naujas pokalbis'
       );
       if (createError) throw createError;
       const { data: newConversation } = await getSDKConversation(conversationId!);
@@ -1256,17 +1281,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     if (!conversation) {
       try {
         setCreatingConversation(true);
-        // Generate composite code for conversation title
-        const _now = new Date();
-        const _yy = String(_now.getFullYear()).slice(-2);
-        const _mm = String(_now.getMonth() + 1).padStart(2, '0');
-        const _dd = String(_now.getDate()).padStart(2, '0');
-        const _autoTitle = `U${selectedManager?.kodas || ''}${selectedEconomist?.kodas || ''}${user.kodas || ''}${_yy}/${_mm}/${_dd}`;
         const { data: conversationId, error: createError } = await createSDKConversation(
           projectId,
           user.id,
           user.email,
-          _autoTitle
+          'Naujas pokalbis'
         );
         if (createError) {
           console.error('Error creating conversation:', createError);
@@ -1679,6 +1698,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       console.log('[Artifact] Saving artifact to database...');
       await updateConversationArtifact(conversation.id, newArtifact);
+
+      // Auto-rename conversation with composite code when artifact is first created
+      if (isNewArtifact && conversation.title === 'Naujas pokalbis') {
+        const _now = new Date();
+        const _yy = String(_now.getFullYear()).slice(-2);
+        const _mm = String(_now.getMonth() + 1).padStart(2, '0');
+        const _dd = String(_now.getDate()).padStart(2, '0');
+        const _compositeTitle = `U${selectedManager?.kodas || ''}${selectedEconomist?.kodas || ''}${user.kodas || ''}${_yy}/${_mm}/${_dd}`;
+        await renameSDKConversation(conversation.id, _compositeTitle);
+        conversation = { ...conversation, title: _compositeTitle };
+        setConversations(prev => prev.map(c => c.id === conversation.id ? { ...c, title: _compositeTitle } : c));
+      }
+
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
