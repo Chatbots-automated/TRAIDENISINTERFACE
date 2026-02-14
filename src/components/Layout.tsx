@@ -112,7 +112,7 @@ export default function Layout({
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={`flex items-center justify-between ${sidebarCollapsed ? 'p-4' : 'px-3 py-3'}`}>
+          <div className="flex items-center justify-between px-3 py-3">
             <div className="flex items-center space-x-2.5 min-w-0">
               <div className="w-8 h-8 flex-shrink-0">
                 <img
@@ -136,11 +136,11 @@ export default function Layout({
           </div>
 
           {/* Primary Navigation */}
-            <ul className={`menu ${sidebarCollapsed ? 'px-1' : 'px-2'} py-3`}>
+            <ul className="menu px-2 py-3">
               <li>
                 <button
                   onClick={() => onViewModeChange?.('sdk')}
-                  className={`${viewMode === 'sdk' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  className={viewMode === 'sdk' ? 'active' : ''}
                   title={sidebarCollapsed ? 'SDK' : undefined}
                 >
                   <div className="relative flex items-center justify-center w-4 flex-shrink-0">
@@ -166,7 +166,7 @@ export default function Layout({
               <li>
                 <button
                   onClick={() => onViewModeChange?.('documents')}
-                  className={`${viewMode === 'documents' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  className={viewMode === 'documents' ? 'active' : ''}
                   title={sidebarCollapsed ? 'Documents' : undefined}
                 >
                   <Database className="w-4 h-4" />
@@ -176,7 +176,7 @@ export default function Layout({
               <li>
                 <button
                   onClick={() => onViewModeChange?.('nestandartiniai')}
-                  className={`${viewMode === 'nestandartiniai' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  className={viewMode === 'nestandartiniai' ? 'active' : ''}
                   title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
                 >
                   <FlaskConical className="w-4 h-4" />
@@ -192,15 +192,13 @@ export default function Layout({
           <div className="mt-auto">
             {/* Admin Section - Only visible to admins */}
             {user.is_admin && (
-              <ul className={`menu ${sidebarCollapsed ? 'px-1' : 'px-2'} pb-2`}>
+              <ul className="menu px-2 pb-2">
                 {!sidebarCollapsed && (
                   <li className="menu-title text-[10px] uppercase tracking-wider">Admin</li>
                 )}
-                {sidebarCollapsed && <li><hr className="my-1 border-base-content/10" /></li>}
                 <li>
                   <button
                     onClick={() => setWebhooksOpen(true)}
-                    className={sidebarCollapsed ? 'justify-center' : ''}
                     title={sidebarCollapsed ? 'Webhooks' : undefined}
                   >
                     <Zap className="w-4 h-4" />
@@ -210,7 +208,7 @@ export default function Layout({
                 <li>
                   <button
                     onClick={() => onViewModeChange?.('instrukcijos')}
-                    className={`${viewMode === 'instrukcijos' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                    className={viewMode === 'instrukcijos' ? 'active' : ''}
                     title={sidebarCollapsed ? 'Instrukcijos' : undefined}
                   >
                     <BookOpen className="w-4 h-4" />
@@ -220,7 +218,7 @@ export default function Layout({
                 <li>
                   <button
                     onClick={() => onViewModeChange?.('users')}
-                    className={`${viewMode === 'users' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                    className={viewMode === 'users' ? 'active' : ''}
                     title={sidebarCollapsed ? 'Users' : undefined}
                   >
                     <Users className="w-4 h-4" />
@@ -332,11 +330,10 @@ export default function Layout({
 
             {/* Collapsed settings + collapse toggle - use menu pattern to match top nav */}
             {sidebarCollapsed && (
-              <ul className="menu px-1 pb-1">
+              <ul className="menu px-2 pb-1">
                 <li>
                   <button
                     onClick={() => setSettingsOpen(true)}
-                    className="justify-center"
                     title="Settings"
                   >
                     <Settings className="w-4 h-4" />
@@ -345,7 +342,6 @@ export default function Layout({
                 <li className="hidden lg:flex">
                   <button
                     onClick={() => setSidebarCollapsed(false)}
-                    className="justify-center"
                     title="Expand sidebar"
                   >
                     <ChevronsRight className="w-4 h-4" />
@@ -368,8 +364,8 @@ export default function Layout({
             )}
 
             {/* User Info - Absolute Bottom */}
-            <div className={`py-3 bg-macos-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-3'}`}>
-              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-2.5'}`}>
+            <div className="py-3 bg-macos-gray-50/50 px-3">
+              <div className="flex items-center justify-center space-x-2.5">
                 <div className="w-8 h-8 bg-gradient-to-br from-macos-blue to-macos-purple rounded-full flex items-center justify-center flex-shrink-0 shadow-macos-sm">
                   <span className="text-white text-sm font-medium">
                     {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
