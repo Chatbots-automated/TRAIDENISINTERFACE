@@ -17,19 +17,19 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
       style={{
         width: `${size}px`,
         height: `${size}px`,
-        maxWidth: `${size}px`,
-        maxHeight: `${size}px`,
         display: 'inline-block',
-        overflow: 'hidden',
-        flexShrink: 0
+        flexShrink: 0,
+        position: 'relative',
+        transform: isAnimated ? 'scale(1)' : 'scale(1.6)',
+        transition: isAnimated ? 'none' : 'transform 0.6s ease-out',
       }}
     >
-      <svg viewBox="130 130 240 240" overflow="hidden" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <svg viewBox="50 50 400 400" style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
         <defs>
-          <filter id={filterId}>
+          <filter id={filterId} x="-100%" y="-100%" width="400%" height="400%">
             <feGaussianBlur
               in="SourceGraphic"
-              stdDeviation="17"
+              stdDeviation="12"
               result="blur"
             />
             <feColorMatrix
@@ -63,11 +63,8 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
               filter: url("#${filterId}");
               scale: 0.25;
               transform-origin: 250px 250px;
-            }
-
-            ${isAnimated ? `
-            .${cls('robotic-arm')} {
               animation: ${cls('robotic-rotate')} 31s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
 
             @keyframes ${cls('robotic-rotate')} {
@@ -91,18 +88,20 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
             .${cls('robotic-arm1')} {
               transform-origin: 300px 200px;
               animation: ${cls('robotic-rotate')} 23s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
 
             .${cls('robotic-arm2')} {
               transform-origin: 400px 200px;
               animation: ${cls('robotic-rotate')} 17s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
 
             .${cls('robotic-arm3')} {
               transform-origin: 490px 200px;
               animation: ${cls('robotic-rotate')} 11s ease-in-out infinite;
+              animation-play-state: ${isAnimated ? 'running' : 'paused'};
             }
-            ` : ''}
           `}
         </style>
 

@@ -408,27 +408,19 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
       {/* Messages */}
       {error && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-          background: colors.status.error,
-          color: colors.status.errorText,
-          border: `1px solid ${colors.status.errorBorder}`
-        }}>
-          <AlertCircle className="w-5 h-5" />
-          <span className="text-sm">{error}</span>
-          <button onClick={() => setError(null)} className="ml-auto text-macos-red/60 hover:text-macos-red transition-colors">
+        <div className="alert alert-soft alert-error mx-6 mt-4 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100 transition-opacity">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {success && (
-        <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-          background: colors.status.success,
-          color: colors.status.successText,
-          border: `1px solid ${colors.status.successBorder}`
-        }}>
-          <Check className="w-5 h-5" />
-          <span className="text-sm">Operation completed successfully!</span>
+        <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
+          <Check className="w-4 h-4 flex-shrink-0" />
+          <span>Operation completed successfully!</span>
         </div>
       )}
 
@@ -465,203 +457,139 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             )}
           </div>
         ) : (
-          <div className="space-y-3">
-            {filteredUsers.map((userData) => (
-              <div
-                key={userData.id}
-                className="rounded-lg p-4 border transition-all"
-                style={{
-                  background: colors.bg.white,
-                  borderColor: colors.border.default
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.boxShadow = '0 4px 6px 0 rgba(0, 0, 0, 0.08)'}
-                onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
-              >
-                {editingUser?.id === userData.id ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
-                        <input
-                          type="text"
-                          value={editingUser.display_name || ''}
-                          onChange={(e) => setEditingUser({...editingUser, display_name: e.target.value})}
-                          className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                          style={{
-                            borderColor: colors.border.default,
-                            background: colors.bg.white,
-                            color: colors.text.primary
-                          }}
-                          onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                          onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                        />
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <input
-                          type="checkbox"
-                          id={`editAdmin-${userData.id}`}
-                          checked={editingUser.is_admin}
-                          onChange={(e) => setEditingUser({...editingUser, is_admin: e.target.checked})}
-                          className="w-4 h-4 rounded"
-                        />
-                        <label htmlFor={`editAdmin-${userData.id}`} className="text-sm font-medium" style={{ color: colors.text.secondary }}>
-                          Admin privileges
-                        </label>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={handleUpdateUser}
-                        disabled={saving}
-                        className="px-4 py-2 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2"
-                        style={{
-                          background: colors.interactive.accent,
-                          color: '#ffffff'
-                        }}
-                        onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
-                        onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
-                      >
-                        {saving ? (
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                        <span>Save</span>
-                      </button>
-                      <button
-                        onClick={() => setEditingUser(null)}
-                        className="px-4 py-2 border rounded-lg transition-colors"
-                        style={{
-                          borderColor: colors.border.default,
-                          color: colors.text.secondary,
-                          background: 'transparent'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{
-                          background: userData.is_admin ? colors.interactive.accentLight : colors.icon.default
-                        }}>
-                          {userData.is_admin ? (
-                            <Shield className="w-6 h-6" style={{ color: colors.interactive.accent }} />
-                          ) : (
-                            <UserIcon className="w-6 h-6" style={{ color: colors.text.secondary }} />
-                          )}
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
-                              {userData.display_name || userData.full_name || userData.email}
-                            </h3>
-                            {userData.is_admin && (
-                              <span className="px-2 py-1 text-xs rounded-full" style={{
-                                background: colors.interactive.accentLight,
-                                color: colors.interactive.accent
-                              }}>
-                                Admin
-                              </span>
-                            )}
-                            {userData.role && (
-                              <span className="px-2 py-1 text-xs rounded-full" style={{
-                                background: colors.bg.tertiary,
-                                color: colors.text.secondary
-                              }}>
-                                {userData.role}
-                              </span>
-                            )}
+          <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
+            <table className="table-striped table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((userData) => (
+                  <React.Fragment key={userData.id}>
+                    {editingUser?.id === userData.id ? (
+                      <tr>
+                        <td colSpan={6}>
+                          <div className="space-y-4 py-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
+                                <input
+                                  type="text"
+                                  value={editingUser.display_name || ''}
+                                  onChange={(e) => setEditingUser({...editingUser, display_name: e.target.value})}
+                                  className="input input-sm w-full"
+                                />
+                              </div>
+                              <div className="flex items-center space-x-3">
+                                <input
+                                  type="checkbox"
+                                  id={`editAdmin-${userData.id}`}
+                                  checked={editingUser.is_admin}
+                                  onChange={(e) => setEditingUser({...editingUser, is_admin: e.target.checked})}
+                                  className="checkbox checkbox-sm checkbox-primary"
+                                />
+                                <label htmlFor={`editAdmin-${userData.id}`} className="text-sm font-medium" style={{ color: colors.text.secondary }}>
+                                  Admin privileges
+                                </label>
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <button onClick={handleUpdateUser} disabled={saving} className="btn btn-primary btn-sm">
+                                {saving ? <span className="loading loading-spinner loading-xs"></span> : <Save className="w-4 h-4" />}
+                                <span>Save</span>
+                              </button>
+                              <button onClick={() => setEditingUser(null)} className="btn btn-soft btn-sm">Cancel</button>
+                            </div>
                           </div>
-                          <p className="text-sm" style={{ color: colors.text.secondary }}>{userData.email}</p>
-                          <p className="text-xs" style={{ color: colors.text.tertiary }}>
-                            Created: {new Date(userData.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => setExpandedUserId(expandedUserId === userData.id ? null : userData.id)}
-                          className="p-2 rounded-lg transition-colors"
-                          style={{ color: colors.text.tertiary }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.color = colors.interactive.accent;
-                            e.currentTarget.style.background = colors.interactive.accentLight;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.color = colors.text.tertiary;
-                            e.currentTarget.style.background = 'transparent';
-                          }}
-                          title="View details"
-                        >
-                          <Edit3 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setEditingUser(userData)}
-                          className="p-2 rounded-lg transition-colors"
-                          style={{ color: colors.text.tertiary }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.color = colors.text.secondary;
-                            e.currentTarget.style.background = colors.bg.secondary;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.color = colors.text.tertiary;
-                            e.currentTarget.style.background = 'transparent';
-                          }}
-                          title="Edit user"
-                        >
-                          <UserIcon className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteUser(userData.id)}
-                          className="p-2 rounded-lg transition-colors"
-                          style={{ color: colors.status.errorText }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = colors.status.error}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                          title="Delete user"
-                          disabled={userData.id === user.id}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expandable Details */}
-                    {expandedUserId === userData.id && (
-                      <div className="mt-4 pt-4 border-t grid grid-cols-2 gap-4" style={{ borderColor: colors.border.light }}>
-                        <div>
-                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Full Name</label>
-                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.full_name || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Email</label>
-                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.email}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Phone</label>
-                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.phone || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Code (Kodas)</label>
-                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.kodas || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium" style={{ color: colors.text.tertiary }}>Role</label>
-                          <p className="text-sm" style={{ color: colors.text.primary }}>{userData.role || '-'}</p>
-                        </div>
-                      </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white text-sm font-medium"
+                              style={{ background: `hsl(${(userData.email || '').charCodeAt(0) * 7 % 360}, 60%, 55%)` }}>
+                              {(userData.display_name || userData.full_name || userData.email || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-medium">{userData.display_name || userData.full_name || userData.email}</span>
+                          </div>
+                        </td>
+                        <td className="text-base-content/70">{userData.email}</td>
+                        <td className="text-sm text-base-content/60">{userData.role || '—'}</td>
+                        <td>
+                          {userData.is_admin ? (
+                            <span className="badge badge-soft badge-success text-xs">Admin</span>
+                          ) : (
+                            <span className="text-sm text-base-content/50">User</span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap">{new Date(userData.created_at).toLocaleDateString()}</td>
+                        <td>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setExpandedUserId(expandedUserId === userData.id ? null : userData.id)}
+                              className="btn btn-circle btn-text btn-sm"
+                              title="View details"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingUser(userData)}
+                              className="btn btn-circle btn-text btn-sm"
+                              title="Edit user"
+                            >
+                              <UserIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteUser(userData.id)}
+                              className="btn btn-circle btn-text btn-sm text-error"
+                              title="Delete user"
+                              disabled={userData.id === user.id}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                )}
-              </div>
-            ))}
+                    {expandedUserId === userData.id && editingUser?.id !== userData.id && (
+                      <tr>
+                        <td colSpan={6} className="bg-base-200/50">
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 py-1">
+                            <div>
+                              <label className="text-xs font-medium text-base-content/50">Full Name</label>
+                              <p className="text-sm">{userData.full_name || '-'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-base-content/50">Email</label>
+                              <p className="text-sm">{userData.email}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-base-content/50">Phone</label>
+                              <p className="text-sm">{userData.phone || '-'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-base-content/50">Code (Kodas)</label>
+                              <p className="text-sm">{userData.kodas || '-'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-base-content/50">Role</label>
+                              <p className="text-sm">{userData.role || '-'}</p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

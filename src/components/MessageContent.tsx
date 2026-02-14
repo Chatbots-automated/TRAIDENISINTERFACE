@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Calculator, Copy } from 'lucide-react';
 
 interface MessageContentProps {
@@ -8,6 +8,7 @@ interface MessageContentProps {
 interface ToolCall {
   name: string;
   parameters: string;
+  result?: string;
   fullXml: string;
 }
 
@@ -50,7 +51,7 @@ export default function MessageContent({ content }: MessageContentProps) {
 
     // Find all function_calls blocks
     while ((match = functionCallsRegex.exec(text)) !== null) {
-      const invokeRegex = /<invoke name="([^"]+)">\s*<parameter name="[^"]+">([^<]*)<\/parameter>\s*<\/invoke>/g;
+      const invokeRegex = /<invoke name="([^"]+)">\s*<parameter name="[^"]+">([^<]*)<\/parameter>(?:\s*<result>([^<]*)<\/result>)?\s*<\/invoke>/g;
       const toolCalls: ToolCall[] = [];
       let invokeMatch;
 
@@ -60,9 +61,16 @@ export default function MessageContent({ content }: MessageContentProps) {
           .replace(/&lt;/g, '<')
           .replace(/&gt;/g, '>')
           .replace(/&amp;/g, '&');
+        const rawResult = invokeMatch[3]
+          ? invokeMatch[3]
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&amp;/g, '&')
+          : undefined;
         toolCalls.push({
           name: invokeMatch[1],
           parameters: rawParam,
+          result: rawResult,
           fullXml: invokeMatch[0]
         });
       }
@@ -231,14 +239,17 @@ export default function MessageContent({ content }: MessageContentProps) {
 }
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
+  const [expanded, setExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const [showOutputs, setShowOutputs] = useState(false);
 
-  const displayLimit = 4;
-  const displayedCalls = showAll ? toolCalls : toolCalls.slice(0, displayLimit);
-  const hiddenCount = toolCalls.length - displayLimit;
+  const visibleCalls = toolCalls.filter(c => c.name !== 'display_buttons');
+  if (visibleCalls.length === 0) return null;
 
-  // Format tool name for display (e.g. "search_documents" -> "Search Documents")
+  const allCompleted = visibleCalls.every(c => c.result);
+  const COLLAPSED_LIMIT = 3;
+  const displayedCalls = showAll ? visibleCalls : visibleCalls.slice(0, COLLAPSED_LIMIT);
+  const hiddenCount = visibleCalls.length - COLLAPSED_LIMIT;
+
   const formatToolName = (name: string): string => {
     return name
       .split('_')
@@ -246,111 +257,308 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       .join(' ');
   };
 
-  // Extract a readable summary from parameter text for the pill display
-  const truncateParam = (text: string, maxLen: number = 70): string => {
-    const cleaned = text.replace(/\s+/g, ' ').trim();
-    // Try to parse JSON and extract the most readable value
+  const getToolParam = (call: ToolCall): string => {
     try {
-      const parsed = JSON.parse(cleaned);
+      const parsed = JSON.parse(call.parameters);
       if (typeof parsed === 'object' && parsed !== null) {
-        // Pick the first string value that looks meaningful
-        const values = Object.values(parsed);
-        const readable = values.find(v => typeof v === 'string' && (v as string).length > 2) as string | undefined;
-        if (readable) {
-          return readable.length <= maxLen ? readable : readable.slice(0, maxLen) + '…';
-        }
+        const readable = Object.values(parsed).find(v => typeof v === 'string' && (v as string).length > 2) as string | undefined;
+        if (readable && readable.length <= 50) return readable;
+        if (readable) return readable.slice(0, 47) + '...';
       }
-    } catch {
-      // Not JSON, use as-is
+    } catch { /* not JSON */ }
+    const cleaned = call.parameters.replace(/\s+/g, ' ').trim();
+    if (cleaned === '{}' || !cleaned) return '';
+    if (cleaned.length <= 50) return cleaned;
+    return cleaned.slice(0, 47) + '...';
+  };
+
+  // formatResult removed - ToolResult component handles rendering now
+
+  const getGroupHeading = (): string => {
+    if (!allCompleted) {
+      return visibleCalls.length === 1
+        ? `Vykdoma: ${formatToolName(visibleCalls[0].name)}`
+        : `Vykdomi ${visibleCalls.length} veiksmai...`;
     }
-    if (cleaned.length <= maxLen) return cleaned;
-    return cleaned.slice(0, maxLen) + '…';
+    return visibleCalls.length === 1
+      ? formatToolName(visibleCalls[0].name)
+      : `${visibleCalls.length} veiksmai atlikti`;
   };
 
   return (
-    <div className="my-3 ml-1">
-      {/* Tree structure with vertical line */}
-      <div className="relative pl-5">
-        {/* Vertical connecting line */}
-        <div
-          className="absolute left-[5px] top-1 bottom-1 w-[1.5px]"
-          style={{ background: '#d4d1cc' }}
-        />
+    <div className="my-2">
+      {!allCompleted && (
+        <style>{`
+          @keyframes tool-breathe {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+          }
+        `}</style>
+      )}
 
-        <div className="space-y-1.5">
-          {displayedCalls.map((call, idx) => (
-            <div key={idx} className="relative flex items-center gap-2.5 min-h-[28px]">
-              {/* Branch connector */}
-              <div
-                className="absolute left-[-15px] top-1/2 w-[12px] h-[1.5px]"
-                style={{ background: '#d4d1cc' }}
-              />
-              {/* Tool name label */}
-              <span
-                className="text-sm font-semibold flex-shrink-0"
-                style={{ color: '#8a857f' }}
-              >
-                {formatToolName(call.name)}
-              </span>
-              {/* Parameter pill */}
-              <code
-                className="px-2 py-0.5 rounded text-xs truncate max-w-[400px]"
-                style={{
-                  background: '#f0ede8',
-                  color: '#5a5550',
-                  fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace'
-                }}
-              >
-                {truncateParam(call.parameters)}
-              </code>
-              {/* Show tool outputs button - only on first tool */}
-              {idx === 0 && (
-                <button
-                  onClick={() => setShowOutputs(!showOutputs)}
-                  className="flex-shrink-0 px-2.5 py-0.5 rounded text-xs transition-colors"
-                  style={{
-                    background: showOutputs ? '#e8e5e0' : 'transparent',
-                    color: '#8a857f',
-                    border: '1px solid #e8e5e0'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = showOutputs ? '#e8e5e0' : 'transparent'}
-                >
-                  {showOutputs ? 'Hide outputs' : 'Show tool outputs'}
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Show more button */}
-        {hiddenCount > 0 && !showAll && (
-          <button
-            onClick={() => setShowAll(true)}
-            className="relative mt-2 text-sm transition-colors"
-            style={{ color: '#8a857f' }}
-            onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
-            onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
-          >
-            Show {hiddenCount} more
-          </button>
+      {/* Header row - plain text, clickable */}
+      <div
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 cursor-pointer select-none"
+        style={{ lineHeight: '1.4' }}
+      >
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
         )}
+        <span
+          className="flex-shrink-0"
+          style={{
+            color: allCompleted ? '#8a857f' : '#6366f1',
+            fontSize: '11px',
+            animation: allCompleted ? 'none' : 'tool-breathe 2s ease-in-out infinite',
+          }}
+        >
+          ✦
+        </span>
+        <span className="text-xs" style={{ color: '#5a5550' }}>
+          {getGroupHeading()}
+        </span>
       </div>
 
-      {/* Expanded tool outputs */}
-      {showOutputs && (
-        <div className="mt-2 ml-5 space-y-1.5">
-          {toolCalls.map((call, idx) => (
-            <div key={idx} className="px-3 py-2 rounded text-xs" style={{ background: '#faf9f7', border: '1px solid #e8e5e0' }}>
-              <div className="font-semibold mb-1" style={{ color: '#3d3935' }}>
-                {formatToolName(call.name)}
+      {/* Tool tree */}
+      {expanded && (
+        <div className="ml-[7px] mt-0.5">
+          {displayedCalls.map((call, idx) => {
+            const isLast = idx === displayedCalls.length - 1 && (showAll || visibleCalls.length <= COLLAPSED_LIMIT);
+            return (
+              <div key={idx} className="flex" style={{ minHeight: '20px' }}>
+                {/* Tree gutter: vertical line + branch */}
+                <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
+                  {/* Vertical line */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '3px',
+                      top: 0,
+                      bottom: isLast ? '50%' : 0,
+                      width: '1px',
+                      background: '#d4d1cc',
+                    }}
+                  />
+                  {/* Horizontal branch */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '3px',
+                      top: '50%',
+                      width: '10px',
+                      height: '1px',
+                      background: '#d4d1cc',
+                    }}
+                  />
+                </div>
+
+                {/* Tool content */}
+                <div className="flex-1 py-0.5" style={{ minWidth: 0 }}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-semibold flex-shrink-0" style={{ color: '#3d3935' }}>
+                      {formatToolName(call.name)}
+                    </span>
+                    {getToolParam(call) && (
+                      <span className="text-[11px] truncate" style={{ color: '#a09b95' }}>
+                        {getToolParam(call)}
+                      </span>
+                    )}
+                  </div>
+                  {/* Result */}
+                  {call.result && (
+                    <ToolResult text={call.result} />
+                  )}
+                </div>
               </div>
-              <pre className="whitespace-pre-wrap break-words font-mono text-[11px]" style={{ color: '#5a5550' }}>
-                {call.parameters}
-              </pre>
+            );
+          })}
+
+          {/* Show more / Show less */}
+          {hiddenCount > 0 && (
+            <div className="flex" style={{ minHeight: '20px' }}>
+              <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
+                {!showAll && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '3px',
+                      top: 0,
+                      bottom: '50%',
+                      width: '1px',
+                      background: '#d4d1cc',
+                    }}
+                  />
+                )}
+              </div>
+              <button
+                onClick={() => setShowAll(!showAll)}
+                className="text-[11px] py-0.5 cursor-pointer"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+              >
+                {showAll ? 'Show less' : `Show ${hiddenCount} more`}
+              </button>
             </div>
-          ))}
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Collapsible JSON tree - objects/arrays auto-collapsed, click to expand
+function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: number; keyName?: string }) {
+  const [open, setOpen] = useState(depth < 1);
+
+  const keyPrefix = keyName !== undefined ? (
+    <span style={{ color: '#8a857f' }}>{`"${keyName}": `}</span>
+  ) : null;
+
+  // Primitives render inline
+  if (data === null) return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>null</span></span>;
+  if (typeof data === 'boolean') return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>{String(data)}</span></span>;
+  if (typeof data === 'number') return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>{data}</span></span>;
+  if (typeof data === 'string') {
+    const display = data.length > 80 ? data.slice(0, 77) + '...' : data;
+    return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>"{display}"</span></span>;
+  }
+
+  const isArray = Array.isArray(data);
+  const entries = isArray ? data.map((v: any, i: number) => [String(i), v] as [string, any]) : Object.entries(data);
+  const openBracket = isArray ? '[' : '{';
+  const closeBracket = isArray ? ']' : '}';
+
+  if (entries.length === 0) {
+    return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>{openBracket}{closeBracket}</span></span>;
+  }
+
+  if (!open) {
+    return (
+      <span>
+        {keyPrefix}
+        <span
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          className="cursor-pointer"
+          style={{ color: '#8a857f' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+        >
+          {openBracket}<span style={{ color: '#b0aba5' }}>{isArray ? `${entries.length} items` : '...'}</span>{closeBracket}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span>
+      {keyPrefix}
+      <span
+        onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+        className="cursor-pointer"
+        style={{ color: '#8a857f' }}
+        onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+      >
+        {openBracket}
+      </span>
+      <div style={{ marginLeft: '12px' }}>
+        {entries.map(([key, value]: [string, any], i: number) => (
+          <div key={key} style={{ lineHeight: '1.5' }}>
+            <CollapsibleJson
+              data={value}
+              depth={depth + 1}
+              keyName={isArray ? undefined : key}
+            />
+            {i < entries.length - 1 && <span style={{ color: '#c4c0bb' }}>,</span>}
+          </div>
+        ))}
+      </div>
+      <span
+        onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+        className="cursor-pointer"
+        style={{ color: '#8a857f' }}
+        onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+      >
+        {closeBracket}
+      </span>
+    </span>
+  );
+}
+
+// Tool result: gradient fade with "daugiau" expand, collapsible JSON
+function ToolResult({ text }: { text: string }) {
+  const [resultExpanded, setResultExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const COLLAPSED_HEIGHT = 56; // ~4 lines
+
+  // Try parse as JSON
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(text);
+    if (typeof parsed !== 'object' || parsed === null) parsed = null;
+  } catch { /* not JSON */ }
+
+  useEffect(() => {
+    if (contentRef.current && !parsed) {
+      setOverflows(contentRef.current.scrollHeight > COLLAPSED_HEIGHT);
+    }
+  }, [text, parsed]);
+
+  // JSON object/array: render as collapsible tree
+  if (parsed) {
+    return (
+      <div className="text-[11px] mt-0.5 font-mono" style={{ lineHeight: '1.5' }}>
+        <CollapsibleJson data={parsed} />
+      </div>
+    );
+  }
+
+  // Plain text: fade + "daugiau"
+  return (
+    <div className="mt-0.5 relative">
+      <div
+        ref={contentRef}
+        className="text-[11px] whitespace-pre-wrap"
+        style={{
+          color: '#a09b95',
+          maxHeight: resultExpanded ? 'none' : `${COLLAPSED_HEIGHT}px`,
+          overflow: 'hidden',
+          wordBreak: 'break-word',
+          transition: 'max-height 0.2s ease',
+        }}
+      >
+        {text}
+      </div>
+      {overflows && !resultExpanded && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '28px',
+            background: 'linear-gradient(to bottom, transparent, white)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      {overflows && (
+        <button
+          onClick={() => setResultExpanded(!resultExpanded)}
+          className="text-[11px] cursor-pointer mt-0.5"
+          style={{ color: '#8a857f' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+        >
+          {resultExpanded ? 'mažiau' : 'daugiau'}
+        </button>
       )}
     </div>
   );

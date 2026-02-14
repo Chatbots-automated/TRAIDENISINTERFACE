@@ -244,13 +244,9 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
 
           {/* Messages */}
           {error && (
-            <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-              background: colors.status.error,
-              color: colors.status.errorText,
-              border: `1px solid ${colors.status.errorBorder}`
-            }}>
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm flex-1">{error}</span>
+            <div className="alert alert-soft alert-error mx-6 mt-4 text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{error}</span>
               <button
                 onClick={() => setError(null)}
                 className="opacity-60 hover:opacity-100 transition-opacity"
@@ -261,13 +257,9 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
           )}
 
           {success && (
-            <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-              background: colors.status.success,
-              color: colors.status.successText,
-              border: `1px solid ${colors.status.successBorder}`
-            }}>
-              <Check className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">{success}</span>
+            <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
+              <Check className="w-4 h-4 flex-shrink-0" />
+              <span>{success}</span>
             </div>
           )}
 
@@ -475,24 +467,16 @@ export default function InstructionsModal({ isOpen, onClose, user }: Instruction
 
         {/* Messages */}
         {error && (
-          <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-            background: colors.status.error,
-            color: colors.status.errorText,
-            border: `1px solid ${colors.status.errorBorder}`
-          }}>
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm">{error}</span>
+          <div className="alert alert-soft alert-error mx-6 mt-4 text-sm">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
         {success && (
-          <div className="mx-6 mt-4 flex items-center space-x-2 p-3 rounded-lg" style={{
-            background: colors.status.success,
-            color: colors.status.successText,
-            border: `1px solid ${colors.status.successBorder}`
-          }}>
-            <Check className="w-5 h-5 flex-shrink-0" />
-            <span className="text-sm">{success}</span>
+          <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
+            <Check className="w-4 h-4 flex-shrink-0" />
+            <span>{success}</span>
           </div>
         )}
 
