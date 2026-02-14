@@ -240,13 +240,15 @@ export default function MessageContent({ content }: MessageContentProps) {
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
-  // Filter out display_buttons tool - it's an internal UI mechanism
   const visibleCalls = toolCalls.filter(c => c.name !== 'display_buttons');
   if (visibleCalls.length === 0) return null;
 
   const allCompleted = visibleCalls.every(c => c.result);
-  const completedCount = visibleCalls.filter(c => c.result).length;
+  const COLLAPSED_LIMIT = 3;
+  const displayedCalls = showAll ? visibleCalls : visibleCalls.slice(0, COLLAPSED_LIMIT);
+  const hiddenCount = visibleCalls.length - COLLAPSED_LIMIT;
 
   const formatToolName = (name: string): string => {
     return name
@@ -255,41 +257,36 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       .join(' ');
   };
 
-  const getToolDescription = (call: ToolCall): string => {
+  const getToolParam = (call: ToolCall): string => {
     try {
       const parsed = JSON.parse(call.parameters);
       if (typeof parsed === 'object' && parsed !== null) {
-        // Find the most readable string value
         const readable = Object.values(parsed).find(v => typeof v === 'string' && (v as string).length > 2) as string | undefined;
-        if (readable && readable.length <= 60) return readable;
-        if (readable) return readable.slice(0, 57) + '...';
+        if (readable && readable.length <= 50) return readable;
+        if (readable) return readable.slice(0, 47) + '...';
       }
-    } catch {
-      // Not JSON
-    }
+    } catch { /* not JSON */ }
     const cleaned = call.parameters.replace(/\s+/g, ' ').trim();
     if (cleaned === '{}' || !cleaned) return '';
-    if (cleaned.length <= 60) return cleaned;
-    return cleaned.slice(0, 57) + '...';
+    if (cleaned.length <= 50) return cleaned;
+    return cleaned.slice(0, 47) + '...';
   };
 
   const formatResult = (text: string): string => {
     try {
       const parsed = JSON.parse(text);
-      // For objects, show a compact summary
       if (typeof parsed === 'object' && parsed !== null) {
         const str = JSON.stringify(parsed, null, 2);
-        if (str.length > 300) return str.slice(0, 297) + '...';
+        if (str.length > 200) return str.slice(0, 197) + '...';
         return str;
       }
       return String(parsed);
     } catch {
-      if (text.length > 300) return text.slice(0, 297) + '...';
+      if (text.length > 200) return text.slice(0, 197) + '...';
       return text;
     }
   };
 
-  // Generate task group heading from tool names
   const getGroupHeading = (): string => {
     if (!allCompleted) {
       return visibleCalls.length === 1
@@ -302,8 +299,7 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
   };
 
   return (
-    <div className="my-3">
-      {/* Breathe animation style */}
+    <div className="my-2">
       {!allCompleted && (
         <style>{`
           @keyframes tool-breathe {
@@ -313,129 +309,85 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
         `}</style>
       )}
 
-      {/* Task group container */}
+      {/* Header row - plain text, clickable */}
       <div
-        className="rounded-xl overflow-hidden"
-        style={{
-          border: '1px solid #e8e5e0',
-          background: '#faf9f7',
-        }}
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 cursor-pointer select-none"
+        style={{ lineHeight: '1.4' }}
       >
-        {/* Header - clickable */}
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 transition-colors cursor-pointer"
-          style={{ background: expanded ? '#f5f3f0' : '#faf9f7' }}
-          onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3f0'}
-          onMouseLeave={(e) => e.currentTarget.style.background = expanded ? '#f5f3f0' : '#faf9f7'}
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
+        )}
+        <span
+          className="flex-shrink-0"
+          style={{
+            color: allCompleted ? '#8a857f' : '#6366f1',
+            fontSize: '11px',
+            animation: allCompleted ? 'none' : 'tool-breathe 2s ease-in-out infinite',
+          }}
         >
-          {/* Status icon with breathe */}
-          <span
-            className="text-sm flex-shrink-0"
-            style={{
-              color: allCompleted ? '#8a857f' : '#6366f1',
-              animation: allCompleted ? 'none' : 'tool-breathe 2s ease-in-out infinite',
-            }}
-          >
-            ✦
-          </span>
+          ✦
+        </span>
+        <span className="text-xs" style={{ color: '#5a5550' }}>
+          {getGroupHeading()}
+        </span>
+      </div>
 
-          {/* Heading */}
-          <span className="text-[13px] font-medium flex-1 text-left" style={{ color: '#3d3935' }}>
-            {getGroupHeading()}
-          </span>
-
-          {/* Count badge */}
-          {visibleCalls.length > 1 && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
-              style={{
-                background: allCompleted ? '#e8e5e0' : 'rgba(99, 102, 241, 0.1)',
-                color: allCompleted ? '#8a857f' : '#6366f1',
-              }}
-            >
-              {completedCount}/{visibleCalls.length}
-            </span>
-          )}
-
-          {/* Expand icon */}
-          {expanded ? (
-            <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#a09b95' }} />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#a09b95' }} />
-          )}
-        </button>
-
-        {/* Expanded tool tree */}
-        {expanded && (
-          <div className="px-3.5 pb-3 pt-1">
-            <div className="relative pl-5">
-              {/* Vertical chain line */}
-              {visibleCalls.length > 1 && (
-                <div
-                  className="absolute"
-                  style={{
-                    left: '5px',
-                    top: '8px',
-                    bottom: '8px',
-                    width: '1.5px',
-                    background: 'linear-gradient(to bottom, #d4d1cc, #e8e5e0)',
-                  }}
-                />
-              )}
-
-              {visibleCalls.map((call, idx) => (
-                <div key={idx} className="relative" style={{ padding: '4px 0' }}>
-                  {/* Chain dot */}
+      {/* Tool tree */}
+      {expanded && (
+        <div className="ml-[7px] mt-0.5">
+          {displayedCalls.map((call, idx) => {
+            const isLast = idx === displayedCalls.length - 1 && (showAll || visibleCalls.length <= COLLAPSED_LIMIT);
+            return (
+              <div key={idx} className="flex" style={{ minHeight: '20px' }}>
+                {/* Tree gutter: vertical line + branch */}
+                <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
+                  {/* Vertical line */}
                   <div
-                    className="absolute rounded-full"
                     style={{
-                      left: '-16px',
-                      width: '7px',
-                      height: '7px',
-                      top: '11px',
-                      border: call.result ? '1.5px solid #8a857f' : '1.5px solid #6366f1',
-                      background: call.result ? '#e8e5e0' : '#eef2ff',
+                      position: 'absolute',
+                      left: '3px',
+                      top: 0,
+                      bottom: isLast ? '50%' : 0,
+                      width: '1px',
+                      background: '#d4d1cc',
                     }}
                   />
+                  {/* Horizontal branch */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '3px',
+                      top: '50%',
+                      width: '10px',
+                      height: '1px',
+                      background: '#d4d1cc',
+                    }}
+                  />
+                </div>
 
-                  {/* Tool row */}
+                {/* Tool content */}
+                <div className="flex-1 py-0.5" style={{ minWidth: 0 }}>
                   <div className="flex items-center gap-1.5">
-                    {/* Status */}
-                    <span className="text-[11px] flex-shrink-0" style={{ color: call.result ? '#22c55e' : '#6366f1', width: '14px' }}>
-                      {call.result ? '✓' : '⟳'}
-                    </span>
-
-                    {/* Tool name */}
-                    <span className="text-xs font-medium flex-shrink-0" style={{ color: '#5a5550' }}>
+                    <span className="text-xs font-semibold flex-shrink-0" style={{ color: '#3d3935' }}>
                       {formatToolName(call.name)}
                     </span>
-
-                    {/* Parameter description */}
-                    {getToolDescription(call) && (
-                      <code
-                        className="px-1.5 py-0.5 rounded text-[11px] truncate max-w-[280px]"
-                        style={{
-                          background: '#f0ede8',
-                          color: '#8a857f',
-                          fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace',
-                        }}
-                      >
-                        {getToolDescription(call)}
-                      </code>
+                    {getToolParam(call) && (
+                      <span className="text-[11px] truncate" style={{ color: '#a09b95' }}>
+                        {getToolParam(call)}
+                      </span>
                     )}
                   </div>
-
-                  {/* Result preview */}
+                  {/* Result as muted text below */}
                   {call.result && (
                     <div
-                      className="mt-1 ml-5 px-2.5 py-1.5 rounded-md text-[11px] font-mono overflow-hidden"
+                      className="text-[11px] mt-0.5 whitespace-pre-wrap"
                       style={{
-                        background: '#f0ede8',
-                        color: '#5a5550',
-                        maxHeight: '80px',
-                        overflowY: 'auto',
-                        whiteSpace: 'pre-wrap',
+                        color: '#a09b95',
+                        maxHeight: '60px',
+                        overflow: 'hidden',
                         wordBreak: 'break-word',
                       }}
                     >
@@ -443,11 +395,40 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
                     </div>
                   )}
                 </div>
-              ))}
+              </div>
+            );
+          })}
+
+          {/* Show more / Show less */}
+          {hiddenCount > 0 && (
+            <div className="flex" style={{ minHeight: '20px' }}>
+              <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
+                {!showAll && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '3px',
+                      top: 0,
+                      bottom: '50%',
+                      width: '1px',
+                      background: '#d4d1cc',
+                    }}
+                  />
+                )}
+              </div>
+              <button
+                onClick={() => setShowAll(!showAll)}
+                className="text-[11px] py-0.5 cursor-pointer"
+                style={{ color: '#8a857f' }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+                onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+              >
+                {showAll ? 'Show less' : `Show ${hiddenCount} more`}
+              </button>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
