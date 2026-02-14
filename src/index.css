@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Override FlyonUI primary color to match brand blue (#007AFF) */
+[data-theme="light"] {
+  --color-primary: oklch(0.5846 0.2239 264.05);
+  --color-primary-content: oklch(1 0 0);
+}
+
 /* macOS-inspired Premium CSS Styling */
 @layer base {
   * {

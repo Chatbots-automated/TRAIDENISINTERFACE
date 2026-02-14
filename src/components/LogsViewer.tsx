@@ -229,94 +229,85 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
               <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>Try adjusting your filters</p>
             </div>
           ) : (
-            logs.map((log) => (
-              <div
-                key={log.id}
-                className="overflow-hidden rounded-lg border transition-all"
-                style={{
-                  background: colors.bg.white,
-                  borderColor: colors.border.default
-                }}
-              >
-                <button
-                  onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
-                  className="w-full p-3 text-left transition-colors"
-                  onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-1.5 mb-1.5">
-                        {expandedLog === log.id ? (
-                          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: colors.text.tertiary }} />
-                        ) : (
-                          <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: colors.text.tertiary }} />
-                        )}
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={getLevelStyle(log.level)}>
-                          {log.level.toUpperCase()}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={getCategoryStyle(log.category)}>
-                          {log.category}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{
-                          background: colors.bg.secondary,
-                          color: colors.text.secondary,
-                          border: `1px solid ${colors.border.default}`
-                        }}>
-                          {log.action}
-                        </span>
-                      </div>
-                      <p className="text-xs font-medium mb-1.5 leading-relaxed" style={{ color: colors.text.primary }}>{log.message}</p>
-                      <div className="flex items-center space-x-3 text-[11px]" style={{ color: colors.text.secondary }}>
-                        {log.user_email && (
-                          <div className="flex items-center space-x-1">
-                            <User className="w-3 h-3" />
-                            <span>{log.user_email}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center space-x-1">
-                          <Calendar className="w-3 h-3" />
-                          <span>{formatTimestamp(log.timestamp)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-
-                {/* Expanded Details */}
-                {expandedLog === log.id && (
-                  <div className="px-3 pb-3 border-t" style={{
-                    borderColor: colors.border.light,
-                    background: colors.bg.secondary
-                  }}>
-                    <div className="mt-2 space-y-1.5">
-                      <div className="text-[11px]">
-                        <span className="font-medium" style={{ color: colors.text.primary }}>ID:</span>
-                        <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.id}</span>
-                      </div>
-                      {log.user_id && (
-                        <div className="text-[11px]">
-                          <span className="font-medium" style={{ color: colors.text.primary }}>User ID:</span>
-                          <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.user_id}</span>
-                        </div>
+            <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
+              <table className="table-striped table">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Level</th>
+                    <th>Category</th>
+                    <th>Action</th>
+                    <th>Message</th>
+                    <th>User</th>
+                    <th>Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logs.map((log) => (
+                    <React.Fragment key={log.id}>
+                      <tr
+                        className="cursor-pointer"
+                        onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
+                      >
+                        <td className="w-6">
+                          {expandedLog === log.id ? (
+                            <ChevronDown className="w-3.5 h-3.5" style={{ color: colors.text.tertiary }} />
+                          ) : (
+                            <ChevronRight className="w-3.5 h-3.5" style={{ color: colors.text.tertiary }} />
+                          )}
+                        </td>
+                        <td>
+                          <span className="badge badge-soft text-xs" style={getLevelStyle(log.level)}>
+                            {log.level.toUpperCase()}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-soft text-xs" style={getCategoryStyle(log.category)}>
+                            {log.category}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-soft badge-info text-xs">{log.action}</span>
+                        </td>
+                        <td className="max-w-xs truncate text-xs" title={log.message}>{log.message}</td>
+                        <td className="text-xs whitespace-nowrap">{log.user_email || '—'}</td>
+                        <td className="text-xs whitespace-nowrap">{formatTimestamp(log.timestamp)}</td>
+                      </tr>
+                      {expandedLog === log.id && (
+                        <tr>
+                          <td colSpan={7} className="bg-base-200/50">
+                            <div className="space-y-1.5 text-[11px] py-1">
+                              <div>
+                                <span className="font-medium" style={{ color: colors.text.primary }}>ID:</span>
+                                <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.id}</span>
+                              </div>
+                              {log.user_id && (
+                                <div>
+                                  <span className="font-medium" style={{ color: colors.text.primary }}>User ID:</span>
+                                  <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.user_id}</span>
+                                </div>
+                              )}
+                              {log.metadata && Object.keys(log.metadata).length > 0 && (
+                                <div>
+                                  <span className="font-medium" style={{ color: colors.text.primary }}>Metadata:</span>
+                                  <pre className="mt-1 p-2 rounded-lg overflow-x-auto border text-[10px]" style={{
+                                    background: colors.bg.white,
+                                    color: colors.text.secondary,
+                                    borderColor: colors.border.default
+                                  }}>
+                                    {JSON.stringify(log.metadata, null, 2)}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                      {log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <div className="text-[11px]">
-                          <span className="font-medium" style={{ color: colors.text.primary }}>Metadata:</span>
-                          <pre className="mt-1 p-2 rounded-lg overflow-x-auto border text-[10px]" style={{
-                            background: colors.bg.white,
-                            color: colors.text.secondary,
-                            borderColor: colors.border.default
-                          }}>
-                            {JSON.stringify(log.metadata, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
