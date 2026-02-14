@@ -2207,17 +2207,19 @@ Vartotojo instrukcija: ${instruction}`;
                         onClick={() => handleSelectOwnedConversation(conv.id)}
                         className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
                           isActive
-                            ? 'bg-primary/10'
+                            ? 'bg-base-content/[0.07]'
                             : 'hover:bg-base-content/5'
                         }`}
                       >
                         <p className="flex-1 min-w-0 text-sm truncate text-base-content">{conv.title}</p>
-                        {/* Date - hidden on hover, replaced by actions */}
-                        <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
-                          {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
-                        </span>
-                        {/* Action icons - visible on hover */}
-                        <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+                        {/* Date - hidden on hover/active, replaced by actions */}
+                        {!isActive && (
+                          <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                            {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                        {/* Action icons - visible on hover or when active */}
+                        <div className={`items-center gap-0.5 flex-shrink-0 ${isActive ? 'flex' : 'hidden group-hover:flex'}`}>
                           <button
                             onClick={(e) => handleDeleteConversation(conv.id, e)}
                             className="p-1 rounded transition-colors text-base-content/30 hover:text-error hover:bg-error/10"
@@ -2433,9 +2435,9 @@ Vartotojo instrukcija: ${instruction}`;
                 return (
                   <div key={`${message.timestamp}-${index}`}>
                     {message.role === 'user' ? (
-                      // User message - blue bubble on right
+                      // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-primary text-primary-content">
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-base-content/15 bg-base-100 text-base-content">
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2623,39 +2625,35 @@ Vartotojo instrukcija: ${instruction}`;
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
         <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
-          <div className="w-full flex flex-col" style={{ height: '100vh', background: '#ffffff' }}>
+          <div className="w-full flex flex-col h-screen bg-base-100">
             {/* Header — compact single row */}
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
               <div className="flex items-center gap-3">
                 {/* Tab switcher (Peržiūra first) */}
                 {currentConversation?.artifact && !isStreamingArtifact ? (
-                  <div className="flex rounded-md overflow-hidden" style={{ border: '1px solid #e5e2dd' }}>
+                  <div className="flex rounded-lg overflow-hidden border border-base-content/10">
                     <button
                       onClick={() => setArtifactTab('preview')}
-                      className="px-2.5 py-1 text-[11px] font-medium transition-colors"
-                      style={{
-                        background: artifactTab === 'preview' ? '#3d3935' : 'transparent',
-                        color: artifactTab === 'preview' ? '#ffffff' : '#8a857f',
-                      }}
+                      className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        artifactTab === 'preview' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
+                      }`}
                     >
                       Peržiūra
                     </button>
                     <button
                       onClick={() => setArtifactTab('data')}
-                      className="px-2.5 py-1 text-[11px] font-medium transition-colors"
-                      style={{
-                        background: artifactTab === 'data' ? '#3d3935' : 'transparent',
-                        color: artifactTab === 'data' ? '#ffffff' : '#8a857f',
-                      }}
+                      className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        artifactTab === 'data' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
+                      }`}
                     >
                       Duomenys
                     </button>
                   </div>
                 ) : (
-                  <span className="text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>
+                  <span className="text-xs font-medium text-base-content">
                     Komercinis pasiūlymas
                     {isStreamingArtifact && (
-                      <span className="ml-2" style={{ color: '#3b82f6' }}>Generuojama...</span>
+                      <span className="ml-2 text-primary">Generuojama...</span>
                     )}
                   </span>
                 )}
@@ -2665,10 +2663,7 @@ Vartotojo instrukcija: ${instruction}`;
                   <>
                     <button
                       onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
-                      className="p-1.5 rounded-md transition-colors"
-                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
                       title="Atsisiųsti PDF"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -2676,10 +2671,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {artifactTab === 'preview' && (
                       <button
                         onClick={() => setDocEditMode(prev => !prev)}
-                        className="p-1.5 rounded-md transition-colors"
-                        style={{ color: docEditMode ? '#3b82f6' : '#8a857f', background: docEditMode ? '#eff6ff' : 'transparent' }}
-                        onMouseEnter={(e) => { if (!docEditMode) e.currentTarget.style.background = '#f0ede8'; }}
-                        onMouseLeave={(e) => { if (!docEditMode) e.currentTarget.style.background = 'transparent'; }}
+                        className={`btn btn-circle btn-text btn-xs ${docEditMode ? 'text-primary bg-primary/10' : 'text-base-content/40 hover:text-base-content/70'}`}
                         title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
                       >
                         {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
@@ -2687,20 +2679,14 @@ Vartotojo instrukcija: ${instruction}`;
                     )}
                     <button
                       onClick={handleOpenTemplateEditor}
-                      className="p-1.5 rounded-md transition-colors"
-                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
                       title="Redaguoti šabloną"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
-                      className="p-1.5 rounded-md transition-colors"
-                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
                       title="Kopijuoti YAML"
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -2709,17 +2695,14 @@ Vartotojo instrukcija: ${instruction}`;
                 )}
                 <button
                   onClick={() => setShowArtifact(false)}
-                  className="p-1.5 rounded-md transition-colors"
-                  style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
-            {/* Fade separator */}
-            <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
+            {/* Separator */}
+            <div className="h-px bg-base-content/8" />
 
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
@@ -3504,14 +3487,14 @@ Vartotojo instrukcija: ${instruction}`;
           </style>`
         );
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.4)' }} onClick={() => setShowTemplateEditor(false)}>
-            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden" style={{ background: '#ffffff', height: '88vh' }} onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTemplateEditor(false)}>
+            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100" style={{ height: '88vh' }} onClick={(e) => e.stopPropagation()}>
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <div className="flex items-center justify-between px-5 py-3 flex-shrink-0 border-b border-base-content/10">
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium" style={{ color: 'var(--color-base-content)' }}>Redaguoti šabloną</span>
+                  <span className="text-sm font-medium text-base-content">Redaguoti šabloną</span>
                   {isGlobalTemplateCustomized() && (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>Pakeistas</span>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/15 text-warning-content">Pakeistas</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -3522,42 +3505,33 @@ Vartotojo instrukcija: ${instruction}`;
                         setTemplateVersion(v => v + 1);
                         setShowTemplateEditor(false);
                       }}
-                      className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
-                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      className="btn btn-soft btn-xs"
                     >
                       Atkurti pradinį
                     </button>
                   )}
                   <button
                     onClick={() => setShowTemplateEditor(false)}
-                    className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
-                    style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    className="btn btn-soft btn-xs"
                   >
                     Atšaukti
                   </button>
                   <button
                     onClick={handleSaveGlobalTemplate}
-                    className="text-[11px] px-4 py-1.5 rounded-md font-medium transition-colors"
-                    style={{ background: '#3d3935', color: 'white' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                    className="btn btn-primary btn-xs"
                   >
                     Išsaugoti
                   </button>
                 </div>
               </div>
               {/* Hint bar */}
-              <div className="px-5 py-1.5 flex-shrink-0" style={{ background: '#fafaf8', borderBottom: '1px solid #f0ede8' }}>
-                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
+              <div className="px-5 py-1.5 flex-shrink-0 bg-base-200/50 border-b border-base-content/5">
+                <span className="text-[10px] text-base-content/40">
                   Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
                 </span>
               </div>
               {/* Visual editor iframe */}
-              <div className="flex-1 overflow-auto" style={{ background: '#f5f4f2' }}>
+              <div className="flex-1 overflow-auto bg-base-200/30">
                 <div style={{ width: '595px', margin: '24px auto' }}>
                   <iframe
                     ref={templateEditorIframeRef}
@@ -3588,45 +3562,24 @@ Vartotojo instrukcija: ${instruction}`;
       {/* Prompt Modal */}
       {showPromptModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-6"
-          style={{ background: 'rgba(0,0,0,0.5)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40"
           onClick={() => {
             setShowPromptModal(false);
             setShowTemplateView(false);
           }}
         >
           <div
-            className="w-full max-w-4xl max-h-[80vh] rounded-lg overflow-hidden"
-            style={{ background: 'white', border: '1px solid #e8e5e0' }}
+            className="w-full max-w-4xl max-h-[80vh] rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-base-content/10">
               <div className="flex items-center gap-4">
-                <h3 className="text-lg font-semibold" style={{ color: 'var(--color-base-content)' }}>
+                <h3 className="text-lg font-semibold text-base-content">
                   {showTemplateView ? 'Prompt Šablonas' : 'Pilnas Prompt'}
                 </h3>
                 <button
                   onClick={() => setShowTemplateView(!showTemplateView)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                  style={{
-                    background: showTemplateView ? '#f0ede8' : '#5a5550',
-                    color: showTemplateView ? '#5a5550' : 'white',
-                    border: showTemplateView ? '1px solid #e8e5e0' : 'none'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (showTemplateView) {
-                      e.currentTarget.style.background = '#e8e5e0';
-                    } else {
-                      e.currentTarget.style.background = '#3d3935';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (showTemplateView) {
-                      e.currentTarget.style.background = '#f0ede8';
-                    } else {
-                      e.currentTarget.style.background = '#5a5550';
-                    }
-                  }}
+                  className={`btn btn-xs ${showTemplateView ? 'btn-soft' : 'btn-primary'}`}
                 >
                   {showTemplateView ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
                 </button>
@@ -3636,16 +3589,13 @@ Vartotojo instrukcija: ${instruction}`;
                   setShowPromptModal(false);
                   setShowTemplateView(false);
                 }}
-                className="p-2 rounded-lg transition-colors"
-                style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                className="btn btn-circle btn-text btn-sm text-base-content/40 hover:text-base-content/70"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: 'var(--color-base-content)' }}>
+              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-base-content">
                 {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
               </pre>
             </div>
