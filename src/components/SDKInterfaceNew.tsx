@@ -14,7 +14,6 @@ import {
   PanelLeft,
   Pencil,
   Copy,
-  RotateCcw,
   ChevronDown,
   ChevronUp,
   User,
@@ -1002,11 +1001,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               // Chat content is everything before the opening tag
               const beforeArtifact = fullResponseText.split('<commercial_offer')[0];
               chatContent = beforeArtifact;
-              setStreamingContent(chatContent);
+              setStreamingContent(accumulatedToolXml + chatContent);
             } else {
               // Normal chat content
               chatContent = fullResponseText;
-              setStreamingContent(chatContent);
+              setStreamingContent(accumulatedToolXml + chatContent);
             }
 
           } else if (event.delta.type === 'input_json_delta' && currentToolUse) {
@@ -1349,6 +1348,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
     }
 
+    // Dismiss any unselected buttons before sending new message
+    const dismissedMessages = conversation.messages.map(msg => {
+      if (msg.buttons && msg.buttons.length > 0 && msg.selectedButtonId === undefined) {
+        const { buttons, buttonsMessage, ...rest } = msg;
+        return rest;
+      }
+      return msg;
+    });
+
     const userMessage: SDKMessage = {
       role: 'user',
       content: messageText,
@@ -1356,7 +1364,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     };
 
     await addMessageToConversation(conversation.id, userMessage);
-    const updatedMessages = [...conversation.messages, userMessage];
+    const updatedMessages = [...dismissedMessages, userMessage];
     setCurrentConversation({ ...conversation, messages: updatedMessages });
     setInputValue('');
     setLoading(true);
@@ -2601,13 +2609,17 @@ Vartotojo instrukcija: ${instruction}`;
                                 <button
                                   key={button.id}
                                   onClick={() => handleButtonClick(button.id, button.value, index)}
-                                  className={`px-3 py-1.5 rounded-lg transition-all text-sm font-medium ${
+                                  className={`px-4 py-2.5 rounded-3xl text-[15px] leading-relaxed transition-all ${
                                     isSelected
-                                      ? 'bg-transparent text-primary border-2 border-primary'
+                                      ? 'text-primary font-medium'
                                       : hasSelection
-                                        ? 'btn-soft opacity-40 cursor-not-allowed'
-                                        : 'bg-primary text-primary-content hover:shadow-md cursor-pointer'
+                                        ? 'text-base-content/30 cursor-not-allowed'
+                                        : 'text-base-content hover:bg-base-content/[0.1] cursor-pointer'
                                   }`}
+                                  style={{
+                                    background: isSelected ? 'rgba(var(--color-primary-raw, 99, 102, 241), 0.08)' : '#f8f8f9',
+                                    border: isSelected ? '2px solid var(--color-primary)' : '1px solid #e5e5e6',
+                                  }}
                                   disabled={hasSelection}
                                 >
                                   {button.label}
@@ -2626,12 +2638,6 @@ Vartotojo instrukcija: ${instruction}`;
                           onClick={() => { navigator.clipboard.writeText(contentString); addNotification('info', 'Nukopijuota', 'Žinutės tekstas nukopijuotas.'); }}
                         >
                           <Copy className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                          title="Regenerate"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
                         </button>
                         {message.thinking && (
                           <details className="ml-2">
