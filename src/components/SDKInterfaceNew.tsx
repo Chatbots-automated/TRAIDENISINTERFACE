@@ -1144,9 +1144,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
           // Create assistant message with buttons (ensure content is string)
           // Prepend accumulated tool call XML so tool usage persists in chat history
-          const fullButtonContent = newAccumulatedToolXml
-            ? (newAccumulatedToolXml + (textContent || 'Displaying options...'))
-            : (textContent || 'Displaying options...');
+          const fullButtonContent = accumulatedToolXml
+            ? (accumulatedToolXml + responseContent + roundToolXml)
+            : (responseContent + roundToolXml);
           const assistantMessage: SDKMessage = {
             role: 'assistant',
             content: fullButtonContent,
