@@ -1587,7 +1587,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           </button>
           <Copy
             className="w-3 h-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0"
-            style={{ color: '#8a857f' }}
+            style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
             onClick={() => {
               navigator.clipboard.writeText(`{{${item.key}}}`);
               addNotification('info', 'Nukopijuota', `{{${item.key}}} nukopijuota į iškarpinę.`);
@@ -2078,35 +2078,15 @@ Vartotojo instrukcija: ${instruction}`;
     }
   };
 
-  if (loadingPrompt) {
-    return (
-      <div className="h-full flex items-center justify-center" style={{ background: '#fdfcfb' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-3 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
-          <p className="text-base font-semibold mb-2" style={{ color: '#3d3935' }}>
-            Kraunamos sistemos instrukcijos
-          </p>
-          <p className="text-sm" style={{ color: '#8a857f' }}>
-            Gaunami kintamieji iš duomenų bazės...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full flex" style={{ background: '#fdfcfb' }}>
+    <div className="h-full flex bg-base-100">
       {/* Reopen Button (when sidebar collapsed) - positioned next to main sidebar */}
       {sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="fixed top-4 z-50 p-2 rounded-r-lg transition-all duration-300"
+          className="fixed top-4 z-50 p-2 rounded-r-lg transition-all duration-300 bg-base-100 border border-base-content/10 text-base-content/60 shadow-sm hover:bg-base-200"
           style={{
-            left: mainSidebarCollapsed ? '64px' : '256px', // Position at edge of main sidebar
-            background: 'white',
-            border: '1px solid #e8e5e0',
-            color: '#5a5550',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+            left: mainSidebarCollapsed ? '64px' : '256px',
           }}
         >
           <PanelLeft className="w-4 h-4" />
@@ -2115,11 +2095,9 @@ Vartotojo instrukcija: ${instruction}`;
 
       {/* Secondary Sidebar - slides from main sidebar edge */}
       <div
-        className="flex-shrink-0 border-r transition-all duration-300 flex flex-col"
+        className="flex-shrink-0 border-r border-base-content/10 transition-all duration-300 flex flex-col bg-base-200/40"
         style={{
           width: sidebarCollapsed ? '0px' : '260px',
-          borderColor: '#e8e5e0',
-          background: '#fafaf9',
           overflow: sidebarCollapsed ? 'hidden' : 'visible',
           opacity: sidebarCollapsed ? 0 : 1
         }}
@@ -2127,17 +2105,14 @@ Vartotojo instrukcija: ${instruction}`;
         {/* Project Header */}
         <div className="p-4 flex items-center justify-between">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
-            <FileText className="w-5 h-5 flex-shrink-0" style={{ color: '#5a5550' }} />
-            <span className="font-semibold truncate" style={{ color: '#3d3935' }}>
+            <FileText className="w-5 h-5 flex-shrink-0 text-base-content/70" />
+            <span className="font-semibold truncate text-base-content">
               Standartinis
             </span>
           </div>
           <button
             onClick={() => setSidebarCollapsed(true)}
-            className="p-1.5 rounded-md transition-colors"
-            style={{ color: '#8a857f' }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            className="btn btn-circle btn-text btn-xs text-base-content/50"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
@@ -2146,23 +2121,20 @@ Vartotojo instrukcija: ${instruction}`;
         {/* Instructions Section */}
         <div className="p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium" style={{ color: '#3d3935' }}>
+            <span className="text-sm font-medium text-base-content">
               Instrukcijos
             </span>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowPromptModal(true)}
-                className="p-1 rounded transition-colors"
-                style={{ color: '#8a857f' }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                className="btn btn-circle btn-text btn-xs text-base-content/50"
                 title="Peržiūrėti prompt"
               >
                 <Eye className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <p className="text-xs" style={{ color: '#8a857f' }}>
+          <p className="text-xs text-base-content/50">
             Sistemos instrukcijos komerciniam pasiūlymui
           </p>
         </div>
@@ -2170,23 +2142,17 @@ Vartotojo instrukcija: ${instruction}`;
         {/* Conversations Section with Tabs */}
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
-          <div className="px-4 border-b relative" style={{ borderColor: '#f0ede8' }}>
+          <div className="px-4 border-b border-base-content/10 relative">
             <div className="flex items-center">
               <button
                 onClick={() => setSidebarView('conversations')}
-                className="flex-1 px-3 py-3 text-sm font-medium transition-colors relative"
-                style={{
-                  color: sidebarView === 'conversations' ? '#3d3935' : '#8a857f'
-                }}
+                className={`flex-1 px-3 py-3 text-sm font-medium transition-colors relative ${sidebarView === 'conversations' ? 'text-base-content' : 'text-base-content/40'}`}
               >
                 Pokalbiai
               </button>
               <button
                 onClick={() => setSidebarView('shared')}
-                className="flex-1 px-3 py-3 text-sm font-medium transition-colors relative"
-                style={{
-                  color: sidebarView === 'shared' ? '#3d3935' : '#8a857f'
-                }}
+                className={`flex-1 px-3 py-3 text-sm font-medium transition-colors relative ${sidebarView === 'shared' ? 'text-base-content' : 'text-base-content/40'}`}
               >
                 Bendri
                 {unreadSharedCount > 0 && (
@@ -2198,9 +2164,8 @@ Vartotojo instrukcija: ${instruction}`;
             </div>
             {/* Sliding underline indicator */}
             <div
-              className="absolute bottom-0 h-0.5 transition-all duration-300 ease-in-out"
+              className="absolute bottom-0 h-0.5 bg-primary transition-all duration-300 ease-in-out"
               style={{
-                background: '#5a5550',
                 width: '50%',
                 left: sidebarView === 'conversations' ? '0%' : '50%'
               }}
@@ -2213,10 +2178,7 @@ Vartotojo instrukcija: ${instruction}`;
               <button
                 onClick={handleCreateConversation}
                 disabled={creatingConversation}
-                className="w-full flex items-center justify-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-                style={{ background: '#f0ede8', color: '#5a5550', border: '1px solid #e8e5e0' }}
-                onMouseEnter={(e) => !creatingConversation && (e.currentTarget.style.background = '#e8e5e0')}
-                onMouseLeave={(e) => !creatingConversation && (e.currentTarget.style.background = '#f0ede8')}
+                className="btn btn-soft btn-sm w-full"
               >
                 <Plus className="w-4 h-4" />
                 <span>Naujas pokalbis</span>
@@ -2229,11 +2191,11 @@ Vartotojo instrukcija: ${instruction}`;
             <div className="flex-1 overflow-y-auto px-2">
               {loadingConversations ? (
                 <div className="p-4 text-center">
-                  <RoboticArmLoader isAnimated={true} size={40} />
+                  <span className="loading loading-spinner loading-sm text-primary"></span>
                 </div>
               ) : conversations.length === 0 ? (
                 <div className="p-4 text-center">
-                  <p className="text-sm" style={{ color: '#8a857f' }}>Pokalbių nėra</p>
+                  <p className="text-sm text-base-content/50">Pokalbių nėra</p>
                 </div>
               ) : (
                 <div className="space-y-0.5">
@@ -2241,29 +2203,21 @@ Vartotojo instrukcija: ${instruction}`;
                     <div
                       key={conv.id}
                       onClick={() => handleSelectOwnedConversation(conv.id)}
-                      className="group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150"
-                      style={{
-                        background: currentConversation?.id === conv.id && !isReadOnly ? '#f0ede8' : 'transparent'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (currentConversation?.id !== conv.id || isReadOnly) e.currentTarget.style.background = '#f9f8f6';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (currentConversation?.id !== conv.id || isReadOnly) e.currentTarget.style.background = 'transparent';
-                      }}
+                      className={`group flex items-start justify-between p-2 rounded-lg cursor-pointer transition-all duration-150 ${
+                        currentConversation?.id === conv.id && !isReadOnly
+                          ? 'bg-primary/10'
+                          : 'hover:bg-base-content/5'
+                      }`}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate" style={{ color: '#3d3935' }}>{conv.title}</p>
-                        <p className="text-xs" style={{ color: '#8a857f' }}>
+                        <p className="text-sm truncate text-base-content">{conv.title}</p>
+                        <p className="text-xs text-base-content/40">
                           {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
                         </p>
                       </div>
                       <button
                         onClick={(e) => handleDeleteConversation(conv.id, e)}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all"
-                        style={{ color: '#991b1b' }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded transition-all text-error hover:bg-error/10"
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
@@ -2279,8 +2233,8 @@ Vartotojo instrukcija: ${instruction}`;
             <div className="flex-1 overflow-y-auto px-2 py-2">
               {sharedConversations.length === 0 ? (
                 <div className="p-4 text-center">
-                  <Users className="w-8 h-8 mx-auto mb-2" style={{ color: '#d1d5db' }} />
-                  <p className="text-sm" style={{ color: '#8a857f' }}>Nėra bendrų pokalbių</p>
+                  <Users className="w-8 h-8 mx-auto mb-2 text-base-content/20" />
+                  <p className="text-sm text-base-content/50">Nėra bendrų pokalbių</p>
                 </div>
               ) : (
                 <div className="space-y-0.5">
@@ -2288,27 +2242,21 @@ Vartotojo instrukcija: ${instruction}`;
                     <div
                       key={sharedConv.id}
                       onClick={() => handleSelectSharedConversation(sharedConv)}
-                      className="group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all duration-150"
-                      style={{
-                        background: currentConversation?.id === sharedConv.conversation_id && isReadOnly ? '#f0ede8' : 'transparent',
-                        border: !sharedConv.is_read ? '1px solid #f97316' : '1px solid transparent'
-                      }}
-                      onMouseEnter={(e) => {
-                        if (currentConversation?.id !== sharedConv.conversation_id || !isReadOnly) e.currentTarget.style.background = '#f9f8f6';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (currentConversation?.id !== sharedConv.conversation_id || !isReadOnly) e.currentTarget.style.background = 'transparent';
-                      }}
+                      className={`group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-all duration-150 ${
+                        currentConversation?.id === sharedConv.conversation_id && isReadOnly
+                          ? 'bg-primary/10'
+                          : 'hover:bg-base-content/5'
+                      } ${!sharedConv.is_read ? 'ring-1 ring-orange-400' : ''}`}
                     >
                       {!sharedConv.is_read && (
-                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: '#f97316' }} />
+                        <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-orange-400" />
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate" style={{ color: '#3d3935' }}>{sharedConv.conversation?.title}</p>
-                        <p className="text-xs truncate" style={{ color: '#8a857f' }}>
+                        <p className="text-sm truncate text-base-content">{sharedConv.conversation?.title}</p>
+                        <p className="text-xs truncate text-base-content/50">
                           Bendrino: {sharedConv.shared_by_name || sharedConv.shared_by_email}
                         </p>
-                        <p className="text-xs" style={{ color: '#9ca3af' }}>
+                        <p className="text-xs text-base-content/40">
                           {new Date(sharedConv.shared_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
                         </p>
                       </div>
@@ -2330,12 +2278,9 @@ Vartotojo instrukcija: ${instruction}`;
             {(currentConversation?.artifact || isStreamingArtifact) && (
               <button
                 onClick={() => setShowArtifact(true)}
-                className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
-                style={{
-                  background: isStreamingArtifact ? '#5a5550' : 'white',
-                  color: isStreamingArtifact ? 'white' : '#5a5550',
-                  border: '1px solid #e8e5e0'
-                }}
+                className={`px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl border border-base-content/10 ${
+                  isStreamingArtifact ? 'bg-primary text-primary-content' : 'bg-base-100 text-base-content'
+                }`}
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
@@ -2352,12 +2297,7 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="relative">
                 <button
                   onClick={handleToggleShareDropdown}
-                  className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl"
-                  style={{
-                    background: 'white',
-                    color: '#5a5550',
-                    border: '1px solid #e8e5e0'
-                  }}
+                  className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl bg-base-100 text-base-content border border-base-content/10"
                 >
                   <div className="flex items-center gap-2">
                     <Share2 className="w-4 h-4" />
@@ -2375,16 +2315,13 @@ Vartotojo instrukcija: ${instruction}`;
                     />
 
                     {/* Dropdown Content */}
-                    <div
-                      className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
-                      style={{ background: 'white', border: '1px solid #e8e5e0' }}
-                    >
+                    <div className="absolute top-full right-0 mt-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 bg-base-100 border border-base-content/10">
                       {/* Header */}
-                      <div className="px-4 py-3 border-b" style={{ borderColor: '#f0ede8' }}>
-                        <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
+                      <div className="px-4 py-3 border-b border-base-content/10">
+                        <h3 className="text-sm font-semibold text-base-content">
                           Dalintis pokalbiu
                         </h3>
-                        <p className="text-xs mt-1" style={{ color: '#8a857f' }}>
+                        <p className="text-xs mt-1 text-base-content/50">
                           Pasirinkite vartotojus
                         </p>
                       </div>
@@ -2392,7 +2329,7 @@ Vartotojo instrukcija: ${instruction}`;
                       {/* User List */}
                       <div className="max-h-64 overflow-y-auto p-2">
                         {shareableUsers.length === 0 ? (
-                          <p className="text-xs text-center py-6" style={{ color: '#9ca3af' }}>
+                          <p className="text-xs text-center py-6" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                             Nėra vartotojų
                           </p>
                         ) : (
@@ -2400,22 +2337,21 @@ Vartotojo instrukcija: ${instruction}`;
                             {shareableUsers.map((shareUser) => (
                               <label
                                 key={shareUser.id}
-                                className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-gray-50"
+                                className="flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors hover:bg-base-200"
                               >
                                 <input
                                   type="checkbox"
                                   checked={selectedShareUsers.includes(shareUser.id)}
                                   onChange={() => toggleUserSelection(shareUser.id)}
-                                  className="w-4 h-4 rounded"
-                                  style={{ accentColor: '#5a5550' }}
+                                  className="checkbox checkbox-primary checkbox-sm"
                                 />
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>
+                                  <div className="text-xs font-medium truncate text-base-content">
                                     {shareUser.full_name || shareUser.display_name || shareUser.email}
                                   </div>
                                 </div>
                                 {selectedShareUsers.includes(shareUser.id) && (
-                                  <Check className="w-4 h-4 flex-shrink-0" style={{ color: '#5a5550' }} />
+                                  <Check className="w-4 h-4 flex-shrink-0 text-primary" />
                                 )}
                               </label>
                             ))}
@@ -2424,31 +2360,21 @@ Vartotojo instrukcija: ${instruction}`;
                       </div>
 
                       {/* Footer Actions */}
-                      <div className="px-3 py-3 border-t flex items-center gap-2" style={{ borderColor: '#f0ede8' }}>
+                      <div className="px-3 py-3 border-t border-base-content/10 flex items-center gap-2">
                         <button
                           onClick={() => setShowShareDropdown(false)}
-                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-                          style={{ background: '#f0ede8', color: '#5a5550' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#e8e5e0'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#f0ede8'}
+                          className="btn btn-soft btn-sm flex-1"
                         >
                           Atšaukti
                         </button>
                         <button
                           onClick={handleShareConversation}
                           disabled={selectedShareUsers.length === 0 || sharingConversation}
-                          className="flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          style={{ background: '#5a5550', color: 'white' }}
-                          onMouseEnter={(e) => {
-                            if (!e.currentTarget.disabled) e.currentTarget.style.background = '#3d3935';
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!e.currentTarget.disabled) e.currentTarget.style.background = '#5a5550';
-                          }}
+                          className="btn btn-primary btn-sm flex-1"
                         >
                           {sharingConversation ? (
                             <span className="flex items-center justify-center gap-1">
-                              <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />
+                              <span className="loading loading-spinner loading-xs"></span>
                               Dalinasi...
                             </span>
                           ) : (
@@ -2468,20 +2394,62 @@ Vartotojo instrukcija: ${instruction}`;
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-6 py-8"
-          style={{ background: '#ffffff' }}
+          className="flex-1 overflow-y-auto px-6 py-8 bg-base-100"
         >
-          {!currentConversation ? (
-            <div className="h-full flex items-center justify-center">
-              <p className="text-sm" style={{ color: '#9ca3af' }}>
-                Parašykite žinutę, kad pradėtumėte pokalbį
+          {!currentConversation || currentConversation.messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto">
+              {/* Logo */}
+              <div className="w-14 h-14 mb-6">
+                <img
+                  src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
+                  alt="Traidenis"
+                  className="w-14 h-14 object-contain rounded-2xl shadow-sm"
+                />
+              </div>
+              {/* Greeting */}
+              <h2 className="text-2xl font-semibold text-base-content mb-2">
+                Kaip galiu padėti?
+              </h2>
+              <p className="text-sm text-base-content/40 mb-8">
+                Traidenis komercinių pasiūlymų asistentas
               </p>
-            </div>
-          ) : currentConversation.messages.length === 0 ? (
-            <div className="h-full flex items-center justify-center">
-              <p className="text-sm" style={{ color: '#9ca3af' }}>
-                Parašykite žinutę, kad pradėtumėte pokalbį
-              </p>
+              {/* Suggestion cards */}
+              <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
+                <button
+                  onClick={() => setInputValue('Noriu paruošti komercinį pasiūlymą')}
+                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
+                >
+                  <p className="text-sm font-medium text-base-content mb-1">Komercinis pasiūlymas</p>
+                  <p className="text-xs text-base-content/40">Paruošti naują komercinį pasiūlymą klientui</p>
+                </button>
+                <button
+                  onClick={() => setInputValue('Kokios valymo sistemos tinkamos 50 gyventojų namui?')}
+                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
+                >
+                  <p className="text-sm font-medium text-base-content mb-1">Produkto parinkimas</p>
+                  <p className="text-xs text-base-content/40">Padėsiu parinkti tinkamą valymo sistemą</p>
+                </button>
+                <button
+                  onClick={() => setInputValue('Paaiškink NubiSave sistemos veikimo principą')}
+                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
+                >
+                  <p className="text-sm font-medium text-base-content mb-1">Techninė informacija</p>
+                  <p className="text-xs text-base-content/40">Sužinokite apie sistemos specifikacijas</p>
+                </button>
+                <button
+                  onClick={() => setInputValue('Palygink NubiSave ir BioSave sistemas')}
+                  className="text-left p-4 rounded-xl border border-base-content/10 bg-base-100 hover:bg-base-200/60 hover:border-base-content/20 transition-all group"
+                >
+                  <p className="text-sm font-medium text-base-content mb-1">Sistemų palyginimas</p>
+                  <p className="text-xs text-base-content/40">Palyginti skirtingų modelių savybes</p>
+                </button>
+              </div>
+              {loadingPrompt && (
+                <div className="mt-6 flex items-center gap-2 text-base-content/30">
+                  <span className="loading loading-spinner loading-xs"></span>
+                  <span className="text-xs">Kraunamos instrukcijos...</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="max-w-4xl mx-auto space-y-4">
@@ -2505,14 +2473,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - clean bubble on right
                       <div className="flex justify-end mb-6">
-                        <div
-                          className="max-w-[75%] px-4 py-2.5 rounded-2xl"
-                          style={{
-                            background: '#f3f4f6',
-                            color: '#111827',
-                            fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif'
-                          }}
-                        >
+                        <div className="max-w-[75%] px-4 py-2.5 rounded-2xl bg-primary/10 text-base-content">
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2529,7 +2490,7 @@ Vartotojo instrukcija: ${instruction}`;
                       {message.buttons && message.buttons.length > 0 && (
                         <div className="mt-4">
                           {message.buttonsMessage && (
-                            <p className="text-sm mb-2" style={{ color: '#6b7280' }}>
+                            <p className="text-sm mb-2" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>
                               {message.buttonsMessage}
                             </p>
                           )}
@@ -2541,16 +2502,14 @@ Vartotojo instrukcija: ${instruction}`;
                                 <button
                                   key={button.id}
                                   onClick={() => handleButtonClick(button.id, button.value, index)}
-                                  className="px-3 py-1.5 rounded-lg transition-all hover:shadow-md text-sm"
+                                  className={`px-3 py-1.5 rounded-lg transition-all text-sm font-medium ${
+                                    isSelected
+                                      ? 'bg-transparent text-primary border-2 border-primary'
+                                      : hasSelection
+                                        ? 'btn-soft opacity-40 cursor-not-allowed'
+                                        : 'bg-primary text-primary-content hover:shadow-md cursor-pointer'
+                                  }`}
                                   disabled={hasSelection}
-                                  style={{
-                                    background: isSelected ? 'transparent' : colors.border.dark,
-                                    color: isSelected ? colors.border.dark : 'white',
-                                    border: isSelected ? `2px solid ${colors.border.dark}` : 'none',
-                                    fontWeight: '500',
-                                    opacity: hasSelection && !isSelected ? 0.4 : 1,
-                                    cursor: hasSelection ? 'not-allowed' : 'pointer'
-                                  }}
                                 >
                                   {button.label}
                                 </button>
@@ -2561,28 +2520,26 @@ Vartotojo instrukcija: ${instruction}`;
                       )}
 
                       {/* Reaction buttons */}
-                      <div className="flex items-center gap-1 mt-3">
+                      <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                          style={{ color: '#6b7280' }}
+                          className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
                           title="Copy"
                           onClick={() => { navigator.clipboard.writeText(contentString); addNotification('info', 'Nukopijuota', 'Žinutės tekstas nukopijuotas.'); }}
                         >
                           <Copy className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
-                          style={{ color: '#6b7280' }}
+                          className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
                           title="Regenerate"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                         </button>
                         {message.thinking && (
                           <details className="ml-2">
-                            <summary className="text-xs cursor-pointer px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors" style={{ color: '#6b7280' }}>
+                            <summary className="text-xs cursor-pointer px-2 py-1 rounded-lg text-base-content/40 hover:bg-base-200 transition-colors">
                               Mąstymas
                             </summary>
-                            <div className="mt-2 text-xs whitespace-pre-wrap px-4 py-3 rounded-lg" style={{ color: '#6b7280', background: '#f9fafb', border: '1px solid #e5e7eb' }}>
+                            <div className="mt-2 text-xs whitespace-pre-wrap px-4 py-3 rounded-lg text-base-content/50 bg-base-200/50 border border-base-content/10">
                               {message.thinking}
                             </div>
                           </details>
@@ -2603,11 +2560,9 @@ Vartotojo instrukcija: ${instruction}`;
 
               {/* Tool usage indicator */}
               {loading && isToolUse && (
-                <div className="mb-4 flex items-center gap-2 ml-1">
-                  <span className="text-sm" style={{ color: '#8a857f' }}>
-                    ✦
-                  </span>
-                  <span className="text-sm font-medium" style={{ color: '#8a857f' }}>
+                <div className="mb-4 flex items-center gap-2 ml-1 text-base-content/40">
+                  <span className="text-sm">✦</span>
+                  <span className="text-sm font-medium">
                     Vykdoma: {toolUseName}...
                   </span>
                 </div>
@@ -2636,11 +2591,7 @@ Vartotojo instrukcija: ${instruction}`;
         {showScrollButton && (
           <button
             onClick={scrollToBottom}
-            className="fixed bottom-24 left-1/2 transform -translate-x-1/2 p-3 rounded-full shadow-lg transition-all hover:shadow-xl z-40"
-            style={{
-              background: '#5a5550',
-              color: 'white'
-            }}
+            className="fixed bottom-24 left-1/2 transform -translate-x-1/2 p-3 rounded-full shadow-lg transition-all hover:shadow-xl z-40 bg-primary text-primary-content"
           >
             <ChevronDown className="w-5 h-5" />
           </button>
@@ -2650,8 +2601,8 @@ Vartotojo instrukcija: ${instruction}`;
         {error && (
           <div className="px-6 pb-2">
             <div className="max-w-4xl mx-auto">
-              <div className="flex items-start gap-2 px-4 py-2 rounded-lg text-sm" style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }}>
-                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="alert alert-soft alert-error text-sm">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1">{error}</span>
               </div>
             </div>
@@ -2661,19 +2612,19 @@ Vartotojo instrukcija: ${instruction}`;
         {/* Input Box or Read-Only Banner */}
         {isReadOnly && conversationDetails ? (
           /* Read-Only Mode Banner */
-          <div className="px-6 py-4 border-t" style={{ background: '#fef3c7', borderColor: '#fde68a' }}>
+          <div className="px-6 py-4 border-t border-warning/30 bg-warning/10">
             <div className="max-w-4xl mx-auto">
-              <div className="flex items-start gap-3 mb-3">
-                <AlertCircle className="w-5 h-5 mt-0.5" style={{ color: '#f59e0b' }} />
+              <div className="alert alert-soft alert-warning text-sm">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <div className="flex-1">
-                  <p className="text-sm font-semibold mb-1" style={{ color: '#92400e' }}>
+                  <p className="font-semibold mb-0.5">
                     Bendrinamas pokalbis. Tik skaityti.
                   </p>
-                  <p className="text-xs" style={{ color: '#92400e' }}>
+                  <p className="text-xs opacity-80">
                     <strong>Bendrino:</strong> {conversationDetails.shared_by.display_name || conversationDetails.shared_by.email}
                   </p>
                   {conversationDetails.shared_with.length > 0 && (
-                    <p className="text-xs mt-1" style={{ color: '#92400e' }}>
+                    <p className="text-xs mt-0.5 opacity-80">
                       <strong>Pasidalinta su:</strong> {conversationDetails.shared_with.map(u => u.display_name || u.email).join(', ')}
                     </p>
                   )}
@@ -2683,7 +2634,7 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
         ) : (
           /* Regular Input Box */
-          <div className="px-6 py-4" style={{ background: '#ffffff' }}>
+          <div className="px-6 py-4 bg-base-100">
             <div className="max-w-4xl mx-auto">
               <div className="relative">
                 <textarea
@@ -2693,16 +2644,12 @@ Vartotojo instrukcija: ${instruction}`;
                   onKeyDown={handleKeyDown}
                   placeholder="Parašykite žinutę..."
                   rows={1}
-                  className="w-full px-4 py-3.5 pr-24 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}`, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}
+                  className="input w-full px-4 py-3.5 pr-24 text-[15px] rounded-xl resize-none transition-all shadow-sm focus:ring-2 focus:ring-primary/30 focus:outline-none focus:border-primary/40"
                   disabled={loading || !systemPrompt}
                 />
                 <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
                   <button
-                    className="p-2 rounded-lg transition-colors"
-                    style={{ color: '#8a857f' }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    className="btn btn-circle btn-text btn-sm text-base-content/40"
                     disabled={loading}
                   >
                     <Paperclip className="w-4 h-4" />
@@ -2710,11 +2657,11 @@ Vartotojo instrukcija: ${instruction}`;
                   <button
                     onClick={handleSend}
                     disabled={!inputValue.trim() || loading || !systemPrompt}
-                    className="p-2.5 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={{
-                      background: inputValue.trim() && !loading ? '#5a5550' : '#e8e5e0',
-                      color: inputValue.trim() && !loading ? 'white' : '#8a857f'
-                    }}
+                    className={`p-2.5 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                      inputValue.trim() && !loading
+                        ? 'bg-primary text-primary-content hover:opacity-90'
+                        : 'bg-base-200 text-base-content/30'
+                    }`}
                   >
                     <Send className="w-4 h-4" />
                   </button>
@@ -2757,7 +2704,7 @@ Vartotojo instrukcija: ${instruction}`;
                     </button>
                   </div>
                 ) : (
-                  <span className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                  <span className="text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>
                     Komercinis pasiūlymas
                     {isStreamingArtifact && (
                       <span className="ml-2" style={{ color: '#3b82f6' }}>Generuojama...</span>
@@ -2771,7 +2718,7 @@ Vartotojo instrukcija: ${instruction}`;
                     <button
                       onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
                       className="p-1.5 rounded-md transition-colors"
-                      style={{ color: '#8a857f' }}
+                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       title="Atsisiųsti PDF"
@@ -2793,7 +2740,7 @@ Vartotojo instrukcija: ${instruction}`;
                     <button
                       onClick={handleOpenTemplateEditor}
                       className="p-1.5 rounded-md transition-colors"
-                      style={{ color: '#8a857f' }}
+                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       title="Redaguoti šabloną"
@@ -2803,7 +2750,7 @@ Vartotojo instrukcija: ${instruction}`;
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
                       className="p-1.5 rounded-md transition-colors"
-                      style={{ color: '#8a857f' }}
+                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       title="Kopijuoti YAML"
@@ -2815,7 +2762,7 @@ Vartotojo instrukcija: ${instruction}`;
                 <button
                   onClick={() => setShowArtifact(false)}
                   className="p-1.5 rounded-md transition-colors"
-                  style={{ color: '#8a857f' }}
+                  style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                   onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                   onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
@@ -2901,7 +2848,7 @@ Vartotojo instrukcija: ${instruction}`;
                               <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: categoryColor + '10', color: categoryColor }}>
                                 {categoryLabel}
                               </span>
-                              <span className="text-[11px] font-medium truncate" style={{ color: '#3d3935' }}>{label}</span>
+                              <span className="text-[11px] font-medium truncate" style={{ color: 'var(--color-base-content)' }}>{label}</span>
                             </div>
                             <button
                               onClick={() => {
@@ -2921,15 +2868,15 @@ Vartotojo instrukcija: ${instruction}`;
                           <div className="px-3 py-2.5">
                             {cat === 'team' && (
                               <div>
-                                <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai užpildyta</span>
-                                <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai užpildyta</span>
+                                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
                               </div>
                             )}
 
                             {cat === 'auto' && (
                               <div>
-                                <span className="text-[10px]" style={{ color: '#9ca3af' }}>Automatiškai sugeneruota</span>
-                                <div className="mt-1 text-xs font-medium" style={{ color: '#3d3935' }}>{editingVariable.editValue || '—'}</div>
+                                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
+                                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
                               </div>
                             )}
 
@@ -2942,7 +2889,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
                                       </div>
                                     ) : (
-                                      <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                                      <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                                         Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
                                       </span>
                                     )}
@@ -2960,7 +2907,7 @@ Vartotojo instrukcija: ${instruction}`;
                                 {techDescLoading && (
                                   <div className="flex items-center justify-center gap-2 py-4">
                                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
-                                    <span className="text-[11px]" style={{ color: '#9ca3af' }}>Generuojama...</span>
+                                    <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
                                   </div>
                                 )}
                                 {techDescError && !techDescLoading && (
@@ -2971,7 +2918,7 @@ Vartotojo instrukcija: ${instruction}`;
                                     <button
                                       onClick={() => setTechDescError(null)}
                                       className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
-                                      style={{ color: '#9ca3af' }}
+                                      style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                       onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                     >
@@ -3019,7 +2966,7 @@ Vartotojo instrukcija: ${instruction}`;
                             {cat === 'economist' && (
                               <div className="flex flex-col gap-0.5">
                                 {economists.length === 0 ? (
-                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>Nėra ekonomistų</span>
+                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
                                 ) : (
                                   economists.map((econ) => {
                                     const isSelected = selectedEconomist?.id === econ.id;
@@ -3051,7 +2998,7 @@ Vartotojo instrukcija: ${instruction}`;
                             {cat === 'manager' && (
                               <div className="flex flex-col gap-0.5">
                                 {managers.length === 0 ? (
-                                  <span className="text-[11px]" style={{ color: '#9ca3af' }}>Nėra vadybininkų</span>
+                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
                                 ) : (
                                   managers.map((mgr) => {
                                     const isSelected = selectedManager?.id === mgr.id;
@@ -3100,7 +3047,7 @@ Vartotojo instrukcija: ${instruction}`;
                                   <button
                                     onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
                                     className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
-                                    style={{ color: '#9ca3af' }}
+                                    style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                     onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                   >
@@ -3153,7 +3100,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         <button
                                           onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
                                           className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
-                                          style={{ color: '#9ca3af' }}
+                                          style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                         >
@@ -3200,7 +3147,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           <button
                                             onClick={() => setAiVarEditMode(false)}
                                             className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
-                                            style={{ color: '#9ca3af' }}
+                                            style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                           >
@@ -3227,7 +3174,7 @@ Vartotojo instrukcija: ${instruction}`;
                                     {aiVarEditLoading && (
                                       <div className="flex items-center justify-center gap-2 py-4">
                                         <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
-                                        <span className="text-[11px]" style={{ color: '#9ca3af' }}>AI generuoja...</span>
+                                        <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
                                       </div>
                                     )}
 
@@ -3239,7 +3186,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         <button
                                           onClick={() => setAiVarEditError(null)}
                                           className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
-                                          style={{ color: '#9ca3af' }}
+                                          style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                         >
@@ -3317,12 +3264,12 @@ Vartotojo instrukcija: ${instruction}`;
                 <button
                   onClick={() => setSectionCollapsed(prev => ({ ...prev, offerData: !prev.offerData }))}
                   className="w-full flex items-center justify-between py-2 mb-2 transition-colors"
-                  style={{ color: '#3d3935' }}
+                  style={{ color: 'var(--color-base-content)' }}
                 >
-                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>
                     Pasiūlymo duomenys
                   </span>
-                  {sectionCollapsed.offerData ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />}
+                  {sectionCollapsed.offerData ? <ChevronDown className="w-3.5 h-3.5" style={{ color: 'var(--color-base-content)', opacity: 0.4 }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: 'var(--color-base-content)', opacity: 0.4 }} />}
                 </button>
 
                 {!sectionCollapsed.offerData && (
@@ -3334,7 +3281,7 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                         <div className="mt-3 flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#3b82f6' }} />
-                          <span className="text-xs" style={{ color: '#6b7280' }}>Generuojamas pasiūlymas...</span>
+                          <span className="text-xs" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>Generuojamas pasiūlymas...</span>
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
@@ -3342,7 +3289,7 @@ Vartotojo instrukcija: ${instruction}`;
                         {renderInteractiveYAML(currentConversation.artifact.content)}
                       </div>
                     ) : (
-                      <p className="text-xs py-4 text-center" style={{ color: '#9ca3af' }}>
+                      <p className="text-xs py-4 text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                         Pasiūlymo duomenys bus rodomi po generavimo.
                       </p>
                     )}
@@ -3358,12 +3305,12 @@ Vartotojo instrukcija: ${instruction}`;
                 <button
                   onClick={() => setSectionCollapsed(prev => ({ ...prev, objectParams: !prev.objectParams }))}
                   className="w-full flex items-center justify-between py-2 mb-2 transition-colors"
-                  style={{ color: '#3d3935' }}
+                  style={{ color: 'var(--color-base-content)' }}
                 >
-                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>
                     Objekto ir vandens parametrai
                   </span>
-                  {sectionCollapsed.objectParams ? <ChevronDown className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: '#9ca3af' }} />}
+                  {sectionCollapsed.objectParams ? <ChevronDown className="w-3.5 h-3.5" style={{ color: 'var(--color-base-content)', opacity: 0.4 }} /> : <ChevronUp className="w-3.5 h-3.5" style={{ color: 'var(--color-base-content)', opacity: 0.4 }} />}
                 </button>
 
                 {!sectionCollapsed.objectParams && (
@@ -3371,7 +3318,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {/* Object sentence */}
                     {OFFER_PARAMETER_DEFINITIONS.filter(p => p.group === 'object').map((param) => (
                       <div key={param.key}>
-                        <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>{param.label}</label>
+                        <label className="text-[10px] block mb-1" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>{param.label}</label>
                         <input
                           type="text"
                           value={offerParameters[param.key] || ''}
@@ -3403,9 +3350,9 @@ Vartotojo instrukcija: ${instruction}`;
                     {/* Contamination & After Cleaning - compact table */}
                     <div className="mt-2">
                       <div className="grid grid-cols-3 gap-1 mb-1">
-                        <div className="text-[10px] font-medium" style={{ color: '#9ca3af' }}></div>
-                        <div className="text-[10px] font-medium text-center" style={{ color: '#9ca3af' }}>Užterštumo</div>
-                        <div className="text-[10px] font-medium text-center" style={{ color: '#9ca3af' }}>Po valymo</div>
+                        <div className="text-[10px] font-medium" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}></div>
+                        <div className="text-[10px] font-medium text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Užterštumo</div>
+                        <div className="text-[10px] font-medium text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Po valymo</div>
                       </div>
                       {['BDS', 'SM', 'N', 'P'].map((param) => {
                         const contKey = `${param}_reglamentORprovided`;
@@ -3414,7 +3361,7 @@ Vartotojo instrukcija: ${instruction}`;
                         const afterDef = OFFER_PARAMETER_DEFINITIONS.find(p => p.key === afterKey);
                         return (
                           <div key={param} className="grid grid-cols-3 gap-1 mb-1 items-center">
-                            <div className="text-[11px] font-medium" style={{ color: '#6b7280' }}>{contDef?.label || param}</div>
+                            <div className="text-[11px] font-medium" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>{contDef?.label || param}</div>
                             <input
                               type="text"
                               value={offerParameters[contKey] || ''}
@@ -3475,13 +3422,13 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Section 3: Team (Economist & Manager) */}
               {!isStreamingArtifact && currentConversation?.artifact && (
                 <div className="mb-4">
-                  <span className="text-xs font-semibold uppercase tracking-wider block py-2 mb-2" style={{ color: '#6b7280' }}>
+                  <span className="text-xs font-semibold uppercase tracking-wider block py-2 mb-2" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>
                     Komanda
                   </span>
                   <div className="space-y-2">
                     {/* Economist Selection */}
                     <div>
-                      <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>Ekonomistas</label>
+                      <label className="text-[10px] block mb-1" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Ekonomistas</label>
                       <div className="relative">
                         <button
                           onClick={() => setShowEconomistDropdown(!showEconomistDropdown)}
@@ -3504,20 +3451,20 @@ Vartotojo instrukcija: ${instruction}`;
                         {showEconomistDropdown && (
                           <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
                             {economists.length === 0 ? (
-                              <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>Nerasta ekonomistų</div>
+                              <div className="p-3 text-xs text-center" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>Nerasta ekonomistų</div>
                             ) : (
                               economists.map((economist) => (
                                 <button
                                   key={economist.id}
                                   onClick={() => { setSelectedEconomist(economist); setShowEconomistDropdown(false); }}
                                   className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                                  style={{ color: '#3d3935' }}
+                                  style={{ color: 'var(--color-base-content)' }}
                                   onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
                                   onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                                 >
                                   <div>
                                     <div className="font-medium">{economist.full_name || economist.display_name || economist.email}</div>
-                                    {economist.kodas && <div className="text-xs" style={{ color: '#8a857f' }}>Kodas: {economist.kodas}</div>}
+                                    {economist.kodas && <div className="text-xs" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>Kodas: {economist.kodas}</div>}
                                   </div>
                                   {selectedEconomist?.id === economist.id && <Check className="w-4 h-4" style={{ color: '#10b981' }} />}
                                 </button>
@@ -3530,7 +3477,7 @@ Vartotojo instrukcija: ${instruction}`;
 
                     {/* Manager Selection */}
                     <div>
-                      <label className="text-[10px] block mb-1" style={{ color: '#9ca3af' }}>Vadybininkas</label>
+                      <label className="text-[10px] block mb-1" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Vadybininkas</label>
                       <div className="relative">
                         <button
                           onClick={() => setShowManagerDropdown(!showManagerDropdown)}
@@ -3553,20 +3500,20 @@ Vartotojo instrukcija: ${instruction}`;
                         {showManagerDropdown && (
                           <div className="absolute z-10 w-full bottom-full mb-1 bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto" style={{ borderColor: '#e8e5e0' }}>
                             {managers.length === 0 ? (
-                              <div className="p-3 text-xs text-center" style={{ color: '#8a857f' }}>Nerasta vadybininkų</div>
+                              <div className="p-3 text-xs text-center" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>Nerasta vadybininkų</div>
                             ) : (
                               managers.map((manager) => (
                                 <button
                                   key={manager.id}
                                   onClick={() => { setSelectedManager(manager); setShowManagerDropdown(false); }}
                                   className="w-full px-3 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                                  style={{ color: '#3d3935' }}
+                                  style={{ color: 'var(--color-base-content)' }}
                                   onMouseEnter={(e) => e.currentTarget.style.background = '#f9fafb'}
                                   onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                                 >
                                   <div>
                                     <div className="font-medium">{manager.full_name || manager.display_name || manager.email}</div>
-                                    {manager.kodas && <div className="text-xs" style={{ color: '#8a857f' }}>Kodas: {manager.kodas}</div>}
+                                    {manager.kodas && <div className="text-xs" style={{ color: 'var(--color-base-content)', opacity: 0.5 }}>Kodas: {manager.kodas}</div>}
                                   </div>
                                   {selectedManager?.id === manager.id && <Check className="w-4 h-4" style={{ color: '#10b981' }} />}
                                 </button>
@@ -3614,7 +3561,7 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 flex-shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium" style={{ color: '#3d3935' }}>Redaguoti šabloną</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--color-base-content)' }}>Redaguoti šabloną</span>
                   {isGlobalTemplateCustomized() && (
                     <span className="text-[9px] px-2 py-0.5 rounded-full" style={{ background: '#fef3c7', color: '#92400e' }}>Pakeistas</span>
                   )}
@@ -3628,7 +3575,7 @@ Vartotojo instrukcija: ${instruction}`;
                         setShowTemplateEditor(false);
                       }}
                       className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
-                      style={{ color: '#8a857f' }}
+                      style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                       onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     >
@@ -3638,7 +3585,7 @@ Vartotojo instrukcija: ${instruction}`;
                   <button
                     onClick={() => setShowTemplateEditor(false)}
                     className="text-[11px] px-3 py-1.5 rounded-md transition-colors"
-                    style={{ color: '#8a857f' }}
+                    style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                     onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
@@ -3657,7 +3604,7 @@ Vartotojo instrukcija: ${instruction}`;
               </div>
               {/* Hint bar */}
               <div className="px-5 py-1.5 flex-shrink-0" style={{ background: '#fafaf8', borderBottom: '1px solid #f0ede8' }}>
-                <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                   Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
                 </span>
               </div>
@@ -3707,7 +3654,7 @@ Vartotojo instrukcija: ${instruction}`;
           >
             <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: '#f0ede8' }}>
               <div className="flex items-center gap-4">
-                <h3 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
+                <h3 className="text-lg font-semibold" style={{ color: 'var(--color-base-content)' }}>
                   {showTemplateView ? 'Prompt Šablonas' : 'Pilnas Prompt'}
                 </h3>
                 <button
@@ -3742,7 +3689,7 @@ Vartotojo instrukcija: ${instruction}`;
                   setShowTemplateView(false);
                 }}
                 className="p-2 rounded-lg transition-colors"
-                style={{ color: '#8a857f' }}
+                style={{ color: 'var(--color-base-content)', opacity: 0.5 }}
                 onMouseEnter={(e) => e.currentTarget.style.background = '#f0ede8'}
                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
@@ -3750,7 +3697,7 @@ Vartotojo instrukcija: ${instruction}`;
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: '#3d3935' }}>
+              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed" style={{ color: 'var(--color-base-content)' }}>
                 {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
               </pre>
             </div>
