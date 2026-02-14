@@ -141,7 +141,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [managers, setManagers] = useState<AppUserData[]>([]);
   const [selectedManager, setSelectedManager] = useState<AppUserData | null>(null);
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
-
+  // Rename state
+  const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // Sharing states
   const [showShareDropdown, setShowShareDropdown] = useState(false);
@@ -528,6 +530,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.error('[Delete] Exception:', err);
       addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
     }
+  };
+
+  const handleStartRename = (convId: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingConvId(convId);
+    setRenameValue(currentTitle);
+  };
+
+  const handleConfirmRename = async (convId: string) => {
+    const trimmed = renameValue.trim();
+    if (!trimmed) { setRenamingConvId(null); return; }
+    try {
+      await renameSDKConversation(convId, trimmed);
+      setConversations(prev => prev.map(c => c.id === convId ? { ...c, title: trimmed } : c));
+      if (currentConversation?.id === convId) {
+        setCurrentConversation(prev => prev ? { ...prev, title: trimmed } : prev);
+      }
+    } catch (err) {
+      console.error('Error renaming conversation:', err);
+    }
+    setRenamingConvId(null);
   };
 
   const scrollToBottom = () => {
@@ -2267,32 +2290,56 @@ Vartotojo instrukcija: ${instruction}`;
                 <div className="space-y-0.5">
                   {conversations.map((conv) => {
                     const isActive = currentConversation?.id === conv.id && !isReadOnly;
+                    const isRenaming = renamingConvId === conv.id;
                     return (
                       <div
                         key={conv.id}
-                        onClick={() => handleSelectOwnedConversation(conv.id)}
+                        onClick={() => !isRenaming && handleSelectOwnedConversation(conv.id)}
                         className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
                           isActive
                             ? 'bg-base-100 border border-base-content/15 shadow-sm'
                             : 'hover:bg-base-content/5'
                         }`}
                       >
-                        <p className="flex-1 min-w-0 text-sm truncate text-base-content">{conv.title}</p>
+                        {isRenaming ? (
+                          <input
+                            autoFocus
+                            value={renameValue}
+                            onChange={(e) => setRenameValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleConfirmRename(conv.id);
+                              if (e.key === 'Escape') setRenamingConvId(null);
+                            }}
+                            onBlur={() => handleConfirmRename(conv.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 min-w-0 text-sm bg-transparent border-b border-base-content/20 outline-none text-base-content py-0"
+                          />
+                        ) : (
+                          <p className="flex-1 min-w-0 text-sm truncate text-base-content">{conv.title}</p>
+                        )}
                         {/* Date - hidden on hover/active, replaced by actions */}
-                        {!isActive && (
-                          <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                        {!isActive && !isRenaming && (
+                          <span className="text-xs font-normal text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
                             {formatLtDate(conv.last_message_at)}
                           </span>
                         )}
                         {/* Action icons - visible on hover or when active */}
-                        <div className={`items-center gap-0.5 flex-shrink-0 ${isActive ? 'flex' : 'hidden group-hover:flex'}`}>
-                          <button
-                            onClick={(e) => handleDeleteConversation(conv.id, e)}
-                            className="p-1 rounded transition-colors text-base-content/30 hover:text-error hover:bg-error/10"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {!isRenaming && (
+                          <div className={`items-center gap-0.5 flex-shrink-0 ${isActive ? 'flex' : 'hidden group-hover:flex'}`}>
+                            <button
+                              onClick={(e) => handleStartRename(conv.id, conv.title, e)}
+                              className="p-1 rounded transition-colors text-base-content/30 hover:text-base-content/60 hover:bg-base-content/5"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteConversation(conv.id, e)}
+                              className="p-1 rounded transition-colors text-base-content/30 hover:text-error hover:bg-error/10"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2333,7 +2380,7 @@ Vartotojo instrukcija: ${instruction}`;
                           </p>
                         </div>
                         {!isActive && (
-                          <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                          <span className="text-xs font-normal text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
                             {formatLtDate(sharedConv.shared_at)}
                           </span>
                         )}
@@ -2613,15 +2660,15 @@ Vartotojo instrukcija: ${instruction}`;
 
               {/* Animated loader - always at bottom of all content when loading */}
               {loading && (
-                <div className="flex justify-start -ml-2">
-                  <RoboticArmLoader isAnimated={true} size={80} />
+                <div className="flex justify-start -ml-1">
+                  <RoboticArmLoader isAnimated={true} size={48} />
                 </div>
               )}
 
               {/* Static loader when idle with conversation history */}
               {!loading && currentConversation && currentConversation.messages.length > 0 && (
-                <div className="flex justify-start -ml-2">
-                  <RoboticArmLoader isAnimated={false} size={70} />
+                <div className="flex justify-start -ml-1">
+                  <RoboticArmLoader isAnimated={false} size={40} />
                 </div>
               )}
 

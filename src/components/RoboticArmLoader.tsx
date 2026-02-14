@@ -24,9 +24,9 @@ export default function RoboticArmLoader({ isAnimated = true, size = 40 }: Robot
         flexShrink: 0
       }}
     >
-      <svg viewBox="130 130 240 240" overflow="hidden" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <svg viewBox="100 100 300 300" overflow="hidden" style={{ width: '100%', height: '100%', display: 'block' }}>
         <defs>
-          <filter id={filterId}>
+          <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur
               in="SourceGraphic"
               stdDeviation="17"
