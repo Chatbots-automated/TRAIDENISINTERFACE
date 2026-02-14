@@ -460,30 +460,20 @@ function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: numb
         onClick={(e) => { e.stopPropagation(); setOpen(false); }}
         className="cursor-pointer"
         style={{ color: '#8a857f' }}
-        onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
-        onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
       >
         {openBracket}
-      </span>
-      <div style={{ marginLeft: '12px' }}>
-        {entries.map(([key, value]: [string, any], i: number) => (
-          <div key={key} style={{ lineHeight: '1.5' }}>
-            <CollapsibleJson
-              data={value}
-              depth={depth + 1}
-              keyName={isArray ? undefined : key}
-            />
-            {i < entries.length - 1 && <span style={{ color: '#c4c0bb' }}>,</span>}
-          </div>
-        ))}
-      </div>
-      <span
-        onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-        className="cursor-pointer"
-        style={{ color: '#8a857f' }}
-        onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
-        onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
-      >
+        <div style={{ marginLeft: '12px' }} onClick={(e) => e.stopPropagation()}>
+          {entries.map(([key, value]: [string, any], i: number) => (
+            <div key={key} style={{ lineHeight: '1.5' }}>
+              <CollapsibleJson
+                data={value}
+                depth={depth + 1}
+                keyName={isArray ? undefined : key}
+              />
+              {i < entries.length - 1 && <span style={{ color: '#c4c0bb' }}>,</span>}
+            </div>
+          ))}
+        </div>
         {closeBracket}
       </span>
     </span>
