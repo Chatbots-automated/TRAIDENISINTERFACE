@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Calculator, Copy } from 'lucide-react';
 
 interface MessageContentProps {
@@ -272,20 +272,7 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
     return cleaned.slice(0, 47) + '...';
   };
 
-  const formatResult = (text: string): string => {
-    try {
-      const parsed = JSON.parse(text);
-      if (typeof parsed === 'object' && parsed !== null) {
-        const str = JSON.stringify(parsed, null, 2);
-        if (str.length > 200) return str.slice(0, 197) + '...';
-        return str;
-      }
-      return String(parsed);
-    } catch {
-      if (text.length > 200) return text.slice(0, 197) + '...';
-      return text;
-    }
-  };
+  // formatResult removed - ToolResult component handles rendering now
 
   const getGroupHeading = (): string => {
     if (!allCompleted) {
@@ -380,19 +367,9 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
                       </span>
                     )}
                   </div>
-                  {/* Result as muted text below */}
+                  {/* Result */}
                   {call.result && (
-                    <div
-                      className="text-[11px] mt-0.5 whitespace-pre-wrap"
-                      style={{
-                        color: '#a09b95',
-                        maxHeight: '60px',
-                        overflow: 'hidden',
-                        wordBreak: 'break-word',
-                      }}
-                    >
-                      {formatResult(call.result)}
-                    </div>
+                    <ToolResult text={call.result} />
                   )}
                 </div>
               </div>
@@ -428,6 +405,160 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Collapsible JSON tree - objects/arrays auto-collapsed, click to expand
+function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: number; keyName?: string }) {
+  const [open, setOpen] = useState(depth < 1);
+
+  const keyPrefix = keyName !== undefined ? (
+    <span style={{ color: '#8a857f' }}>{`"${keyName}": `}</span>
+  ) : null;
+
+  // Primitives render inline
+  if (data === null) return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>null</span></span>;
+  if (typeof data === 'boolean') return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>{String(data)}</span></span>;
+  if (typeof data === 'number') return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>{data}</span></span>;
+  if (typeof data === 'string') {
+    const display = data.length > 80 ? data.slice(0, 77) + '...' : data;
+    return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>"{display}"</span></span>;
+  }
+
+  const isArray = Array.isArray(data);
+  const entries = isArray ? data.map((v: any, i: number) => [String(i), v] as [string, any]) : Object.entries(data);
+  const openBracket = isArray ? '[' : '{';
+  const closeBracket = isArray ? ']' : '}';
+
+  if (entries.length === 0) {
+    return <span>{keyPrefix}<span style={{ color: '#a09b95' }}>{openBracket}{closeBracket}</span></span>;
+  }
+
+  if (!open) {
+    return (
+      <span>
+        {keyPrefix}
+        <span
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          className="cursor-pointer"
+          style={{ color: '#8a857f' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+        >
+          {openBracket}<span style={{ color: '#b0aba5' }}>{isArray ? `${entries.length} items` : '...'}</span>{closeBracket}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <span>
+      {keyPrefix}
+      <span
+        onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+        className="cursor-pointer"
+        style={{ color: '#8a857f' }}
+        onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+      >
+        {openBracket}
+      </span>
+      <div style={{ marginLeft: '12px' }}>
+        {entries.map(([key, value]: [string, any], i: number) => (
+          <div key={key} style={{ lineHeight: '1.5' }}>
+            <CollapsibleJson
+              data={value}
+              depth={depth + 1}
+              keyName={isArray ? undefined : key}
+            />
+            {i < entries.length - 1 && <span style={{ color: '#c4c0bb' }}>,</span>}
+          </div>
+        ))}
+      </div>
+      <span
+        onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+        className="cursor-pointer"
+        style={{ color: '#8a857f' }}
+        onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+        onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+      >
+        {closeBracket}
+      </span>
+    </span>
+  );
+}
+
+// Tool result: gradient fade with "daugiau" expand, collapsible JSON
+function ToolResult({ text }: { text: string }) {
+  const [resultExpanded, setResultExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const COLLAPSED_HEIGHT = 56; // ~4 lines
+
+  // Try parse as JSON
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(text);
+    if (typeof parsed !== 'object' || parsed === null) parsed = null;
+  } catch { /* not JSON */ }
+
+  useEffect(() => {
+    if (contentRef.current && !parsed) {
+      setOverflows(contentRef.current.scrollHeight > COLLAPSED_HEIGHT);
+    }
+  }, [text, parsed]);
+
+  // JSON object/array: render as collapsible tree
+  if (parsed) {
+    return (
+      <div className="text-[11px] mt-0.5 font-mono" style={{ lineHeight: '1.5' }}>
+        <CollapsibleJson data={parsed} />
+      </div>
+    );
+  }
+
+  // Plain text: fade + "daugiau"
+  return (
+    <div className="mt-0.5 relative">
+      <div
+        ref={contentRef}
+        className="text-[11px] whitespace-pre-wrap"
+        style={{
+          color: '#a09b95',
+          maxHeight: resultExpanded ? 'none' : `${COLLAPSED_HEIGHT}px`,
+          overflow: 'hidden',
+          wordBreak: 'break-word',
+          transition: 'max-height 0.2s ease',
+        }}
+      >
+        {text}
+      </div>
+      {overflows && !resultExpanded && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '28px',
+            background: 'linear-gradient(to bottom, transparent, white)',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+      {overflows && (
+        <button
+          onClick={() => setResultExpanded(!resultExpanded)}
+          className="text-[11px] cursor-pointer mt-0.5"
+          style={{ color: '#8a857f' }}
+          onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+          onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+        >
+          {resultExpanded ? 'mažiau' : 'daugiau'}
+        </button>
       )}
     </div>
   );
