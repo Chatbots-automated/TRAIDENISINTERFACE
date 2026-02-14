@@ -74,6 +74,13 @@ interface SDKInterfaceNewProps {
   onRequestMainSidebarCollapse?: (collapsed: boolean) => void;
 }
 
+// Lithuanian short month names for sidebar dates
+const LT_MONTHS_SHORT = ['Sau', 'Vas', 'Kov', 'Bal', 'Geg', 'Bir', 'Lie', 'Rgp', 'Rgs', 'Spa', 'Lap', 'Gru'];
+function formatLtDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${LT_MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
+}
+
 // Session persistence keys
 const SESSION_KEY = 'traidenis_sdk_session';
 function loadSession(): { showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
@@ -417,11 +424,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleCreateConversation = async () => {
     try {
       setCreatingConversation(true);
+      // Generate composite code for conversation title: U + codes + yy/mm/dd
+      const now = new Date();
+      const yy = String(now.getFullYear()).slice(-2);
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mgrCode = selectedManager?.kodas || '';
+      const econCode = selectedEconomist?.kodas || '';
+      const techCode = user.kodas || '';
+      const compositeTitle = `U${mgrCode}${econCode}${techCode}${yy}/${mm}/${dd}`;
       const { data: conversationId, error: createError } = await createSDKConversation(
         projectId,
         user.id,
         user.email,
-        'Naujas pokalbis'
+        compositeTitle
       );
       if (createError) throw createError;
       const { data: newConversation } = await getSDKConversation(conversationId!);
@@ -2119,20 +2135,15 @@ Vartotojo instrukcija: ${instruction}`;
         </div>
 
         {/* Instructions Section */}
-        <div className="mx-3 my-3 p-3 rounded-xl bg-base-100 border border-base-content/5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Eye className="w-4 h-4 text-base-content/40" />
-              <span className="text-sm font-medium text-base-content">
-                Instrukcijos
-              </span>
-            </div>
-            <button
-              onClick={() => setShowPromptModal(true)}
-              className="text-[11px] text-primary hover:underline"
-            >
-              Peržiūrėti
-            </button>
+        <div
+          onClick={() => setShowPromptModal(true)}
+          className="mx-3 my-3 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Eye className="w-4 h-4 text-base-content/40" />
+            <span className="text-sm font-medium text-base-content">
+              Instrukcijos
+            </span>
           </div>
           <p className="text-xs text-base-content/40 mt-1 ml-6">
             Sistemos instrukcijos komerciniam pasiūlymui
@@ -2207,7 +2218,7 @@ Vartotojo instrukcija: ${instruction}`;
                         onClick={() => handleSelectOwnedConversation(conv.id)}
                         className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
                           isActive
-                            ? 'bg-base-content/[0.07]'
+                            ? 'bg-base-100 border border-base-content/15 shadow-sm'
                             : 'hover:bg-base-content/5'
                         }`}
                       >
@@ -2215,7 +2226,7 @@ Vartotojo instrukcija: ${instruction}`;
                         {/* Date - hidden on hover/active, replaced by actions */}
                         {!isActive && (
                           <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
-                            {new Date(conv.last_message_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
+                            {formatLtDate(conv.last_message_at)}
                           </span>
                         )}
                         {/* Action icons - visible on hover or when active */}
@@ -2267,7 +2278,7 @@ Vartotojo instrukcija: ${instruction}`;
                           </p>
                         </div>
                         <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0">
-                          {new Date(sharedConv.shared_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric' })}
+                          {formatLtDate(sharedConv.shared_at)}
                         </span>
                       </div>
                     );

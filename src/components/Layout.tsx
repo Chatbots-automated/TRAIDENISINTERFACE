@@ -342,7 +342,7 @@ export default function Layout({
                     <Settings className="w-4 h-4" />
                   </button>
                 </li>
-                <li className="hidden lg:block">
+                <li className="hidden lg:flex">
                   <button
                     onClick={() => setSidebarCollapsed(false)}
                     className="justify-center"
