@@ -187,7 +187,7 @@ export default function Layout({
                 {!sidebarCollapsed && (
                   <li className="menu-title text-[10px] uppercase tracking-wider">Admin</li>
                 )}
-                {sidebarCollapsed && <li className="divider my-1"></li>}
+                {sidebarCollapsed && <li><hr className="my-1 border-base-content/10" /></li>}
                 <li>
                   <button
                     onClick={() => setWebhooksOpen(true)}
@@ -321,31 +321,32 @@ export default function Layout({
               </div>
             )}
 
-            {/* Collapsed settings button - for all users */}
+            {/* Collapsed settings + collapse toggle - use menu pattern to match top nav */}
             {sidebarCollapsed && (
-              <div className="px-2 pb-1">
-                <button
-                  onClick={() => setSettingsOpen(true)}
-                  className="w-full flex items-center justify-center py-2 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
-                  title="Settings"
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-              </div>
+              <ul className="menu px-1 pb-1">
+                <li>
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    className="justify-center"
+                    title="Settings"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                </li>
+                <li className="hidden lg:block">
+                  <button
+                    onClick={() => setSidebarCollapsed(false)}
+                    className="justify-center"
+                    title="Expand sidebar"
+                  >
+                    <ChevronsRight className="w-4 h-4" />
+                  </button>
+                </li>
+              </ul>
             )}
 
-            {/* Collapse Toggle Button - At bottom for all users */}
-            {sidebarCollapsed ? (
-              <div className="px-2 pb-1 hidden lg:block">
-                <button
-                  onClick={() => setSidebarCollapsed(false)}
-                  className="w-full flex items-center justify-center py-2 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
-                  title="Expand sidebar"
-                >
-                  <ChevronsRight className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
+            {/* Collapse Toggle Button - expanded state */}
+            {!sidebarCollapsed && (
               <div className="px-2 pb-1 hidden lg:block">
                 <button
                   onClick={() => setSidebarCollapsed(true)}

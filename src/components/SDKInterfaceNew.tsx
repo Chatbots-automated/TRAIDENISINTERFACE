@@ -2425,9 +2425,9 @@ Vartotojo instrukcija: ${instruction}`;
                 return (
                   <div key={`${message.timestamp}-${index}`}>
                     {message.role === 'user' ? (
-                      // User message - dark bubble on right
+                      // User message - blue bubble on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-base-content text-base-100">
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-primary text-primary-content">
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2563,27 +2563,15 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
         )}
 
-        {/* Input Box or Read-Only Banner */}
+        {/* Input Box or Read-Only info */}
         {isReadOnly && conversationDetails ? (
-          /* Read-Only Mode Banner */
-          <div className="px-4 py-4 border-t border-warning/30 bg-warning/10">
-            <div className="max-w-3xl mx-auto">
-              <div className="alert alert-soft alert-warning text-sm">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="font-semibold mb-0.5">
-                    Bendrinamas pokalbis. Tik skaityti.
-                  </p>
-                  <p className="text-xs opacity-80">
-                    <strong>Bendrino:</strong> {conversationDetails.shared_by.display_name || conversationDetails.shared_by.email}
-                  </p>
-                  {conversationDetails.shared_with.length > 0 && (
-                    <p className="text-xs mt-0.5 opacity-80">
-                      <strong>Pasidalinta su:</strong> {conversationDetails.shared_with.map(u => u.display_name || u.email).join(', ')}
-                    </p>
-                  )}
-                </div>
-              </div>
+          /* Read-Only - no input, just subtle info */
+          <div className="px-4 py-3 border-t border-base-content/5 bg-base-100">
+            <div className="max-w-3xl mx-auto flex items-center justify-center gap-2 text-base-content/30 text-sm">
+              <Lock className="w-3.5 h-3.5" />
+              <span>Tik skaitymo režimas</span>
+              <span className="text-base-content/15">·</span>
+              <span>Bendrino: {conversationDetails.shared_by.display_name || conversationDetails.shared_by.email}</span>
             </div>
           </div>
         ) : (
@@ -2604,7 +2592,7 @@ Vartotojo instrukcija: ${instruction}`;
                   onKeyDown={handleKeyDown}
                   placeholder="Klauskite bet ko..."
                   rows={1}
-                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 resize-none py-1.5 focus:outline-none leading-relaxed"
+                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 resize-none py-1.5 outline-none focus:outline-none focus:ring-0 focus:shadow-none border-none leading-relaxed"
                   disabled={loading || !systemPrompt}
                 />
                 <button
