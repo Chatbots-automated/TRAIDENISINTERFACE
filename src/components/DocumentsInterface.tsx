@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, AlertCircle, RefreshCw, Database, ChevronUp, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp } from 'lucide-react';
 import type { AppUser } from '../types';
-import { colors } from '../lib/designSystem';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai } from '../lib/dokumentaiService';
 
 interface DocumentsInterfaceProps {
@@ -9,7 +8,7 @@ interface DocumentsInterfaceProps {
   projectId: string;
 }
 
-type TabType = 'standartiniai' | 'nestandartiniai';
+type TableName = 'standartiniai_projektai' | 'n8n_vector_store';
 type SortDirection = 'asc' | 'desc';
 
 interface SortConfig {
@@ -17,10 +16,11 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-/**
- * Render a cell value for display in the table.
- * Handles objects, arrays, booleans, nulls, and long strings.
- */
+const TABLE_OPTIONS: { value: TableName; label: string }[] = [
+  { value: 'standartiniai_projektai', label: 'Standartiniai projektai' },
+  { value: 'n8n_vector_store', label: 'Nestandartiniai (vector store)' },
+];
+
 function renderCellValue(value: any): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? 'Taip' : 'Ne';
@@ -36,13 +36,9 @@ function renderCellValue(value: any): string {
   return str.length > 150 ? str.slice(0, 150) + '...' : str;
 }
 
-/**
- * Extract column names from data rows. Places 'id' first if present.
- */
 function getColumns(rows: any[]): string[] {
   if (rows.length === 0) return [];
   const keys = Object.keys(rows[0]);
-  // Put 'id' first, then sort the rest alphabetically
   const idIndex = keys.indexOf('id');
   if (idIndex > -1) {
     keys.splice(idIndex, 1);
@@ -54,15 +50,15 @@ function getColumns(rows: any[]): string[] {
   return keys;
 }
 
-/**
- * Format a column name for display: replace underscores with spaces, capitalize first letter.
- */
 function formatColumnName(col: string): string {
   return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
 export default function DocumentsInterface({ user, projectId }: DocumentsInterfaceProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('standartiniai');
+  const [selectedTable, setSelectedTable] = useState<TableName>('standartiniai_projektai');
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const [standartiniaiData, setStandartiniaiData] = useState<any[]>([]);
   const [nestandartiniaiData, setNestandartiniaiData] = useState<any[]>([]);
   const [loadingStandartiniai, setLoadingStandartiniai] = useState(true);
@@ -71,6 +67,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [errorNestandartiniai, setErrorNestandartiniai] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    if (dropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [dropdownOpen]);
 
   useEffect(() => {
     loadStandartiniai();
@@ -84,7 +93,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       const data = await fetchStandartiniaiProjektai();
       setStandartiniaiData(data);
     } catch (err: any) {
-      console.error('Error loading standartiniai:', err);
       setErrorStandartiniai(err?.message || 'Nepavyko gauti duomenų');
     } finally {
       setLoadingStandartiniai(false);
@@ -98,22 +106,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       const data = await fetchNestandartiniaiDokumentai();
       setNestandartiniaiData(data);
     } catch (err: any) {
-      console.error('Error loading nestandartiniai:', err);
       setErrorNestandartiniai(err?.message || 'Nepavyko gauti duomenų');
     } finally {
       setLoadingNestandartiniai(false);
     }
   };
 
-  // Determine current dataset
-  const currentData = activeTab === 'standartiniai' ? standartiniaiData : nestandartiniaiData;
-  const currentLoading = activeTab === 'standartiniai' ? loadingStandartiniai : loadingNestandartiniai;
-  const currentError = activeTab === 'standartiniai' ? errorStandartiniai : errorNestandartiniai;
-  const currentReload = activeTab === 'standartiniai' ? loadStandartiniai : loadNestandartiniai;
+  const currentData = selectedTable === 'standartiniai_projektai' ? standartiniaiData : nestandartiniaiData;
+  const currentLoading = selectedTable === 'standartiniai_projektai' ? loadingStandartiniai : loadingNestandartiniai;
+  const currentError = selectedTable === 'standartiniai_projektai' ? errorStandartiniai : errorNestandartiniai;
+  const currentReload = selectedTable === 'standartiniai_projektai' ? loadStandartiniai : loadNestandartiniai;
+  const currentLabel = TABLE_OPTIONS.find(o => o.value === selectedTable)!.label;
 
   const columns = useMemo(() => getColumns(currentData), [currentData]);
 
-  // Filter rows by search query across all visible columns
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) return currentData;
     const q = searchQuery.toLowerCase();
@@ -126,7 +132,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     );
   }, [currentData, searchQuery, columns]);
 
-  // Sort filtered data
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
@@ -154,217 +159,179 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     });
   };
 
-  // Reset sort when switching tabs
-  const handleTabChange = (tab: TabType) => {
-    setActiveTab(tab);
+  const handleTableChange = (table: TableName) => {
+    setSelectedTable(table);
+    setDropdownOpen(false);
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: colors.bg.primary }}>
+    <div className="h-full flex flex-col bg-base-200/50">
       {/* Header */}
-      <div className="p-6 border-b" style={{
-        borderColor: colors.border.light,
-        background: colors.bg.white + 'CC'
-      }}>
-        <div className="flex items-center justify-between mb-5">
+      <div className="p-6 border-b border-base-content/10 bg-base-100/80">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-2xl font-semibold" style={{ color: colors.text.primary }}>Dokumentai</h2>
-            <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>
-              Duomenų bazės lentelės
+            <h2 className="text-2xl font-semibold text-base-content">Dokumentai</h2>
+            <p className="text-sm mt-1 text-base-content/60">
+              Duomen&#x173; baz&#x117;s lentel&#x117;s
             </p>
           </div>
-          <button
-            onClick={currentReload}
-            disabled={currentLoading}
-            className="px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-colors text-sm"
-            style={{
-              background: colors.interactive.secondary,
-              color: colors.interactive.secondaryText
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = colors.interactive.secondaryHover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = colors.interactive.secondary)}
-          >
-            <RefreshCw className={`w-4 h-4 ${currentLoading ? 'animate-spin' : ''}`} />
-            <span>Atnaujinti</span>
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Refresh button */}
+            <button
+              onClick={currentReload}
+              disabled={currentLoading}
+              className="btn btn-soft btn-sm"
+            >
+              <RefreshCw className={`w-4 h-4 ${currentLoading ? 'animate-spin' : ''}`} />
+              Atnaujinti
+            </button>
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex space-x-1 mb-4 p-1 rounded-lg" style={{ background: colors.bg.tertiary }}>
-          <button
-            onClick={() => handleTabChange('standartiniai')}
-            className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all duration-150"
-            style={{
-              background: activeTab === 'standartiniai' ? colors.bg.white : 'transparent',
-              color: activeTab === 'standartiniai' ? colors.text.primary : colors.text.tertiary,
-              boxShadow: activeTab === 'standartiniai' ? colors.shadow.sm : 'none'
-            }}
-          >
-            Standartiniai
-            {!loadingStandartiniai && (
-              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full" style={{
-                background: activeTab === 'standartiniai' ? colors.bg.tertiary : 'transparent',
-                color: colors.text.tertiary
-              }}>
-                {standartiniaiData.length}
+        {/* Toolbar: table selector + search */}
+        <div className="flex items-center gap-3">
+          {/* Table selector dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="btn btn-sm btn-outline gap-2 min-w-[240px] justify-between"
+            >
+              <span className="flex items-center gap-2">
+                <Database className="w-4 h-4" />
+                {currentLabel}
               </span>
-            )}
-          </button>
-          <button
-            onClick={() => handleTabChange('nestandartiniai')}
-            className="flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all duration-150"
-            style={{
-              background: activeTab === 'nestandartiniai' ? colors.bg.white : 'transparent',
-              color: activeTab === 'nestandartiniai' ? colors.text.primary : colors.text.tertiary,
-              boxShadow: activeTab === 'nestandartiniai' ? colors.shadow.sm : 'none'
-            }}
-          >
-            Nestandartiniai
-            {!loadingNestandartiniai && (
-              <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full" style={{
-                background: activeTab === 'nestandartiniai' ? colors.bg.tertiary : 'transparent',
-                color: colors.text.tertiary
-              }}>
-                {nestandartiniaiData.length}
-              </span>
-            )}
-          </button>
-        </div>
+              <ChevronDown className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: colors.text.tertiary }} />
-          <input
-            type="text"
-            placeholder="Ieškoti..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-lg text-sm"
-            style={{
-              background: colors.bg.white,
-              border: `1px solid ${colors.border.default}`,
-              color: colors.text.primary
-            }}
-          />
+            {dropdownOpen && (
+              <ul className="absolute z-50 mt-1 w-full bg-base-100 rounded-lg border border-base-content/10 shadow-lg py-1 macos-animate-slide-down">
+                {TABLE_OPTIONS.map(opt => (
+                  <li key={opt.value}>
+                    <button
+                      onClick={() => handleTableChange(opt.value)}
+                      className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-base-200 ${
+                        selectedTable === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-base-content'
+                      }`}
+                    >
+                      {opt.label}
+                      <span className="block text-xs text-base-content/40 font-mono">{opt.value}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Search input */}
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+            <input
+              type="text"
+              placeholder="Ie\u0161koti..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="input input-sm w-full pl-9"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Error Message */}
+      {/* Error */}
       {currentError && (
-        <div className="mx-6 mt-4 p-4 rounded-lg flex items-center space-x-3" style={{ background: colors.status.errorBg }}>
-          <AlertCircle className="w-5 h-5 flex-shrink-0" style={{ color: colors.status.errorText }} />
-          <p className="text-sm" style={{ color: colors.status.errorText }}>{currentError}</p>
+        <div className="mx-6 mt-4 alert alert-error alert-soft">
+          <AlertCircle className="w-5 h-5" />
+          <span>{currentError}</span>
         </div>
       )}
 
-      {/* Table Content */}
+      {/* Table content */}
       <div className="flex-1 overflow-auto p-6">
         {currentLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
-              <p className="text-sm" style={{ color: colors.text.secondary }}>Kraunama...</p>
+              <span className="loading loading-spinner loading-lg text-primary"></span>
+              <p className="text-sm mt-4 text-base-content/60">Kraunama...</p>
             </div>
           </div>
         ) : sortedData.length === 0 ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
-              <Database className="w-12 h-12 mx-auto mb-4" style={{ color: colors.text.tertiary }} />
-              <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
-                {searchQuery ? 'Nieko nerasta' : 'Nėra duomenų'}
+              <Database className="w-12 h-12 mx-auto mb-4 text-base-content/20" />
+              <h3 className="text-lg font-medium mb-2 text-base-content">
+                {searchQuery ? 'Nieko nerasta' : 'N\u0117ra duomen\u0173'}
               </h3>
-              <p className="text-sm" style={{ color: colors.text.secondary }}>
+              <p className="text-sm text-base-content/60">
                 {searchQuery
-                  ? 'Pakeiskite paieškos užklausą'
-                  : `Lentelė ${activeTab === 'standartiniai' ? 'standartiniai_projektai' : 'n8n_vector_store'} tuščia`
+                  ? 'Pakeiskite paie\u0161kos u\u017eklaus\u0105'
+                  : `Lentel\u0117 ${selectedTable} tu\u0161\u010dia`
                 }
               </p>
             </div>
           </div>
         ) : (
-          <div className="rounded-lg border overflow-hidden" style={{
-            borderColor: colors.border.default,
-            background: colors.bg.white
-          }}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ background: colors.bg.tertiary }}>
+          <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
+            <table className="table-striped table">
+              <thead>
+                <tr>
+                  {columns.map(col => (
+                    <th
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className="cursor-pointer select-none whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{formatColumnName(col)}</span>
+                        <span className="inline-flex flex-col leading-none">
+                          <ChevronUp
+                            className={`w-3 h-3 ${
+                              sortConfig.column === col && sortConfig.direction === 'asc'
+                                ? 'text-primary'
+                                : 'text-base-content/20'
+                            }`}
+                          />
+                          <ChevronDown
+                            className={`w-3 h-3 -mt-0.5 ${
+                              sortConfig.column === col && sortConfig.direction === 'desc'
+                                ? 'text-primary'
+                                : 'text-base-content/20'
+                            }`}
+                          />
+                        </span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedData.map((row, rowIndex) => (
+                  <tr key={row.id ?? rowIndex}>
                     {columns.map(col => (
-                      <th
+                      <td
                         key={col}
-                        onClick={() => handleSort(col)}
-                        className="px-4 py-3 text-left font-semibold cursor-pointer select-none whitespace-nowrap"
-                        style={{ color: colors.text.primary, borderBottom: `1px solid ${colors.border.default}` }}
+                        className="whitespace-nowrap max-w-xs truncate"
+                        title={String(row[col] ?? '')}
                       >
-                        <div className="flex items-center space-x-1">
-                          <span>{formatColumnName(col)}</span>
-                          <span className="inline-flex flex-col" style={{ lineHeight: 0 }}>
-                            <ChevronUp
-                              className="w-3 h-3"
-                              style={{
-                                color: sortConfig.column === col && sortConfig.direction === 'asc'
-                                  ? colors.text.primary
-                                  : colors.text.quaternary
-                              }}
-                            />
-                            <ChevronDown
-                              className="w-3 h-3 -mt-0.5"
-                              style={{
-                                color: sortConfig.column === col && sortConfig.direction === 'desc'
-                                  ? colors.text.primary
-                                  : colors.text.quaternary
-                              }}
-                            />
-                          </span>
-                        </div>
-                      </th>
+                        {renderCellValue(row[col])}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {sortedData.map((row, rowIndex) => (
-                    <tr
-                      key={row.id ?? rowIndex}
-                      className="transition-colors"
-                      style={{
-                        borderBottom: rowIndex < sortedData.length - 1 ? `1px solid ${colors.border.light}` : undefined
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = colors.bg.secondary)}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = '')}
-                    >
-                      {columns.map(col => (
-                        <td
-                          key={col}
-                          className="px-4 py-3 whitespace-nowrap max-w-xs truncate"
-                          style={{ color: colors.text.secondary }}
-                          title={String(row[col] ?? '')}
-                        >
-                          {renderCellValue(row[col])}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
 
-            {/* Footer with row count */}
-            <div className="px-4 py-2 text-xs border-t flex items-center justify-between" style={{
-              borderColor: colors.border.light,
-              color: colors.text.tertiary,
-              background: colors.bg.secondary
-            }}>
+            {/* Footer */}
+            <div className="px-4 py-2 text-xs border-t border-base-content/10 flex items-center justify-between bg-base-200/50 text-base-content/50">
               <span>
                 {searchQuery
-                  ? `${sortedData.length} iš ${currentData.length} įrašų`
-                  : `${sortedData.length} įrašų`
+                  ? `${sortedData.length} i\u0161 ${currentData.length} \u012Fra\u0161\u0173`
+                  : `${sortedData.length} \u012Fra\u0161\u0173`
                 }
               </span>
-              <span style={{ color: colors.text.quaternary }}>
-                {activeTab === 'standartiniai' ? 'standartiniai_projektai' : 'n8n_vector_store'}
+              <span className="font-mono text-base-content/30">
+                {selectedTable}
               </span>
             </div>
           </div>
