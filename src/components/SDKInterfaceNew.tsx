@@ -2158,7 +2158,7 @@ Vartotojo instrukcija: ${instruction}`;
         }}
       >
         {/* Project Header */}
-        <div className="px-4 py-3 flex items-center justify-between border-b border-base-content/5">
+        <div className="px-4 py-3 flex items-center justify-between">
           <div className="flex items-center space-x-3 flex-1 min-w-0">
             <FileText className="w-5 h-5 flex-shrink-0 text-base-content/50" />
             <span className="font-semibold truncate text-base-content">
@@ -2176,7 +2176,7 @@ Vartotojo instrukcija: ${instruction}`;
         {/* Instructions Section */}
         <div
           onClick={() => setShowPromptModal(true)}
-          className="mx-3 my-3 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
+          className="mx-3 mb-2 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
         >
           <div className="flex items-center gap-2">
             <Eye className="w-4 h-4 text-base-content/40" />
@@ -2186,6 +2186,22 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
           <p className="text-xs text-base-content/40 mt-1 ml-6">
             Sistemos instrukcijos komerciniam pasiūlymui
+          </p>
+        </div>
+
+        {/* Document Template Section */}
+        <div
+          onClick={handleOpenTemplateEditor}
+          className="mx-3 mb-3 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Pencil className="w-4 h-4 text-base-content/40" />
+            <span className="text-sm font-medium text-base-content">
+              Dokumentas
+            </span>
+          </div>
+          <p className="text-xs text-base-content/40 mt-1 ml-6">
+            Redaguokite komercinio dokumento šabloną
           </p>
         </div>
 
@@ -2303,7 +2319,7 @@ Vartotojo instrukcija: ${instruction}`;
                         onClick={() => handleSelectSharedConversation(sharedConv)}
                         className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
                           isActive
-                            ? 'bg-primary/10'
+                            ? 'bg-base-100 border border-base-content/15 shadow-sm'
                             : 'hover:bg-base-content/5'
                         }`}
                       >
@@ -2316,9 +2332,11 @@ Vartotojo instrukcija: ${instruction}`;
                             {sharedConv.shared_by_name || sharedConv.shared_by_email}
                           </p>
                         </div>
-                        <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0">
-                          {formatLtDate(sharedConv.shared_at)}
-                        </span>
+                        {!isActive && (
+                          <span className="text-[11px] text-base-content/30 whitespace-nowrap flex-shrink-0 group-hover:hidden">
+                            {formatLtDate(sharedConv.shared_at)}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -2498,7 +2516,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl border border-base-content/10 bg-base-content/[0.06] text-base-content">
+                        <div className="max-w-[80%] px-4 py-2.5 rounded-2xl text-base-content" style={{ background: '#ececed' }}>
                           <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
@@ -2738,13 +2756,6 @@ Vartotojo instrukcija: ${instruction}`;
                         {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                       </button>
                     )}
-                    <button
-                      onClick={handleOpenTemplateEditor}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Redaguoti šabloną"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
                       className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
