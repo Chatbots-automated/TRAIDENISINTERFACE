@@ -1,6 +1,7 @@
--- Migration: Global Template with versioning
+-- Migration: Global Template with versioning (max 30 versions)
 -- Moves the global HTML template from localStorage to the database so it's
--- truly shared across all users.  Includes a version history table for undo.
+-- truly shared across all users.  Includes a version history table for undo
+-- with automatic cleanup to keep only the newest 30 entries.
 
 -- ============================================================================
 -- Table: global_template (singleton — always id=1)
@@ -18,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.global_template (
 );
 
 -- ============================================================================
--- Table: global_template_versions (append-only history)
+-- Table: global_template_versions (append-only history, max 30 rows)
 -- ============================================================================
 
 CREATE SEQUENCE IF NOT EXISTS global_template_versions_version_seq;
@@ -37,6 +38,31 @@ CREATE TABLE IF NOT EXISTS public.global_template_versions (
 
 CREATE INDEX IF NOT EXISTS global_template_versions_version_idx
   ON public.global_template_versions(version_number DESC);
+
+-- ============================================================================
+-- Trigger: auto-prune versions beyond 30 after each INSERT
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION prune_global_template_versions()
+RETURNS TRIGGER AS $$
+BEGIN
+  DELETE FROM public.global_template_versions
+  WHERE id IN (
+    SELECT id
+    FROM public.global_template_versions
+    ORDER BY version_number DESC
+    OFFSET 30
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_prune_global_template_versions ON public.global_template_versions;
+
+CREATE TRIGGER trg_prune_global_template_versions
+  AFTER INSERT ON public.global_template_versions
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION prune_global_template_versions();
 
 -- ============================================================================
 -- Permissions (same pattern as other tables)

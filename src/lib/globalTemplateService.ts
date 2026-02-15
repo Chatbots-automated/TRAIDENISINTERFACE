@@ -3,12 +3,15 @@
  *
  * Manages the single shared HTML template stored in the database.
  * All users see the same template.  Every save creates a version
- * snapshot so changes can be undone.
+ * snapshot so changes can be undone (up to MAX_VERSIONS back).
  */
 
 import { db } from './database';
 import { COMMERCIAL_OFFER_TEMPLATE } from '../templates/commercialOfferTemplate';
 import { appLogger } from './appLogger';
+
+/** Maximum number of version history entries to keep. */
+const MAX_VERSIONS = 30;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,9 +82,43 @@ export async function getGlobalTemplateHtml(): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Delete the oldest version history entries so only MAX_VERSIONS remain.
+ * Called after every insert to keep the table bounded.
+ */
+async function pruneOldVersions(): Promise<void> {
+  try {
+    // Fetch all versions ordered newest-first, only need the id field
+    const { data, error } = await db
+      .from('global_template_versions')
+      .select('id,version_number')
+      .order('version_number', { ascending: false });
+
+    if (error || !data) return;
+
+    const rows = data as { id: string; version_number: number }[];
+    if (rows.length <= MAX_VERSIONS) return;
+
+    // Everything beyond the first MAX_VERSIONS rows must go
+    const toDelete = rows.slice(MAX_VERSIONS);
+    for (const row of toDelete) {
+      await db
+        .from('global_template_versions')
+        .delete()
+        .eq('id', row.id);
+    }
+
+    console.log(`[GlobalTemplate] Pruned ${toDelete.length} old version(s), keeping ${MAX_VERSIONS}`);
+  } catch (err) {
+    // Non-critical — log and move on
+    console.error('[GlobalTemplate] Error pruning old versions:', err);
+  }
+}
+
+/**
  * Save a new version of the global template.
  * - Upserts the singleton row (id=1).
  * - Creates a version history entry with the *previous* content.
+ * - Prunes versions beyond the 30-entry limit.
  */
 export async function saveGlobalTemplateToDb(
   html: string,
@@ -103,11 +140,14 @@ export async function saveGlobalTemplateToDb(
           created_by_name: current.updated_by_name,
           change_description: changeDescription ?? 'Šablono atnaujinimas',
         });
+
+      // 3. Prune old versions beyond the 30-entry limit
+      await pruneOldVersions();
     }
 
     const nextVersion = (current?.version ?? 0) + 1;
 
-    // 3. Upsert the singleton row
+    // 4. Upsert the singleton row
     if (current) {
       const { data, error } = await db
         .from('global_template')
