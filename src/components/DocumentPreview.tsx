@@ -66,7 +66,10 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     );
 
     const srcdoc = useMemo(() => {
-      return renderedHtml.replace(
+      // Strip <meta http-equiv> tags — redundant in srcdoc (always UTF-8)
+      // and cause "Blocked script execution" console errors in sandboxed iframes
+      const sanitized = renderedHtml.replace(/<meta[^>]+http-equiv[^>]*>/gi, '');
+      return sanitized.replace(
         '</style>',
         `
       /* Preview host overrides */

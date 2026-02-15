@@ -3639,7 +3639,10 @@ Vartotojo instrukcija: ${instruction}`;
         // Render template for editing — variable chips but no page-break processing
         const tpl = getDefaultTemplate();
         const rendered = renderTemplateForEditor(tpl);
-        const editorSrcdoc = rendered.replace(
+        // Strip <meta http-equiv> tags — they are redundant in srcdoc (always UTF-8)
+        // and cause "Blocked script execution" console errors in sandboxed iframes
+        const sanitized = rendered.replace(/<meta[^>]+http-equiv[^>]*>/gi, '');
+        const editorSrcdoc = sanitized.replace(
           '</style>',
           `
           /* Preview host overrides */
