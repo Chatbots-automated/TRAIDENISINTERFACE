@@ -303,7 +303,7 @@ export default function Layout({
 
             {/* User Info - Absolute Bottom */}
             <div className="py-3 bg-macos-gray-50/50 px-3">
-              <div className="flex items-center justify-center space-x-2.5">
+              <div className="flex items-center justify-center space-x-2.5 h-9">
                 <div className="w-8 h-8 bg-gradient-to-br from-macos-blue to-macos-purple rounded-full flex items-center justify-center flex-shrink-0 shadow-macos-sm">
                   <span className="text-white text-sm font-medium">
                     {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
