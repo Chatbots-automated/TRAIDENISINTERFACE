@@ -78,6 +78,41 @@ export async function getGlobalTemplateHtml(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Change summary helpers
+// ---------------------------------------------------------------------------
+
+/** Strip HTML tags and collapse whitespace to get plain text. */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Compute a short, user-friendly Lithuanian summary of what changed
+ * between oldHtml and newHtml.
+ */
+export function computeChangeSummary(oldHtml: string, newHtml: string): string {
+  const oldText = stripHtml(oldHtml);
+  const newText = stripHtml(newHtml);
+
+  if (oldText === newText) return 'Formatavimo pakeitimai';
+
+  const oldWords = oldText.split(/\s+/).filter(Boolean);
+  const newWords = newText.split(/\s+/).filter(Boolean);
+  const diff = newWords.length - oldWords.length;
+
+  if (diff > 3) return `Pridėta ~${diff} žodž.`;
+  if (diff < -3) return `Pašalinta ~${Math.abs(diff)} žodž.`;
+  return 'Teksto pakeitimai';
+}
+
+// ---------------------------------------------------------------------------
 // Write
 // ---------------------------------------------------------------------------
 
@@ -132,13 +167,19 @@ export async function saveGlobalTemplateToDb(
 
     // 2. Snapshot the *previous* content into version history
     if (current) {
+      // Compute a human-readable summary of the change
+      const autoSummary = computeChangeSummary(current.html_content, html);
+      const description = changeDescription
+        ? `${changeDescription} (${autoSummary.toLowerCase()})`
+        : autoSummary;
+
       await db
         .from('global_template_versions')
         .insert({
           html_content: current.html_content,
           created_by: current.updated_by,
           created_by_name: current.updated_by_name,
-          change_description: changeDescription ?? 'Šablono atnaujinimas',
+          change_description: description,
         });
 
       // 3. Prune old versions beyond the 30-entry limit

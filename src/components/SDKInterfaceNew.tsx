@@ -183,6 +183,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateVersionHistory, setTemplateVersionHistory] = useState<GlobalTemplateVersion[]>([]);
   const [showTemplateVersions, setShowTemplateVersions] = useState(false);
   const [templateSaving, setTemplateSaving] = useState(false);
+  const [revertConfirm, setRevertConfirm] = useState<{ id: string; versionNumber: number } | null>(null);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
@@ -3678,19 +3679,6 @@ Vartotojo instrukcija: ${instruction}`;
                   >
                     Istorija
                   </button>
-                  {isGlobalTemplateCustomized() && (
-                    <button
-                      onClick={() => {
-                        const userName = user.full_name || user.email;
-                        resetGlobalTemplate(user.id, userName);
-                        setTemplateVersion(v => v + 1);
-                        setShowTemplateEditor(false);
-                      }}
-                      className="btn btn-soft btn-xs"
-                    >
-                      Atkurti pradinį
-                    </button>
-                  )}
                   <button
                     onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
                     className="btn btn-soft btn-xs"
@@ -3747,40 +3735,78 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
                 {/* Version history sidebar */}
                 {showTemplateVersions && (
-                  <div className="w-72 flex-shrink-0 overflow-auto bg-base-100">
+                  <div className="w-72 flex-shrink-0 flex flex-col bg-base-100" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
                     <div className="px-4 py-3 border-b border-base-content/5">
-                      <span className="text-xs font-medium text-base-content/70">Versijų istorija</span>
+                      <span className="text-[13px] font-medium text-base-content/70">Istorija</span>
+                      <p className="text-[11px] mt-0.5" style={{ color: '#b0b0b0' }}>Galite grįžti prie ankstesnės versijos</p>
                     </div>
+                    <div className="flex-1 overflow-auto">
                     {templateVersionHistory.length === 0 ? (
-                      <div className="px-4 py-6 text-center">
-                        <span className="text-xs text-base-content/30">Nėra ankstesnių versijų</span>
+                      <div className="px-4 py-8 text-center">
+                        <span className="text-[12px]" style={{ color: '#b0b0b0' }}>Kol kas pakeitimų nėra</span>
                       </div>
                     ) : (
-                      <div className="divide-y divide-base-content/5">
-                        {templateVersionHistory.map((v) => {
+                      <div>
+                        {templateVersionHistory.map((v, idx) => {
                           const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
+                          const isConfirming = revertConfirm?.id === v.id;
+                          const dateStr = new Date(v.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                           return (
-                            <div key={v.id} className="px-4 py-3 hover:bg-base-content/[0.02] transition-colors">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs font-medium text-base-content/60">v{v.version_number}</span>
-                                <button
-                                  onClick={() => handleRevertTemplate(v.id)}
-                                  disabled={templateSaving}
-                                  className="btn btn-soft btn-xs"
-                                  title="Atkurti šią versiją"
-                                >
-                                  {templateSaving ? '...' : 'Atkurti'}
-                                </button>
+                            <div key={v.id} className={`px-4 py-3 transition-colors ${idx < templateVersionHistory.length - 1 ? 'border-b border-base-content/5' : ''} ${isConfirming ? 'bg-warning/5' : 'hover:bg-base-content/[0.02]'}`}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[12px] font-medium" style={{ color: '#b0b0b0' }}>{firstName}</span>
+                                <span className="text-[11px]" style={{ color: '#c8c8c8' }}>{dateStr}</span>
                               </div>
-                              <div className="mt-1 text-[10px] text-base-content/40">
+                              <div className="mt-1 text-[12px] text-base-content/60">
                                 {v.change_description || 'Šablono pakeitimas'}
                               </div>
-                              <div className="mt-1 text-[10px] text-base-content/30">
-                                {firstName} &middot; {new Date(v.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </div>
+                              {isConfirming ? (
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className="text-[11px] text-warning-content/70">Atkurti?</span>
+                                  <button
+                                    onClick={() => { setRevertConfirm(null); handleRevertTemplate(v.id); }}
+                                    disabled={templateSaving}
+                                    className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                  >
+                                    {templateSaving ? '...' : 'Taip'}
+                                  </button>
+                                  <button
+                                    onClick={() => setRevertConfirm(null)}
+                                    className="text-[11px] px-2 py-0.5 rounded hover:bg-base-content/5 transition-colors" style={{ color: '#b0b0b0' }}
+                                  >
+                                    Ne
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setRevertConfirm({ id: v.id, versionNumber: v.version_number })}
+                                  className="mt-1.5 text-[11px] px-0 py-0 bg-transparent border-none cursor-pointer hover:underline transition-colors" style={{ color: '#b0b0b0' }}
+                                >
+                                  Grįžti prie šios versijos
+                                </button>
+                              )}
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+                    </div>
+                    {/* Restore default - at bottom of sidebar */}
+                    {isGlobalTemplateCustomized() && (
+                      <div className="px-4 py-3 border-t border-base-content/5 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            if (confirm('Ar tikrai norite atkurti pradinį šabloną? Dabartiniai pakeitimai bus išsaugoti istorijoje.')) {
+                              const userName = user.full_name || user.email;
+                              resetGlobalTemplate(user.id, userName);
+                              setTemplateVersion(v => v + 1);
+                              setShowTemplateEditor(false);
+                            }
+                          }}
+                          className="w-full text-[11px] py-1.5 rounded transition-colors hover:bg-base-content/5 text-center" style={{ color: '#b0b0b0' }}
+                        >
+                          Atkurti pradinį šabloną
+                        </button>
                       </div>
                     )}
                   </div>
