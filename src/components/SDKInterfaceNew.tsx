@@ -3658,7 +3658,7 @@ Vartotojo instrukcija: ${instruction}`;
         const versionNum = meta?.version ?? null;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}>
-            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100" style={{ height: '88vh' }} onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-xl" style={{ height: '88vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }} onClick={(e) => e.stopPropagation()}>
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 flex-shrink-0 border-b border-base-content/10">
                 <div className="flex items-center gap-3">
@@ -3694,7 +3694,7 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
               </div>
               {/* Info bar: last edited by + hint */}
-              <div className="px-5 py-1.5 flex-shrink-0 bg-base-200/50 border-b border-base-content/5 flex items-center justify-between">
+              <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
                 <span className="text-[10px] text-base-content/40">
                   Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
                 </span>
@@ -3710,7 +3710,7 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* Visual editor iframe */}
-                <div className={`flex-1 overflow-auto bg-base-200/30 ${showTemplateVersions ? 'border-r border-base-content/5' : ''}`}>
+                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
                   <div style={{ width: '595px', margin: '24px auto' }}>
                     <iframe
                       ref={templateEditorIframeRef}
@@ -3735,9 +3735,9 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
                 {/* Version history sidebar */}
                 {showTemplateVersions && (
-                  <div className="w-72 flex-shrink-0 flex flex-col bg-base-100" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
-                    <div className="px-4 py-3 border-b border-base-content/5">
-                      <span className="text-[13px] font-medium text-base-content/70">Istorija</span>
+                  <div className="w-72 flex-shrink-0 flex flex-col bg-base-100 border-l border-base-content/10">
+                    <div className="px-4 py-3 border-b border-base-content/10">
+                      <span className="text-sm font-semibold text-base-content">Istorija</span>
                       <p className="text-[11px] mt-0.5" style={{ color: '#b0b0b0' }}>Galite grįžti prie ankstesnės versijos</p>
                     </div>
                     <div className="flex-1 overflow-auto">
@@ -3752,7 +3752,7 @@ Vartotojo instrukcija: ${instruction}`;
                           const isConfirming = revertConfirm?.id === v.id;
                           const dateStr = new Date(v.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                           return (
-                            <div key={v.id} className={`px-4 py-3 transition-colors ${idx < templateVersionHistory.length - 1 ? 'border-b border-base-content/5' : ''} ${isConfirming ? 'bg-warning/5' : 'hover:bg-base-content/[0.02]'}`}>
+                            <div key={v.id} className={`px-4 py-3 transition-all duration-150 ${idx < templateVersionHistory.length - 1 ? 'border-b border-base-content/5' : ''} ${isConfirming ? 'bg-warning/5' : 'hover:bg-base-content/5'}`}>
                               <div className="flex items-center gap-2">
                                 <span className="text-[12px] font-medium" style={{ color: '#b0b0b0' }}>{firstName}</span>
                                 <span className="text-[11px]" style={{ color: '#c8c8c8' }}>{dateStr}</span>
@@ -3780,7 +3780,7 @@ Vartotojo instrukcija: ${instruction}`;
                               ) : (
                                 <button
                                   onClick={() => setRevertConfirm({ id: v.id, versionNumber: v.version_number })}
-                                  className="mt-1.5 text-[11px] px-0 py-0 bg-transparent border-none cursor-pointer hover:underline transition-colors" style={{ color: '#b0b0b0' }}
+                                  className="mt-1.5 text-[11px] px-0 py-0 bg-transparent border-none cursor-pointer hover:text-primary transition-all duration-150" style={{ color: '#b0b0b0' }}
                                 >
                                   Grįžti prie šios versijos
                                 </button>
