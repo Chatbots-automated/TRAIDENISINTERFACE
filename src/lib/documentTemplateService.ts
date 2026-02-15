@@ -28,7 +28,7 @@ import {
 // When `true`, on next app load the version history is wiped and the current
 // template becomes version 1 — a fresh start.
 // ---------------------------------------------------------------------------
-const RESET_VERSION_HISTORY = true;
+const RESET_VERSION_HISTORY = false;
 
 // ---------------------------------------------------------------------------
 // In-memory cache — keeps synchronous callers working while data lives in DB
