@@ -342,16 +342,29 @@ export async function clearAllVersionsAndResetToV1(
   userName: string
 ): Promise<GlobalTemplate | null> {
   try {
-    // 1. Delete every row in global_template_versions
-    const { error: delErr } = await db
+    // 1. Fetch all version IDs, then delete each one
+    const { data: allVersions, error: fetchErr } = await db
       .from('global_template_versions')
-      .delete()
-      .neq('id', '00000000-0000-0000-0000-000000000000'); // match all rows
+      .select('id')
+      .order('version_number', { ascending: false });
 
-    if (delErr) {
-      console.error('[GlobalTemplate] Error clearing version history:', delErr);
-    } else {
+    if (fetchErr) {
+      console.error('[GlobalTemplate] Error fetching versions for deletion:', fetchErr);
+    } else if (allVersions && (allVersions as any[]).length > 0) {
+      const versionIds = (allVersions as { id: string }[]).map(v => v.id);
+      console.log(`[GlobalTemplate] Deleting ${versionIds.length} version(s)...`);
+      for (const vid of versionIds) {
+        const { error: delOneErr } = await db
+          .from('global_template_versions')
+          .delete()
+          .eq('id', vid);
+        if (delOneErr) {
+          console.error(`[GlobalTemplate] Error deleting version ${vid}:`, delOneErr);
+        }
+      }
       console.log('[GlobalTemplate] All version history cleared.');
+    } else {
+      console.log('[GlobalTemplate] No version history to clear.');
     }
 
     // 2. Read the current template (so we keep its html_content)
