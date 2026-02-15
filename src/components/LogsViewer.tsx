@@ -113,8 +113,8 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
               <Activity className="w-5 h-5" style={{ color: colors.interactive.accent }} />
             </div>
             <div>
-              <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Application Logs</h2>
-              <p className="text-xs" style={{ color: colors.text.secondary }}>System activity and events</p>
+              <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Programos žurnalai</h2>
+              <p className="text-xs" style={{ color: colors.text.secondary }}>Sistemos veikla ir įvykiai</p>
             </div>
           </div>
           <button
@@ -135,7 +135,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
         }}>
           <div className="flex items-center space-x-2">
             <Filter className="w-4 h-4" style={{ color: colors.text.secondary }} />
-            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Filters:</span>
+            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Filtrai:</span>
           </div>
 
           {/* Category Filter */}
@@ -151,7 +151,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>
-                {cat === 'all' ? 'All Categories' : cat.replace('_', ' ')}
+                {cat === 'all' ? 'Visos kategorijos' : cat.replace('_', ' ')}
               </option>
             ))}
           </select>
@@ -169,7 +169,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
           >
             {levels.map((level) => (
               <option key={level} value={level}>
-                {level === 'all' ? 'All Levels' : level.toUpperCase()}
+                {level === 'all' ? 'Visi lygiai' : level.toUpperCase()}
               </option>
             ))}
           </select>
@@ -187,7 +187,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
             onMouseLeave={(e) => !loading && (e.currentTarget.style.background = colors.bg.white)}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
+            <span>Atnaujinti</span>
           </button>
         </div>
 
@@ -197,14 +197,14 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
             <div className="flex items-center justify-center h-64">
               <div className="flex flex-col items-center space-y-3">
                 <RefreshCw className="w-6 h-6 animate-spin" style={{ color: colors.interactive.accent }} />
-                <p className="text-sm" style={{ color: colors.text.secondary }}>Loading logs...</p>
+                <p className="text-sm" style={{ color: colors.text.secondary }}>Kraunami žurnalai...</p>
               </div>
             </div>
           ) : logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64">
               <AlertCircle className="w-10 h-10 mb-3" style={{ color: colors.text.tertiary }} />
-              <p className="text-base font-medium" style={{ color: colors.text.primary }}>No logs found</p>
-              <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>Try adjusting your filters</p>
+              <p className="text-base font-medium" style={{ color: colors.text.primary }}>Žurnalų nerasta</p>
+              <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>Pabandykite pakeisti filtrus</p>
             </div>
           ) : (
             <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
@@ -212,12 +212,12 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
                 <thead>
                   <tr>
                     <th></th>
-                    <th>Level</th>
-                    <th>Category</th>
-                    <th>Action</th>
-                    <th>Message</th>
-                    <th>User</th>
-                    <th>Timestamp</th>
+                    <th>Lygis</th>
+                    <th>Kategorija</th>
+                    <th>Veiksmas</th>
+                    <th>Žinutė</th>
+                    <th>Naudotojas</th>
+                    <th>Laikas</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -255,13 +255,13 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
                               </div>
                               {log.user_id && (
                                 <div>
-                                  <span className="font-medium" style={{ color: colors.text.primary }}>User ID:</span>
+                                  <span className="font-medium" style={{ color: colors.text.primary }}>Naudotojo ID:</span>
                                   <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.user_id}</span>
                                 </div>
                               )}
                               {log.metadata && Object.keys(log.metadata).length > 0 && (
                                 <div>
-                                  <span className="font-medium" style={{ color: colors.text.primary }}>Metadata:</span>
+                                  <span className="font-medium" style={{ color: colors.text.primary }}>Metaduomenys:</span>
                                   <pre className="mt-1 p-2 rounded-lg overflow-x-auto border text-[10px]" style={{
                                     background: colors.bg.white,
                                     color: colors.text.secondary,
@@ -289,7 +289,7 @@ export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
           background: colors.bg.secondary
         }}>
           <p className="text-[11px] text-center" style={{ color: colors.text.secondary }}>
-            Showing {logs.length} log {logs.length === 1 ? 'entry' : 'entries'}
+            {logs.length === 1 ? 'Rodomas 1 įrašas' : `Rodoma ${logs.length} įrašų`}
           </p>
         </div>
       </div>

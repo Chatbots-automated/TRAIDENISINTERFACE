@@ -2673,7 +2673,7 @@ Vartotojo instrukcija: ${instruction}`;
                       <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                          title="Copy"
+                          title="Kopijuoti"
                           onClick={() => { navigator.clipboard.writeText(contentString); addNotification('info', 'Nukopijuota', 'Žinutės tekstas nukopijuotas.'); }}
                         >
                           <Copy className="w-3.5 h-3.5" />
