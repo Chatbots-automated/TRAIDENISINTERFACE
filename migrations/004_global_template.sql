@@ -65,13 +65,7 @@ CREATE TRIGGER trg_prune_global_template_versions
   EXECUTE FUNCTION prune_global_template_versions();
 
 -- ============================================================================
--- Permissions (same pattern as other tables)
+-- Permissions — Directus manages access via its own DB user.
+-- Grant full access to the role Directus connects as (typically the DB owner).
+-- No Supabase-specific roles needed.
 -- ============================================================================
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.global_template TO authenticated;
-GRANT SELECT ON public.global_template TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.global_template_versions TO authenticated;
-GRANT SELECT ON public.global_template_versions TO anon;
-
-GRANT USAGE, SELECT ON SEQUENCE global_template_versions_version_seq TO authenticated, anon;
