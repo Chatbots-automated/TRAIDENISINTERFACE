@@ -329,6 +329,83 @@ export async function resetGlobalTemplateInDb(
 }
 
 // ---------------------------------------------------------------------------
+// One-time version reset
+// ---------------------------------------------------------------------------
+
+/**
+ * Clear ALL version history and reset the global_template row to version 1.
+ * The current html_content is preserved — it becomes the new "default" baseline.
+ * Call this once, then flip RESET_VERSION_HISTORY to false.
+ */
+export async function clearAllVersionsAndResetToV1(
+  userId: string,
+  userName: string
+): Promise<GlobalTemplate | null> {
+  try {
+    // 1. Delete every row in global_template_versions
+    const { error: delErr } = await db
+      .from('global_template_versions')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000'); // match all rows
+
+    if (delErr) {
+      console.error('[GlobalTemplate] Error clearing version history:', delErr);
+    } else {
+      console.log('[GlobalTemplate] All version history cleared.');
+    }
+
+    // 2. Read the current template (so we keep its html_content)
+    const current = await getGlobalTemplate();
+    const html = current?.html_content ?? COMMERCIAL_OFFER_TEMPLATE;
+
+    // 3. Upsert the singleton row at version 1
+    const { data, error } = current
+      ? await db
+          .from('global_template')
+          .update({
+            html_content: html,
+            updated_at: new Date().toISOString(),
+            updated_by: userId,
+            updated_by_name: userName,
+            version: 1,
+          })
+          .eq('id', 1)
+          .select()
+          .single()
+      : await db
+          .from('global_template')
+          .insert({
+            id: 1,
+            html_content: html,
+            updated_by: userId,
+            updated_by_name: userName,
+            version: 1,
+          })
+          .select()
+          .single();
+
+    if (error) {
+      console.error('[GlobalTemplate] Error resetting to v1:', error);
+      return null;
+    }
+
+    console.log('[GlobalTemplate] Template reset to version 1 — fresh start.');
+
+    await appLogger.logDocument({
+      action: 'global_template_version_reset',
+      userId,
+      userEmail: userName,
+      metadata: { version: 1, note: 'Version history cleared, fresh start' },
+    });
+
+    return data as GlobalTemplate;
+  } catch (err) {
+    console.error('[GlobalTemplate] Error in clearAllVersionsAndResetToV1:', err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Version History
 // ---------------------------------------------------------------------------
 
