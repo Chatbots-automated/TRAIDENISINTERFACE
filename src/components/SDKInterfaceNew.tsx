@@ -2919,8 +2919,9 @@ Vartotojo instrukcija: ${instruction}`;
                             : editingVariable.y - 8,
                           transform: popupPlacement === 'above' ? 'translateY(-100%)' : undefined,
                           zIndex: 50,
-                          width: '264px',
+                          width: '280px',
                           filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
                         }}
                       >
                         {/* Pointer triangle — points toward the variable */}
@@ -2930,7 +2931,7 @@ Vartotojo instrukcija: ${instruction}`;
                             borderLeft: '7px solid transparent',
                             borderRight: '7px solid transparent',
                             borderBottom: '7px solid #ffffff',
-                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 248) + 'px',
                           }} />
                         )}
 
@@ -2940,41 +2941,43 @@ Vartotojo instrukcija: ${instruction}`;
                           overflow: 'hidden',
                           border: '1px solid rgba(0,0,0,0.06)',
                         }}>
-                          {/* Header — compact with colored category pill */}
-                          <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f3f2f0' }}>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: categoryColor + '10', color: categoryColor }}>
-                                {categoryLabel}
-                              </span>
-                              <span className="text-[11px] font-medium truncate" style={{ color: 'var(--color-base-content)' }}>{label}</span>
+                          {/* Header — label as title, category as subtle tag */}
+                          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-[14px] font-semibold truncate" style={{ color: '#1a1a1a', letterSpacing: '-0.01em' }}>{label}</div>
+                                <span className="inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: categoryColor + '12', color: categoryColor }}>
+                                  {categoryLabel}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setEditingVariable(null);
+                                  documentPreviewRef.current?.clearActiveVariable();
+                                }}
+                                className="p-1 rounded-md flex-shrink-0 transition-colors mt-0.5"
+                                style={{ color: '#c0bbb5' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => {
-                                setEditingVariable(null);
-                                documentPreviewRef.current?.clearActiveVariable();
-                              }}
-                              className="p-0.5 rounded-full flex-shrink-0 transition-colors"
-                              style={{ color: '#c0bbb5' }}
-                              onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
                           </div>
 
                           {/* Body */}
-                          <div className="px-3 py-2.5">
+                          <div className="px-3.5 py-3">
                             {cat === 'team' && (
                               <div>
-                                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai užpildyta</span>
-                                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
+                                <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai užpildyta</span>
+                                <div className="mt-1 text-[13px] font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
                               </div>
                             )}
 
                             {cat === 'auto' && (
                               <div>
-                                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
-                                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
+                                <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
+                                <div className="mt-1 text-[13px] font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
                               </div>
                             )}
 
@@ -2983,17 +2986,17 @@ Vartotojo instrukcija: ${instruction}`;
                                 {!techDescResult && !techDescLoading && !techDescError && (
                                   <div>
                                     {editingVariable.editValue ? (
-                                      <div className="text-[11px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
+                                      <div className="text-[12px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
                                         {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
                                       </div>
                                     ) : (
-                                      <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
+                                      <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                                         Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
                                       </span>
                                     )}
                                     <button
                                       onClick={handleGenerateTechDescription}
-                                      className="w-full mt-2 text-[11px] px-3 py-2 rounded-lg font-medium transition-colors"
+                                      className="w-full mt-2 text-[12px] px-3 py-2 rounded-lg font-medium transition-colors"
                                       style={{ background: '#0891b2', color: 'white' }}
                                       onMouseEnter={(e) => e.currentTarget.style.background = '#0e7490'}
                                       onMouseLeave={(e) => e.currentTarget.style.background = '#0891b2'}
@@ -3005,17 +3008,17 @@ Vartotojo instrukcija: ${instruction}`;
                                 {techDescLoading && (
                                   <div className="flex items-center justify-center gap-2 py-4">
                                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
-                                    <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
+                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
                                   </div>
                                 )}
                                 {techDescError && !techDescLoading && (
                                   <div>
-                                    <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                    <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
                                       {techDescError}
                                     </div>
                                     <button
                                       onClick={() => setTechDescError(null)}
-                                      className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                      className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                       style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                       onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3027,15 +3030,15 @@ Vartotojo instrukcija: ${instruction}`;
                                 {techDescResult && !techDescLoading && (
                                   <div>
                                     <div
-                                      className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                      className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
                                       style={{ color: '#3d3935', lineHeight: '1.6', background: '#f8f7f6', border: '1px solid #e5e2dd' }}
                                     >
                                       {techDescResult}
                                     </div>
-                                    <div className="flex justify-end mt-2 gap-1.5">
+                                    <div className="flex justify-end mt-2.5 gap-2">
                                       <button
                                         onClick={() => { setTechDescResult(null); }}
-                                        className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                        className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                         style={{ color: '#ef4444' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3048,7 +3051,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           setTechDescResult(null);
                                           addNotification('success', 'Aprašymas priimtas', 'Technologinis aprašymas įrašytas į dokumentą.');
                                         }}
-                                        className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                        className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
                                         style={{ background: '#059669', color: 'white' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#047857'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = '#059669'}
@@ -3064,7 +3067,7 @@ Vartotojo instrukcija: ${instruction}`;
                             {cat === 'economist' && (
                               <div className="flex flex-col gap-0.5">
                                 {economists.length === 0 ? (
-                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
+                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
                                 ) : (
                                   economists.map((econ) => {
                                     const isSelected = selectedEconomist?.id === econ.id;
@@ -3076,7 +3079,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           setEditingVariable(null);
                                           documentPreviewRef.current?.clearActiveVariable();
                                         }}
-                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
                                         style={{
                                           background: isSelected ? '#eff6ff' : 'transparent',
                                           color: '#3d3935',
@@ -3085,7 +3088,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                       >
                                         <span className={isSelected ? 'font-medium' : ''}>{econ.full_name || econ.email}</span>
-                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
                                       </button>
                                     );
                                   })
@@ -3096,7 +3099,7 @@ Vartotojo instrukcija: ${instruction}`;
                             {cat === 'manager' && (
                               <div className="flex flex-col gap-0.5">
                                 {managers.length === 0 ? (
-                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
+                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
                                 ) : (
                                   managers.map((mgr) => {
                                     const isSelected = selectedManager?.id === mgr.id;
@@ -3108,7 +3111,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           setEditingVariable(null);
                                           documentPreviewRef.current?.clearActiveVariable();
                                         }}
-                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
                                         style={{
                                           background: isSelected ? '#eff6ff' : 'transparent',
                                           color: '#3d3935',
@@ -3117,7 +3120,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                       >
                                         <span className={isSelected ? 'font-medium' : ''}>{mgr.full_name || mgr.email}</span>
-                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
                                       </button>
                                     );
                                   })
@@ -3136,15 +3139,15 @@ Vartotojo instrukcija: ${instruction}`;
                                     if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
                                   }}
                                   autoFocus
-                                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none transition-all"
+                                  className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none transition-all"
                                   style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
                                   onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
                                   onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                 />
-                                <div className="flex justify-end mt-2 gap-1.5">
+                                <div className="flex justify-end mt-2.5 gap-2">
                                   <button
                                     onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                    className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                    className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                     style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                     onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3153,7 +3156,7 @@ Vartotojo instrukcija: ${instruction}`;
                                   </button>
                                   <button
                                     onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                    className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                    className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
                                     style={{ background: '#3d3935', color: 'white' }}
                                     onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
                                     onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
@@ -3177,27 +3180,27 @@ Vartotojo instrukcija: ${instruction}`;
                                       }}
                                       autoFocus
                                       rows={3}
-                                      className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                      className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
                                       style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
                                       onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
                                       onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                     />
-                                    <div className="flex items-center justify-between mt-2">
+                                    <div className="flex items-center justify-between mt-2.5">
                                       <button
                                         onClick={() => { setAiVarEditMode(true); setAiVarEditInstruction(''); setAiVarEditResult(null); setAiVarEditError(null); }}
-                                        className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
                                         style={{ color: '#8b5cf6' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3ff'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                         title="AI redakcija"
                                       >
-                                        <Sparkles className="w-2.5 h-2.5" />
+                                        <Sparkles className="w-3 h-3" />
                                         AI
                                       </button>
-                                      <div className="flex gap-1.5">
+                                      <div className="flex gap-2">
                                         <button
                                           onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                          className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                          className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                           style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3206,7 +3209,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         </button>
                                         <button
                                           onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                          className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                          className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
                                           style={{ background: '#3d3935', color: 'white' }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
@@ -3222,7 +3225,7 @@ Vartotojo instrukcija: ${instruction}`;
                                     {!aiVarEditResult && !aiVarEditLoading && !aiVarEditError && (
                                       <div>
                                         {editingVariable.editValue && (
-                                          <div className="text-[10px] max-h-20 overflow-y-auto mb-2 px-2 py-1.5 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
+                                          <div className="text-[12px] max-h-20 overflow-y-auto mb-2 px-2.5 py-2 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
                                             {editingVariable.editValue.slice(0, 150)}{editingVariable.editValue.length > 150 ? '...' : ''}
                                           </div>
                                         )}
@@ -3236,15 +3239,15 @@ Vartotojo instrukcija: ${instruction}`;
                                           autoFocus
                                           rows={2}
                                           placeholder="Aprašykite, ką AI turėtų pakeisti..."
-                                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                          className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
                                           style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
                                           onFocus={(e) => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)'; }}
                                           onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                         />
-                                        <div className="flex items-center justify-between mt-2">
+                                        <div className="flex items-center justify-between mt-2.5">
                                           <button
                                             onClick={() => setAiVarEditMode(false)}
-                                            className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
                                             style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3254,7 +3257,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           <button
                                             onClick={handleAIVariableEdit}
                                             disabled={!aiVarEditInstruction.trim()}
-                                            className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            className="flex items-center gap-1 text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
                                             style={{
                                               background: aiVarEditInstruction.trim() ? '#8b5cf6' : '#e5e2dd',
                                               color: aiVarEditInstruction.trim() ? 'white' : '#9ca3af',
@@ -3262,7 +3265,7 @@ Vartotojo instrukcija: ${instruction}`;
                                             onMouseEnter={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#7c3aed'; }}
                                             onMouseLeave={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#8b5cf6'; }}
                                           >
-                                            <Sparkles className="w-3 h-3" />
+                                            <Sparkles className="w-3.5 h-3.5" />
                                             Generuoti
                                           </button>
                                         </div>
@@ -3272,18 +3275,18 @@ Vartotojo instrukcija: ${instruction}`;
                                     {aiVarEditLoading && (
                                       <div className="flex items-center justify-center gap-2 py-4">
                                         <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
-                                        <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
+                                        <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
                                       </div>
                                     )}
 
                                     {aiVarEditError && !aiVarEditLoading && (
                                       <div>
-                                        <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                        <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
                                           {aiVarEditError}
                                         </div>
                                         <button
                                           onClick={() => setAiVarEditError(null)}
-                                          className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                          className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                           style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3296,15 +3299,15 @@ Vartotojo instrukcija: ${instruction}`;
                                     {aiVarEditResult && !aiVarEditLoading && (
                                       <div>
                                         <div
-                                          className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                          className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
                                           style={{ color: '#3d3935', lineHeight: '1.6', background: '#faf5ff', border: '1px solid #e9d5ff' }}
                                         >
                                           {aiVarEditResult}
                                         </div>
-                                        <div className="flex justify-end mt-2 gap-1.5">
+                                        <div className="flex justify-end mt-2.5 gap-2">
                                           <button
                                             onClick={() => { setAiVarEditResult(null); }}
-                                            className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                            className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                             style={{ color: '#ef4444' }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3319,7 +3322,7 @@ Vartotojo instrukcija: ${instruction}`;
                                               setAiVarEditMode(false);
                                               await handleVariableSave(key, value);
                                             }}
-                                            className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
                                             style={{ background: '#8b5cf6', color: 'white' }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#7c3aed'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = '#8b5cf6'}
