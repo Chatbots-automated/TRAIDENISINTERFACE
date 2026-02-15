@@ -3742,61 +3742,60 @@ Vartotojo instrukcija: ${instruction}`;
                       <span className="text-sm font-semibold text-base-content">Istorija</span>
                       <p className="text-[11px] mt-0.5" style={{ color: '#b0b0b0' }}>Galite grįžti prie ankstesnės versijos</p>
                     </div>
-                    <div className="flex-1 overflow-auto">
+                    <div className="flex-1 overflow-auto py-1">
                     {templateVersionHistory.length === 0 ? (
                       <div className="px-4 py-8 text-center">
                         <span className="text-[12px]" style={{ color: '#b0b0b0' }}>Kol kas pakeitimų nėra</span>
                       </div>
                     ) : (
-                      <div>
+                      <div className="space-y-0.5">
                         {templateVersionHistory.map((v, idx) => {
                           const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
                           const isConfirming = revertConfirm?.id === v.id;
                           const isExpanded = expandedVersionId === v.id;
                           const dateStr = new Date(v.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                           return (
-                            <div key={v.id} className={`transition-all duration-150 ${idx < templateVersionHistory.length - 1 ? 'border-b border-base-content/5' : ''} ${isConfirming ? 'bg-warning/5' : ''}`}>
-                              {/* Clickable entry header */}
-                              <div
-                                className={`px-4 py-3 cursor-pointer transition-all duration-150 ${isExpanded ? 'bg-base-content/[0.03]' : 'hover:bg-base-content/5'}`}
-                                onClick={() => {
-                                  if (isExpanded) {
-                                    setExpandedVersionId(null);
-                                    setExpandedDiff(null);
-                                  } else {
-                                    // Compute diff: this version vs the next state
-                                    const nextHtml = idx === 0
-                                      ? getDefaultTemplate() // compare with current template
-                                      : templateVersionHistory[idx - 1].html_content;
-                                    const segments = computeHtmlDiff(v.html_content, nextHtml);
-                                    setExpandedDiff(segments);
-                                    setExpandedVersionId(v.id);
-                                  }
-                                }}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[12px] font-medium" style={{ color: '#b0b0b0' }}>{firstName}</span>
-                                    <span className="text-[11px]" style={{ color: '#c8c8c8' }}>{dateStr}</span>
-                                  </div>
-                                  <span className="text-[10px]" style={{ color: '#c8c8c8' }}>{isExpanded ? '▾' : '▸'}</span>
+                            <div key={v.id} className={`mx-2 rounded-lg transition-all duration-150 ${isExpanded ? 'bg-base-content/[0.03]' : 'hover:bg-base-content/5'} ${isConfirming ? 'bg-warning/5' : ''}`}>
+                              {/* Entry header */}
+                              <div className="px-3 py-2.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[12px] font-medium" style={{ color: '#b0b0b0' }}>{firstName}</span>
+                                  <span className="text-[11px]" style={{ color: '#c8c8c8' }}>{dateStr}</span>
                                 </div>
-                                <div className="mt-1 text-[12px] text-base-content/60">
+                                <div className="mt-0.5 text-[12px] text-base-content/60">
                                   {v.change_description || 'Šablono pakeitimas'}
                                 </div>
+                                {/* Expand/collapse toggle */}
+                                <button
+                                  onClick={() => {
+                                    if (isExpanded) {
+                                      setExpandedVersionId(null);
+                                      setExpandedDiff(null);
+                                    } else {
+                                      const nextHtml = idx === 0
+                                        ? getDefaultTemplate()
+                                        : templateVersionHistory[idx - 1].html_content;
+                                      const segments = computeHtmlDiff(v.html_content, nextHtml);
+                                      setExpandedDiff(segments);
+                                      setExpandedVersionId(v.id);
+                                    }
+                                  }}
+                                  className="mt-1 text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
+                                >
+                                  {isExpanded ? 'Slėpti pakeitimus' : 'Peržiūrėti pakeitimus'}
+                                </button>
                               </div>
 
                               {/* Expanded diff view */}
                               {isExpanded && expandedDiff && (
-                                <div className="px-4 pb-3">
-                                  <div className="rounded-lg bg-base-200/60 border border-base-content/5 p-3 max-h-48 overflow-auto">
+                                <div className="px-3 pb-3">
+                                  <div className="rounded-lg bg-base-200/60 p-3 max-h-48 overflow-auto">
                                     <div className="text-[11px] leading-relaxed" style={{ wordBreak: 'break-word' }}>
                                       {expandedDiff.every(s => s.type === 'same') ? (
                                         <span style={{ color: '#b0b0b0' }}>Tik formatavimo pakeitimai (tekstas nepasikeitė)</span>
                                       ) : (
                                         expandedDiff.map((seg, si) => {
                                           if (seg.type === 'same') {
-                                            // Show context: only first/last few words of long unchanged runs
                                             const words = seg.text.split(' ');
                                             if (words.length > 8) {
                                               return (
@@ -3816,7 +3815,6 @@ Vartotojo instrukcija: ${instruction}`;
                                               </span>
                                             );
                                           }
-                                          // removed
                                           return (
                                             <span key={si} style={{ background: '#fee2e2', color: '#991b1b', textDecoration: 'line-through', borderRadius: '2px', padding: '0 2px' }}>
                                               {seg.text}
@@ -3826,20 +3824,20 @@ Vartotojo instrukcija: ${instruction}`;
                                       )}
                                     </div>
                                   </div>
-                                  {/* Actions below diff */}
+                                  {/* Revert action */}
                                   <div className="mt-2 flex items-center gap-3">
                                     {isConfirming ? (
                                       <>
                                         <span className="text-[11px] text-warning-content/70">Grįžti prie šios versijos?</span>
                                         <button
-                                          onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); handleRevertTemplate(v.id); }}
+                                          onClick={() => { setRevertConfirm(null); handleRevertTemplate(v.id); }}
                                           disabled={templateSaving}
                                           className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                                         >
                                           {templateSaving ? '...' : 'Taip'}
                                         </button>
                                         <button
-                                          onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); }}
+                                          onClick={() => setRevertConfirm(null)}
                                           className="text-[11px] px-2 py-0.5 rounded hover:bg-base-content/5 transition-colors" style={{ color: '#b0b0b0' }}
                                         >
                                           Ne
@@ -3847,8 +3845,8 @@ Vartotojo instrukcija: ${instruction}`;
                                       </>
                                     ) : (
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); setRevertConfirm({ id: v.id, versionNumber: v.version_number }); }}
-                                        className="text-[11px] px-0 py-0 bg-transparent border-none cursor-pointer hover:text-primary transition-all duration-150" style={{ color: '#b0b0b0' }}
+                                        onClick={() => setRevertConfirm({ id: v.id, versionNumber: v.version_number })}
+                                        className="text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
                                       >
                                         Grįžti prie šios versijos
                                       </button>
@@ -3862,19 +3860,19 @@ Vartotojo instrukcija: ${instruction}`;
                       </div>
                     )}
                     </div>
-                    {/* Restore default - at bottom of sidebar */}
+                    {/* Restore default - prominent at bottom */}
                     {isGlobalTemplateCustomized() && (
-                      <div className="px-4 py-3 border-t border-base-content/5 flex-shrink-0">
+                      <div className="px-3 py-3 border-t border-base-content/10 flex-shrink-0">
                         <button
                           onClick={() => {
-                            if (confirm('Ar tikrai norite atkurti pradinį šabloną? Dabartiniai pakeitimai bus išsaugoti istorijoje.')) {
+                            if (confirm('Ar tikrai norite atkurti pradinį šabloną?\n\nDabartiniai pakeitimai bus išsaugoti istorijoje.')) {
                               const userName = user.full_name || user.email;
                               resetGlobalTemplate(user.id, userName);
                               setTemplateVersion(v => v + 1);
                               setShowTemplateEditor(false);
                             }
                           }}
-                          className="w-full text-[11px] py-1.5 rounded transition-colors hover:bg-base-content/5 text-center" style={{ color: '#b0b0b0' }}
+                          className="w-full text-[12px] font-medium py-2 px-3 rounded-lg transition-all duration-150 border border-error/20 text-error/70 hover:bg-error/10 hover:text-error hover:border-error/30"
                         >
                           Atkurti pradinį šabloną
                         </button>
