@@ -233,6 +233,20 @@ export function getUnfilledVariables(
 // Helpers
 // ------------------------------------------------------------------
 
+/**
+ * Sanitize HTML before loading into a sandboxed iframe.
+ * Strips script tags, meta http-equiv, inline event handlers, and
+ * javascript: URLs so that user-edited templates from the DB cannot
+ * inject executable content.
+ */
+export function sanitizeHtmlForIframe(html: string): string {
+  return html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<meta[^>]+http-equiv[^>]*>/gi, '')
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/javascript\s*:/gi, 'blocked:');
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')

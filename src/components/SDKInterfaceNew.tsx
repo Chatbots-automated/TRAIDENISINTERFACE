@@ -64,7 +64,7 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta } from '../lib/documentTemplateService';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
@@ -3639,9 +3639,7 @@ Vartotojo instrukcija: ${instruction}`;
         // Render template for editing — variable chips but no page-break processing
         const tpl = getDefaultTemplate();
         const rendered = renderTemplateForEditor(tpl);
-        // Strip <meta http-equiv> tags — they are redundant in srcdoc (always UTF-8)
-        // and cause "Blocked script execution" console errors in sandboxed iframes
-        const sanitized = rendered.replace(/<meta[^>]+http-equiv[^>]*>/gi, '');
+        const sanitized = sanitizeHtmlForIframe(rendered);
         const editorSrcdoc = sanitized.replace(
           '</style>',
           `
@@ -3728,7 +3726,7 @@ Vartotojo instrukcija: ${instruction}`;
                       ref={templateEditorIframeRef}
                       srcDoc={editorSrcdoc}
                       title="Šablono redaktorius"
-                      sandbox="allow-same-origin"
+                      sandbox="allow-same-origin allow-scripts"
                       scrolling="no"
                       style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
                       onLoad={() => {

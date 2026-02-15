@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
-import { renderTemplate, getDefaultTemplate, getUnfilledVariables } from '../lib/documentTemplateService';
+import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
@@ -66,9 +66,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     );
 
     const srcdoc = useMemo(() => {
-      // Strip <meta http-equiv> tags — redundant in srcdoc (always UTF-8)
-      // and cause "Blocked script execution" console errors in sandboxed iframes
-      const sanitized = renderedHtml.replace(/<meta[^>]+http-equiv[^>]*>/gi, '');
+      const sanitized = sanitizeHtmlForIframe(renderedHtml);
       return sanitized.replace(
         '</style>',
         `
@@ -374,7 +372,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               ref={iframeRef}
               srcDoc={srcdoc}
               title="Dokumento peržiūra"
-              sandbox="allow-same-origin allow-modals"
+              sandbox="allow-same-origin allow-scripts allow-modals"
               scrolling="no"
               style={{
                 width: '595px',
