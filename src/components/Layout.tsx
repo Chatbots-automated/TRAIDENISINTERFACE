@@ -241,11 +241,13 @@ export default function Layout({
                 </div>
               )}
 
+              {user.is_admin && !sidebarCollapsed && (
+                <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Admin</div>
+              )}
               <ul className="menu px-2 pb-1">
                 {/* Admin buttons */}
                 {user.is_admin && (
                   <>
-                    <li className={`menu-title text-[10px] uppercase tracking-wider ${sidebarCollapsed ? 'opacity-0' : ''}`}>Admin</li>
                     <li>
                       <button
                         onClick={() => setWebhooksOpen(true)}
