@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown } from 'lucide-react';
-import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/database';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, UserPlus, Hash, Mail, Lock, Briefcase, ArrowLeft } from 'lucide-react';
+import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin, getVadybininkai, createVadybininkas, deleteVadybininkas } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
 
@@ -29,18 +29,29 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   const [success, setSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  const [roleFilter, setRoleFilter] = useState<string | null>(null); // null = exclude vadybininkas, 'all' = show all, or specific role
+  const [roleFilter, setRoleFilter] = useState<string>('all'); // 'all' = show all, or specific role
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+
+  const [createMode, setCreateMode] = useState<'select' | 'komanda' | 'vadybininkas'>('select');
+
+  const [vadybininkai, setVadybininkai] = useState<{ id: string; full_name?: string; kodas?: string; created_at: string }[]>([]);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
     password: '',
     displayName: '',
-    isAdmin: false
+    isAdmin: false,
+    role: ''
+  });
+
+  const [newVadybininkas, setNewVadybininkas] = useState({
+    fullName: '',
+    kodas: ''
   });
 
   useEffect(() => {
     loadUsers();
+    loadVadybininkai();
   }, []);
 
   const loadUsers = async () => {
@@ -57,7 +68,31 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
     }
   };
 
-  const handleCreateUser = async () => {
+  const loadVadybininkai = async () => {
+    try {
+      const { data, error } = await getVadybininkai();
+      if (error) throw error;
+      setVadybininkai(data || []);
+    } catch (error: any) {
+      console.error('Error loading vadybininkai:', error);
+    }
+  };
+
+  const generateKodas = (fullName: string): string => {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length < 2) return parts[0]?.charAt(0)?.toUpperCase() || '';
+    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+  };
+
+  const resetCreateModal = () => {
+    setShowCreateModal(false);
+    setCreateMode('select');
+    setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
+    setNewVadybininkas({ fullName: '', kodas: '' });
+    setError(null);
+  };
+
+  const handleCreateKomanda = async () => {
     if (!newUserData.email.trim() || !newUserData.password.trim()) {
       setError('Email and password are required');
       return;
@@ -71,16 +106,49 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         newUserData.email,
         newUserData.password,
         newUserData.displayName,
-        newUserData.isAdmin
+        newUserData.isAdmin,
+        newUserData.role || undefined
       );
 
       if (error) throw error;
 
-      setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
-      setShowCreateModal(false);
+      resetCreateModal();
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
       await loadUsers();
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateVadybininkas = async () => {
+    if (!newVadybininkas.fullName.trim()) {
+      setError('Full name is required');
+      return;
+    }
+
+    if (!newVadybininkas.kodas.trim()) {
+      setError('Kodas is required');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const { error } = await createVadybininkas(
+        newVadybininkas.fullName.trim(),
+        newVadybininkas.kodas.trim()
+      );
+
+      if (error) throw error;
+
+      resetCreateModal();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      await loadVadybininkai();
     } catch (error: any) {
       setError(error.message);
     } finally {
@@ -132,11 +200,6 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   // Filter users based on role filter
   const filteredUsers = users.filter(u => {
     if (roleFilter === 'all') return true;
-    if (roleFilter === null) {
-      // Default: exclude vadybininkas
-      return u.role?.toLowerCase() !== 'vadybininkas';
-    }
-    // Specific role selected
     return u.role?.toLowerCase() === roleFilter.toLowerCase();
   });
 
@@ -184,7 +247,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               >
                 <Filter className="w-4 h-4" />
                 <span className="text-sm">
-                  {roleFilter === 'all' ? 'All Roles' : roleFilter === null ? 'Default Filter' : roleFilter}
+                  {roleFilter === 'all' ? 'All Roles' : roleFilter}
                 </span>
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -195,21 +258,6 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   className="absolute right-0 mt-2 w-56 bg-white border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto"
                   style={{ borderColor: colors.border.default }}
                 >
-                  <button
-                    onClick={() => {
-                      setRoleFilter(null);
-                      setShowRoleDropdown(false);
-                    }}
-                    className="w-full px-4 py-2 text-sm text-left transition-colors flex items-center justify-between"
-                    style={{ color: colors.text.primary }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
-                  >
-                    <span>Default (hide managers)</span>
-                    {roleFilter === null && (
-                      <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
-                    )}
-                  </button>
                   <button
                     onClick={() => {
                       setRoleFilter('all');
@@ -269,139 +317,296 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         </div>
       </div>
 
-      {/* Create User Form */}
+      {/* Create User Modal */}
       {showCreateModal && (
-        <div className="p-6 border-b" style={{
-          background: colors.interactive.accentLight,
-          borderColor: colors.interactive.accent + '33' // 20% opacity
-        }}>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Create New User</h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="p-2 rounded-lg transition-colors"
-                style={{ color: colors.text.tertiary }}
-                onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4">
-              {error && (
-                <div className="flex items-center space-x-2 text-macos-red bg-macos-red/10 p-3 rounded-macos border-[0.5px] border-macos-red/20">
-                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                  <span className="text-sm">{error}</span>
+        <div
+          className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-[10vh] overflow-y-auto"
+          style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+          onClick={resetCreateModal}
+        >
+          <div
+            className="bg-white rounded-xl shadow-lg w-full max-w-md"
+            style={{ border: `1px solid ${colors.border.light}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  {createMode !== 'select' && (
+                    <button
+                      onClick={() => { setCreateMode('select'); setError(null); }}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors -ml-1"
+                    >
+                      <ArrowLeft className="w-4 h-4" style={{ color: colors.text.tertiary }} />
+                    </button>
+                  )}
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: colors.icon.default }}>
+                    <UserPlus className="w-5 h-5" style={{ color: colors.interactive.accent }} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
+                      {createMode === 'select' ? 'Add User' : createMode === 'komanda' ? 'Add Team Member' : 'Add Vadybininkas'}
+                    </h2>
+                    <p className="text-sm mt-0.5" style={{ color: colors.text.tertiary }}>
+                      {createMode === 'select' ? 'Choose user type' : createMode === 'komanda' ? 'Set up account credentials' : 'Kodas is auto-generated from the name'}
+                    </p>
+                  </div>
                 </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Email *</label>
-                <input
-                  type="email"
-                  value={newUserData.email}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="user@example.com"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{
-                    borderColor: colors.border.default,
-                    background: colors.bg.white,
-                    color: colors.text.primary
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Password *</label>
-                <input
-                  type="password"
-                  value={newUserData.password}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder="Enter password"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{
-                    borderColor: colors.border.default,
-                    background: colors.bg.white,
-                    color: colors.text.primary
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
-                <input
-                  type="text"
-                  value={newUserData.displayName}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
-                  placeholder="Full Name"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{
-                    borderColor: colors.border.default,
-                    background: colors.bg.white,
-                    color: colors.text.primary
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                />
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <input
-                  type="checkbox"
-                  id="isAdmin"
-                  checked={newUserData.isAdmin}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, isAdmin: e.target.checked }))}
-                  className="w-4 h-4 rounded"
-                />
-                <label htmlFor="isAdmin" className="text-sm font-medium" style={{ color: colors.text.secondary }}>
-                  Admin privileges
-                </label>
+                <button
+                  onClick={resetCreateModal}
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" style={{ color: colors.text.tertiary }} />
+                </button>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-5 py-4 border-t border-black/5 bg-macos-gray-50/50 rounded-b-macos-xl flex items-center justify-end space-x-3">
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
-                  setError(null);
-                }}
-                className="macos-btn px-4 py-2 text-sm text-macos-gray-600 hover:text-macos-gray-800 rounded-macos transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateUser}
-                disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
-                className="px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
-                style={{
-                  background: colors.interactive.accent,
-                  color: '#ffffff'
-                }}
-                onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
-                onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
-              >
-                {saving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                    <span>Creating...</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>Create User</span>
-                  </>
-                )}
-              </button>
-            </div>
+            {/* Step 1: Selection */}
+            {createMode === 'select' && (
+              <div className="px-6 py-5 space-y-3">
+                <button
+                  onClick={() => setCreateMode('komanda')}
+                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group"
+                  style={{ borderColor: colors.border.default, background: colors.bg.white }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.interactive.accent; e.currentTarget.style.background = colors.interactive.accentLight; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; e.currentTarget.style.background = colors.bg.white; }}
+                >
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: colors.bg.tertiary }}>
+                    <Users className="w-5 h-5" style={{ color: colors.text.secondary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: colors.text.primary }}>Komanda</p>
+                    <p className="text-xs" style={{ color: colors.text.tertiary }}>App user with email, password, and role</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setCreateMode('vadybininkas')}
+                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group"
+                  style={{ borderColor: colors.border.default, background: colors.bg.white }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.interactive.accent; e.currentTarget.style.background = colors.interactive.accentLight; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; e.currentTarget.style.background = colors.bg.white; }}
+                >
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: colors.bg.tertiary }}>
+                    <Briefcase className="w-5 h-5" style={{ color: colors.text.secondary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: colors.text.primary }}>Vadybininkas</p>
+                    <p className="text-xs" style={{ color: colors.text.tertiary }}>Manager with name and kodas</p>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* Step 2a: Komanda form */}
+            {createMode === 'komanda' && (
+              <>
+                <div className="px-6 py-5 space-y-4">
+                  {error && (
+                    <div className="flex items-center space-x-2 p-3 rounded-lg text-sm" style={{
+                      background: colors.status.errorBg,
+                      border: `1px solid ${colors.status.errorBorder}`,
+                      color: colors.status.errorText
+                    }}>
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="email"
+                        value={newUserData.email}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="user@example.com"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="password"
+                        value={newUserData.password}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                        placeholder="Enter password"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Display Name</label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="text"
+                        value={newUserData.displayName}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
+                        placeholder="Full Name (optional)"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Role</label>
+                    <div className="relative">
+                      <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <select
+                        value={newUserData.role}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, role: e.target.value }))}
+                        className="w-full pl-10 pr-8 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm appearance-none"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: newUserData.role ? colors.text.primary : colors.text.tertiary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      >
+                        <option value="">No role (optional)</option>
+                        {availableRoles.map((role) => (
+                          <option key={role} value={role}>{role}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: colors.text.tertiary }} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-3 pt-1">
+                    <input
+                      type="checkbox"
+                      id="isAdmin"
+                      checked={newUserData.isAdmin}
+                      onChange={(e) => setNewUserData(prev => ({ ...prev, isAdmin: e.target.checked }))}
+                      className="checkbox checkbox-sm checkbox-primary"
+                    />
+                    <div>
+                      <label htmlFor="isAdmin" className="text-sm font-medium cursor-pointer" style={{ color: colors.text.secondary }}>
+                        Admin privileges
+                      </label>
+                      <p className="text-xs" style={{ color: colors.text.tertiary }}>
+                        Grants access to system settings and user management
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+                  <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >Cancel</button>
+                  <button
+                    onClick={handleCreateKomanda}
+                    disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
+                    className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
+                    style={{ background: colors.interactive.accent, color: '#ffffff' }}
+                    onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                    onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
+                  >
+                    {saving ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Creating...</span></>
+                    ) : (
+                      <><UserPlus className="w-4 h-4" /><span>Create User</span></>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2b: Vadybininkas form */}
+            {createMode === 'vadybininkas' && (
+              <>
+                <div className="px-6 py-5 space-y-4">
+                  {error && (
+                    <div className="flex items-center space-x-2 p-3 rounded-lg text-sm" style={{
+                      background: colors.status.errorBg,
+                      border: `1px solid ${colors.status.errorBorder}`,
+                      color: colors.status.errorText
+                    }}>
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Full Name</label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="text"
+                        value={newVadybininkas.fullName}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          setNewVadybininkas(prev => ({ ...prev, fullName: name, kodas: generateKodas(name) }));
+                        }}
+                        placeholder="Vardas Pavarde"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Kodas</label>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="text"
+                        value={newVadybininkas.kodas}
+                        onChange={(e) => setNewVadybininkas(prev => ({ ...prev, kodas: e.target.value.toUpperCase() }))}
+                        placeholder="e.g. TN"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      />
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
+                      Auto-calculated from name. You can change it.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+                  <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >Cancel</button>
+                  <button
+                    onClick={handleCreateVadybininkas}
+                    disabled={saving || !newVadybininkas.fullName.trim() || !newVadybininkas.kodas.trim()}
+                    className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
+                    style={{ background: colors.interactive.accent, color: '#ffffff' }}
+                    onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                    onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
+                  >
+                    {saving ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Creating...</span></>
+                    ) : (
+                      <><UserPlus className="w-4 h-4" /><span>Add</span></>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -524,9 +729,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         <td className="text-sm text-base-content/60">{userData.role || '—'}</td>
                         <td>
                           {userData.is_admin ? (
-                            <span className="badge badge-soft badge-success text-xs">Admin</span>
+                            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Admin</span>
                           ) : (
-                            <span className="text-sm text-base-content/50">User</span>
+                            <span className="text-sm" style={{ color: colors.text.tertiary }}>User</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap">{new Date(userData.created_at).toLocaleDateString()}</td>
@@ -590,6 +795,60 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Vadybininkai Table */}
+        {vadybininkai.length > 0 && (
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text.secondary }}>Vadybininkai</h3>
+            <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
+              <table className="table-striped table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Kodas</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vadybininkai.map((v) => (
+                    <tr key={v.id}>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white text-sm font-medium"
+                            style={{ background: `hsl(${(v.full_name || '').charCodeAt(0) * 7 % 360}, 60%, 55%)` }}>
+                            {(v.full_name || '?').charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium">{v.full_name || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="text-sm font-mono" style={{ color: colors.text.secondary }}>{v.kodas || '—'}</td>
+                      <td className="whitespace-nowrap">{new Date(v.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete ${v.full_name}?`)) return;
+                            try {
+                              const { error } = await deleteVadybininkas(v.id);
+                              if (error) throw error;
+                              await loadVadybininkai();
+                            } catch (err: any) {
+                              setError(err.message);
+                            }
+                          }}
+                          className="btn btn-circle btn-text btn-sm text-error"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

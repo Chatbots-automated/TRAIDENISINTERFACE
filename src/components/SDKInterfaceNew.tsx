@@ -2229,7 +2229,7 @@ Vartotojo instrukcija: ${instruction}`;
           onClick={() => setSidebarCollapsed(false)}
           className="fixed top-4 z-50 p-2 rounded-r-lg transition-all duration-300 bg-base-100 border border-base-content/10 text-base-content/60 shadow-sm hover:bg-base-200"
           style={{
-            left: mainSidebarCollapsed ? '64px' : '256px',
+            left: mainSidebarCollapsed ? '64px' : '208px',
           }}
         >
           <PanelLeft className="w-4 h-4" />

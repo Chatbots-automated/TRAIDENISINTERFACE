@@ -170,7 +170,7 @@ export const getCurrentUser = async () => {
 // Admin functions
 // ============================================================================
 
-export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
+export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean, role?: string) => {
   try {
     const { user: adminUser } = await getCurrentUser();
 
@@ -182,7 +182,8 @@ export const createUserByAdmin = async (email: string, password: string, display
         email: email,
         password: password,
         display_name: displayName,
-        is_admin: isAdmin
+        is_admin: isAdmin,
+        ...(role ? { role } : {})
       }])
       .select()
       .single()
@@ -207,7 +208,7 @@ export const createUserByAdmin = async (email: string, password: string, display
       userEmail: adminUser?.email,
       targetUserId: appUserData.id,
       targetUserEmail: email,
-      metadata: { display_name: displayName, is_admin: isAdmin }
+      metadata: { display_name: displayName, is_admin: isAdmin, role }
     });
 
     return { data: appUserData, error: null };
@@ -335,6 +336,71 @@ export const deleteUserByAdmin = async (userId: string) => {
     return { data, error: null };
   } catch (error) {
     console.error('Error in deleteUserByAdmin:', error);
+    return { data: null, error };
+  }
+};
+
+// ============================================================================
+// Vadybininkai (managers) table
+// ============================================================================
+
+export const getVadybininkai = async () => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .select('id, created_at, kodas, full_name, role')
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.error('Error getting vadybininkai:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getVadybininkai:', error);
+    return { data: null, error };
+  }
+};
+
+export const createVadybininkas = async (fullName: string, kodas: string) => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .insert([{
+        full_name: fullName,
+        kodas: kodas,
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating vadybininkas:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in createVadybininkas:', error);
+    return { data: null, error };
+  }
+};
+
+export const deleteVadybininkas = async (id: string) => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting vadybininkas:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in deleteVadybininkas:', error);
     return { data: null, error };
   }
 };

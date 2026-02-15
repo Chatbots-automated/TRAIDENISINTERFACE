@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { NavLink } from 'react-router-dom';
 import { signOut } from '../lib/database';
 import {
   Menu,
@@ -108,12 +107,12 @@ export default function Layout({
         fixed inset-y-0 left-0 z-50 macos-sidebar transform transition-all duration-300 ease-out
         lg:translate-x-0 lg:static lg:inset-0 lg:h-screen
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-        ${sidebarCollapsed ? 'w-16 sidebar-collapsed' : 'w-64'}
+        ${sidebarCollapsed ? 'w-16 sidebar-collapsed' : 'w-52'}
       `}>
         <div className="flex flex-col h-full overflow-hidden">
           {/* Header */}
-          <div className={`flex items-center justify-between p-4`}>
-            <div className="flex items-center space-x-3 min-w-0">
+          <div className="flex items-center justify-between px-3 py-3">
+            <div className="flex items-center space-x-2.5 min-w-0">
               <div className="w-8 h-8 flex-shrink-0">
                 <img
                   src="https://yt3.googleusercontent.com/ytc/AIdro_lQ6KhO739Y9QuJQJu3pJ5sSNHHCwPuL_q0SZIn3i5x6g=s900-c-k-c0x00ffffff-no-rj"
@@ -136,11 +135,11 @@ export default function Layout({
           </div>
 
           {/* Primary Navigation */}
-            <ul className={`menu ${sidebarCollapsed ? 'px-1' : 'px-2'} py-3`}>
+            <ul className="menu px-2 py-3">
               <li>
                 <button
                   onClick={() => onViewModeChange?.('sdk')}
-                  className={`${viewMode === 'sdk' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  className={viewMode === 'sdk' ? 'active' : ''}
                   title={sidebarCollapsed ? 'SDK' : undefined}
                 >
                   <div className="relative flex items-center justify-center w-4 flex-shrink-0">
@@ -166,7 +165,7 @@ export default function Layout({
               <li>
                 <button
                   onClick={() => onViewModeChange?.('documents')}
-                  className={`${viewMode === 'documents' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  className={viewMode === 'documents' ? 'active' : ''}
                   title={sidebarCollapsed ? 'Documents' : undefined}
                 >
                   <Database className="w-4 h-4" />
@@ -176,11 +175,11 @@ export default function Layout({
               <li>
                 <button
                   onClick={() => onViewModeChange?.('nestandartiniai')}
-                  className={`${viewMode === 'nestandartiniai' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
+                  className={viewMode === 'nestandartiniai' ? 'active' : ''}
                   title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
                 >
                   <FlaskConical className="w-4 h-4" />
-                  {!sidebarCollapsed && <span className="whitespace-nowrap">Nestandartiniai Projektai</span>}
+                  {!sidebarCollapsed && <span className="truncate">Nestandartiniai Projektai</span>}
                 </button>
               </li>
             </ul>
@@ -190,186 +189,120 @@ export default function Layout({
 
           {/* Footer - Absolute Bottom */}
           <div className="mt-auto">
-            {/* Admin Section - Only visible to admins */}
-            {user.is_admin && (
-              <ul className={`menu ${sidebarCollapsed ? 'px-1' : 'px-2'} pb-2`}>
-                {!sidebarCollapsed && (
-                  <li className="menu-title text-[10px] uppercase tracking-wider">Admin</li>
-                )}
-                {sidebarCollapsed && <li><hr className="my-1 border-base-content/10" /></li>}
-                <li>
-                  <button
-                    onClick={() => setWebhooksOpen(true)}
-                    className={sidebarCollapsed ? 'justify-center' : ''}
-                    title={sidebarCollapsed ? 'Webhooks' : undefined}
-                  >
-                    <Zap className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => onViewModeChange?.('instrukcijos')}
-                    className={`${viewMode === 'instrukcijos' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
-                    title={sidebarCollapsed ? 'Instrukcijos' : undefined}
-                  >
-                    <BookOpen className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => onViewModeChange?.('users')}
-                    className={`${viewMode === 'users' ? 'active' : ''} ${sidebarCollapsed ? 'justify-center' : ''}`}
-                    title={sidebarCollapsed ? 'Users' : undefined}
-                  >
-                    <Users className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Users</span>}
-                  </button>
-                </li>
-              </ul>
-            )}
-
-            {/* Admin Settings Dropdown */}
-            {user.is_admin && !sidebarCollapsed && (
-              <div className="relative" ref={settingsDropdownRef}>
-                {/* Dropup Menu */}
-                {settingsDropdownOpen && (
-                  <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
-                    <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
-                      <li>
-                        <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
-                          <Settings className="w-4 h-4" />
-                          <span>Settings</span>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                          className="text-error hover:bg-error/10"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Sign Out</span>
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
-                )}
-
-                {/* Settings Button */}
-                <ul className="menu px-2">
-                  <li>
-                    <button onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}>
-                      <Settings className="w-4 h-4" />
-                      <span className="whitespace-nowrap">Settings</span>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {/* Settings Dropdown Button - Only for non-admins */}
-            {!user.is_admin && !sidebarCollapsed && (
-              <div className="relative" ref={settingsDropdownRef}>
-                {/* Dropup Menu */}
-                {settingsDropdownOpen && (
-                  <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
-                    <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
-                      {/* Naujokas Mode Toggle */}
-                      <li>
-                        <div
-                          onClick={() => onToggleNaujokas?.()}
-                          className="flex items-center justify-between cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-base">🎓</span>
-                            <span>Naujokas</span>
-                          </div>
+            {/* Footer controls - single unified menu */}
+            <div className="relative" ref={settingsDropdownRef}>
+              {/* Dropup Menu - only in expanded state */}
+              {!sidebarCollapsed && settingsDropdownOpen && (
+                <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
+                  <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
+                    {!user.is_admin && (
+                      <>
+                        <li>
                           <div
-                            className={`relative w-10 h-6 rounded-full transition-colors duration-200 ${
-                              naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
-                            }`}
+                            onClick={() => onToggleNaujokas?.()}
+                            className="flex items-center justify-between cursor-pointer"
                           >
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">🎓</span>
+                              <span>Naujokas</span>
+                            </div>
                             <div
-                              className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
-                                naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                              className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
+                                naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
                               }`}
-                            />
+                            >
+                              <div
+                                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
+                                  naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                                }`}
+                              />
+                            </div>
                           </div>
-                        </div>
-                      </li>
-                      <li className="divider my-1"></li>
-                      <li>
-                        <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
-                          <Settings className="w-4 h-4" />
-                          <span>Settings</span>
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                          className="text-error hover:bg-error/10"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Sign Out</span>
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
+                        </li>
+                        <li className="divider my-1"></li>
+                      </>
+                    )}
+                    <li>
+                      <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
+                        <Settings className="w-4 h-4" />
+                        <span>Settings</span>
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
+                        className="text-error hover:bg-error/10"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Sign Out</span>
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              )}
+
+              {user.is_admin && !sidebarCollapsed && (
+                <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Admin</div>
+              )}
+              <ul className="menu px-2 pb-1">
+                {/* Admin buttons */}
+                {user.is_admin && (
+                  <>
+                    <li>
+                      <button
+                        onClick={() => setWebhooksOpen(true)}
+                        title={sidebarCollapsed ? 'Webhooks' : undefined}
+                      >
+                        <Zap className="w-4 h-4" />
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onViewModeChange?.('instrukcijos')}
+                        className={viewMode === 'instrukcijos' ? 'active' : ''}
+                        title={sidebarCollapsed ? 'Instrukcijos' : undefined}
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onViewModeChange?.('users')}
+                        className={viewMode === 'users' ? 'active' : ''}
+                        title={sidebarCollapsed ? 'Users' : undefined}
+                      >
+                        <Users className="w-4 h-4" />
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Users</span>}
+                      </button>
+                    </li>
+                  </>
                 )}
-
-                {/* Settings Button */}
-                <ul className="menu px-2">
-                  <li>
-                    <button onClick={() => setSettingsDropdownOpen(!settingsDropdownOpen)}>
-                      <Settings className="w-4 h-4" />
-                      <span className="whitespace-nowrap">Settings</span>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            )}
-
-            {/* Collapsed settings + collapse toggle - use menu pattern to match top nav */}
-            {sidebarCollapsed && (
-              <ul className="menu px-1 pb-1">
+                {/* Settings + Collapse/Expand */}
                 <li>
                   <button
-                    onClick={() => setSettingsOpen(true)}
-                    className="justify-center"
-                    title="Settings"
+                    onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
+                    title={sidebarCollapsed ? 'Settings' : undefined}
                   >
                     <Settings className="w-4 h-4" />
+                    {!sidebarCollapsed && <span className="whitespace-nowrap">Settings</span>}
                   </button>
                 </li>
                 <li className="hidden lg:flex">
                   <button
-                    onClick={() => setSidebarCollapsed(false)}
-                    className="justify-center"
-                    title="Expand sidebar"
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                    title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                   >
-                    <ChevronsRight className="w-4 h-4" />
+                    {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
                   </button>
                 </li>
               </ul>
-            )}
-
-            {/* Collapse Toggle Button - expanded state */}
-            {!sidebarCollapsed && (
-              <div className="px-2 pb-1 hidden lg:block">
-                <button
-                  onClick={() => setSidebarCollapsed(true)}
-                  className="w-full flex items-center justify-end py-2 pr-4 rounded-md text-sm text-base-content/60 hover:bg-black/5 transition-colors"
-                  title="Collapse sidebar"
-                >
-                  <ChevronsLeft className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            </div>
 
             {/* User Info - Absolute Bottom */}
-            <div className={`py-3 bg-macos-gray-50/50 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
-              <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'}`}>
+            <div className="py-3 bg-macos-gray-50/50 px-3">
+              <div className="flex items-center justify-center space-x-2.5 h-9">
                 <div className="w-8 h-8 bg-gradient-to-br from-macos-blue to-macos-purple rounded-full flex items-center justify-center flex-shrink-0 shadow-macos-sm">
                   <span className="text-white text-sm font-medium">
                     {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
