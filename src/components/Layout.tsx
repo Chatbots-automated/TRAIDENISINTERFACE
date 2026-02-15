@@ -189,45 +189,7 @@ export default function Layout({
 
           {/* Footer - Absolute Bottom */}
           <div className="mt-auto">
-            {/* Admin Section - Only visible to admins */}
-            {user.is_admin && (
-              <ul className="menu px-2 pb-2">
-                {!sidebarCollapsed && (
-                  <li className="menu-title text-[10px] uppercase tracking-wider">Admin</li>
-                )}
-                <li>
-                  <button
-                    onClick={() => setWebhooksOpen(true)}
-                    title={sidebarCollapsed ? 'Webhooks' : undefined}
-                  >
-                    <Zap className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => onViewModeChange?.('instrukcijos')}
-                    className={viewMode === 'instrukcijos' ? 'active' : ''}
-                    title={sidebarCollapsed ? 'Instrukcijos' : undefined}
-                  >
-                    <BookOpen className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
-                  </button>
-                </li>
-                <li>
-                  <button
-                    onClick={() => onViewModeChange?.('users')}
-                    className={viewMode === 'users' ? 'active' : ''}
-                    title={sidebarCollapsed ? 'Users' : undefined}
-                  >
-                    <Users className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Users</span>}
-                  </button>
-                </li>
-              </ul>
-            )}
-
-            {/* Settings & Collapse - unified structure for both states */}
+            {/* Footer controls - single unified menu */}
             <div className="relative" ref={settingsDropdownRef}>
               {/* Dropup Menu - only in expanded state */}
               {!sidebarCollapsed && settingsDropdownOpen && (
@@ -279,8 +241,45 @@ export default function Layout({
                 </div>
               )}
 
-              {/* Bottom controls - same DOM structure in both states */}
               <ul className="menu px-2 pb-1">
+                {/* Admin buttons */}
+                {user.is_admin && (
+                  <>
+                    {!sidebarCollapsed && (
+                      <li className="menu-title text-[10px] uppercase tracking-wider">Admin</li>
+                    )}
+                    <li>
+                      <button
+                        onClick={() => setWebhooksOpen(true)}
+                        title={sidebarCollapsed ? 'Webhooks' : undefined}
+                      >
+                        <Zap className="w-4 h-4" />
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onViewModeChange?.('instrukcijos')}
+                        className={viewMode === 'instrukcijos' ? 'active' : ''}
+                        title={sidebarCollapsed ? 'Instrukcijos' : undefined}
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={() => onViewModeChange?.('users')}
+                        className={viewMode === 'users' ? 'active' : ''}
+                        title={sidebarCollapsed ? 'Users' : undefined}
+                      >
+                        <Users className="w-4 h-4" />
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Users</span>}
+                      </button>
+                    </li>
+                  </>
+                )}
+                {/* Settings + Collapse/Expand */}
                 <li>
                   <button
                     onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
