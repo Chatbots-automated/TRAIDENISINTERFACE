@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, UserPlus, Hash } from 'lucide-react';
-import { getAllUsers, updateUserByAdmin, deleteUserByAdmin, getVadybininkai, createVadybininkas, deleteVadybininkas } from '../lib/database';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, UserPlus, Hash, Mail, Lock, Briefcase, ArrowLeft } from 'lucide-react';
+import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin, getVadybininkai, createVadybininkas, deleteVadybininkas } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
 
@@ -32,7 +32,17 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   const [roleFilter, setRoleFilter] = useState<string>('all'); // 'all' = show all, or specific role
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
+  const [createMode, setCreateMode] = useState<'select' | 'komanda' | 'vadybininkas'>('select');
+
   const [vadybininkai, setVadybininkai] = useState<{ id: string; full_name?: string; kodas?: string; created_at: string }[]>([]);
+
+  const [newUserData, setNewUserData] = useState({
+    email: '',
+    password: '',
+    displayName: '',
+    isAdmin: false,
+    role: ''
+  });
 
   const [newVadybininkas, setNewVadybininkas] = useState({
     fullName: '',
@@ -74,7 +84,46 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
     return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
   };
 
-  const handleCreateUser = async () => {
+  const resetCreateModal = () => {
+    setShowCreateModal(false);
+    setCreateMode('select');
+    setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
+    setNewVadybininkas({ fullName: '', kodas: '' });
+    setError(null);
+  };
+
+  const handleCreateKomanda = async () => {
+    if (!newUserData.email.trim() || !newUserData.password.trim()) {
+      setError('Email and password are required');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+
+    try {
+      const { error } = await createUserByAdmin(
+        newUserData.email,
+        newUserData.password,
+        newUserData.displayName,
+        newUserData.isAdmin,
+        newUserData.role || undefined
+      );
+
+      if (error) throw error;
+
+      resetCreateModal();
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      await loadUsers();
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateVadybininkas = async () => {
     if (!newVadybininkas.fullName.trim()) {
       setError('Full name is required');
       return;
@@ -96,8 +145,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
       if (error) throw error;
 
-      setNewVadybininkas({ fullName: '', kodas: '' });
-      setShowCreateModal(false);
+      resetCreateModal();
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
       await loadVadybininkai();
@@ -269,16 +317,12 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         </div>
       </div>
 
-      {/* Create Vadybininkas Modal */}
+      {/* Create User Modal */}
       {showCreateModal && (
         <div
           className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-[10vh] overflow-y-auto"
           style={{ background: 'rgba(0, 0, 0, 0.3)' }}
-          onClick={() => {
-            setShowCreateModal(false);
-            setNewVadybininkas({ fullName: '', kodas: '' });
-            setError(null);
-          }}
+          onClick={resetCreateModal}
         >
           <div
             className="bg-white rounded-xl shadow-lg w-full max-w-md"
@@ -289,24 +333,28 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <div className="px-6 py-5 border-b" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
+                  {createMode !== 'select' && (
+                    <button
+                      onClick={() => { setCreateMode('select'); setError(null); }}
+                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors -ml-1"
+                    >
+                      <ArrowLeft className="w-4 h-4" style={{ color: colors.text.tertiary }} />
+                    </button>
+                  )}
                   <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: colors.icon.default }}>
                     <UserPlus className="w-5 h-5" style={{ color: colors.interactive.accent }} />
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
-                      Add Vadybininkas
+                      {createMode === 'select' ? 'Add User' : createMode === 'komanda' ? 'Add Team Member' : 'Add Vadybininkas'}
                     </h2>
                     <p className="text-sm mt-0.5" style={{ color: colors.text.tertiary }}>
-                      Kodas is auto-generated from the name
+                      {createMode === 'select' ? 'Choose user type' : createMode === 'komanda' ? 'Set up account credentials' : 'Kodas is auto-generated from the name'}
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setNewVadybininkas({ fullName: '', kodas: '' });
-                    setError(null);
-                  }}
+                  onClick={resetCreateModal}
                   className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
                 >
                   <X className="w-5 h-5" style={{ color: colors.text.tertiary }} />
@@ -314,115 +362,251 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               </div>
             </div>
 
-            {/* Modal Body */}
-            <div className="px-6 py-5 space-y-4">
-              {error && (
-                <div className="flex items-center space-x-2 p-3 rounded-lg text-sm" style={{
-                  background: colors.status.errorBg,
-                  border: `1px solid ${colors.status.errorBorder}`,
-                  color: colors.status.errorText
-                }}>
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Full Name</label>
-                <div className="relative">
-                  <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
-                  <input
-                    type="text"
-                    value={newVadybininkas.fullName}
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      setNewVadybininkas(prev => ({
-                        ...prev,
-                        fullName: name,
-                        kodas: generateKodas(name)
-                      }));
-                    }}
-                    placeholder="Vardas Pavarde"
-                    className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                    style={{
-                      borderColor: colors.border.default,
-                      background: colors.bg.white,
-                      color: colors.text.primary
-                    }}
-                    onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                    onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                    autoFocus
-                  />
-                </div>
+            {/* Step 1: Selection */}
+            {createMode === 'select' && (
+              <div className="px-6 py-5 space-y-3">
+                <button
+                  onClick={() => setCreateMode('komanda')}
+                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group"
+                  style={{ borderColor: colors.border.default, background: colors.bg.white }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.interactive.accent; e.currentTarget.style.background = colors.interactive.accentLight; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; e.currentTarget.style.background = colors.bg.white; }}
+                >
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: colors.bg.tertiary }}>
+                    <Users className="w-5 h-5" style={{ color: colors.text.secondary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: colors.text.primary }}>Komanda</p>
+                    <p className="text-xs" style={{ color: colors.text.tertiary }}>App user with email, password, and role</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setCreateMode('vadybininkas')}
+                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group"
+                  style={{ borderColor: colors.border.default, background: colors.bg.white }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.interactive.accent; e.currentTarget.style.background = colors.interactive.accentLight; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; e.currentTarget.style.background = colors.bg.white; }}
+                >
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: colors.bg.tertiary }}>
+                    <Briefcase className="w-5 h-5" style={{ color: colors.text.secondary }} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: colors.text.primary }}>Vadybininkas</p>
+                    <p className="text-xs" style={{ color: colors.text.tertiary }}>Manager with name and kodas</p>
+                  </div>
+                </button>
               </div>
+            )}
 
-              <div>
-                <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Kodas</label>
-                <div className="relative">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
-                  <input
-                    type="text"
-                    value={newVadybininkas.kodas}
-                    onChange={(e) => setNewVadybininkas(prev => ({ ...prev, kodas: e.target.value.toUpperCase() }))}
-                    placeholder="e.g. TN"
-                    className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                    style={{
-                      borderColor: colors.border.default,
-                      background: colors.bg.white,
-                      color: colors.text.primary
-                    }}
-                    onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                    onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                  />
+            {/* Step 2a: Komanda form */}
+            {createMode === 'komanda' && (
+              <>
+                <div className="px-6 py-5 space-y-4">
+                  {error && (
+                    <div className="flex items-center space-x-2 p-3 rounded-lg text-sm" style={{
+                      background: colors.status.errorBg,
+                      border: `1px solid ${colors.status.errorBorder}`,
+                      color: colors.status.errorText
+                    }}>
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="email"
+                        value={newUserData.email}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="user@example.com"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Password</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="password"
+                        value={newUserData.password}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                        placeholder="Enter password"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Display Name</label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="text"
+                        value={newUserData.displayName}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
+                        placeholder="Full Name (optional)"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Role</label>
+                    <div className="relative">
+                      <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <select
+                        value={newUserData.role}
+                        onChange={(e) => setNewUserData(prev => ({ ...prev, role: e.target.value }))}
+                        className="w-full pl-10 pr-8 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm appearance-none"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: newUserData.role ? colors.text.primary : colors.text.tertiary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      >
+                        <option value="">No role (optional)</option>
+                        {availableRoles.map((role) => (
+                          <option key={role} value={role}>{role}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: colors.text.tertiary }} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-3 pt-1">
+                    <input
+                      type="checkbox"
+                      id="isAdmin"
+                      checked={newUserData.isAdmin}
+                      onChange={(e) => setNewUserData(prev => ({ ...prev, isAdmin: e.target.checked }))}
+                      className="checkbox checkbox-sm checkbox-primary"
+                    />
+                    <div>
+                      <label htmlFor="isAdmin" className="text-sm font-medium cursor-pointer" style={{ color: colors.text.secondary }}>
+                        Admin privileges
+                      </label>
+                      <p className="text-xs" style={{ color: colors.text.tertiary }}>
+                        Grants access to system settings and user management
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
-                  Auto-calculated from name. You can change it.
-                </p>
-              </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{
-              borderColor: colors.border.light,
-              background: colors.bg.secondary
-            }}>
-              <button
-                onClick={() => {
-                  setShowCreateModal(false);
-                  setNewVadybininkas({ fullName: '', kodas: '' });
-                  setError(null);
-                }}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                style={{ color: colors.text.secondary }}
-                onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCreateUser}
-                disabled={saving || !newVadybininkas.fullName.trim() || !newVadybininkas.kodas.trim()}
-                className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
-                style={{
-                  background: colors.interactive.accent,
-                  color: '#ffffff'
-                }}
-                onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
-                onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
-              >
-                {saving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-                    <span>Creating...</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-4 h-4" />
-                    <span>Add</span>
-                  </>
-                )}
-              </button>
-            </div>
+                <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+                  <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >Cancel</button>
+                  <button
+                    onClick={handleCreateKomanda}
+                    disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
+                    className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
+                    style={{ background: colors.interactive.accent, color: '#ffffff' }}
+                    onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                    onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
+                  >
+                    {saving ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Creating...</span></>
+                    ) : (
+                      <><UserPlus className="w-4 h-4" /><span>Create User</span></>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2b: Vadybininkas form */}
+            {createMode === 'vadybininkas' && (
+              <>
+                <div className="px-6 py-5 space-y-4">
+                  {error && (
+                    <div className="flex items-center space-x-2 p-3 rounded-lg text-sm" style={{
+                      background: colors.status.errorBg,
+                      border: `1px solid ${colors.status.errorBorder}`,
+                      color: colors.status.errorText
+                    }}>
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Full Name</label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="text"
+                        value={newVadybininkas.fullName}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          setNewVadybininkas(prev => ({ ...prev, fullName: name, kodas: generateKodas(name) }));
+                        }}
+                        placeholder="Vardas Pavarde"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Kodas</label>
+                    <div className="relative">
+                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <input
+                        type="text"
+                        value={newVadybininkas.kodas}
+                        onChange={(e) => setNewVadybininkas(prev => ({ ...prev, kodas: e.target.value.toUpperCase() }))}
+                        placeholder="e.g. TN"
+                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
+                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                      />
+                    </div>
+                    <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
+                      Auto-calculated from name. You can change it.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+                  <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  >Cancel</button>
+                  <button
+                    onClick={handleCreateVadybininkas}
+                    disabled={saving || !newVadybininkas.fullName.trim() || !newVadybininkas.kodas.trim()}
+                    className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
+                    style={{ background: colors.interactive.accent, color: '#ffffff' }}
+                    onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
+                    onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
+                  >
+                    {saving ? (
+                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Creating...</span></>
+                    ) : (
+                      <><UserPlus className="w-4 h-4" /><span>Add</span></>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
