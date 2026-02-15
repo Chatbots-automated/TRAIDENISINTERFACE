@@ -237,8 +237,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadSharedConversations();
     loadShareableUsers();
     // Hydrate global template cache from DB so all users share the same template
-    // Passes user info so the one-time version reset migration can run (if enabled)
-    loadGlobalTemplateFromDb(user.id, user.full_name || user.email).then(() => setTemplateVersion(v => v + 1));
+    loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
   }, []);
 
   // Sync URL ↔ currentConversation

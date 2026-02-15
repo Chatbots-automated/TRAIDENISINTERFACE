@@ -18,17 +18,8 @@ import {
   getGlobalTemplate,
   saveGlobalTemplateToDb,
   resetGlobalTemplateInDb,
-  clearAllVersionsAndResetToV1,
   type GlobalTemplate,
 } from './globalTemplateService';
-
-// ---------------------------------------------------------------------------
-// ONE-TIME MIGRATION FLAG
-// Set to `false` after the first successful deployment.
-// When `true`, on next app load the version history is wiped and the current
-// template becomes version 1 — a fresh start.
-// ---------------------------------------------------------------------------
-const RESET_VERSION_HISTORY = false;
 
 // ---------------------------------------------------------------------------
 // In-memory cache — keeps synchronous callers working while data lives in DB
@@ -42,29 +33,9 @@ let _cacheLoaded = false;
  * Load the global template from the database into the in-memory cache.
  * Must be called once on app startup (e.g. in useEffect).
  * Returns the full GlobalTemplate metadata (updated_by_name, version, etc.).
- *
- * When RESET_VERSION_HISTORY is true, performs a one-time migration:
- * clears all version history and resets the template to version 1.
  */
-export async function loadGlobalTemplateFromDb(
-  currentUserId?: string,
-  currentUserName?: string,
-): Promise<GlobalTemplate | null> {
+export async function loadGlobalTemplateFromDb(): Promise<GlobalTemplate | null> {
   try {
-    // One-time migration: wipe version history, reset to v1
-    if (RESET_VERSION_HISTORY && currentUserId && currentUserName) {
-      console.log('[DocumentTemplate] RESET_VERSION_HISTORY flag is ON — performing one-time reset…');
-      const resetResult = await clearAllVersionsAndResetToV1(currentUserId, currentUserName);
-      if (resetResult) {
-        _cachedHtml = resetResult.html_content;
-        _cachedMeta = resetResult;
-        _cacheLoaded = true;
-        console.log('[DocumentTemplate] Version reset complete. Set RESET_VERSION_HISTORY = false now.');
-        return resetResult;
-      }
-      // If reset failed, fall through to normal load
-    }
-
     const tpl = await getGlobalTemplate();
     if (tpl) {
       _cachedHtml = tpl.html_content;
