@@ -3742,121 +3742,157 @@ Vartotojo instrukcija: ${instruction}`;
                       <span className="text-sm font-semibold text-base-content">Istorija</span>
                       <p className="text-[11px] mt-0.5" style={{ color: '#b0b0b0' }}>Galite grįžti prie ankstesnės versijos</p>
                     </div>
-                    <div className="flex-1 overflow-auto py-1">
+                    <div className="flex-1 overflow-auto">
                     {templateVersionHistory.length === 0 ? (
                       <div className="px-4 py-8 text-center">
                         <span className="text-[12px]" style={{ color: '#b0b0b0' }}>Kol kas pakeitimų nėra</span>
                       </div>
                     ) : (
-                      <div className="space-y-0.5">
-                        {templateVersionHistory.map((v, idx) => {
-                          const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
-                          const isConfirming = revertConfirm?.id === v.id;
-                          const isExpanded = expandedVersionId === v.id;
-                          const dateStr = new Date(v.created_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                          return (
-                            <div key={v.id} className={`mx-2 rounded-lg transition-all duration-150 ${isExpanded ? 'bg-base-content/[0.03]' : 'hover:bg-base-content/5'} ${isConfirming ? 'bg-warning/5' : ''}`}>
-                              {/* Entry header */}
-                              <div className="px-3 py-2.5">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[12px] font-medium" style={{ color: '#b0b0b0' }}>{firstName}</span>
-                                  <span className="text-[11px]" style={{ color: '#c8c8c8' }}>{dateStr}</span>
-                                </div>
-                                <div className="mt-0.5 text-[12px] text-base-content/60">
-                                  {v.change_description || 'Šablono pakeitimas'}
-                                </div>
-                                {/* Expand/collapse toggle */}
-                                <button
-                                  onClick={() => {
-                                    if (isExpanded) {
-                                      setExpandedVersionId(null);
-                                      setExpandedDiff(null);
-                                    } else {
-                                      const nextHtml = idx === 0
-                                        ? getDefaultTemplate()
-                                        : templateVersionHistory[idx - 1].html_content;
-                                      const segments = computeHtmlDiff(v.html_content, nextHtml);
-                                      setExpandedDiff(segments);
-                                      setExpandedVersionId(v.id);
-                                    }
-                                  }}
-                                  className="mt-1 text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
-                                >
-                                  {isExpanded ? 'Slėpti pakeitimus' : 'Peržiūrėti pakeitimus'}
-                                </button>
-                              </div>
+                      <div className="py-3 px-3 space-y-4">
+                        {/* Group versions by date */}
+                        {(() => {
+                          const groups: { dateLabel: string; items: { v: typeof templateVersionHistory[0]; idx: number }[] }[] = [];
+                          templateVersionHistory.forEach((v, idx) => {
+                            const d = new Date(v.created_at);
+                            const label = d.toLocaleDateString('lt-LT', { year: 'numeric', month: 'long', day: 'numeric' });
+                            const last = groups[groups.length - 1];
+                            if (last && last.dateLabel === label) {
+                              last.items.push({ v, idx });
+                            } else {
+                              groups.push({ dateLabel: label, items: [{ v, idx }] });
+                            }
+                          });
 
-                              {/* Expanded diff view */}
-                              {isExpanded && expandedDiff && (
-                                <div className="px-3 pb-3">
-                                  <div className="rounded-lg bg-base-200/60 p-3 max-h-48 overflow-auto">
-                                    <div className="text-[11px] leading-relaxed" style={{ wordBreak: 'break-word' }}>
-                                      {expandedDiff.every(s => s.type === 'same') ? (
-                                        <span style={{ color: '#b0b0b0' }}>Tik formatavimo pakeitimai (tekstas nepasikeitė)</span>
-                                      ) : (
-                                        expandedDiff.map((seg, si) => {
-                                          if (seg.type === 'same') {
-                                            const words = seg.text.split(' ');
-                                            if (words.length > 8) {
-                                              return (
-                                                <span key={si} className="text-base-content/40">
-                                                  {words.slice(0, 3).join(' ')}{' '}
-                                                  <span style={{ color: '#c8c8c8' }}>···</span>{' '}
-                                                  {words.slice(-3).join(' ')}{' '}
-                                                </span>
-                                              );
-                                            }
-                                            return <span key={si} className="text-base-content/40">{seg.text} </span>;
+                          const relativeTime = (dateStr: string) => {
+                            const diff = Date.now() - new Date(dateStr).getTime();
+                            const mins = Math.floor(diff / 60000);
+                            if (mins < 1) return 'ką tik';
+                            if (mins < 60) return `prieš ${mins} min.`;
+                            const hrs = Math.floor(mins / 60);
+                            if (hrs < 24) return `prieš ${hrs} val.`;
+                            const days = Math.floor(hrs / 24);
+                            if (days === 1) return 'vakar';
+                            return `prieš ${days} d.`;
+                          };
+
+                          return groups.map((group, gi) => (
+                            <div key={gi}>
+                              {/* Date group header */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <svg className="w-4 h-4 text-base-content/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <circle cx="12" cy="12" r="4" />
+                                  <path d="M12 2v4m0 12v4" />
+                                </svg>
+                                <span className="text-[12px] font-medium text-base-content/50">Pakeitimai {group.dateLabel}</span>
+                              </div>
+                              {/* Bordered card with rows */}
+                              <div className="rounded-lg border border-base-content/10 overflow-hidden">
+                                {group.items.map((item, ii) => {
+                                  const { v, idx } = item;
+                                  const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
+                                  const isConfirming = revertConfirm?.id === v.id;
+                                  const isExpanded = expandedVersionId === v.id;
+                                  return (
+                                    <div key={v.id} className={`${ii > 0 ? 'border-t border-base-content/10' : ''} ${isConfirming ? 'bg-warning/5' : ''}`}>
+                                      {/* Row */}
+                                      <div
+                                        className={`px-3 py-2.5 cursor-pointer transition-colors duration-100 ${isExpanded ? 'bg-base-content/[0.03]' : 'hover:bg-base-content/[0.03]'}`}
+                                        onClick={() => {
+                                          if (isExpanded) {
+                                            setExpandedVersionId(null);
+                                            setExpandedDiff(null);
+                                          } else {
+                                            const nextHtml = idx === 0
+                                              ? getDefaultTemplate()
+                                              : templateVersionHistory[idx - 1].html_content;
+                                            const segments = computeHtmlDiff(v.html_content, nextHtml);
+                                            setExpandedDiff(segments);
+                                            setExpandedVersionId(v.id);
                                           }
-                                          if (seg.type === 'added') {
-                                            return (
-                                              <span key={si} style={{ background: '#dcfce7', color: '#166534', borderRadius: '2px', padding: '0 2px' }}>
-                                                {seg.text}
-                                              </span>
-                                            );
-                                          }
-                                          return (
-                                            <span key={si} style={{ background: '#fee2e2', color: '#991b1b', textDecoration: 'line-through', borderRadius: '2px', padding: '0 2px' }}>
-                                              {seg.text}
-                                            </span>
-                                          );
-                                        })
+                                        }}
+                                      >
+                                        <div className="text-[12.5px] font-medium text-base-content/80 leading-snug">
+                                          {v.change_description || 'Šablono pakeitimas'}
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-base-content/40">
+                                          {firstName} pakeitė {relativeTime(v.created_at)}
+                                        </div>
+                                      </div>
+
+                                      {/* Expanded diff + actions */}
+                                      {isExpanded && expandedDiff && (
+                                        <div className="px-3 pb-3 border-t border-base-content/5">
+                                          <div className="mt-2 rounded-md bg-base-200/60 p-2.5 max-h-48 overflow-auto">
+                                            <div className="text-[11px] leading-relaxed" style={{ wordBreak: 'break-word' }}>
+                                              {expandedDiff.every(s => s.type === 'same') ? (
+                                                <span className="text-base-content/40">Tik formatavimo pakeitimai (tekstas nepasikeitė)</span>
+                                              ) : (
+                                                expandedDiff.map((seg, si) => {
+                                                  if (seg.type === 'same') {
+                                                    const words = seg.text.split(' ');
+                                                    if (words.length > 8) {
+                                                      return (
+                                                        <span key={si} className="text-base-content/30">
+                                                          {words.slice(0, 3).join(' ')}{' '}
+                                                          <span className="text-base-content/20">···</span>{' '}
+                                                          {words.slice(-3).join(' ')}{' '}
+                                                        </span>
+                                                      );
+                                                    }
+                                                    return <span key={si} className="text-base-content/30">{seg.text} </span>;
+                                                  }
+                                                  if (seg.type === 'added') {
+                                                    return (
+                                                      <span key={si} style={{ background: '#dcfce7', color: '#166534', borderRadius: '2px', padding: '0 2px' }}>
+                                                        {seg.text}
+                                                      </span>
+                                                    );
+                                                  }
+                                                  return (
+                                                    <span key={si} style={{ background: '#fee2e2', color: '#991b1b', textDecoration: 'line-through', borderRadius: '2px', padding: '0 2px' }}>
+                                                      {seg.text}
+                                                    </span>
+                                                  );
+                                                })
+                                              )}
+                                            </div>
+                                          </div>
+                                          <div className="mt-2 flex items-center gap-3">
+                                            {isConfirming ? (
+                                              <>
+                                                <span className="text-[11px] text-warning-content/70">Grįžti prie šios versijos?</span>
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); handleRevertTemplate(v.id); }}
+                                                  disabled={templateSaving}
+                                                  className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                                >
+                                                  {templateSaving ? '...' : 'Taip'}
+                                                </button>
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); }}
+                                                  className="text-[11px] px-2 py-0.5 rounded hover:bg-base-content/5 text-base-content/40 transition-colors"
+                                                >
+                                                  Ne
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); setRevertConfirm({ id: v.id, versionNumber: v.version_number }); }}
+                                                className="text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
+                                              >
+                                                Grįžti prie šios versijos
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
                                       )}
                                     </div>
-                                  </div>
-                                  {/* Revert action */}
-                                  <div className="mt-2 flex items-center gap-3">
-                                    {isConfirming ? (
-                                      <>
-                                        <span className="text-[11px] text-warning-content/70">Grįžti prie šios versijos?</span>
-                                        <button
-                                          onClick={() => { setRevertConfirm(null); handleRevertTemplate(v.id); }}
-                                          disabled={templateSaving}
-                                          className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                                        >
-                                          {templateSaving ? '...' : 'Taip'}
-                                        </button>
-                                        <button
-                                          onClick={() => setRevertConfirm(null)}
-                                          className="text-[11px] px-2 py-0.5 rounded hover:bg-base-content/5 transition-colors" style={{ color: '#b0b0b0' }}
-                                        >
-                                          Ne
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <button
-                                        onClick={() => setRevertConfirm({ id: v.id, versionNumber: v.version_number })}
-                                        className="text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
-                                      >
-                                        Grįžti prie šios versijos
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          );
-                        })}
+                          ));
+                        })()}
                       </div>
                     )}
                     </div>
