@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, Mail, Lock, UserPlus } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
@@ -269,119 +269,169 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         </div>
       </div>
 
-      {/* Create User Form */}
+      {/* Create User Modal */}
       {showCreateModal && (
-        <div className="p-6 border-b" style={{
-          background: colors.interactive.accentLight,
-          borderColor: colors.interactive.accent + '33' // 20% opacity
-        }}>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Create New User</h3>
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="p-2 rounded-lg transition-colors"
-                style={{ color: colors.text.tertiary }}
-                onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div
+          className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-[10vh] overflow-y-auto"
+          style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+          onClick={() => {
+            setShowCreateModal(false);
+            setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+            setError(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-lg w-full max-w-md"
+            style={{ border: `1px solid ${colors.border.light}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-5 border-b" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: colors.icon.default }}>
+                    <UserPlus className="w-5 h-5" style={{ color: colors.interactive.accent }} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
+                      Create New User
+                    </h2>
+                    <p className="text-sm mt-0.5" style={{ color: colors.text.tertiary }}>
+                      Set up account credentials
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+                    setError(null);
+                  }}
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" style={{ color: colors.text.tertiary }} />
+                </button>
+              </div>
             </div>
 
             {/* Modal Body */}
-            <div className="p-5 space-y-4">
+            <div className="px-6 py-5 space-y-4">
               {error && (
-                <div className="flex items-center space-x-2 text-macos-red bg-macos-red/10 p-3 rounded-macos border-[0.5px] border-macos-red/20">
-                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                  <span className="text-sm">{error}</span>
+                <div className="flex items-center space-x-2 p-3 rounded-lg text-sm" style={{
+                  background: colors.status.errorBg,
+                  border: `1px solid ${colors.status.errorBorder}`,
+                  color: colors.status.errorText
+                }}>
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Email *</label>
-                <input
-                  type="email"
-                  value={newUserData.email}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="user@example.com"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{
-                    borderColor: colors.border.default,
-                    background: colors.bg.white,
-                    color: colors.text.primary
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                />
+                <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                  <input
+                    type="email"
+                    value={newUserData.email}
+                    onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="user@example.com"
+                    className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                    style={{
+                      borderColor: colors.border.default,
+                      background: colors.bg.white,
+                      color: colors.text.primary
+                    }}
+                    onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                    onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                    autoFocus
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Password *</label>
-                <input
-                  type="password"
-                  value={newUserData.password}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder="Enter password"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{
-                    borderColor: colors.border.default,
-                    background: colors.bg.white,
-                    color: colors.text.primary
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                />
+                <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                  <input
+                    type="password"
+                    value={newUserData.password}
+                    onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder="Enter password"
+                    className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                    style={{
+                      borderColor: colors.border.default,
+                      background: colors.bg.white,
+                      color: colors.text.primary
+                    }}
+                    onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                    onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
-                <input
-                  type="text"
-                  value={newUserData.displayName}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
-                  placeholder="Full Name"
-                  className="w-full px-3 py-2 border rounded-lg focus:outline-none"
-                  style={{
-                    borderColor: colors.border.default,
-                    background: colors.bg.white,
-                    color: colors.text.primary
-                  }}
-                  onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                  onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
-                />
+                <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Display Name</label>
+                <div className="relative">
+                  <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                  <input
+                    type="text"
+                    value={newUserData.displayName}
+                    onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
+                    placeholder="Full Name (optional)"
+                    className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
+                    style={{
+                      borderColor: colors.border.default,
+                      background: colors.bg.white,
+                      color: colors.text.primary
+                    }}
+                    onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                    onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center space-x-3">
+              <div className="flex items-center space-x-3 pt-1">
                 <input
                   type="checkbox"
                   id="isAdmin"
                   checked={newUserData.isAdmin}
                   onChange={(e) => setNewUserData(prev => ({ ...prev, isAdmin: e.target.checked }))}
-                  className="w-4 h-4 rounded"
+                  className="checkbox checkbox-sm checkbox-primary"
                 />
-                <label htmlFor="isAdmin" className="text-sm font-medium" style={{ color: colors.text.secondary }}>
-                  Admin privileges
-                </label>
+                <div>
+                  <label htmlFor="isAdmin" className="text-sm font-medium cursor-pointer" style={{ color: colors.text.secondary }}>
+                    Admin privileges
+                  </label>
+                  <p className="text-xs" style={{ color: colors.text.tertiary }}>
+                    Grants access to system settings and user management
+                  </p>
+                </div>
               </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-4 border-t border-black/5 bg-macos-gray-50/50 rounded-b-macos-xl flex items-center justify-end space-x-3">
+            <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{
+              borderColor: colors.border.light,
+              background: colors.bg.secondary
+            }}>
               <button
                 onClick={() => {
                   setShowCreateModal(false);
                   setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
                   setError(null);
                 }}
-                className="macos-btn px-4 py-2 text-sm text-macos-gray-600 hover:text-macos-gray-800 rounded-macos transition-colors"
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{ color: colors.text.secondary }}
+                onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateUser}
                 disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
-                className="px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
                 style={{
                   background: colors.interactive.accent,
                   color: '#ffffff'
@@ -396,7 +446,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </>
                 ) : (
                   <>
-                    <Save className="w-4 h-4" />
+                    <UserPlus className="w-4 h-4" />
                     <span>Create User</span>
                   </>
                 )}
@@ -524,9 +574,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         <td className="text-sm text-base-content/60">{userData.role || '—'}</td>
                         <td>
                           {userData.is_admin ? (
-                            <span className="badge badge-soft badge-success text-xs">Admin</span>
+                            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Admin</span>
                           ) : (
-                            <span className="text-sm text-base-content/50">User</span>
+                            <span className="text-sm" style={{ color: colors.text.tertiary }}>User</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap">{new Date(userData.created_at).toLocaleDateString()}</td>
