@@ -341,6 +341,71 @@ export const deleteUserByAdmin = async (userId: string) => {
 };
 
 // ============================================================================
+// Vadybininkai (managers) table
+// ============================================================================
+
+export const getVadybininkai = async () => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .select('id, created_at, kodas, full_name, role')
+      .order('full_name', { ascending: true });
+
+    if (error) {
+      console.error('Error getting vadybininkai:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in getVadybininkai:', error);
+    return { data: null, error };
+  }
+};
+
+export const createVadybininkas = async (fullName: string, kodas: string) => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .insert([{
+        full_name: fullName,
+        kodas: kodas,
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating vadybininkas:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in createVadybininkas:', error);
+    return { data: null, error };
+  }
+};
+
+export const deleteVadybininkas = async (id: string) => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting vadybininkas:', error);
+      throw error;
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in deleteVadybininkas:', error);
+    return { data: null, error };
+  }
+};
+
+// ============================================================================
 // Project management
 // ============================================================================
 

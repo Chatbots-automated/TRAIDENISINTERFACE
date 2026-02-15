@@ -58,14 +58,13 @@ export const getEconomists = async (): Promise<AppUserData[]> => {
 };
 
 /**
- * Get only users with role = 'vadybininkas' (case insensitive)
+ * Get managers from the vadybininkai table
  */
 export const getManagers = async (): Promise<AppUserData[]> => {
   try {
     const { data, error } = await db
-      .from('app_users')
-      .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
-      .ilike('role', 'vadybininkas')
+      .from('vadybininkai')
+      .select('id, created_at, kodas, full_name, role')
       .order('full_name', { ascending: true });
 
     if (error) {
@@ -73,7 +72,16 @@ export const getManagers = async (): Promise<AppUserData[]> => {
       throw error;
     }
 
-    return data || [];
+    // Map vadybininkai fields to AppUserData shape for compatibility
+    return (data || []).map(v => ({
+      id: v.id,
+      email: '',
+      is_admin: false,
+      created_at: v.created_at,
+      kodas: v.kodas || undefined,
+      full_name: v.full_name || undefined,
+      role: v.role || undefined,
+    }));
   } catch (error) {
     console.error('[UserService] Exception in getManagers:', error);
     return [];
