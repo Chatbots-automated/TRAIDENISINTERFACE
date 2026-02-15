@@ -3665,34 +3665,38 @@ Vartotojo instrukcija: ${instruction}`;
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}>
             <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-xl" style={{ height: '88vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }} onClick={(e) => e.stopPropagation()}>
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 flex-shrink-0 border-b border-base-content/10">
+              <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.08)', background: 'linear-gradient(to bottom, rgba(0,0,0,0.015), transparent)' }}>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-base-content">Redaguoti šabloną</span>
-                  {isGlobalTemplateCustomized() && (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/15 text-warning-content">Pakeistas</span>
-                  )}
-                  {versionNum !== null && (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-base-content/5 text-base-content/40">v{versionNum}</span>
-                  )}
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[17px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Šablono redagavimas</span>
+                      {isGlobalTemplateCustomized() && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-warning/15 text-warning-content">Pakeistas</span>
+                      )}
+                    </div>
+                    {versionNum !== null && (
+                      <span className="text-[11px] text-base-content/40 mt-0.5 block">versija: <span className="font-semibold text-base-content/60">#{versionNum}</span></span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Version history / undo button */}
                   <button
                     onClick={() => { setShowTemplateVersions(!showTemplateVersions); setExpandedVersionId(null); setExpandedDiff(null); }}
-                    className={`btn btn-soft btn-xs ${showTemplateVersions ? 'btn-active' : ''}`}
+                    className={`btn btn-soft btn-sm ${showTemplateVersions ? 'btn-active' : ''}`}
                     title="Versijų istorija"
                   >
                     Istorija
                   </button>
                   <button
                     onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
-                    className="btn btn-soft btn-xs"
+                    className="btn btn-soft btn-sm"
                   >
                     Atšaukti
                   </button>
                   <button
                     onClick={handleSaveGlobalTemplate}
-                    className="btn btn-primary btn-xs"
+                    className="btn btn-primary btn-sm"
                   >
                     Išsaugoti
                   </button>
