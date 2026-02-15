@@ -68,15 +68,6 @@ export async function getGlobalTemplate(): Promise<GlobalTemplate | null> {
   }
 }
 
-/**
- * Get the HTML for the global template.
- * Falls back to the hardcoded default if no DB row exists.
- */
-export async function getGlobalTemplateHtml(): Promise<string> {
-  const tpl = await getGlobalTemplate();
-  return tpl?.html_content ?? COMMERCIAL_OFFER_TEMPLATE;
-}
-
 // ---------------------------------------------------------------------------
 // Change summary helpers
 // ---------------------------------------------------------------------------
