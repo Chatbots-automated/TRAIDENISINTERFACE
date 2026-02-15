@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, Mail, Lock, UserPlus } from 'lucide-react';
+import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, Mail, Lock, UserPlus, Briefcase } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
@@ -36,7 +36,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
     email: '',
     password: '',
     displayName: '',
-    isAdmin: false
+    isAdmin: false,
+    role: ''
   });
 
   useEffect(() => {
@@ -71,12 +72,13 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         newUserData.email,
         newUserData.password,
         newUserData.displayName,
-        newUserData.isAdmin
+        newUserData.isAdmin,
+        newUserData.role || undefined
       );
 
       if (error) throw error;
 
-      setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+      setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
       setShowCreateModal(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
@@ -276,7 +278,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
           style={{ background: 'rgba(0, 0, 0, 0.3)' }}
           onClick={() => {
             setShowCreateModal(false);
-            setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+            setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
             setError(null);
           }}
         >
@@ -304,7 +306,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 <button
                   onClick={() => {
                     setShowCreateModal(false);
-                    setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+                    setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
                     setError(null);
                   }}
                   className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -391,6 +393,31 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Role</label>
+                <div className="relative">
+                  <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
+                  <select
+                    value={newUserData.role}
+                    onChange={(e) => setNewUserData(prev => ({ ...prev, role: e.target.value }))}
+                    className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm appearance-none"
+                    style={{
+                      borderColor: colors.border.default,
+                      background: colors.bg.white,
+                      color: newUserData.role ? colors.text.primary : colors.text.tertiary
+                    }}
+                    onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
+                    onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                  >
+                    <option value="">No role (optional)</option>
+                    {availableRoles.map((role) => (
+                      <option key={role} value={role}>{role}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: colors.text.tertiary }} />
+                </div>
+              </div>
+
               <div className="flex items-center space-x-3 pt-1">
                 <input
                   type="checkbox"
@@ -418,7 +445,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <button
                 onClick={() => {
                   setShowCreateModal(false);
-                  setNewUserData({ email: '', password: '', displayName: '', isAdmin: false });
+                  setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
                   setError(null);
                 }}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"

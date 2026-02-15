@@ -170,7 +170,7 @@ export const getCurrentUser = async () => {
 // Admin functions
 // ============================================================================
 
-export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean) => {
+export const createUserByAdmin = async (email: string, password: string, displayName: string, isAdmin: boolean, role?: string) => {
   try {
     const { user: adminUser } = await getCurrentUser();
 
@@ -182,7 +182,8 @@ export const createUserByAdmin = async (email: string, password: string, display
         email: email,
         password: password,
         display_name: displayName,
-        is_admin: isAdmin
+        is_admin: isAdmin,
+        ...(role ? { role } : {})
       }])
       .select()
       .single()
@@ -207,7 +208,7 @@ export const createUserByAdmin = async (email: string, password: string, display
       userEmail: adminUser?.email,
       targetUserId: appUserData.id,
       targetUserEmail: email,
-      metadata: { display_name: displayName, is_admin: isAdmin }
+      metadata: { display_name: displayName, is_admin: isAdmin, role }
     });
 
     return { data: appUserData, error: null };
