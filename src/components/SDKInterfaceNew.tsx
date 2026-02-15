@@ -64,7 +64,8 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor } from '../lib/documentTemplateService';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta } from '../lib/documentTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -179,6 +180,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateVersion, setTemplateVersion] = useState(0);
   // Global template editor
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
+  const [templateVersionHistory, setTemplateVersionHistory] = useState<GlobalTemplateVersion[]>([]);
+  const [showTemplateVersions, setShowTemplateVersions] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [revertConfirm, setRevertConfirm] = useState<{ id: string; versionNumber: number } | null>(null);
+  const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
+  const [expandedDiff, setExpandedDiff] = useState<DiffSegment[] | null>(null);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
@@ -229,6 +236,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadManagers();
     loadSharedConversations();
     loadShareableUsers();
+    // Hydrate global template cache from DB so all users share the same template
+    loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
   }, []);
 
   // Sync URL ↔ currentConversation
@@ -1963,6 +1972,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
+    setShowTemplateVersions(false);
+    // Fetch version history in the background
+    getGlobalTemplateVersions(30).then(setTemplateVersionHistory).catch(() => {});
   };
 
   /**
@@ -1986,10 +1998,37 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Clean up editor artifacts
     html = html.replace(/\s*contenteditable="(true|false)"/gi, '');
 
-    saveGlobalTemplate(html);
+    const userName = user.full_name || user.email;
+    saveGlobalTemplate(html, user.id, userName);
     setTemplateVersion(v => v + 1);
     setShowTemplateEditor(false);
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
+  };
+
+  /** Revert the global template to a specific version from history. */
+  const handleRevertTemplate = async (versionId: string) => {
+    setTemplateSaving(true);
+    try {
+      const userName = user.full_name || user.email;
+      const result = await revertToVersion(versionId, user.id, userName);
+      if (result) {
+        // Reload from DB to refresh cache
+        await loadGlobalTemplateFromDb();
+        setTemplateVersion(v => v + 1);
+        // Refresh version history
+        const versions = await getGlobalTemplateVersions(30);
+        setTemplateVersionHistory(versions);
+        setShowTemplateVersions(false);
+        setShowTemplateEditor(false);
+        addNotification('success', 'Šablonas atkurtas', 'Globalus šablonas sėkmingai grąžintas į ankstesnę versiją.');
+      } else {
+        addNotification('error', 'Klaida', 'Nepavyko atkurti šablono versijos.');
+      }
+    } catch {
+      addNotification('error', 'Klaida', 'Nepavyko atkurti šablono versijos.');
+    } finally {
+      setTemplateSaving(false);
+    }
   };
 
   /** Save the current editing variable value — surgical replacement for YAML keys. */
@@ -2880,8 +2919,9 @@ Vartotojo instrukcija: ${instruction}`;
                             : editingVariable.y - 8,
                           transform: popupPlacement === 'above' ? 'translateY(-100%)' : undefined,
                           zIndex: 50,
-                          width: '264px',
+                          width: '280px',
                           filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
                         }}
                       >
                         {/* Pointer triangle — points toward the variable */}
@@ -2891,7 +2931,7 @@ Vartotojo instrukcija: ${instruction}`;
                             borderLeft: '7px solid transparent',
                             borderRight: '7px solid transparent',
                             borderBottom: '7px solid #ffffff',
-                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 248) + 'px',
                           }} />
                         )}
 
@@ -2901,41 +2941,43 @@ Vartotojo instrukcija: ${instruction}`;
                           overflow: 'hidden',
                           border: '1px solid rgba(0,0,0,0.06)',
                         }}>
-                          {/* Header — compact with colored category pill */}
-                          <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f3f2f0' }}>
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0" style={{ background: categoryColor + '10', color: categoryColor }}>
-                                {categoryLabel}
-                              </span>
-                              <span className="text-[11px] font-medium truncate" style={{ color: 'var(--color-base-content)' }}>{label}</span>
+                          {/* Header — label as title, category as subtle tag */}
+                          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-[14px] font-semibold truncate" style={{ color: '#1a1a1a', letterSpacing: '-0.01em' }}>{label}</div>
+                                <span className="inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: categoryColor + '12', color: categoryColor }}>
+                                  {categoryLabel}
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setEditingVariable(null);
+                                  documentPreviewRef.current?.clearActiveVariable();
+                                }}
+                                className="p-1 rounded-md flex-shrink-0 transition-colors mt-0.5"
+                                style={{ color: '#c0bbb5' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            <button
-                              onClick={() => {
-                                setEditingVariable(null);
-                                documentPreviewRef.current?.clearActiveVariable();
-                              }}
-                              className="p-0.5 rounded-full flex-shrink-0 transition-colors"
-                              style={{ color: '#c0bbb5' }}
-                              onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
                           </div>
 
                           {/* Body */}
-                          <div className="px-3 py-2.5">
+                          <div className="px-3.5 py-3">
                             {cat === 'team' && (
                               <div>
-                                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai užpildyta</span>
-                                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
+                                <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai užpildyta</span>
+                                <div className="mt-1 text-[13px] font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
                               </div>
                             )}
 
                             {cat === 'auto' && (
                               <div>
-                                <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
-                                <div className="mt-1 text-xs font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
+                                <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
+                                <div className="mt-1 text-[13px] font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
                               </div>
                             )}
 
@@ -2944,17 +2986,17 @@ Vartotojo instrukcija: ${instruction}`;
                                 {!techDescResult && !techDescLoading && !techDescError && (
                                   <div>
                                     {editingVariable.editValue ? (
-                                      <div className="text-[11px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
+                                      <div className="text-[12px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
                                         {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
                                       </div>
                                     ) : (
-                                      <span className="text-[10px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
+                                      <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                                         Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
                                       </span>
                                     )}
                                     <button
                                       onClick={handleGenerateTechDescription}
-                                      className="w-full mt-2 text-[11px] px-3 py-2 rounded-lg font-medium transition-colors"
+                                      className="w-full mt-2 text-[12px] px-3 py-2 rounded-lg font-medium transition-colors"
                                       style={{ background: '#0891b2', color: 'white' }}
                                       onMouseEnter={(e) => e.currentTarget.style.background = '#0e7490'}
                                       onMouseLeave={(e) => e.currentTarget.style.background = '#0891b2'}
@@ -2966,17 +3008,17 @@ Vartotojo instrukcija: ${instruction}`;
                                 {techDescLoading && (
                                   <div className="flex items-center justify-center gap-2 py-4">
                                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
-                                    <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
+                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
                                   </div>
                                 )}
                                 {techDescError && !techDescLoading && (
                                   <div>
-                                    <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                    <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
                                       {techDescError}
                                     </div>
                                     <button
                                       onClick={() => setTechDescError(null)}
-                                      className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                      className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                       style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                       onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                       onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -2988,15 +3030,15 @@ Vartotojo instrukcija: ${instruction}`;
                                 {techDescResult && !techDescLoading && (
                                   <div>
                                     <div
-                                      className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                      className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
                                       style={{ color: '#3d3935', lineHeight: '1.6', background: '#f8f7f6', border: '1px solid #e5e2dd' }}
                                     >
                                       {techDescResult}
                                     </div>
-                                    <div className="flex justify-end mt-2 gap-1.5">
+                                    <div className="flex justify-end mt-2.5 gap-2">
                                       <button
                                         onClick={() => { setTechDescResult(null); }}
-                                        className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                        className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                         style={{ color: '#ef4444' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3009,7 +3051,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           setTechDescResult(null);
                                           addNotification('success', 'Aprašymas priimtas', 'Technologinis aprašymas įrašytas į dokumentą.');
                                         }}
-                                        className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                        className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
                                         style={{ background: '#059669', color: 'white' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#047857'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = '#059669'}
@@ -3025,7 +3067,7 @@ Vartotojo instrukcija: ${instruction}`;
                             {cat === 'economist' && (
                               <div className="flex flex-col gap-0.5">
                                 {economists.length === 0 ? (
-                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
+                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
                                 ) : (
                                   economists.map((econ) => {
                                     const isSelected = selectedEconomist?.id === econ.id;
@@ -3037,7 +3079,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           setEditingVariable(null);
                                           documentPreviewRef.current?.clearActiveVariable();
                                         }}
-                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
                                         style={{
                                           background: isSelected ? '#eff6ff' : 'transparent',
                                           color: '#3d3935',
@@ -3046,7 +3088,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                       >
                                         <span className={isSelected ? 'font-medium' : ''}>{econ.full_name || econ.email}</span>
-                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
                                       </button>
                                     );
                                   })
@@ -3057,7 +3099,7 @@ Vartotojo instrukcija: ${instruction}`;
                             {cat === 'manager' && (
                               <div className="flex flex-col gap-0.5">
                                 {managers.length === 0 ? (
-                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
+                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
                                 ) : (
                                   managers.map((mgr) => {
                                     const isSelected = selectedManager?.id === mgr.id;
@@ -3069,7 +3111,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           setEditingVariable(null);
                                           documentPreviewRef.current?.clearActiveVariable();
                                         }}
-                                        className="text-left text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
                                         style={{
                                           background: isSelected ? '#eff6ff' : 'transparent',
                                           color: '#3d3935',
@@ -3078,7 +3120,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                                       >
                                         <span className={isSelected ? 'font-medium' : ''}>{mgr.full_name || mgr.email}</span>
-                                        {isSelected && <Check className="w-3 h-3 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
                                       </button>
                                     );
                                   })
@@ -3097,15 +3139,15 @@ Vartotojo instrukcija: ${instruction}`;
                                     if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
                                   }}
                                   autoFocus
-                                  className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none transition-all"
+                                  className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none transition-all"
                                   style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
                                   onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
                                   onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                 />
-                                <div className="flex justify-end mt-2 gap-1.5">
+                                <div className="flex justify-end mt-2.5 gap-2">
                                   <button
                                     onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                    className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                    className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                     style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                     onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3114,7 +3156,7 @@ Vartotojo instrukcija: ${instruction}`;
                                   </button>
                                   <button
                                     onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                    className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                    className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
                                     style={{ background: '#3d3935', color: 'white' }}
                                     onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
                                     onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
@@ -3138,27 +3180,27 @@ Vartotojo instrukcija: ${instruction}`;
                                       }}
                                       autoFocus
                                       rows={3}
-                                      className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                      className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
                                       style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
                                       onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
                                       onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                     />
-                                    <div className="flex items-center justify-between mt-2">
+                                    <div className="flex items-center justify-between mt-2.5">
                                       <button
                                         onClick={() => { setAiVarEditMode(true); setAiVarEditInstruction(''); setAiVarEditResult(null); setAiVarEditError(null); }}
-                                        className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
                                         style={{ color: '#8b5cf6' }}
                                         onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3ff'}
                                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                         title="AI redakcija"
                                       >
-                                        <Sparkles className="w-2.5 h-2.5" />
+                                        <Sparkles className="w-3 h-3" />
                                         AI
                                       </button>
-                                      <div className="flex gap-1.5">
+                                      <div className="flex gap-2">
                                         <button
                                           onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                          className="text-[10px] px-2.5 py-1 rounded-md transition-colors"
+                                          className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                           style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3167,7 +3209,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         </button>
                                         <button
                                           onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                          className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                          className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
                                           style={{ background: '#3d3935', color: 'white' }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
@@ -3183,7 +3225,7 @@ Vartotojo instrukcija: ${instruction}`;
                                     {!aiVarEditResult && !aiVarEditLoading && !aiVarEditError && (
                                       <div>
                                         {editingVariable.editValue && (
-                                          <div className="text-[10px] max-h-20 overflow-y-auto mb-2 px-2 py-1.5 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
+                                          <div className="text-[12px] max-h-20 overflow-y-auto mb-2 px-2.5 py-2 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
                                             {editingVariable.editValue.slice(0, 150)}{editingVariable.editValue.length > 150 ? '...' : ''}
                                           </div>
                                         )}
@@ -3197,15 +3239,15 @@ Vartotojo instrukcija: ${instruction}`;
                                           autoFocus
                                           rows={2}
                                           placeholder="Aprašykite, ką AI turėtų pakeisti..."
-                                          className="w-full text-[11px] px-2.5 py-1.5 rounded-lg outline-none resize-none transition-all"
+                                          className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
                                           style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
                                           onFocus={(e) => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)'; }}
                                           onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
                                         />
-                                        <div className="flex items-center justify-between mt-2">
+                                        <div className="flex items-center justify-between mt-2.5">
                                           <button
                                             onClick={() => setAiVarEditMode(false)}
-                                            className="flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-md transition-colors"
+                                            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
                                             style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3215,7 +3257,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           <button
                                             onClick={handleAIVariableEdit}
                                             disabled={!aiVarEditInstruction.trim()}
-                                            className="flex items-center gap-1 text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            className="flex items-center gap-1 text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
                                             style={{
                                               background: aiVarEditInstruction.trim() ? '#8b5cf6' : '#e5e2dd',
                                               color: aiVarEditInstruction.trim() ? 'white' : '#9ca3af',
@@ -3223,7 +3265,7 @@ Vartotojo instrukcija: ${instruction}`;
                                             onMouseEnter={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#7c3aed'; }}
                                             onMouseLeave={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#8b5cf6'; }}
                                           >
-                                            <Sparkles className="w-3 h-3" />
+                                            <Sparkles className="w-3.5 h-3.5" />
                                             Generuoti
                                           </button>
                                         </div>
@@ -3233,18 +3275,18 @@ Vartotojo instrukcija: ${instruction}`;
                                     {aiVarEditLoading && (
                                       <div className="flex items-center justify-center gap-2 py-4">
                                         <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
-                                        <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
+                                        <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
                                       </div>
                                     )}
 
                                     {aiVarEditError && !aiVarEditLoading && (
                                       <div>
-                                        <div className="text-[10px] px-2 py-1.5 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                        <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
                                           {aiVarEditError}
                                         </div>
                                         <button
                                           onClick={() => setAiVarEditError(null)}
-                                          className="w-full mt-2 text-[10px] px-3 py-1 rounded-md transition-colors"
+                                          className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                           style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
                                           onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
                                           onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3257,15 +3299,15 @@ Vartotojo instrukcija: ${instruction}`;
                                     {aiVarEditResult && !aiVarEditLoading && (
                                       <div>
                                         <div
-                                          className="text-[10px] max-h-48 overflow-y-auto rounded-lg p-2"
+                                          className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
                                           style={{ color: '#3d3935', lineHeight: '1.6', background: '#faf5ff', border: '1px solid #e9d5ff' }}
                                         >
                                           {aiVarEditResult}
                                         </div>
-                                        <div className="flex justify-end mt-2 gap-1.5">
+                                        <div className="flex justify-end mt-2.5 gap-2">
                                           <button
                                             onClick={() => { setAiVarEditResult(null); }}
-                                            className="text-[10px] px-3 py-1 rounded-md transition-colors"
+                                            className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
                                             style={{ color: '#ef4444' }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3280,7 +3322,7 @@ Vartotojo instrukcija: ${instruction}`;
                                               setAiVarEditMode(false);
                                               await handleVariableSave(key, value);
                                             }}
-                                            className="text-[10px] px-3 py-1 rounded-md font-medium transition-colors"
+                                            className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
                                             style={{ background: '#8b5cf6', color: 'white' }}
                                             onMouseEnter={(e) => e.currentTarget.style.background = '#7c3aed'}
                                             onMouseLeave={(e) => e.currentTarget.style.background = '#8b5cf6'}
@@ -3614,73 +3656,273 @@ Vartotojo instrukcija: ${instruction}`;
           .template-var.filled { background: rgba(59,130,246,0.04); box-shadow: 0 0 0 1px rgba(59,130,246,0.12); padding: 0 2px; border-radius: 3px; }
           </style>`
         );
+        const meta = getGlobalTemplateMeta();
+        const lastEditedFirstName = meta?.updated_by_name
+          ? meta.updated_by_name.split(' ')[0]
+          : null;
+        const versionNum = meta?.version ?? null;
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTemplateEditor(false)}>
-            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100" style={{ height: '88vh' }} onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}>
+            <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-xl" style={{ height: '88vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }} onClick={(e) => e.stopPropagation()}>
               {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 flex-shrink-0 border-b border-base-content/10">
+              <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.08)', background: 'linear-gradient(to bottom, rgba(0,0,0,0.015), transparent)' }}>
                 <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-base-content">Redaguoti šabloną</span>
-                  {isGlobalTemplateCustomized() && (
-                    <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/15 text-warning-content">Pakeistas</span>
-                  )}
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[17px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Šablono redagavimas</span>
+                      {isGlobalTemplateCustomized() && (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-warning/15 text-warning-content">Pakeistas</span>
+                      )}
+                    </div>
+                    {versionNum !== null && (
+                      <span className="text-[11px] text-base-content/40 mt-0.5 block">versija: <span className="font-semibold text-base-content/60">#{versionNum}</span></span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {isGlobalTemplateCustomized() && (
-                    <button
-                      onClick={() => {
-                        resetGlobalTemplate();
-                        setTemplateVersion(v => v + 1);
-                        setShowTemplateEditor(false);
-                      }}
-                      className="btn btn-soft btn-xs"
-                    >
-                      Atkurti pradinį
-                    </button>
-                  )}
+                  {/* Version history / undo button */}
                   <button
-                    onClick={() => setShowTemplateEditor(false)}
-                    className="btn btn-soft btn-xs"
+                    onClick={() => { setShowTemplateVersions(!showTemplateVersions); setExpandedVersionId(null); setExpandedDiff(null); }}
+                    className={`btn btn-soft btn-sm ${showTemplateVersions ? 'btn-active' : ''}`}
+                    title="Versijų istorija"
+                  >
+                    Istorija
+                  </button>
+                  <button
+                    onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
+                    className="btn btn-soft btn-sm"
                   >
                     Atšaukti
                   </button>
                   <button
                     onClick={handleSaveGlobalTemplate}
-                    className="btn btn-primary btn-xs"
+                    className="btn btn-primary btn-sm"
                   >
                     Išsaugoti
                   </button>
                 </div>
               </div>
-              {/* Hint bar */}
-              <div className="px-5 py-1.5 flex-shrink-0 bg-base-200/50 border-b border-base-content/5">
+              {/* Info bar: last edited by + hint */}
+              <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
                 <span className="text-[10px] text-base-content/40">
                   Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
                 </span>
+                {lastEditedFirstName && (
+                  <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
+                    Paskutinį kartą redagavo: <span className="text-base-content/50 font-medium">{lastEditedFirstName}</span>
+                    {meta?.updated_at && (
+                      <> &middot; {new Date(meta.updated_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                    )}
+                  </span>
+                )}
               </div>
-              {/* Visual editor iframe */}
-              <div className="flex-1 overflow-auto bg-base-200/30">
-                <div style={{ width: '595px', margin: '24px auto' }}>
-                  <iframe
-                    ref={templateEditorIframeRef}
-                    srcDoc={editorSrcdoc}
-                    title="Šablono redaktorius"
-                    sandbox="allow-same-origin"
-                    scrolling="no"
-                    style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
-                    onLoad={() => {
-                      const doc = templateEditorIframeRef.current?.contentDocument;
-                      if (doc) {
-                        doc.body.contentEditable = 'true';
-                        // Auto-size iframe to content
-                        const h = doc.body.scrollHeight;
-                        if (templateEditorIframeRef.current) {
-                          templateEditorIframeRef.current.style.height = h + 'px';
+              {/* Main content area: editor + optional version sidebar */}
+              <div className="flex-1 flex min-h-0 overflow-hidden">
+                {/* Visual editor iframe */}
+                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
+                  <div style={{ width: '595px', margin: '24px auto' }}>
+                    <iframe
+                      ref={templateEditorIframeRef}
+                      srcDoc={editorSrcdoc}
+                      title="Šablono redaktorius"
+                      sandbox="allow-same-origin"
+                      scrolling="no"
+                      style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
+                      onLoad={() => {
+                        const doc = templateEditorIframeRef.current?.contentDocument;
+                        if (doc) {
+                          doc.body.contentEditable = 'true';
+                          // Auto-size iframe to content
+                          const h = doc.body.scrollHeight;
+                          if (templateEditorIframeRef.current) {
+                            templateEditorIframeRef.current.style.height = h + 'px';
+                          }
                         }
-                      }
-                    }}
-                  />
+                      }}
+                    />
+                  </div>
                 </div>
+                {/* Version history sidebar */}
+                {showTemplateVersions && (
+                  <div className="w-72 flex-shrink-0 flex flex-col bg-base-100 border-l border-base-content/10">
+                    <div className="px-4 py-3 border-b border-base-content/10">
+                      <span className="text-sm font-semibold text-base-content">Istorija</span>
+                      <p className="text-[11px] mt-0.5" style={{ color: '#b0b0b0' }}>Galite grįžti prie ankstesnės versijos</p>
+                    </div>
+                    <div className="flex-1 overflow-auto">
+                    {templateVersionHistory.length === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <span className="text-[12px]" style={{ color: '#b0b0b0' }}>Kol kas pakeitimų nėra</span>
+                      </div>
+                    ) : (
+                      <div className="py-3 px-3 space-y-4">
+                        {/* Group versions by date */}
+                        {(() => {
+                          const groups: { dateLabel: string; items: { v: typeof templateVersionHistory[0]; idx: number }[] }[] = [];
+                          templateVersionHistory.forEach((v, idx) => {
+                            const d = new Date(v.created_at);
+                            const label = d.toLocaleDateString('lt-LT', { year: 'numeric', month: 'long', day: 'numeric' });
+                            const last = groups[groups.length - 1];
+                            if (last && last.dateLabel === label) {
+                              last.items.push({ v, idx });
+                            } else {
+                              groups.push({ dateLabel: label, items: [{ v, idx }] });
+                            }
+                          });
+
+                          const relativeTime = (dateStr: string) => {
+                            const diff = Date.now() - new Date(dateStr).getTime();
+                            const mins = Math.floor(diff / 60000);
+                            if (mins < 1) return 'ką tik';
+                            if (mins < 60) return `prieš ${mins} min.`;
+                            const hrs = Math.floor(mins / 60);
+                            if (hrs < 24) return `prieš ${hrs} val.`;
+                            const days = Math.floor(hrs / 24);
+                            if (days === 1) return 'vakar';
+                            return `prieš ${days} d.`;
+                          };
+
+                          return groups.map((group, gi) => (
+                            <div key={gi}>
+                              {/* Date group header */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <svg className="w-4 h-4 text-base-content/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <circle cx="12" cy="12" r="4" />
+                                  <path d="M12 2v4m0 12v4" />
+                                </svg>
+                                <span className="text-[12px] font-medium text-base-content/50">Pakeitimai {group.dateLabel}</span>
+                              </div>
+                              {/* Bordered card with rows */}
+                              <div className="rounded-lg border border-base-content/10 overflow-hidden">
+                                {group.items.map((item, ii) => {
+                                  const { v, idx } = item;
+                                  const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
+                                  const isConfirming = revertConfirm?.id === v.id;
+                                  const isExpanded = expandedVersionId === v.id;
+                                  return (
+                                    <div key={v.id} className={`${ii > 0 ? 'border-t border-base-content/10' : ''} ${isConfirming ? 'bg-warning/5' : ''}`}>
+                                      {/* Row */}
+                                      <div
+                                        className={`px-3 py-2.5 cursor-pointer transition-colors duration-100 ${isExpanded ? 'bg-base-content/[0.03]' : 'hover:bg-base-content/[0.03]'}`}
+                                        onClick={() => {
+                                          if (isExpanded) {
+                                            setExpandedVersionId(null);
+                                            setExpandedDiff(null);
+                                          } else {
+                                            const nextHtml = idx === 0
+                                              ? getDefaultTemplate()
+                                              : templateVersionHistory[idx - 1].html_content;
+                                            const segments = computeHtmlDiff(v.html_content, nextHtml);
+                                            setExpandedDiff(segments);
+                                            setExpandedVersionId(v.id);
+                                          }
+                                        }}
+                                      >
+                                        <div className="text-[12.5px] font-medium text-base-content/80 leading-snug">
+                                          {v.change_description || 'Šablono pakeitimas'}
+                                        </div>
+                                        <div className="mt-1 text-[11px] text-base-content/40">
+                                          {firstName} pakeitė {relativeTime(v.created_at)}
+                                        </div>
+                                      </div>
+
+                                      {/* Expanded diff + actions */}
+                                      {isExpanded && expandedDiff && (
+                                        <div className="px-3 pb-3 border-t border-base-content/5">
+                                          <div className="mt-2 rounded-md bg-base-200/60 p-2.5 max-h-48 overflow-auto">
+                                            <div className="text-[11px] leading-relaxed" style={{ wordBreak: 'break-word' }}>
+                                              {expandedDiff.every(s => s.type === 'same') ? (
+                                                <span className="text-base-content/40">Tik formatavimo pakeitimai (tekstas nepasikeitė)</span>
+                                              ) : (
+                                                expandedDiff.map((seg, si) => {
+                                                  if (seg.type === 'same') {
+                                                    const words = seg.text.split(' ');
+                                                    if (words.length > 8) {
+                                                      return (
+                                                        <span key={si} className="text-base-content/30">
+                                                          {words.slice(0, 3).join(' ')}{' '}
+                                                          <span className="text-base-content/20">···</span>{' '}
+                                                          {words.slice(-3).join(' ')}{' '}
+                                                        </span>
+                                                      );
+                                                    }
+                                                    return <span key={si} className="text-base-content/30">{seg.text} </span>;
+                                                  }
+                                                  if (seg.type === 'added') {
+                                                    return (
+                                                      <span key={si} style={{ background: '#dcfce7', color: '#166534', borderRadius: '2px', padding: '0 2px' }}>
+                                                        {seg.text}
+                                                      </span>
+                                                    );
+                                                  }
+                                                  return (
+                                                    <span key={si} style={{ background: '#fee2e2', color: '#991b1b', textDecoration: 'line-through', borderRadius: '2px', padding: '0 2px' }}>
+                                                      {seg.text}
+                                                    </span>
+                                                  );
+                                                })
+                                              )}
+                                            </div>
+                                          </div>
+                                          <div className="mt-2 flex items-center gap-3">
+                                            {isConfirming ? (
+                                              <>
+                                                <span className="text-[11px] text-warning-content/70">Grįžti prie šios versijos?</span>
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); handleRevertTemplate(v.id); }}
+                                                  disabled={templateSaving}
+                                                  className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                                                >
+                                                  {templateSaving ? '...' : 'Taip'}
+                                                </button>
+                                                <button
+                                                  onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); }}
+                                                  className="text-[11px] px-2 py-0.5 rounded hover:bg-base-content/5 text-base-content/40 transition-colors"
+                                                >
+                                                  Ne
+                                                </button>
+                                              </>
+                                            ) : (
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); setRevertConfirm({ id: v.id, versionNumber: v.version_number }); }}
+                                                className="text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
+                                              >
+                                                Grįžti prie šios versijos
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                    </div>
+                    {/* Restore default - prominent at bottom */}
+                    {isGlobalTemplateCustomized() && (
+                      <div className="px-3 py-3 border-t border-base-content/10 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            if (confirm('Ar tikrai norite atkurti pradinį šabloną?\n\nDabartiniai pakeitimai bus išsaugoti istorijoje.')) {
+                              const userName = user.full_name || user.email;
+                              resetGlobalTemplate(user.id, userName);
+                              setTemplateVersion(v => v + 1);
+                              setShowTemplateEditor(false);
+                            }
+                          }}
+                          className="w-full text-[12px] font-medium py-2 px-3 rounded-lg transition-all duration-150 border border-error/20 text-error/70 hover:bg-error/10 hover:text-error hover:border-error/30"
+                        >
+                          Atkurti pradinį šabloną
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
