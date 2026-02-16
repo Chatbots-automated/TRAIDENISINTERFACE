@@ -122,7 +122,7 @@ export default function Layout({
               </div>
               <div className={`transition-opacity duration-300 ${sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
                 <h1 className="text-base font-semibold text-macos-gray-900 tracking-macos-tight whitespace-nowrap">Traidenis</h1>
-                <p className="text-xs text-macos-gray-500 whitespace-nowrap">Žinių bazė</p>
+                <p className="text-xs text-macos-gray-500 whitespace-nowrap">Duomenų bazė</p>
               </div>
             </div>
             {/* Mobile close button */}

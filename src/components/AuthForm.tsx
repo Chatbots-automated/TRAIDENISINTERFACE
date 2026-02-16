@@ -70,7 +70,7 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
               Prisijungti prie Traidenis
             </h1>
             <p className="text-sm" style={{ color: colors.text.secondary }}>
-              Žinių bazė
+              Duomenų bazė
             </p>
           </div>
 
