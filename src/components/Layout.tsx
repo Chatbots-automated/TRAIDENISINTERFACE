@@ -234,50 +234,47 @@ export default function Layout({
                   {/* Dropup Menu - anchored to Nustatymai button */}
                   {!sidebarCollapsed && settingsDropdownOpen && (
                     <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up">
-                      <ul className="menu bg-white rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
+                      <div className="bg-white rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1 flex flex-col">
                         {!user.is_admin && (
                           <>
-                            <li>
-                              <div
-                                onClick={() => onToggleNaujokas?.()}
-                                className="flex items-center justify-between cursor-pointer"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span className="text-base">🎓</span>
-                                  <span>Naujokas</span>
-                                </div>
-                                <div
-                                  className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                                    naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
-                                  }`}
-                                >
-                                  <div
-                                    className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
-                                      naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
-                                    }`}
-                                  />
-                                </div>
+                            <div
+                              onClick={() => onToggleNaujokas?.()}
+                              className="flex items-center justify-between cursor-pointer px-3 py-1.5 mx-1 rounded-md hover:bg-black/5 transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">🎓</span>
+                                <span className="text-sm">Naujokas</span>
                               </div>
-                            </li>
-                            <li className="divider my-1"></li>
+                              <div
+                                className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
+                                  naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
+                                }`}
+                              >
+                                <div
+                                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
+                                    naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                            <div className="border-t border-black/5 my-1 mx-1"></div>
                           </>
                         )}
-                        <li>
-                          <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
-                            <Settings className="w-4 h-4" />
-                            <span>Nustatymai</span>
-                          </button>
-                        </li>
-                        <li>
-                          <button
-                            onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                            className="text-error hover:bg-error/10"
-                          >
-                            <LogOut className="w-4 h-4" />
-                            <span>Atsijungti</span>
-                          </button>
-                        </li>
-                      </ul>
+                        <button
+                          onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}
+                          className="flex items-center gap-2 px-3 py-1.5 mx-1 rounded-md hover:bg-black/5 transition-colors text-sm w-auto text-left"
+                        >
+                          <Settings className="w-4 h-4" />
+                          <span>Nustatymai</span>
+                        </button>
+                        <button
+                          onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
+                          className="flex items-center gap-2 px-3 py-1.5 mx-1 rounded-md text-error hover:bg-error/10 transition-colors text-sm w-auto text-left"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Atsijungti</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                   <button
