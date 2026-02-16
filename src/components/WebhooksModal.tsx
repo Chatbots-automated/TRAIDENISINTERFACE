@@ -41,7 +41,7 @@ const WEBHOOK_GROUPS: WebhookGroup[] = [
     category: 'nestandartiniai',
     label: 'Nestandartiniai Gaminiai',
     icon: <Package className="w-4 h-4" />,
-    description: 'EML upload and project management webhooks',
+    description: 'EML įkėlimo ir projektų valdymo webhook\'ai',
     webhookKeys: [
       'n8n_upload_new',
       'n8n_find_similar',
@@ -50,9 +50,9 @@ const WEBHOOK_GROUPS: WebhookGroup[] = [
   },
   {
     category: 'sdk_tools',
-    label: 'SDK Tools',
+    label: 'SDK įrankiai',
     icon: <Settings className="w-4 h-4" />,
-    description: 'Anthropic SDK chat tool webhooks and commercial offer generation',
+    description: 'SDK pokalbių įrankių webhook\'ai ir komercinių pasiūlymų generavimas',
     webhookKeys: [
       'n8n_get_products',
       'n8n_get_prices',
@@ -168,7 +168,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
   };
 
   const getStatusText = (status: number) => {
-    if (status === 0) return 'Connection Error';
+    if (status === 0) return 'Ryšio klaida';
     if (status >= 200 && status < 300) return `${status} OK`;
     return `${status} Error`;
   };
@@ -208,10 +208,10 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
               </div>
               <div>
                 <h2 className="text-xl font-semibold" style={{ color: colors.text.primary }}>
-                  Webhook Configuration
+                  Webhook konfigūracija
                 </h2>
                 <p className="text-sm mt-0.5" style={{ color: colors.text.secondary }}>
-                  Manage your n8n webhook endpoints
+                  Tvarkykite n8n webhook galinio taško nuorodas
                 </p>
               </div>
             </div>
@@ -300,10 +300,10 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
               <table className="table-striped table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th>Pavadinimas</th>
                     <th>URL</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>Būsena</th>
+                    <th>Veiksmai</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -346,7 +346,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                           <td className="font-medium text-sm whitespace-nowrap">{webhook.webhook_name}</td>
                           <td className="max-w-xs">
                             <code className="text-xs font-mono text-base-content/60 truncate block">
-                              {webhook.url || 'Not configured'}
+                              {webhook.url || 'Nesukonfigūruota'}
                             </code>
                           </td>
                           <td className="whitespace-nowrap">
@@ -365,7 +365,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                           <td>
                             <div className="flex items-center gap-1">
                               <button onClick={() => handleEdit(webhook)} className="btn btn-soft btn-sm btn-xs">
-                                Edit
+                                Redaguoti
                               </button>
                               <button
                                 onClick={() => handleTest(webhook)}
@@ -373,9 +373,9 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                                 className="btn btn-primary btn-sm btn-xs"
                               >
                                 {testing === webhook.id ? (
-                                  <><Loader2 className="w-3 h-3 animate-spin" /><span>Test</span></>
+                                  <><Loader2 className="w-3 h-3 animate-spin" /><span>Testas</span></>
                                 ) : (
-                                  <><Zap className="w-3 h-3" /><span>Test</span></>
+                                  <><Zap className="w-3 h-3" /><span>Testas</span></>
                                 )}
                               </button>
                               <a
@@ -383,7 +383,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="btn btn-circle btn-text btn-sm btn-xs"
-                                title="Open in browser"
+                                title="Atidaryti naršyklėje"
                               >
                                 <ExternalLink className="w-3.5 h-3.5" />
                               </a>
@@ -408,7 +408,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
             <div className="flex items-center space-x-2">
               <Database className="w-3.5 h-3.5" />
               <span>
-                {filteredWebhooks.length} webhook{filteredWebhooks.length !== 1 ? 's' : ''} in this category
+                {filteredWebhooks.length} webhook'{filteredWebhooks.length !== 1 ? 'ų' : 'as'} šioje kategorijoje
               </span>
             </div>
             <button

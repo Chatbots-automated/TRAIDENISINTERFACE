@@ -400,7 +400,7 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
                 onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
                 onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
               >
-                {showAll ? 'Show less' : `Show ${hiddenCount} more`}
+                {showAll ? 'Rodyti mažiau' : `Rodyti dar ${hiddenCount}`}
               </button>
             </div>
           )}
@@ -447,7 +447,7 @@ function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: numb
           onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
           onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
         >
-          {openBracket}<span style={{ color: '#b0aba5' }}>{isArray ? `${entries.length} items` : '...'}</span>{closeBracket}
+          {openBracket}<span style={{ color: '#b0aba5' }}>{isArray ? `${entries.length} elem.` : '...'}</span>{closeBracket}
         </span>
       </span>
     );
@@ -585,7 +585,7 @@ function CodeBlock({ codeBlock }: { codeBlock: CodeBlock }) {
             color: 'white'
           }}
         >
-          {copied ? 'Copied!' : 'Copy'}
+          {copied ? 'Nukopijuota!' : 'Kopijuoti'}
         </button>
       </div>
       <div className="p-4 overflow-x-auto">

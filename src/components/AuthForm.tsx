@@ -67,10 +67,10 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           {/* Header */}
           <div className="text-center mb-8">
             <h1 className="text-2xl font-semibold mb-2" style={{ color: colors.text.primary }}>
-              Log into Traidenis
+              Prisijungti prie Traidenis
             </h1>
             <p className="text-sm" style={{ color: colors.text.secondary }}>
-              High-Performance Knowledge Base
+              Duomenų bazė
             </p>
           </div>
 
@@ -79,13 +79,13 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
             {/* Email Input */}
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>
-                Email
+                El. paštas
               </label>
               <input
                 type="email"
                 value={formData.email}
                 onChange={(e) => handleInputChange('email', e.target.value)}
-                placeholder="email@example.com"
+                placeholder="el.pastas@pavyzdys.lt"
                 className="w-full px-4 py-2.5 rounded-lg border focus:outline-none"
                 style={{
                   borderColor: colors.border.default,
@@ -101,14 +101,14 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
             {/* Password Input */}
             <div>
               <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>
-                Password
+                Slaptažodis
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={formData.password}
                   onChange={(e) => handleInputChange('password', e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder="Įveskite slaptažodį"
                   className="w-full px-4 py-2.5 rounded-lg border focus:outline-none pr-12"
                   style={{
                     borderColor: colors.border.default,
@@ -155,10 +155,10 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
               {loading ? (
                 <div className="flex items-center justify-center space-x-2">
                   <div className="animate-spin rounded-full h-5 w-5 border-2 border-white/30 border-t-white" />
-                  <span>Signing in...</span>
+                  <span>Jungiamasi...</span>
                 </div>
               ) : (
-                'Log in'
+                'Prisijungti'
               )}
             </button>
           </form>

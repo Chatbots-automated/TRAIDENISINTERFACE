@@ -62,7 +62,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       setUsers(data || []);
     } catch (error: any) {
       console.error('Error loading users:', error);
-      setError('Failed to load users');
+      setError('Nepavyko įkelti naudotojų');
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
   const handleCreateKomanda = async () => {
     if (!newUserData.email.trim() || !newUserData.password.trim()) {
-      setError('Email and password are required');
+      setError('El. paštas ir slaptažodis yra privalomi');
       return;
     }
 
@@ -125,12 +125,12 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
   const handleCreateVadybininkas = async () => {
     if (!newVadybininkas.fullName.trim()) {
-      setError('Full name is required');
+      setError('Vardas ir pavardė yra privalomi');
       return;
     }
 
     if (!newVadybininkas.kodas.trim()) {
-      setError('Kodas is required');
+      setError('Kodas yra privalomas');
       return;
     }
 
@@ -183,7 +183,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    if (!confirm('Ar tikrai norite ištrinti šį naudotoją?')) return;
 
     try {
       const { error } = await deleteUserByAdmin(userId);
@@ -209,10 +209,10 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         <div className="text-center">
           <Shield className="w-16 h-16 mx-auto mb-4" style={{ color: colors.status.errorText }} />
           <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
-            Access Denied
+            Prieiga uždrausta
           </h3>
           <p style={{ color: colors.text.secondary }}>
-            You need admin privileges to access this page
+            Jums reikia administratoriaus teisių
           </p>
         </div>
       </div>
@@ -228,8 +228,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       }}>
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>User Management</h2>
-            <p className="text-sm" style={{ color: colors.text.secondary }}>Create and manage user accounts</p>
+            <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>Naudotojų valdymas</h2>
+            <p className="text-sm" style={{ color: colors.text.secondary }}>Kurkite ir valdykite naudotojų paskyras</p>
           </div>
           <div className="flex items-center gap-3">
             {/* Role Filter */}
@@ -247,7 +247,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               >
                 <Filter className="w-4 h-4" />
                 <span className="text-sm">
-                  {roleFilter === 'all' ? 'All Roles' : roleFilter}
+                  {roleFilter === 'all' ? 'Visos rolės' : roleFilter}
                 </span>
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -268,7 +268,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.secondary}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'white'}
                   >
-                    <span>All Roles</span>
+                    <span>Visos rolės</span>
                     {roleFilter === 'all' && (
                       <Check className="w-4 h-4" style={{ color: colors.interactive.accent }} />
                     )}
@@ -311,7 +311,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
             >
               <Plus className="w-4 h-4" />
-              <span>Add User</span>
+              <span>Pridėti naudotoją</span>
             </button>
           </div>
         </div>
@@ -346,10 +346,10 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
-                      {createMode === 'select' ? 'Add User' : createMode === 'komanda' ? 'Add Team Member' : 'Add Vadybininkas'}
+                      {createMode === 'select' ? 'Pridėti naudotoją' : createMode === 'komanda' ? 'Pridėti komandos narį' : 'Pridėti vadybininką'}
                     </h2>
                     <p className="text-sm mt-0.5" style={{ color: colors.text.tertiary }}>
-                      {createMode === 'select' ? 'Choose user type' : createMode === 'komanda' ? 'Set up account credentials' : 'Kodas is auto-generated from the name'}
+                      {createMode === 'select' ? 'Pasirinkite naudotojo tipą' : createMode === 'komanda' ? 'Nustatykite paskyros duomenis' : 'Kodas generuojamas automatiškai'}
                     </p>
                   </div>
                 </div>
@@ -377,7 +377,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
                   <div>
                     <p className="text-sm font-semibold" style={{ color: colors.text.primary }}>Komanda</p>
-                    <p className="text-xs" style={{ color: colors.text.tertiary }}>App user with email, password, and role</p>
+                    <p className="text-xs" style={{ color: colors.text.tertiary }}>Sistemos naudotojas su el. paštu, slaptažodžiu ir role</p>
                   </div>
                 </button>
                 <button
@@ -392,7 +392,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
                   <div>
                     <p className="text-sm font-semibold" style={{ color: colors.text.primary }}>Vadybininkas</p>
-                    <p className="text-xs" style={{ color: colors.text.tertiary }}>Manager with name and kodas</p>
+                    <p className="text-xs" style={{ color: colors.text.tertiary }}>Vadybininkas su vardu ir kodu</p>
                   </div>
                 </button>
               </div>
@@ -414,7 +414,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Email</label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>El. paštas</label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
                       <input
@@ -432,14 +432,14 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Password</label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Slaptažodis</label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
                       <input
                         type="password"
                         value={newUserData.password}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
-                        placeholder="Enter password"
+                        placeholder="Įveskite slaptažodį"
                         className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
                         style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
                         onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
@@ -449,14 +449,14 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Display Name</label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Rodomas vardas</label>
                     <div className="relative">
                       <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
                       <input
                         type="text"
                         value={newUserData.displayName}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
-                        placeholder="Full Name (optional)"
+                        placeholder="Vardas Pavardė (neprivaloma)"
                         className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
                         style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
                         onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
@@ -466,7 +466,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Role</label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Rolė</label>
                     <div className="relative">
                       <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
                       <select
@@ -477,7 +477,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
                         onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
                       >
-                        <option value="">No role (optional)</option>
+                        <option value="">Be rolės (neprivaloma)</option>
                         {availableRoles.map((role) => (
                           <option key={role} value={role}>{role}</option>
                         ))}
@@ -496,10 +496,10 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     />
                     <div>
                       <label htmlFor="isAdmin" className="text-sm font-medium cursor-pointer" style={{ color: colors.text.secondary }}>
-                        Admin privileges
+                        Administratoriaus teisės
                       </label>
                       <p className="text-xs" style={{ color: colors.text.tertiary }}>
-                        Grants access to system settings and user management
+                        Suteikia prieigą prie sistemos nustatymų ir naudotojų valdymo
                       </p>
                     </div>
                   </div>
@@ -509,7 +509,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
                     onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >Cancel</button>
+                  >Atšaukti</button>
                   <button
                     onClick={handleCreateKomanda}
                     disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
@@ -519,9 +519,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
                   >
                     {saving ? (
-                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Creating...</span></>
+                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Kuriama...</span></>
                     ) : (
-                      <><UserPlus className="w-4 h-4" /><span>Create User</span></>
+                      <><UserPlus className="w-4 h-4" /><span>Sukurti naudotoją</span></>
                     )}
                   </button>
                 </div>
@@ -544,7 +544,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   )}
 
                   <div>
-                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Full Name</label>
+                    <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Vardas Pavardė</label>
                     <div className="relative">
                       <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
                       <input
@@ -580,7 +580,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       />
                     </div>
                     <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
-                      Auto-calculated from name. You can change it.
+                      Automatiškai apskaičiuotas pagal vardą. Galite pakeisti.
                     </p>
                   </div>
                 </div>
@@ -589,7 +589,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
                     onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >Cancel</button>
+                  >Atšaukti</button>
                   <button
                     onClick={handleCreateVadybininkas}
                     disabled={saving || !newVadybininkas.fullName.trim() || !newVadybininkas.kodas.trim()}
@@ -599,9 +599,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
                   >
                     {saving ? (
-                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Creating...</span></>
+                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Kuriama...</span></>
                     ) : (
-                      <><UserPlus className="w-4 h-4" /><span>Add</span></>
+                      <><UserPlus className="w-4 h-4" /><span>Pridėti</span></>
                     )}
                   </button>
                 </div>
@@ -625,7 +625,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       {success && (
         <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
           <Check className="w-4 h-4 flex-shrink-0" />
-          <span>Operation completed successfully!</span>
+          <span>Operacija sėkmingai atlikta!</span>
         </div>
       )}
 
@@ -641,10 +641,10 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
           <div className="text-center py-12">
             <Users className="w-16 h-16 mx-auto mb-4" style={{ color: colors.text.tertiary }} />
             <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
-              {users.length === 0 ? 'No users yet' : 'No users match the filter'}
+              {users.length === 0 ? 'Naudotojų dar nėra' : 'Nė vienas naudotojas neatitinka filtro'}
             </h3>
             <p className="mb-6" style={{ color: colors.text.secondary }}>
-              {users.length === 0 ? 'Create your first user to get started' : 'Try changing the filter to see users'}
+              {users.length === 0 ? 'Sukurkite pirmą naudotoją' : 'Pabandykite pakeisti filtrą'}
             </p>
             {users.length === 0 && (
               <button
@@ -657,7 +657,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
                 onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
               >
-                Add User
+                Pridėti naudotoją
               </button>
             )}
           </div>
@@ -666,12 +666,12 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <table className="table-striped table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Role</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Actions</th>
+                  <th>Vardas</th>
+                  <th>El. paštas</th>
+                  <th>Rolė</th>
+                  <th>Statusas</th>
+                  <th>Sukurta</th>
+                  <th>Veiksmai</th>
                 </tr>
               </thead>
               <tbody>
@@ -683,7 +683,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                           <div className="space-y-4 py-2">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Display Name</label>
+                                <label className="block text-sm font-medium mb-2" style={{ color: colors.text.secondary }}>Rodomas vardas</label>
                                 <input
                                   type="text"
                                   value={editingUser.display_name || ''}
@@ -700,16 +700,16 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                                   className="checkbox checkbox-sm checkbox-primary"
                                 />
                                 <label htmlFor={`editAdmin-${userData.id}`} className="text-sm font-medium" style={{ color: colors.text.secondary }}>
-                                  Admin privileges
+                                  Administratoriaus teisės
                                 </label>
                               </div>
                             </div>
                             <div className="flex items-center space-x-2">
                               <button onClick={handleUpdateUser} disabled={saving} className="btn btn-primary btn-sm">
                                 {saving ? <span className="loading loading-spinner loading-xs"></span> : <Save className="w-4 h-4" />}
-                                <span>Save</span>
+                                <span>Išsaugoti</span>
                               </button>
-                              <button onClick={() => setEditingUser(null)} className="btn btn-soft btn-sm">Cancel</button>
+                              <button onClick={() => setEditingUser(null)} className="btn btn-soft btn-sm">Atšaukti</button>
                             </div>
                           </div>
                         </td>
@@ -729,9 +729,9 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         <td className="text-sm text-base-content/60">{userData.role || '—'}</td>
                         <td>
                           {userData.is_admin ? (
-                            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Admin</span>
+                            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Admin.</span>
                           ) : (
-                            <span className="text-sm" style={{ color: colors.text.tertiary }}>User</span>
+                            <span className="text-sm" style={{ color: colors.text.tertiary }}>Naudotojas</span>
                           )}
                         </td>
                         <td className="whitespace-nowrap">{new Date(userData.created_at).toLocaleDateString()}</td>
@@ -740,21 +740,21 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                             <button
                               onClick={() => setExpandedUserId(expandedUserId === userData.id ? null : userData.id)}
                               className="btn btn-circle btn-text btn-sm"
-                              title="View details"
+                              title="Peržiūrėti"
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => setEditingUser(userData)}
                               className="btn btn-circle btn-text btn-sm"
-                              title="Edit user"
+                              title="Redaguoti naudotoją"
                             >
                               <UserIcon className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleDeleteUser(userData.id)}
                               className="btn btn-circle btn-text btn-sm text-error"
-                              title="Delete user"
+                              title="Ištrinti naudotoją"
                               disabled={userData.id === user.id}
                             >
                               <Trash2 className="w-4 h-4" />
@@ -768,23 +768,23 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         <td colSpan={6} className="bg-base-200/50">
                           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 py-1">
                             <div>
-                              <label className="text-xs font-medium text-base-content/50">Full Name</label>
+                              <label className="text-xs font-medium text-base-content/50">Vardas Pavardė</label>
                               <p className="text-sm">{userData.full_name || '-'}</p>
                             </div>
                             <div>
-                              <label className="text-xs font-medium text-base-content/50">Email</label>
+                              <label className="text-xs font-medium text-base-content/50">El. paštas</label>
                               <p className="text-sm">{userData.email}</p>
                             </div>
                             <div>
-                              <label className="text-xs font-medium text-base-content/50">Phone</label>
+                              <label className="text-xs font-medium text-base-content/50">Telefonas</label>
                               <p className="text-sm">{userData.phone || '-'}</p>
                             </div>
                             <div>
-                              <label className="text-xs font-medium text-base-content/50">Code (Kodas)</label>
+                              <label className="text-xs font-medium text-base-content/50">Kodas</label>
                               <p className="text-sm">{userData.kodas || '-'}</p>
                             </div>
                             <div>
-                              <label className="text-xs font-medium text-base-content/50">Role</label>
+                              <label className="text-xs font-medium text-base-content/50">Rolė</label>
                               <p className="text-sm">{userData.role || '-'}</p>
                             </div>
                           </div>
@@ -806,10 +806,10 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <table className="table-striped table">
                 <thead>
                   <tr>
-                    <th>Name</th>
+                    <th>Vardas</th>
                     <th>Kodas</th>
-                    <th>Created</th>
-                    <th>Actions</th>
+                    <th>Sukurta</th>
+                    <th>Veiksmai</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -829,7 +829,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       <td>
                         <button
                           onClick={async () => {
-                            if (!confirm(`Delete ${v.full_name}?`)) return;
+                            if (!confirm(`Ištrinti ${v.full_name}?`)) return;
                             try {
                               const { error } = await deleteVadybininkas(v.id);
                               if (error) throw error;
@@ -839,7 +839,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                             }
                           }}
                           className="btn btn-circle btn-text btn-sm text-error"
-                          title="Delete"
+                          title="Ištrinti"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

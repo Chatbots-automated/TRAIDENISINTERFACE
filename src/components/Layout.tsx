@@ -122,7 +122,7 @@ export default function Layout({
               </div>
               <div className={`transition-opacity duration-300 ${sidebarCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'}`}>
                 <h1 className="text-base font-semibold text-macos-gray-900 tracking-macos-tight whitespace-nowrap">Traidenis</h1>
-                <p className="text-xs text-macos-gray-500 whitespace-nowrap">Knowledge Base</p>
+                <p className="text-xs text-macos-gray-500 whitespace-nowrap">Duomenų bazė</p>
               </div>
             </div>
             {/* Mobile close button */}
@@ -166,10 +166,10 @@ export default function Layout({
                 <button
                   onClick={() => onViewModeChange?.('documents')}
                   className={viewMode === 'documents' ? 'active' : ''}
-                  title={sidebarCollapsed ? 'Documents' : undefined}
+                  title={sidebarCollapsed ? 'Dokumentai' : undefined}
                 >
                   <Database className="w-4 h-4" />
-                  {!sidebarCollapsed && <span className="whitespace-nowrap">Documents</span>}
+                  {!sidebarCollapsed && <span className="whitespace-nowrap">Dokumentai</span>}
                 </button>
               </li>
               <li>
@@ -225,7 +225,7 @@ export default function Layout({
                     <li>
                       <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
                         <Settings className="w-4 h-4" />
-                        <span>Settings</span>
+                        <span>Nustatymai</span>
                       </button>
                     </li>
                     <li>
@@ -234,7 +234,7 @@ export default function Layout({
                         className="text-error hover:bg-error/10"
                       >
                         <LogOut className="w-4 h-4" />
-                        <span>Sign Out</span>
+                        <span>Atsijungti</span>
                       </button>
                     </li>
                   </ul>
@@ -242,7 +242,7 @@ export default function Layout({
               )}
 
               {user.is_admin && !sidebarCollapsed && (
-                <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Admin</div>
+                <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Valdymas</div>
               )}
               <ul className="menu px-2 pb-1">
                 {/* Admin buttons */}
@@ -271,10 +271,10 @@ export default function Layout({
                       <button
                         onClick={() => onViewModeChange?.('users')}
                         className={viewMode === 'users' ? 'active' : ''}
-                        title={sidebarCollapsed ? 'Users' : undefined}
+                        title={sidebarCollapsed ? 'Naudotojai' : undefined}
                       >
                         <Users className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Users</span>}
+                        {!sidebarCollapsed && <span className="whitespace-nowrap">Naudotojai</span>}
                       </button>
                     </li>
                   </>
@@ -283,16 +283,16 @@ export default function Layout({
                 <li>
                   <button
                     onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
-                    title={sidebarCollapsed ? 'Settings' : undefined}
+                    title={sidebarCollapsed ? 'Nustatymai' : undefined}
                   >
                     <Settings className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Settings</span>}
+                    {!sidebarCollapsed && <span className="whitespace-nowrap">Nustatymai</span>}
                   </button>
                 </li>
                 <li className="hidden lg:flex">
                   <button
                     onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                    title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
                   >
                     {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
                   </button>
