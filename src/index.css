@@ -180,6 +180,12 @@
     padding-inline: 0 !important;
   }
 
+  /* Footer buttons - matches FlyonUI .menu li > button appearance without using .menu */
+  .sidebar-footer-btn {
+    @apply flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer w-full text-left;
+    @apply hover:bg-base-content/10 transition-colors;
+  }
+
   /* Legacy vf sidebar (mapped to macOS glassmorphism) */
   .vf-sidebar {
     background: rgba(255, 255, 255, 0.85);

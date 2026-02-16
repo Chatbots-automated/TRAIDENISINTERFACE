@@ -194,50 +194,40 @@ export default function Layout({
               {user.is_admin && !sidebarCollapsed && (
                 <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Valdymas</div>
               )}
-              <ul className="menu px-2 pb-1">
+              <div className="flex flex-col gap-0.5 px-2 pb-1">
                 {/* Admin buttons */}
                 {user.is_admin && (
                   <>
-                    <li>
-                      <button
-                        onClick={() => setWebhooksOpen(true)}
-                        title={sidebarCollapsed ? 'Webhooks' : undefined}
-                      >
-                        <Zap className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => onViewModeChange?.('instrukcijos')}
-                        className={viewMode === 'instrukcijos' ? 'active' : ''}
-                        title={sidebarCollapsed ? 'Instrukcijos' : undefined}
-                      >
-                        <BookOpen className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => onViewModeChange?.('users')}
-                        className={viewMode === 'users' ? 'active' : ''}
-                        title={sidebarCollapsed ? 'Naudotojai' : undefined}
-                      >
-                        <Users className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Naudotojai</span>}
-                      </button>
-                    </li>
+                    <button
+                      onClick={() => setWebhooksOpen(true)}
+                      title={sidebarCollapsed ? 'Webhooks' : undefined}
+                      className={`sidebar-footer-btn ${sidebarCollapsed ? 'justify-center !px-0' : ''}`}
+                    >
+                      <Zap className="w-4 h-4" />
+                      {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
+                    </button>
+                    <button
+                      onClick={() => onViewModeChange?.('instrukcijos')}
+                      className={`sidebar-footer-btn ${sidebarCollapsed ? 'justify-center !px-0' : ''} ${viewMode === 'instrukcijos' ? 'bg-primary/10 text-primary' : ''}`}
+                      title={sidebarCollapsed ? 'Instrukcijos' : undefined}
+                    >
+                      <BookOpen className="w-4 h-4" />
+                      {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
+                    </button>
+                    <button
+                      onClick={() => onViewModeChange?.('users')}
+                      className={`sidebar-footer-btn ${sidebarCollapsed ? 'justify-center !px-0' : ''} ${viewMode === 'users' ? 'bg-primary/10 text-primary' : ''}`}
+                      title={sidebarCollapsed ? 'Naudotojai' : undefined}
+                    >
+                      <Users className="w-4 h-4" />
+                      {!sidebarCollapsed && <span className="whitespace-nowrap">Naudotojai</span>}
+                    </button>
                   </>
                 )}
-                {/* Settings + Collapse/Expand */}
-                <li
-                  className="relative"
-                  ref={settingsDropdownRef}
-                  style={settingsDropdownOpen ? { pointerEvents: 'none' } : undefined}
-                >
-                  {/* Dropup Menu - anchored to Nustatymai button */}
+                {/* Settings + Dropdown */}
+                <div className="relative" ref={settingsDropdownRef}>
                   {!sidebarCollapsed && settingsDropdownOpen && (
-                    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up" style={{ pointerEvents: 'auto' }}>
+                    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up">
                       <div className="bg-white rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1 flex flex-col">
                         {!user.is_admin && (
                           <>
@@ -284,21 +274,21 @@ export default function Layout({
                   <button
                     onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
                     title={sidebarCollapsed ? 'Nustatymai' : undefined}
-                    style={settingsDropdownOpen ? { pointerEvents: 'auto' } : undefined}
+                    className={`sidebar-footer-btn w-full ${sidebarCollapsed ? 'justify-center !px-0' : ''}`}
                   >
                     <Settings className="w-4 h-4" />
                     {!sidebarCollapsed && <span className="whitespace-nowrap">Nustatymai</span>}
                   </button>
-                </li>
-                <li className="hidden lg:flex">
-                  <button
-                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                    title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
-                  >
-                    {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
-                  </button>
-                </li>
-              </ul>
+                </div>
+                {/* Collapse/Expand */}
+                <button
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
+                  className={`sidebar-footer-btn hidden lg:flex ${sidebarCollapsed ? 'justify-center !px-0' : ''}`}
+                >
+                  {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             {/* User Info - Absolute Bottom */}
