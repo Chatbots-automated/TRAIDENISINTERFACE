@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
-import { renderTemplate, getDefaultTemplate, getUnfilledVariables } from '../lib/documentTemplateService';
+import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
@@ -66,7 +66,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     );
 
     const srcdoc = useMemo(() => {
-      return renderedHtml.replace(
+      const sanitized = sanitizeHtmlForIframe(renderedHtml);
+      return sanitized.replace(
         '</style>',
         `
       /* Preview host overrides */
@@ -371,7 +372,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               ref={iframeRef}
               srcDoc={srcdoc}
               title="Dokumento peržiūra"
-              sandbox="allow-same-origin allow-modals"
+              /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
+                 content is sanitized by sanitizeHtmlForIframe() instead */
               scrolling="no"
               style={{
                 width: '595px',
