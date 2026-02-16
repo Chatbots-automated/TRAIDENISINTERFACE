@@ -193,7 +193,7 @@ export default function Layout({
             <div className="relative" ref={settingsDropdownRef}>
               {/* Dropup Menu - only in expanded state */}
               {!sidebarCollapsed && settingsDropdownOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
+                <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up">
                   <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
                     {!user.is_admin && (
                       <>
