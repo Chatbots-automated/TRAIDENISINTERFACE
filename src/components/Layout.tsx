@@ -230,16 +230,20 @@ export default function Layout({
                   </>
                 )}
                 {/* Settings + Collapse/Expand */}
-                <li className="relative" ref={settingsDropdownRef}>
+                <li
+                  className="relative"
+                  ref={settingsDropdownRef}
+                  style={settingsDropdownOpen ? { pointerEvents: 'none' } : undefined}
+                >
                   {/* Dropup Menu - anchored to Nustatymai button */}
                   {!sidebarCollapsed && settingsDropdownOpen && (
-                    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up">
+                    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up" style={{ pointerEvents: 'auto' }}>
                       <div className="bg-white rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1 flex flex-col">
                         {!user.is_admin && (
                           <>
                             <div
                               onClick={() => onToggleNaujokas?.()}
-                              className="flex items-center justify-between cursor-pointer px-3 py-1.5 mx-1 rounded-md hover:bg-black/5 transition-colors"
+                              className="flex items-center justify-between cursor-pointer px-3 py-2 mx-1 rounded-lg hover:bg-black/5 transition-colors"
                             >
                               <div className="flex items-center gap-2">
                                 <span className="text-base">🎓</span>
@@ -262,14 +266,14 @@ export default function Layout({
                         )}
                         <button
                           onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}
-                          className="flex items-center gap-2 px-3 py-1.5 mx-1 rounded-md hover:bg-black/5 transition-colors text-sm w-auto text-left"
+                          className="flex items-center gap-2 px-3 py-2 mx-1 rounded-lg hover:bg-black/5 transition-colors text-sm w-auto text-left"
                         >
                           <Settings className="w-4 h-4" />
                           <span>Nustatymai</span>
                         </button>
                         <button
                           onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                          className="flex items-center gap-2 px-3 py-1.5 mx-1 rounded-md text-error hover:bg-error/10 transition-colors text-sm w-auto text-left"
+                          className="flex items-center gap-2 px-3 py-2 mx-1 rounded-lg text-error hover:bg-error/10 transition-colors text-sm w-auto text-left"
                         >
                           <LogOut className="w-4 h-4" />
                           <span>Atsijungti</span>
@@ -280,6 +284,7 @@ export default function Layout({
                   <button
                     onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
                     title={sidebarCollapsed ? 'Nustatymai' : undefined}
+                    style={settingsDropdownOpen ? { pointerEvents: 'auto' } : undefined}
                   >
                     <Settings className="w-4 h-4" />
                     {!sidebarCollapsed && <span className="whitespace-nowrap">Nustatymai</span>}
