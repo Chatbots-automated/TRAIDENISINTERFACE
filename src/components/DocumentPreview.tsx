@@ -372,7 +372,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               ref={iframeRef}
               srcDoc={srcdoc}
               title="Dokumento peržiūra"
-              sandbox="allow-same-origin allow-scripts allow-modals"
+              /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
+                 content is sanitized by sanitizeHtmlForIframe() instead */
               scrolling="no"
               style={{
                 width: '595px',

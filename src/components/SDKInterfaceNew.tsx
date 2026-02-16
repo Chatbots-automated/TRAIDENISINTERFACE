@@ -3726,7 +3726,8 @@ Vartotojo instrukcija: ${instruction}`;
                       ref={templateEditorIframeRef}
                       srcDoc={editorSrcdoc}
                       title="Šablono redaktorius"
-                      sandbox="allow-same-origin allow-scripts"
+                      /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
+                         content is sanitized by sanitizeHtmlForIframe() instead */
                       scrolling="no"
                       style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
                       onLoad={() => {
