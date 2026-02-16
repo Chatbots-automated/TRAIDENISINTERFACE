@@ -234,7 +234,7 @@ export default function Layout({
                   {/* Dropup Menu - anchored to Nustatymai button */}
                   {!sidebarCollapsed && settingsDropdownOpen && (
                     <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up">
-                      <ul className="menu bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
+                      <ul className="menu bg-white rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
                         {!user.is_admin && (
                           <>
                             <li>
