@@ -20,7 +20,6 @@ import {
   Check,
   Share2,
   Users,
-  Download,
   Lock,
   Unlock,
   Sparkles
@@ -2835,13 +2834,6 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="flex items-center gap-1">
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
-                    <button
-                      onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Atsisiųsti PDF"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
                     {artifactTab === 'preview' && !isReadOnly && (
                       <button
                         onClick={() => setDocEditMode(prev => !prev)}
@@ -2886,6 +2878,10 @@ Vartotojo instrukcija: ${instruction}`;
                       setEditingVariable(null);
                       documentPreviewRef.current?.clearActiveVariable();
                     }
+                  }}
+                  onPrint={() => {
+                    documentPreviewRef.current?.print();
+                    addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.');
                   }}
                 />
 
@@ -3646,10 +3642,10 @@ Vartotojo instrukcija: ${instruction}`;
           /* Preview host overrides */
           html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
           body.c47.doc-content {
-            max-width: 595px;
-            margin: 0 auto;
+            max-width: none;
+            margin: 0;
             background: #ffffff;
-            padding: 36pt;
+            padding: 24pt 28pt;
           }
           body:focus { outline: none; }
           .template-var { cursor: default; border-radius: 3px; }
@@ -3720,8 +3716,8 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* Visual editor iframe */}
-                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
-                  <div style={{ width: '595px', margin: '24px auto' }}>
+                <div className={`flex-1 overflow-auto ${showTemplateVersions ? '' : ''}`} style={{ background: '#f5f3f0' }}>
+                  <div style={{ width: '595px', margin: '16px auto', background: '#ffffff', boxShadow: '0 1px 4px rgba(0,0,0,0.08), 0 0 1px rgba(0,0,0,0.05)', borderRadius: '2px' }}>
                     <iframe
                       ref={templateEditorIframeRef}
                       srcDoc={editorSrcdoc}

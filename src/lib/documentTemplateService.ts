@@ -120,22 +120,19 @@ export function renderTemplate(
   const pageBreakCount = (html.match(pageBreakRegex) || []).length;
   const totalPages = pageBreakCount + 1;
 
-  // Convert Google Docs page-break <hr> to visual page separators,
-  // injecting the header block after each separator so subsequent pages
+  // Convert Google Docs page-break <hr> to a data-attribute marker that
+  // DocumentPreview can split on for paginated rendering.
+  // The header block is injected after each separator so subsequent pages
   // display the company logo/info.
-  const pageSeparator =
-    `<div style="width:100%;border-top:2px dashed #d1d5db;margin:32px 0;position:relative;">` +
-    `<span style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;padding:0 12px;font-size:10px;color:#9ca3af;white-space:nowrap;">Naujas puslapis</span>` +
-    `</div>`;
+  const PAGE_SPLIT_MARKER = '<!--PAGE_SPLIT-->';
 
-  // Inject page number footer before each page separator
   let pageNum = 1;
   html = html.replace(
     /<hr[^>]*style="page-break-before:\s*always[^"]*"[^>]*>/gi,
     () => {
       const pageFooter = `<div class="page-number">${pageNum} / ${totalPages}</div>`;
       pageNum++;
-      return pageFooter + pageSeparator + headerBlock;
+      return pageFooter + PAGE_SPLIT_MARKER + headerBlock;
     }
   );
 
@@ -246,6 +243,9 @@ export function sanitizeHtmlForIframe(html: string): string {
     .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
     .replace(/javascript\s*:/gi, 'blocked:');
 }
+
+/** Marker inserted between pages by renderTemplate(). Used by DocumentPreview to split pages. */
+export const PAGE_SPLIT_MARKER = '<!--PAGE_SPLIT-->';
 
 function escapeHtml(str: string): string {
   return str
