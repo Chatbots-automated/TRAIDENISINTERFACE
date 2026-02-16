@@ -182,8 +182,11 @@
 
   /* Footer buttons - matches FlyonUI .menu li > button appearance without using .menu */
   .sidebar-footer-btn {
-    @apply flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer w-full text-left;
-    @apply hover:bg-base-content/10 transition-colors;
+    @apply flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm cursor-pointer w-full text-left transition-colors;
+  }
+
+  .sidebar-footer-btn:hover {
+    background-color: rgba(0, 0, 0, 0.06);
   }
 
   /* Legacy vf sidebar (mapped to macOS glassmorphism) */
