@@ -68,15 +68,30 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
   function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll, editable = false, conversationId, onPrint }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const scrollAreaRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
     const [iframeHeight, setIframeHeight] = useState(1200);
     const [currentPage, setCurrentPage] = useState(0);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const fullscreenRef = useRef<HTMLDivElement>(null);
+    const [containerWidth, setContainerWidth] = useState(0);
+
+    // Auto-measure available width so we can fit the document
+    useEffect(() => {
+      const el = scrollAreaRef.current;
+      if (!el) return;
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          setContainerWidth(entry.contentRect.width);
+        }
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, []);
 
     // Refs to avoid stale closures in iframe event handlers
-    const zoomRef = useRef(zoom);
-    zoomRef.current = zoom;
+    // Note: zoomRef tracks the effectiveZoom (auto-fit * user zoom) — updated below after computation
+    const zoomRef = useRef(BASE_ZOOM);
     const onVariableClickRef = useRef(onVariableClick);
     onVariableClickRef.current = onVariableClick;
     const editableRef = useRef(editable);
@@ -377,54 +392,164 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
 
+    // The document's native width (A4 at 72dpi = 595px)
+    const docWidth = 595;
+    // Auto-fit: compute a base zoom that fills the container width (minus 24px margin)
+    const autoFitZoom = containerWidth > 0 ? Math.min((containerWidth - 24) / docWidth, 1.1) : BASE_ZOOM;
+    // Effective zoom = autoFit base * user adjustment
+    const effectiveZoom = autoFitZoom * (zoom / BASE_ZOOM);
+
     const displayZoom = Math.round((zoom / BASE_ZOOM) * 100);
 
-    // In fullscreen mode, scale to fill available width
-    const docWidth = 595;
-    const scaledWidth = docWidth * zoom;
-    const scaledHeight = iframeHeight * zoom;
+    // Keep zoomRef up-to-date for iframe click position calculations
+    zoomRef.current = effectiveZoom;
+
+    const scaledWidth = docWidth * effectiveZoom;
+    const scaledHeight = iframeHeight * effectiveZoom;
 
     const goToPrevPage = () => setCurrentPage((p) => Math.max(0, p - 1));
     const goToNextPage = () => setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
 
+    // Shared button style helper
+    const toolbarBtnStyle = (disabled?: boolean): React.CSSProperties => ({
+      width: '28px',
+      height: '28px',
+      color: disabled ? '#d1d5db' : '#6b7280',
+      cursor: disabled ? 'default' : 'pointer',
+      border: 'none',
+      background: 'transparent',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '4px',
+      transition: 'background 0.15s, color 0.15s',
+      flexShrink: 0,
+    });
+
+    const hoverIn = (e: React.MouseEvent, disabled?: boolean) => {
+      if (!disabled) e.currentTarget.style.background = '#e8e5e0';
+    };
+    const hoverOut = (e: React.MouseEvent) => {
+      e.currentTarget.style.background = 'transparent';
+    };
+
     return (
       <div ref={fullscreenRef} className={`flex flex-col h-full min-h-0 relative ${isFullscreen ? 'bg-base-200' : ''}`}>
         <div ref={containerRef} className="flex flex-col h-full min-h-0 relative">
-          {/* Top info bar — minimal */}
-          <div className="flex items-center justify-between px-3 py-1 flex-shrink-0">
-            <span className="text-[10px]" style={{ color: '#9ca3af' }}>
-              {unfilled.length === 0
-                ? 'Visi kintamieji užpildyti'
-                : `Liko užpildyti: ${unfilled.length}`}
-            </span>
+
+          {/* ── Top toolbar ─────────────────────────────────────────────
+              Layout: [page nav]  |  [zoom]  |  [download · fullscreen]
+              Mirrors the reference screenshot toolbar.
+          ──────────────────────────────────────────────────────────── */}
+          <div
+            className="flex items-center justify-between px-2 flex-shrink-0 select-none"
+            style={{
+              height: '38px',
+              background: isFullscreen ? '#f0ede8' : '#faf9f7',
+              borderBottom: '1px solid #e8e5e0',
+            }}
+          >
+            {/* Left: page navigation */}
+            <div className="flex items-center gap-0.5" style={{ minWidth: '100px' }}>
+              <button
+                onClick={goToPrevPage}
+                disabled={currentPage === 0 || totalPages <= 1}
+                style={toolbarBtnStyle(currentPage === 0 || totalPages <= 1)}
+                onMouseEnter={(e) => hoverIn(e, currentPage === 0 || totalPages <= 1)}
+                onMouseLeave={hoverOut}
+                title="Ankstesnis puslapis"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <span
+                className="text-[12px] tabular-nums px-1"
+                style={{ color: '#6b7280', minWidth: '40px', textAlign: 'center', letterSpacing: '0.01em' }}
+              >
+                {currentPage + 1} <span style={{ color: '#b0ada8' }}>iš</span> {totalPages}
+              </span>
+
+              <button
+                onClick={goToNextPage}
+                disabled={currentPage === totalPages - 1 || totalPages <= 1}
+                style={toolbarBtnStyle(currentPage === totalPages - 1 || totalPages <= 1)}
+                onMouseEnter={(e) => hoverIn(e, currentPage === totalPages - 1 || totalPages <= 1)}
+                onMouseLeave={hoverOut}
+                title="Kitas puslapis"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Center: zoom controls */}
             <div className="flex items-center gap-0.5">
               <button
                 onClick={handleZoomOut}
-                className="p-1 rounded transition-colors"
-                style={{ color: '#8a857f' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#f0ede8')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                style={toolbarBtnStyle(zoom <= 0.3)}
+                onMouseEnter={(e) => hoverIn(e, zoom <= 0.3)}
+                onMouseLeave={hoverOut}
+                title="Sumažinti"
               >
-                <ZoomOut className="w-3 h-3" />
+                <ZoomOut className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[10px] w-8 text-center tabular-nums" style={{ color: '#9ca3af' }}>
+              <span
+                className="text-[11px] tabular-nums"
+                style={{ color: '#6b7280', minWidth: '36px', textAlign: 'center' }}
+              >
                 {displayZoom}%
               </span>
               <button
                 onClick={handleZoomIn}
-                className="p-1 rounded transition-colors"
-                style={{ color: '#8a857f' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#f0ede8')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                style={toolbarBtnStyle(zoom >= 1.3)}
+                onMouseEnter={(e) => hoverIn(e, zoom >= 1.3)}
+                onMouseLeave={hoverOut}
+                title="Padidinti"
               >
-                <ZoomIn className="w-3 h-3" />
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Right: download + fullscreen */}
+            <div className="flex items-center gap-0.5" style={{ minWidth: '100px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  if (onPrint) {
+                    onPrint();
+                  } else {
+                    printIframeRef.current?.contentWindow?.print();
+                  }
+                }}
+                style={toolbarBtnStyle()}
+                onMouseEnter={(e) => hoverIn(e)}
+                onMouseLeave={hoverOut}
+                title="Atsisiųsti PDF"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+              <button
+                onClick={toggleFullscreen}
+                style={toolbarBtnStyle()}
+                onMouseEnter={(e) => hoverIn(e)}
+                onMouseLeave={hoverOut}
+                title={isFullscreen ? 'Išeiti iš viso ekrano' : 'Visas ekranas'}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
               </button>
             </div>
           </div>
-          <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
+
+          {/* Unfilled variable hint — only when relevant */}
+          {unfilled.length > 0 && (
+            <div className="px-3 py-0.5 flex-shrink-0" style={{ background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
+              <span className="text-[10px]" style={{ color: '#92400e' }}>
+                Liko užpildyti: {unfilled.length}
+              </span>
+            </div>
+          )}
 
           {/* Preview area — single page at a time */}
           <div
+            ref={scrollAreaRef}
             className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
             style={{ background: isFullscreen ? '#e8e5e0' : '#f5f3f0' }}
             onScroll={onScroll}
@@ -452,93 +577,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
                   border: 'none',
                   display: 'block',
                   overflow: 'hidden',
-                  transform: `scale(${zoom})`,
+                  transform: `scale(${effectiveZoom})`,
                   transformOrigin: 'top left',
                 }}
                 onLoad={handleIframeLoad}
               />
-            </div>
-          </div>
-
-          {/* Bottom toolbar — page nav + actions (matches reference screenshot) */}
-          <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
-          <div
-            className="flex items-center justify-between px-3 flex-shrink-0"
-            style={{ height: '40px' }}
-          >
-            {/* Page navigation — left side */}
-            <div className="flex items-center gap-1">
-              {totalPages > 1 ? (
-                <>
-                  <button
-                    onClick={goToPrevPage}
-                    disabled={currentPage === 0}
-                    className="flex items-center justify-center rounded transition-colors"
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      color: currentPage === 0 ? '#d1d5db' : '#6b7280',
-                      cursor: currentPage === 0 ? 'default' : 'pointer',
-                    }}
-                    onMouseEnter={(e) => { if (currentPage > 0) e.currentTarget.style.background = '#f0ede8'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="text-[12px] tabular-nums px-1 select-none" style={{ color: '#6b7280', minWidth: '36px', textAlign: 'center' }}>
-                    {currentPage + 1} / {totalPages}
-                  </span>
-                  <button
-                    onClick={goToNextPage}
-                    disabled={currentPage === totalPages - 1}
-                    className="flex items-center justify-center rounded transition-colors"
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      color: currentPage === totalPages - 1 ? '#d1d5db' : '#6b7280',
-                      cursor: currentPage === totalPages - 1 ? 'default' : 'pointer',
-                    }}
-                    onMouseEnter={(e) => { if (currentPage < totalPages - 1) e.currentTarget.style.background = '#f0ede8'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </>
-              ) : (
-                <span className="text-[10px]" style={{ color: '#bbb' }}>
-                  1 puslapis
-                </span>
-              )}
-            </div>
-
-            {/* Actions — right side */}
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => {
-                  if (onPrint) {
-                    onPrint();
-                  } else {
-                    printIframeRef.current?.contentWindow?.print();
-                  }
-                }}
-                className="flex items-center justify-center rounded transition-colors"
-                style={{ width: '28px', height: '28px', color: '#6b7280' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f0ede8'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                title="Atsisiųsti PDF"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-              <button
-                onClick={toggleFullscreen}
-                className="flex items-center justify-center rounded transition-colors"
-                style={{ width: '28px', height: '28px', color: '#6b7280' }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = '#f0ede8'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                title={isFullscreen ? 'Išeiti iš viso ekrano' : 'Visas ekranas'}
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-              </button>
             </div>
           </div>
         </div>

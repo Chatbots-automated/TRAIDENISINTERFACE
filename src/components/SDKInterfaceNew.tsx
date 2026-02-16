@@ -2797,7 +2797,7 @@ Vartotojo instrukcija: ${instruction}`;
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '40vw' }}>
           <div className="w-full flex flex-col h-screen bg-base-100">
             {/* Header — compact single row */}
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
