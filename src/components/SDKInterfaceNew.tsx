@@ -21,7 +21,6 @@ import {
   Share2,
   Users,
   Lock,
-  Unlock,
   Sparkles
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
@@ -2832,26 +2831,6 @@ Vartotojo instrukcija: ${instruction}`;
                 )}
               </div>
               <div className="flex items-center gap-1">
-                {!isStreamingArtifact && currentConversation?.artifact && (
-                  <>
-                    {artifactTab === 'preview' && !isReadOnly && (
-                      <button
-                        onClick={() => setDocEditMode(prev => !prev)}
-                        className={`btn btn-circle btn-text btn-xs ${docEditMode ? 'text-primary bg-primary/10' : 'text-base-content/40 hover:text-base-content/70'}`}
-                        title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
-                      >
-                        {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Kopijuoti YAML"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </>
-                )}
                 <button
                   onClick={() => setShowArtifact(false)}
                   className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
@@ -2883,6 +2862,8 @@ Vartotojo instrukcija: ${instruction}`;
                     documentPreviewRef.current?.print();
                     addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.');
                   }}
+                  showEditToggle={artifactTab === 'preview' && !isReadOnly}
+                  onToggleEdit={() => setDocEditMode(prev => !prev)}
                 />
 
                 {/* Click-outside overlay + floating variable editor popup */}

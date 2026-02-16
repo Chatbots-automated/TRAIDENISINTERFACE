@@ -94,8 +94,8 @@ export function renderTemplate(
   let html = template;
 
   // Replace every {{key}} with a clickable data-var span.
-  // Filled variables show the value; unfilled ones show a yellow placeholder chip.
-  // Both are wrapped in <span data-var="key"> for click handling in the preview.
+  // Filled variables render as plain text; unfilled ones render as subtle
+  // gray placeholder text (no chips, no yellow backgrounds).
   html = html.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
     const trimKey = key.trim();
     const value = variables[trimKey];
@@ -105,8 +105,8 @@ export function renderTemplate(
       return `<span data-var="${trimKey}" class="template-var filled">${escaped}</span>`;
     }
 
-    // Unfilled — visible placeholder chip, also clickable
-    return `<span data-var="${trimKey}" class="template-var unfilled" style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;cursor:pointer;">${trimKey}</span>`;
+    // Unfilled — plain gray placeholder, clickable
+    return `<span data-var="${trimKey}" class="template-var unfilled" style="color:#aaa;cursor:pointer;">${trimKey}</span>`;
   });
 
   // Extract the header block (logo bar + company info) — the first <div>
@@ -153,7 +153,7 @@ export function renderTemplate(
 export function renderTemplateForEditor(template: string): string {
   return template.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
     const trimKey = key.trim();
-    return `<span data-var="${trimKey}" class="template-var unfilled" contenteditable="false" style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;display:inline-block;">${trimKey}</span>`;
+    return `<span data-var="${trimKey}" class="template-var unfilled" contenteditable="false" style="color:#aaa;cursor:default;">${trimKey}</span>`;
   });
 }
 
