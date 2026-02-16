@@ -190,132 +190,123 @@ export default function Layout({
           {/* Footer - Absolute Bottom */}
           <div className="mt-auto">
             {/* Footer controls - single unified menu */}
-            <div className="relative" ref={settingsDropdownRef}>
-              {/* Dropup Menu - only in expanded state */}
-              {!sidebarCollapsed && settingsDropdownOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 macos-animate-slide-up">
-                  <ul className="menu mx-2 bg-white/95 backdrop-blur-macos rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1">
-                    {!user.is_admin && (
-                      <>
-                        <li>
-                          <div
-                            onClick={() => onToggleNaujokas?.()}
-                            className="flex items-center justify-between cursor-pointer"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-base">🎓</span>
-                              <span>Naujokas</span>
-                            </div>
-                            <div
-                              className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
-                                naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
-                              }`}
-                            >
-                              <div
-                                className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
-                                  naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
-                                }`}
-                              />
-                            </div>
-                          </div>
-                        </li>
-                        <li className="divider my-1"></li>
-                      </>
-                    )}
-                    <li>
-                      <button onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}>
-                        <Settings className="w-4 h-4" />
-                        <span>Nustatymai</span>
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
-                        className="text-error hover:bg-error/10"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Atsijungti</span>
-                      </button>
-                    </li>
-                  </ul>
+            <div>
+              {user.is_admin && (
+                <div className={`overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-h-0 opacity-0' : 'max-h-8 opacity-100'}`}>
+                  <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Valdymas</div>
                 </div>
               )}
-
-              {user.is_admin && !sidebarCollapsed && (
-                <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Valdymas</div>
-              )}
-              <ul className="menu px-2 pb-1">
+              <div className="flex flex-col gap-0.5 px-2 pb-1">
                 {/* Admin buttons */}
                 {user.is_admin && (
                   <>
-                    <li>
-                      <button
-                        onClick={() => setWebhooksOpen(true)}
-                        title={sidebarCollapsed ? 'Webhooks' : undefined}
-                      >
-                        <Zap className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Webhooks</span>}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => onViewModeChange?.('instrukcijos')}
-                        className={viewMode === 'instrukcijos' ? 'active' : ''}
-                        title={sidebarCollapsed ? 'Instrukcijos' : undefined}
-                      >
-                        <BookOpen className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Instrukcijos</span>}
-                      </button>
-                    </li>
-                    <li>
-                      <button
-                        onClick={() => onViewModeChange?.('users')}
-                        className={viewMode === 'users' ? 'active' : ''}
-                        title={sidebarCollapsed ? 'Naudotojai' : undefined}
-                      >
-                        <Users className="w-4 h-4" />
-                        {!sidebarCollapsed && <span className="whitespace-nowrap">Naudotojai</span>}
-                      </button>
-                    </li>
+                    <button
+                      onClick={() => setWebhooksOpen(true)}
+                      title={sidebarCollapsed ? 'Webhooks' : undefined}
+                      className="sidebar-footer-btn"
+                    >
+                      <Zap className="w-4 h-4 flex-shrink-0" />
+                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Webhooks</span>
+                    </button>
+                    <button
+                      onClick={() => onViewModeChange?.('instrukcijos')}
+                      className={`sidebar-footer-btn ${viewMode === 'instrukcijos' ? 'bg-primary/10 text-primary' : ''}`}
+                      title={sidebarCollapsed ? 'Instrukcijos' : undefined}
+                    >
+                      <BookOpen className="w-4 h-4 flex-shrink-0" />
+                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Instrukcijos</span>
+                    </button>
+                    <button
+                      onClick={() => onViewModeChange?.('users')}
+                      className={`sidebar-footer-btn ${viewMode === 'users' ? 'bg-primary/10 text-primary' : ''}`}
+                      title={sidebarCollapsed ? 'Naudotojai' : undefined}
+                    >
+                      <Users className="w-4 h-4 flex-shrink-0" />
+                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Naudotojai</span>
+                    </button>
                   </>
                 )}
-                {/* Settings + Collapse/Expand */}
-                <li>
+                {/* Settings + Dropdown */}
+                <div className="relative" ref={settingsDropdownRef}>
+                  {!sidebarCollapsed && settingsDropdownOpen && (
+                    <div className="absolute bottom-full left-0 right-0 mb-1 z-50 macos-animate-slide-up">
+                      <div className="bg-white rounded-macos border-[0.5px] border-black/10 shadow-macos-lg py-1 flex flex-col">
+                        {!user.is_admin && (
+                          <>
+                            <div
+                              onClick={() => onToggleNaujokas?.()}
+                              className="flex items-center justify-between cursor-pointer px-3 py-2 mx-1 rounded-lg hover:bg-black/5 transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-base">🎓</span>
+                                <span className="text-sm">Naujokas</span>
+                              </div>
+                              <div
+                                className={`relative w-9 h-5 rounded-full transition-colors duration-200 flex-shrink-0 ${
+                                  naujokasMode ? 'bg-macos-green' : 'bg-macos-gray-200'
+                                }`}
+                              >
+                                <div
+                                  className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-macos-sm transition-transform duration-200 ${
+                                    naujokasMode ? 'translate-x-4' : 'translate-x-0.5'
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                            <div className="border-t border-black/5 my-1 mx-1"></div>
+                          </>
+                        )}
+                        <button
+                          onClick={() => { setSettingsOpen(true); setSettingsDropdownOpen(false); }}
+                          className="flex items-center gap-2 px-3 py-2 mx-1 rounded-lg hover:bg-black/5 transition-colors text-sm w-auto text-left"
+                        >
+                          <Settings className="w-4 h-4" />
+                          <span>Nustatymai</span>
+                        </button>
+                        <button
+                          onClick={() => { handleSignOut(); setSettingsDropdownOpen(false); }}
+                          className="flex items-center gap-2 px-3 py-2 mx-1 rounded-lg text-error hover:bg-error/10 transition-colors text-sm w-auto text-left"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Atsijungti</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <button
                     onClick={() => sidebarCollapsed ? setSettingsOpen(true) : setSettingsDropdownOpen(!settingsDropdownOpen)}
                     title={sidebarCollapsed ? 'Nustatymai' : undefined}
+                    className="sidebar-footer-btn"
                   >
-                    <Settings className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Nustatymai</span>}
+                    <Settings className="w-4 h-4 flex-shrink-0" />
+                    <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Nustatymai</span>
                   </button>
-                </li>
-                <li className="hidden lg:flex">
-                  <button
-                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                    title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
-                  >
-                    {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
-                  </button>
-                </li>
-              </ul>
+                </div>
+                {/* Collapse/Expand */}
+                <button
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
+                  className="sidebar-footer-btn hidden lg:flex"
+                >
+                  {sidebarCollapsed ? <ChevronsRight className="w-4 h-4 flex-shrink-0" /> : <ChevronsLeft className="w-4 h-4 flex-shrink-0" />}
+                </button>
+              </div>
             </div>
 
             {/* User Info - Absolute Bottom */}
             <div className="py-3 bg-macos-gray-50/50 px-3">
-              <div className="flex items-center justify-center space-x-2.5 h-9">
+              <div className={`flex items-center justify-center h-9 transition-all duration-300 ${sidebarCollapsed ? 'gap-0' : 'gap-2.5'}`}>
                 <div className="w-8 h-8 bg-gradient-to-br from-macos-blue to-macos-purple rounded-full flex items-center justify-center flex-shrink-0 shadow-macos-sm">
                   <span className="text-white text-sm font-medium">
                     {user.display_name?.charAt(0) || user.email.charAt(0).toUpperCase()}
                   </span>
                 </div>
-                {!sidebarCollapsed && (
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-macos-gray-900 truncate">
-                      {user.display_name || user.email}
-                    </p>
-                    <p className="text-xs text-macos-gray-500 truncate">{user.email}</p>
-                  </div>
-                )}
+                <div className={`min-w-0 overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'flex-1 max-w-full opacity-100'}`}>
+                  <p className="text-sm font-medium text-macos-gray-900 truncate whitespace-nowrap">
+                    {user.display_name || user.email}
+                  </p>
+                  <p className="text-xs text-macos-gray-500 truncate whitespace-nowrap">{user.email}</p>
+                </div>
               </div>
             </div>
           </div>

@@ -180,6 +180,25 @@
     padding-inline: 0 !important;
   }
 
+  /* Footer buttons - matches FlyonUI .menu li > button appearance without using .menu */
+  .sidebar-footer-btn {
+    @apply flex items-center py-1.5 rounded-lg text-sm cursor-pointer w-full text-left overflow-hidden;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    gap: 0.5rem;
+    transition: padding 300ms ease-out, gap 300ms ease-out, background-color 150ms;
+  }
+
+  .sidebar-footer-btn:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+  }
+
+  .sidebar-collapsed .sidebar-footer-btn {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    gap: 0;
+  }
+
   /* Legacy vf sidebar (mapped to macOS glassmorphism) */
   .vf-sidebar {
     background: rgba(255, 255, 255, 0.85);
