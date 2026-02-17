@@ -1,18 +1,16 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { ZoomIn, ZoomOut } from 'lucide-react';
-import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import { ChevronLeft, ChevronRight, Download, Lock, Maximize2, Minimize2, Unlock, ZoomIn, ZoomOut } from 'lucide-react';
+import { renderTemplate, renderTemplateForPrint, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe, PAGE_SPLIT_MARKER } from '../lib/documentTemplateService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
   clearActiveVariable: () => void;
-  /** Get the full innerHTML of the iframe body (includes user text edits). */
   getEditedHtml: () => string | null;
 }
 
 export interface VariableClickInfo {
   key: string;
   filled: boolean;
-  /** Position relative to the DocumentPreview container */
   x: number;
   y: number;
 }
@@ -20,208 +18,169 @@ export interface VariableClickInfo {
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
-  /** Bump to force re-reading the global template from localStorage. */
   templateVersion?: number;
   onVariableClick?: (info: VariableClickInfo | null) => void;
   onScroll?: () => void;
-  /** Whether the document body is contentEditable. Default false. */
   editable?: boolean;
-  /** Conversation ID — used for localStorage persistence of manual edits. */
   conversationId?: string;
+  onPrint?: () => void;
+  onToggleEdit?: () => void;
+  showEditToggle?: boolean;
 }
 
-// The "native" zoom where the document fits the panel well.
-// Displayed as 100% in the UI; other zoom levels are relative to this.
 const BASE_ZOOM = 0.95;
-
 const DOC_EDIT_PREFIX = 'doc_edit_';
 
+// ---------------------------------------------------------------------------
+// Split rendered HTML into per-page srcdoc strings at PAGE_SPLIT markers
+// ---------------------------------------------------------------------------
+function splitIntoPages(fullHtml: string): string[] {
+  if (!fullHtml.includes(PAGE_SPLIT_MARKER)) return [fullHtml];
+
+  const headMatch = fullHtml.match(/<head[^>]*>[\s\S]*?<\/head>/i);
+  const head = headMatch ? headMatch[0] : '<head></head>';
+  const bodyTagMatch = fullHtml.match(/<body([^>]*)>/i);
+  const bodyAttrs = bodyTagMatch ? bodyTagMatch[1] : '';
+  const bodyInnerMatch = fullHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  const bodyInner = bodyInnerMatch ? bodyInnerMatch[1] : fullHtml;
+
+  return bodyInner.split(PAGE_SPLIT_MARKER).map((part) =>
+    `<!DOCTYPE html><html>${head}<body${bodyAttrs}>${part}</body></html>`
+  );
+}
+
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll, editable = false, conversationId }, ref) {
+  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll, editable = false, conversationId, onPrint, onToggleEdit, showEditToggle = false }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const scrollAreaRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
     const [iframeHeight, setIframeHeight] = useState(1200);
+    const [currentPage, setCurrentPage] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const fullscreenRef = useRef<HTMLDivElement>(null);
+    const [containerWidth, setContainerWidth] = useState(0);
 
-    // Refs to avoid stale closures in iframe event handlers
-    const zoomRef = useRef(zoom);
-    zoomRef.current = zoom;
+    useEffect(() => {
+      const el = scrollAreaRef.current;
+      if (!el) return;
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) setContainerWidth(entry.contentRect.width);
+      });
+      ro.observe(el);
+      return () => ro.disconnect();
+    }, []);
+
+    const zoomRef = useRef(BASE_ZOOM);
     const onVariableClickRef = useRef(onVariableClick);
     onVariableClickRef.current = onVariableClick;
     const editableRef = useRef(editable);
     editableRef.current = editable;
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Re-read global template whenever templateVersion changes
     const templateHtml = useMemo(() => template || getDefaultTemplate(), [template, templateVersion]);
+    const renderedHtml = useMemo(() => renderTemplate(templateHtml, variables), [templateHtml, variables]);
+    const unfilled = useMemo(() => getUnfilledVariables(templateHtml, variables), [templateHtml, variables]);
 
-    const renderedHtml = useMemo(
-      () => renderTemplate(templateHtml, variables),
-      [templateHtml, variables]
-    );
-
-    const unfilled = useMemo(
-      () => getUnfilledVariables(templateHtml, variables),
-      [templateHtml, variables]
-    );
-
-    const srcdoc = useMemo(() => {
-      const sanitized = sanitizeHtmlForIframe(renderedHtml);
-      return sanitized.replace(
-        '</style>',
-        `
-      /* Preview host overrides */
-      html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
+    // ── Preview CSS (injected into each page iframe) ──
+    const previewCss = `
+      html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
       body.c47.doc-content {
-        max-width: 595px;
-        margin: 0 auto;
-        background: #ffffff;
-        padding: 36pt 36pt 36pt 36pt;
+        max-width: none; margin: 0; background: #fff;
+        padding: 24pt 28pt;
       }
-
-      /* Interactive variable styles — always visible */
-      .template-var {
-        cursor: pointer;
-        border-radius: 3px;
-        transition: background 0.15s, box-shadow 0.15s;
-      }
-      .template-var.filled {
-        background: rgba(59,130,246,0.04);
-        box-shadow: 0 0 0 1px rgba(59,130,246,0.12);
-        padding: 0 2px;
-        border-radius: 3px;
-      }
-      .template-var.filled:hover {
-        background: rgba(59,130,246,0.08);
-        box-shadow: 0 0 0 1.5px rgba(59,130,246,0.3);
-      }
-      .template-var.unfilled:hover {
-        box-shadow: 0 0 0 2px #f59e0b;
+      .template-var { cursor: pointer; }
+      .template-var.filled { }
+      .template-var.unfilled {
+        color: inherit; background: none !important;
+        border: none !important; padding: 0 !important;
+        font-size: inherit !important; white-space: normal !important;
       }
       .template-var.active {
-        background: rgba(59,130,246,0.12) !important;
-        box-shadow: 0 0 0 1.5px #3b82f6 !important;
+        background: rgba(59,130,246,0.08) !important; border-radius: 2px;
       }
-
-      /* Page number footer */
       .page-number {
-        text-align: right;
-        padding: 16px 0 4px;
-        font-size: 9px;
-        color: #9ca3af;
-        font-family: Arial, sans-serif;
-        letter-spacing: 0.5px;
+        text-align: right; padding: 16px 0 4px;
+        font-size: 9px; color: #9ca3af;
+        font-family: Arial, sans-serif; letter-spacing: 0.5px;
       }
+    </style>`;
 
-      /* Print-optimized styles */
-      @media print {
-        html, body {
-          margin: 0 !important;
-          padding: 0 !important;
-          background: white !important;
-          overflow: visible !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        body.c47.doc-content {
-          max-width: none !important;
-          margin: 0 !important;
-          padding: 36pt 36pt 36pt 36pt !important;
-          box-shadow: none !important;
-        }
-        .template-var { cursor: default; }
-        .template-var.filled { background: transparent !important; box-shadow: none !important; padding: 0 !important; }
-        span[style*="background:#fff3cd"] {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        div[style*="border-top:2px dashed"] {
-          border: none !important;
-          margin: 0 !important;
-          page-break-before: always !important;
-          break-before: page !important;
-        }
-        div[style*="border-top:2px dashed"] span {
-          display: none !important;
-        }
-        .page-number {
-          text-align: right;
-          font-size: 8px;
-          color: #9ca3af;
-          padding: 8px 0 0;
-        }
-        img {
-          max-width: 100% !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        @page {
-          size: A4;
-          margin: 0;
-        }
+    // ── Print CSS (for the hidden print iframe) ──
+    const printCss = `
+      html, body {
+        margin: 0; padding: 0; background: #fff;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
-      </style>`
-      );
+      body.c47.doc-content {
+        max-width: none; margin: 0; background: #fff;
+        padding: 36pt;
+      }
+      img {
+        max-width: 100% !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      @page { size: A4; margin: 0; }
+    </style>`;
+
+    // Preview: split at markers
+    const pageSrcdocs = useMemo(() => {
+      return splitIntoPages(sanitizeHtmlForIframe(renderedHtml).replace('</style>', previewCss));
     }, [renderedHtml]);
 
-    // Expose methods to parent via ref
+    // Print: separate render that keeps original <hr page-break> tags
+    const printSrcdoc = useMemo(() => {
+      const printHtml = renderTemplateForPrint(templateHtml, variables);
+      return sanitizeHtmlForIframe(printHtml).replace('</style>', printCss);
+    }, [templateHtml, variables]);
+
+    const totalPages = pageSrcdocs.length;
+
+    useEffect(() => {
+      if (currentPage >= totalPages) setCurrentPage(Math.max(0, totalPages - 1));
+    }, [totalPages, currentPage]);
+
+    const currentSrcdoc = pageSrcdocs[currentPage] || pageSrcdocs[0] || '';
+    const printIframeRef = useRef<HTMLIFrameElement>(null);
+
     useImperativeHandle(ref, () => ({
-      print: () => {
-        const iframe = iframeRef.current;
-        if (iframe?.contentWindow) {
-          iframe.contentWindow.print();
-        }
-      },
+      print: () => { printIframeRef.current?.contentWindow?.print(); },
       clearActiveVariable: () => {
-        const doc = iframeRef.current?.contentDocument;
-        if (doc) {
-          doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
-        }
+        iframeRef.current?.contentDocument?.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
       },
-      getEditedHtml: () => {
-        const doc = iframeRef.current?.contentDocument;
-        return doc?.documentElement?.outerHTML || null;
-      },
+      getEditedHtml: () => iframeRef.current?.contentDocument?.documentElement?.outerHTML || null,
     }));
 
     const measureIframe = useCallback(() => {
-      const iframe = iframeRef.current;
-      if (iframe?.contentDocument?.body) {
-        const h = iframe.contentDocument.body.scrollHeight;
-        setIframeHeight(h);
-      }
+      const h = iframeRef.current?.contentDocument?.body?.scrollHeight;
+      if (h) setIframeHeight(h);
     }, []);
 
-    // After iframe loads: measure height + attach click handlers to [data-var] spans
     const handleIframeLoad = useCallback(() => {
       measureIframe();
-
-      const iframe = iframeRef.current;
-      const doc = iframe?.contentDocument;
+      const doc = iframeRef.current?.contentDocument;
       if (!doc) return;
 
-      // Set contentEditable based on prop (default: locked)
       doc.body.contentEditable = editableRef.current ? 'true' : 'false';
       doc.body.style.outline = 'none';
 
-      // Restore saved manual edits if they exist for this conversation
       if (conversationId) {
         try {
           const saved = localStorage.getItem(DOC_EDIT_PREFIX + conversationId);
           if (saved) {
             const { html, fingerprint } = JSON.parse(saved);
-            // Only restore if the underlying template hasn't changed
-            if (fingerprint === srcdoc.length.toString()) {
+            if (fingerprint === currentSrcdoc.length.toString()) {
               doc.body.innerHTML = html;
               setTimeout(measureIframe, 50);
             } else {
               localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
             }
           }
-        } catch { /* ignore corrupt data */ }
+        } catch { /* ignore */ }
       }
 
-      // Auto-save on input (debounced 500ms)
       doc.body.addEventListener('input', () => {
         if (!editableRef.current || !conversationId) return;
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -230,32 +189,27 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           if (body) {
             localStorage.setItem(DOC_EDIT_PREFIX + conversationId, JSON.stringify({
               html: body.innerHTML,
-              fingerprint: srcdoc.length.toString(),
+              fingerprint: currentSrcdoc.length.toString(),
             }));
           }
         }, 500);
       });
 
-      // Click on body (non-variable area) clears active state and closes popup
       doc.body.addEventListener('click', () => {
         doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
         onVariableClickRef.current?.(null);
       });
 
-      const varSpans = doc.querySelectorAll<HTMLSpanElement>('[data-var]');
-      varSpans.forEach((span) => {
+      doc.querySelectorAll<HTMLSpanElement>('[data-var]').forEach((span) => {
         span.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
-
           const varKey = span.getAttribute('data-var');
           if (!varKey) return;
 
-          // Remove active class from all, add to clicked
           doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
           span.classList.add('active');
 
-          // Calculate position relative to the DocumentPreview container
           const iframeEl = iframeRef.current;
           const container = containerRef.current;
           if (!iframeEl || !container) return;
@@ -263,141 +217,239 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           const spanRect = span.getBoundingClientRect();
           const iframeRect = iframeEl.getBoundingClientRect();
           const containerRect = container.getBoundingClientRect();
-
-          // Use refs to get current zoom (avoids stale closure)
           const z = zoomRef.current;
-          const x = iframeRect.left - containerRect.left + spanRect.left * z + (spanRect.width * z) / 2;
-          const y = iframeRect.top - containerRect.top + spanRect.top * z + spanRect.height * z;
-
-          const isFilled = span.classList.contains('filled');
 
           onVariableClickRef.current?.({
             key: varKey,
-            filled: isFilled,
-            x,
-            y,
+            filled: span.classList.contains('filled'),
+            x: iframeRect.left - containerRect.left + spanRect.left * z + (spanRect.width * z) / 2,
+            y: iframeRect.top - containerRect.top + spanRect.top * z + spanRect.height * z,
           });
         });
       });
-    }, [measureIframe]);
+    }, [measureIframe, currentSrcdoc]);
 
-    // Re-measure when variables change (srcdoc updates trigger onLoad)
     useEffect(() => {
       const t = setTimeout(measureIframe, 150);
       return () => clearTimeout(t);
-    }, [srcdoc, measureIframe]);
+    }, [currentSrcdoc, measureIframe]);
 
-    // Clear active state inside iframe when variables change (re-render)
-    const prevSrcdocRef = useRef(srcdoc);
+    const prevRenderedRef = useRef(renderedHtml);
     useEffect(() => {
-      if (prevSrcdocRef.current !== srcdoc) {
-        prevSrcdocRef.current = srcdoc;
-        // srcdoc changed → iframe will reload, active states reset automatically
-        // Clear saved edit since underlying data changed
-        if (conversationId) {
-          localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
-        }
+      if (prevRenderedRef.current !== renderedHtml) {
+        prevRenderedRef.current = renderedHtml;
+        if (conversationId) localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
       }
-    }, [srcdoc, conversationId]);
+    }, [renderedHtml, conversationId]);
 
-    // Toggle contentEditable when editable prop changes (without iframe reload)
     useEffect(() => {
       const doc = iframeRef.current?.contentDocument;
-      if (doc?.body) {
-        doc.body.contentEditable = editable ? 'true' : 'false';
-      }
+      if (doc?.body) doc.body.contentEditable = editable ? 'true' : 'false';
     }, [editable]);
+
+    const toggleFullscreen = useCallback(() => {
+      if (!isFullscreen) {
+        fullscreenRef.current?.requestFullscreen?.();
+      } else {
+        document.exitFullscreen?.();
+      }
+    }, [isFullscreen]);
+
+    useEffect(() => {
+      const h = () => setIsFullscreen(!!document.fullscreenElement);
+      document.addEventListener('fullscreenchange', h);
+      return () => document.removeEventListener('fullscreenchange', h);
+    }, []);
 
     const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
 
+    const docWidth = 595;
+    const autoFitZoom = containerWidth > 0 ? Math.min((containerWidth - 24) / docWidth, 1.1) : BASE_ZOOM;
+    const effectiveZoom = autoFitZoom * (zoom / BASE_ZOOM);
     const displayZoom = Math.round((zoom / BASE_ZOOM) * 100);
+    zoomRef.current = effectiveZoom;
 
-    const scaledWidth = 595 * zoom;
-    const scaledHeight = iframeHeight * zoom;
+    const scaledWidth = docWidth * effectiveZoom;
+    const scaledHeight = iframeHeight * effectiveZoom;
+
+    const goToPrevPage = () => setCurrentPage((p) => Math.max(0, p - 1));
+    const goToNextPage = () => setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
+
+    // ── Toolbar button helpers ──
+    const btnBase: React.CSSProperties = {
+      width: '30px', height: '30px',
+      border: 'none', background: 'transparent',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      borderRadius: '6px', transition: 'background 0.15s, color 0.15s',
+      flexShrink: 0, cursor: 'pointer',
+    };
+    const btn = (disabled?: boolean): React.CSSProperties => ({
+      ...btnBase,
+      color: disabled ? '#d1d5db' : '#555',
+      cursor: disabled ? 'default' : 'pointer',
+    });
+    const onEnter = (e: React.MouseEvent, disabled?: boolean) => { if (!disabled) e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; };
+    const onLeave = (e: React.MouseEvent) => { e.currentTarget.style.background = 'transparent'; };
 
     return (
-      <div ref={containerRef} className="flex flex-col h-full min-h-0 relative">
-        {/* Toolbar */}
-        <div
-          className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
-        >
-          <span className="text-[10px]" style={{ color: '#9ca3af' }}>
-            {unfilled.length === 0
-              ? 'Visi kintamieji užpildyti'
-              : `Liko užpildyti: ${unfilled.length}`}
-          </span>
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={handleZoomOut}
-              className="p-1 rounded transition-colors"
-              style={{ color: '#8a857f' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f0ede8')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <ZoomOut className="w-3 h-3" />
-            </button>
-            <span className="text-[10px] w-8 text-center tabular-nums" style={{ color: '#9ca3af' }}>
-              {displayZoom}%
-            </span>
-            <button
-              onClick={handleZoomIn}
-              className="p-1 rounded transition-colors"
-              style={{ color: '#8a857f' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#f0ede8')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <ZoomIn className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-        <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
+      <div
+        ref={fullscreenRef}
+        className="flex flex-col h-full min-h-0 relative"
+        style={{ background: isFullscreen ? '#fff' : undefined }}
+      >
+        <div ref={containerRef} className="flex flex-col h-full min-h-0 relative">
 
-        {/* Preview area — single scroll layer, white background */}
-        <div
-          className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
-          style={{ background: '#ffffff' }}
-          onScroll={onScroll}
-        >
-          {/* Scaled wrapper — explicit size so scroll area matches visual content */}
+          {/* ── Top toolbar ── */}
           <div
+            className="flex items-center justify-between px-2 flex-shrink-0 select-none"
             style={{
-              width: `${scaledWidth}px`,
-              height: `${scaledHeight}px`,
-              margin: '0 auto',
-              overflow: 'hidden',
+              height: '40px',
+              background: '#fafafa',
+              borderBottom: '1px solid #eee',
             }}
           >
-            <iframe
-              ref={iframeRef}
-              srcDoc={srcdoc}
-              title="Dokumento peržiūra"
-              /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
-                 content is sanitized by sanitizeHtmlForIframe() instead */
-              scrolling="no"
+            {/* Left: page navigation */}
+            <div className="flex items-center gap-0.5" style={{ minWidth: '110px' }}>
+              <button
+                onClick={goToPrevPage}
+                disabled={currentPage === 0 || totalPages <= 1}
+                style={btn(currentPage === 0 || totalPages <= 1)}
+                onMouseEnter={(e) => onEnter(e, currentPage === 0 || totalPages <= 1)}
+                onMouseLeave={onLeave}
+                title="Ankstesnis puslapis"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span
+                className="text-[12px] tabular-nums px-1"
+                style={{ color: '#666', minWidth: '44px', textAlign: 'center' }}
+              >
+                {currentPage + 1} <span style={{ opacity: 0.5 }}>/ {totalPages}</span>
+              </span>
+              <button
+                onClick={goToNextPage}
+                disabled={currentPage === totalPages - 1 || totalPages <= 1}
+                style={btn(currentPage === totalPages - 1 || totalPages <= 1)}
+                onMouseEnter={(e) => onEnter(e, currentPage === totalPages - 1 || totalPages <= 1)}
+                onMouseLeave={onLeave}
+                title="Kitas puslapis"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Center: zoom */}
+            <div className="flex items-center gap-0.5">
+              <button onClick={handleZoomOut} style={btn(zoom <= 0.3)} onMouseEnter={(e) => onEnter(e, zoom <= 0.3)} onMouseLeave={onLeave} title="Sumažinti">
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] tabular-nums" style={{ color: '#888', minWidth: '36px', textAlign: 'center' }}>
+                {displayZoom}%
+              </span>
+              <button onClick={handleZoomIn} style={btn(zoom >= 1.3)} onMouseEnter={(e) => onEnter(e, zoom >= 1.3)} onMouseLeave={onLeave} title="Padidinti">
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Right: edit · download · fullscreen */}
+            <div className="flex items-center gap-0.5" style={{ minWidth: '110px', justifyContent: 'flex-end' }}>
+              {unfilled.length > 0 && (
+                <span className="text-[10px] mr-1" style={{ color: '#b0a090' }}>
+                  {unfilled.length} liko
+                </span>
+              )}
+
+              {showEditToggle && (
+                <button
+                  onClick={onToggleEdit}
+                  style={{
+                    ...btnBase,
+                    color: editable ? '#3b82f6' : '#555',
+                    background: editable ? 'rgba(59,130,246,0.1)' : 'transparent',
+                  }}
+                  onMouseEnter={(e) => { if (!editable) e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; }}
+                  onMouseLeave={(e) => { if (!editable) e.currentTarget.style.background = 'transparent'; }}
+                  title={editable ? 'Užrakinti redagavimą' : 'Redaguoti dokumentą'}
+                >
+                  {editable ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                </button>
+              )}
+
+              <button
+                onClick={() => { onPrint ? onPrint() : printIframeRef.current?.contentWindow?.print(); }}
+                style={btn()}
+                onMouseEnter={(e) => onEnter(e)}
+                onMouseLeave={onLeave}
+                title="Atsisiųsti PDF"
+              >
+                <Download className="w-4 h-4" />
+              </button>
+              <button
+                onClick={toggleFullscreen}
+                style={btn()}
+                onMouseEnter={(e) => onEnter(e)}
+                onMouseLeave={onLeave}
+                title={isFullscreen ? 'Išeiti iš viso ekrano' : 'Visas ekranas'}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Document area ── */}
+          <div
+            ref={scrollAreaRef}
+            className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex"
+            style={{
+              background: isFullscreen ? '#f7f7f7' : '#f0f0f0',
+              justifyContent: 'center',
+              alignItems: 'flex-start',
+            }}
+            onScroll={onScroll}
+          >
+            <div
               style={{
-                width: '595px',
-                height: `${iframeHeight}px`,
-                border: 'none',
-                display: 'block',
+                width: `${scaledWidth}px`,
+                minHeight: `${scaledHeight}px`,
+                margin: '12px auto',
                 overflow: 'hidden',
-                transform: `scale(${zoom})`,
-                transformOrigin: 'top left',
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                borderRadius: '2px',
+                flexShrink: 0,
               }}
-              onLoad={handleIframeLoad}
-            />
+            >
+              <iframe
+                ref={iframeRef}
+                srcDoc={currentSrcdoc}
+                title="Dokumento peržiūra"
+                scrolling="no"
+                style={{
+                  width: `${docWidth}px`,
+                  height: `${iframeHeight}px`,
+                  border: 'none',
+                  display: 'block',
+                  overflow: 'hidden',
+                  transform: `scale(${effectiveZoom})`,
+                  transformOrigin: 'top left',
+                }}
+                onLoad={handleIframeLoad}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Disclaimer */}
-        <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
-        <div
-          className="px-3 py-1 text-center flex-shrink-0"
-        >
-          <span className="text-[9px]" style={{ color: '#bbb' }}>
-            Peržiūra yra apytikslė. Galutinis dokumentas gali šiek tiek skirtis.
-          </span>
-        </div>
+        {/* Hidden iframe for printing — uses renderTemplateForPrint which
+            keeps original <hr page-break> tags for correct page breaks */}
+        <iframe
+          ref={printIframeRef}
+          srcDoc={printSrcdoc}
+          title="Spausdinimo peržiūra"
+          style={{ position: 'absolute', width: 0, height: 0, border: 'none', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
       </div>
     );
   }

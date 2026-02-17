@@ -20,9 +20,7 @@ import {
   Check,
   Share2,
   Users,
-  Download,
   Lock,
-  Unlock,
   Sparkles
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
@@ -2798,7 +2796,7 @@ Vartotojo instrukcija: ${instruction}`;
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '40vw' }}>
           <div className="w-full flex flex-col h-screen bg-base-100">
             {/* Header — compact single row */}
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
@@ -2833,33 +2831,6 @@ Vartotojo instrukcija: ${instruction}`;
                 )}
               </div>
               <div className="flex items-center gap-1">
-                {!isStreamingArtifact && currentConversation?.artifact && (
-                  <>
-                    <button
-                      onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Atsisiųsti PDF"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                    {artifactTab === 'preview' && !isReadOnly && (
-                      <button
-                        onClick={() => setDocEditMode(prev => !prev)}
-                        className={`btn btn-circle btn-text btn-xs ${docEditMode ? 'text-primary bg-primary/10' : 'text-base-content/40 hover:text-base-content/70'}`}
-                        title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
-                      >
-                        {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Kopijuoti YAML"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </>
-                )}
                 <button
                   onClick={() => setShowArtifact(false)}
                   className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
@@ -2887,6 +2858,12 @@ Vartotojo instrukcija: ${instruction}`;
                       documentPreviewRef.current?.clearActiveVariable();
                     }
                   }}
+                  onPrint={() => {
+                    documentPreviewRef.current?.print();
+                    addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.');
+                  }}
+                  showEditToggle={artifactTab === 'preview' && !isReadOnly}
+                  onToggleEdit={() => setDocEditMode(prev => !prev)}
                 />
 
                 {/* Click-outside overlay + floating variable editor popup */}
@@ -3646,10 +3623,10 @@ Vartotojo instrukcija: ${instruction}`;
           /* Preview host overrides */
           html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
           body.c47.doc-content {
-            max-width: 595px;
-            margin: 0 auto;
+            max-width: none;
+            margin: 0;
             background: #ffffff;
-            padding: 36pt;
+            padding: 24pt 28pt;
           }
           body:focus { outline: none; }
           .template-var { cursor: default; border-radius: 3px; }
@@ -3720,8 +3697,8 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* Visual editor iframe */}
-                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
-                  <div style={{ width: '595px', margin: '24px auto' }}>
+                <div className={`flex-1 overflow-auto ${showTemplateVersions ? '' : ''}`} style={{ background: '#f5f3f0' }}>
+                  <div style={{ width: '595px', margin: '16px auto', background: '#ffffff', boxShadow: '0 1px 4px rgba(0,0,0,0.08), 0 0 1px rgba(0,0,0,0.05)', borderRadius: '2px' }}>
                     <iframe
                       ref={templateEditorIframeRef}
                       srcDoc={editorSrcdoc}

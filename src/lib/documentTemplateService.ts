@@ -94,8 +94,8 @@ export function renderTemplate(
   let html = template;
 
   // Replace every {{key}} with a clickable data-var span.
-  // Filled variables show the value; unfilled ones show a yellow placeholder chip.
-  // Both are wrapped in <span data-var="key"> for click handling in the preview.
+  // Filled variables render as plain text; unfilled ones render as subtle
+  // gray placeholder text (no chips, no yellow backgrounds).
   html = html.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
     const trimKey = key.trim();
     const value = variables[trimKey];
@@ -105,37 +105,28 @@ export function renderTemplate(
       return `<span data-var="${trimKey}" class="template-var filled">${escaped}</span>`;
     }
 
-    // Unfilled — visible placeholder chip, also clickable
-    return `<span data-var="${trimKey}" class="template-var unfilled" style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;cursor:pointer;">${trimKey}</span>`;
+    // Unfilled — plain gray placeholder, clickable
+    return `<span data-var="${trimKey}" class="template-var unfilled" style="color:#aaa;cursor:pointer;">${trimKey}</span>`;
   });
-
-  // Extract the header block (logo bar + company info) — the first <div>
-  // inside <body>.  This block is injected after every page break so each
-  // printed page starts with the company heading.
-  const headerMatch = html.match(/<body[^>]*>(\s*<div>[\s\S]*?<\/div>)/);
-  const headerBlock = headerMatch ? headerMatch[1] : '';
 
   // Count total pages (page-break HRs + 1)
   const pageBreakRegex = /<hr[^>]*style="page-break-before:\s*always[^"]*"[^>]*>/gi;
   const pageBreakCount = (html.match(pageBreakRegex) || []).length;
   const totalPages = pageBreakCount + 1;
 
-  // Convert Google Docs page-break <hr> to visual page separators,
-  // injecting the header block after each separator so subsequent pages
-  // display the company logo/info.
-  const pageSeparator =
-    `<div style="width:100%;border-top:2px dashed #d1d5db;margin:32px 0;position:relative;">` +
-    `<span style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#fff;padding:0 12px;font-size:10px;color:#9ca3af;white-space:nowrap;">Naujas puslapis</span>` +
-    `</div>`;
+  // Replace page-break <hr> tags with <!--PAGE_SPLIT--> markers for the
+  // paginated preview. Page numbers are added before each break.
+  // NOTE: We intentionally do NOT inject the header block here — header
+  // injection was causing content displacement and ruining print layout.
+  const PAGE_SPLIT_MARKER = '<!--PAGE_SPLIT-->';
 
-  // Inject page number footer before each page separator
   let pageNum = 1;
   html = html.replace(
     /<hr[^>]*style="page-break-before:\s*always[^"]*"[^>]*>/gi,
     () => {
       const pageFooter = `<div class="page-number">${pageNum} / ${totalPages}</div>`;
       pageNum++;
-      return pageFooter + pageSeparator + headerBlock;
+      return pageFooter + PAGE_SPLIT_MARKER;
     }
   );
 
@@ -149,6 +140,36 @@ export function renderTemplate(
 }
 
 /**
+ * Render template for printing / PDF export.
+ *
+ * - Substitutes variables (same as renderTemplate).
+ * - KEEPS the original `<hr style="page-break-before:always">` tags so the
+ *   browser's print engine places page breaks correctly.
+ * - Does NOT inject headers or page numbers (avoids content displacement).
+ */
+export function renderTemplateForPrint(
+  template: string,
+  variables: Record<string, string>
+): string {
+  let html = template;
+
+  html = html.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
+    const trimKey = key.trim();
+    const value = variables[trimKey];
+
+    if (value !== undefined && value !== '') {
+      const escaped = escapeHtml(value).replace(/\n/g, '<br>');
+      return escaped; // Plain text, no spans needed for print
+    }
+    return trimKey; // Show placeholder name
+  });
+
+  // Keep original <hr page-break> — the browser uses these for page breaks.
+  // No header injection, no page numbering — let the document print naturally.
+  return html;
+}
+
+/**
  * Render template for the visual editor: only variable substitution,
  * no page-break processing or header injection.  This keeps the raw
  * template structure intact so we can cleanly extract it back on save.
@@ -156,7 +177,7 @@ export function renderTemplate(
 export function renderTemplateForEditor(template: string): string {
   return template.replace(/\{\{([^}]+)\}\}/g, (_match, key: string) => {
     const trimKey = key.trim();
-    return `<span data-var="${trimKey}" class="template-var unfilled" contenteditable="false" style="background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;display:inline-block;">${trimKey}</span>`;
+    return `<span data-var="${trimKey}" class="template-var unfilled" contenteditable="false" style="color:#aaa;cursor:default;">${trimKey}</span>`;
   });
 }
 
@@ -246,6 +267,9 @@ export function sanitizeHtmlForIframe(html: string): string {
     .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
     .replace(/javascript\s*:/gi, 'blocked:');
 }
+
+/** Marker inserted between pages by renderTemplate(). Used by DocumentPreview to split pages. */
+export const PAGE_SPLIT_MARKER = '<!--PAGE_SPLIT-->';
 
 function escapeHtml(str: string): string {
   return str
