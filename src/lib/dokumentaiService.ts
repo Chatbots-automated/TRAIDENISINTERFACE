@@ -22,14 +22,26 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
   }
 };
 
+/** Columns we display for nestandartiniai */
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas';
+
+export interface NestandartiniaiRecord {
+  id: number;
+  description: string | null;
+  metadata: string | Record<string, string> | null;
+  project_name: string | null;
+  pateikimo_data: string | null;
+  klientas: string | null;
+}
+
 /**
- * Fetch all records from n8n_vector_store table
+ * Fetch records from n8n_vector_store table (only the columns we need)
  */
-export const fetchNestandartiniaiDokumentai = async (): Promise<any[]> => {
+export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiRecord[]> => {
   try {
     const { data, error } = await db
       .from('n8n_vector_store')
-      .select('*')
+      .select(NESTANDARTINIAI_FIELDS)
       .order('id', { ascending: false });
 
     if (error) {
@@ -37,7 +49,7 @@ export const fetchNestandartiniaiDokumentai = async (): Promise<any[]> => {
       throw error;
     }
 
-    return data || [];
+    return (data as NestandartiniaiRecord[] | null) || [];
   } catch (error: any) {
     console.error('Error in fetchNestandartiniaiDokumentai:', error);
     throw error;

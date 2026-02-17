@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Search, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Filter, X } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai } from '../lib/dokumentaiService';
+import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 
 interface DocumentsInterfaceProps {
   user: AppUser;
@@ -16,12 +17,55 @@ interface SortConfig {
   direction: SortDirection;
 }
 
+/** Filters applied to metadata JSON fields */
+interface MetadataFilters {
+  orientacija: string;
+  derva: string;
+  talpa_tipas: string;
+  DN: string;
+  metadataSearch: string;
+}
+
+const EMPTY_FILTERS: MetadataFilters = {
+  orientacija: '',
+  derva: '',
+  talpa_tipas: '',
+  DN: '',
+  metadataSearch: '',
+};
+
 const TABLE_OPTIONS: { value: TableName; label: string }[] = [
   { value: 'standartiniai_projektai', label: 'Standartiniai projektai' },
   { value: 'n8n_vector_store', label: 'Nestandartiniai (vector store)' },
 ];
 
-function renderCellValue(value: any): string {
+/** Columns shown for nestandartiniai table */
+const NESTANDARTINIAI_COLUMNS = ['id', 'description', 'metadata', 'project_name', 'pateikimo_data', 'klientas'];
+
+const NESTANDARTINIAI_COLUMN_LABELS: Record<string, string> = {
+  id: 'ID',
+  description: 'Description',
+  metadata: 'Metadata',
+  project_name: 'Project name',
+  pateikimo_data: 'Pateikimo data',
+  klientas: 'Klientas',
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function parseMetadata(raw: string | Record<string, string> | null | undefined): Record<string, string> | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw as Record<string, string>;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function renderCellValue(value: any, column?: string): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? 'Taip' : 'Ne';
   if (typeof value === 'object') {
@@ -33,6 +77,9 @@ function renderCellValue(value: any): string {
     }
   }
   const str = String(value);
+  if (column === 'metadata') {
+    return str.length > 80 ? str.slice(0, 80) + '...' : str;
+  }
   return str.length > 150 ? str.slice(0, 150) + '...' : str;
 }
 
@@ -54,19 +101,174 @@ function formatColumnName(col: string): string {
   return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
+/** Extract unique metadata values for a given key across all records */
+function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string): string[] {
+  const set = new Set<string>();
+  for (const r of records) {
+    const meta = parseMetadata(r.metadata);
+    if (meta && meta[key]) {
+      set.add(meta[key]);
+    }
+  }
+  return Array.from(set).sort();
+}
+
+// ---------------------------------------------------------------------------
+// MetadataCell – renders the JSON object in a readable popover
+// ---------------------------------------------------------------------------
+
+function MetadataCell({ raw }: { raw: string | Record<string, string> | null }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const meta = parseMetadata(raw);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  if (!meta) return <span className="text-base-content/40">—</span>;
+
+  const preview = Object.entries(meta).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-left text-xs font-mono text-primary/80 hover:text-primary truncate max-w-[220px] block"
+        title="Spustelėkite, kad matytumėte visą metadata"
+      >
+        {preview.length > 60 ? preview.slice(0, 60) + '...' : preview}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 mt-1 w-80 max-h-72 overflow-auto bg-base-100 border border-base-content/15 rounded-lg shadow-xl p-3 text-xs font-mono space-y-0.5">
+          {Object.entries(meta).map(([k, v]) => (
+            <div key={k} className="flex gap-2">
+              <span className="text-base-content/50 min-w-[120px] shrink-0">{k}:</span>
+              <span className="text-base-content break-all">{String(v)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FilterBar – metadata filters for nestandartiniai table
+// ---------------------------------------------------------------------------
+
+interface FilterBarProps {
+  filters: MetadataFilters;
+  onChange: (f: MetadataFilters) => void;
+  options: {
+    orientacija: string[];
+    derva: string[];
+    talpa_tipas: string[];
+    DN: string[];
+  };
+}
+
+function FilterBar({ filters, onChange, options }: FilterBarProps) {
+  const hasActiveFilters = Object.values(filters).some(v => v !== '');
+
+  const update = (key: keyof MetadataFilters, value: string) => {
+    onChange({ ...filters, [key]: value });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 py-2">
+      <Filter className="w-4 h-4 text-base-content/40 shrink-0" />
+
+      {/* Orientacija */}
+      <select
+        value={filters.orientacija}
+        onChange={e => update('orientacija', e.target.value)}
+        className="select select-xs select-bordered min-w-[130px]"
+      >
+        <option value="">Orientacija</option>
+        {options.orientacija.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+
+      {/* Derva */}
+      <select
+        value={filters.derva}
+        onChange={e => update('derva', e.target.value)}
+        className="select select-xs select-bordered min-w-[130px]"
+      >
+        <option value="">Derva</option>
+        {options.derva.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+
+      {/* Talpa tipas */}
+      <select
+        value={filters.talpa_tipas}
+        onChange={e => update('talpa_tipas', e.target.value)}
+        className="select select-xs select-bordered min-w-[130px]"
+      >
+        <option value="">Talpa tipas</option>
+        {options.talpa_tipas.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+
+      {/* DN (diametras) */}
+      <select
+        value={filters.DN}
+        onChange={e => update('DN', e.target.value)}
+        className="select select-xs select-bordered min-w-[110px]"
+      >
+        <option value="">DN</option>
+        {options.DN.map(v => <option key={v} value={v}>{v}</option>)}
+      </select>
+
+      {/* Free-text metadata search */}
+      <div className="relative">
+        <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-base-content/40" />
+        <input
+          type="text"
+          placeholder="Ieškoti metadata..."
+          value={filters.metadataSearch}
+          onChange={e => update('metadataSearch', e.target.value)}
+          className="input input-xs input-bordered pl-6 w-[180px]"
+        />
+      </div>
+
+      {/* Clear all */}
+      {hasActiveFilters && (
+        <button
+          onClick={() => onChange({ ...EMPTY_FILTERS })}
+          className="btn btn-xs btn-ghost text-error gap-1"
+        >
+          <X className="w-3 h-3" />
+          Išvalyti
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function DocumentsInterface({ user, projectId }: DocumentsInterfaceProps) {
   const [selectedTable, setSelectedTable] = useState<TableName>('standartiniai_projektai');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [standartiniaiData, setStandartiniaiData] = useState<any[]>([]);
-  const [nestandartiniaiData, setNestandartiniaiData] = useState<any[]>([]);
+  const [nestandartiniaiData, setNestandartiniaiData] = useState<NestandartiniaiRecord[]>([]);
   const [loadingStandartiniai, setLoadingStandartiniai] = useState(true);
   const [loadingNestandartiniai, setLoadingNestandartiniai] = useState(true);
   const [errorStandartiniai, setErrorStandartiniai] = useState<string | null>(null);
   const [errorNestandartiniai, setErrorNestandartiniai] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
+  const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -112,26 +314,76 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   };
 
-  const currentData = selectedTable === 'standartiniai_projektai' ? standartiniaiData : nestandartiniaiData;
-  const currentLoading = selectedTable === 'standartiniai_projektai' ? loadingStandartiniai : loadingNestandartiniai;
-  const currentError = selectedTable === 'standartiniai_projektai' ? errorStandartiniai : errorNestandartiniai;
-  const currentReload = selectedTable === 'standartiniai_projektai' ? loadStandartiniai : loadNestandartiniai;
+  // ---- Derived state for nestandartiniai filter options (computed once per data load) ----
+  const filterOptions = useMemo(() => ({
+    orientacija: extractUniqueMetaValues(nestandartiniaiData, 'orientacija'),
+    derva: extractUniqueMetaValues(nestandartiniaiData, 'derva'),
+    talpa_tipas: extractUniqueMetaValues(nestandartiniaiData, 'talpa_tipas'),
+    DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
+  }), [nestandartiniaiData]);
+
+  // ---- Table data, columns, loading, error based on selection ----
+  const isNestandartiniai = selectedTable === 'n8n_vector_store';
+  const currentLoading = isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
+  const currentError = isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
+  const currentReload = isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
   const currentLabel = TABLE_OPTIONS.find(o => o.value === selectedTable)!.label;
 
-  const columns = useMemo(() => getColumns(currentData), [currentData]);
+  const columns = useMemo(() => {
+    if (isNestandartiniai) return NESTANDARTINIAI_COLUMNS;
+    return getColumns(standartiniaiData);
+  }, [isNestandartiniai, standartiniaiData]);
 
+  // ---- Filtering ----
   const filteredData = useMemo(() => {
-    if (!searchQuery.trim()) return currentData;
-    const q = searchQuery.toLowerCase();
-    return currentData.filter(row =>
-      columns.some(col => {
-        const val = row[col];
-        if (val === null || val === undefined) return false;
-        return String(val).toLowerCase().includes(q);
-      })
-    );
-  }, [currentData, searchQuery, columns]);
+    let rows: any[] = isNestandartiniai ? nestandartiniaiData : standartiniaiData;
 
+    // Global text search across visible columns
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      rows = rows.filter(row =>
+        columns.some(col => {
+          const val = row[col];
+          if (val === null || val === undefined) return false;
+          if (typeof val === 'object') {
+            return JSON.stringify(val).toLowerCase().includes(q);
+          }
+          return String(val).toLowerCase().includes(q);
+        })
+      );
+    }
+
+    // Metadata-specific filters (only for nestandartiniai)
+    if (isNestandartiniai) {
+      const { orientacija, derva, talpa_tipas, DN, metadataSearch } = metadataFilters;
+
+      if (orientacija || derva || talpa_tipas || DN || metadataSearch) {
+        rows = rows.filter((row: NestandartiniaiRecord) => {
+          const meta = parseMetadata(row.metadata);
+          if (!meta) return false;
+
+          if (orientacija && meta.orientacija !== orientacija) return false;
+          if (derva && meta.derva !== derva) return false;
+          if (talpa_tipas && meta.talpa_tipas !== talpa_tipas) return false;
+          if (DN && meta.DN !== DN) return false;
+
+          if (metadataSearch) {
+            const q = metadataSearch.toLowerCase();
+            const found = Object.entries(meta).some(
+              ([k, v]) => k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
+            );
+            if (!found) return false;
+          }
+
+          return true;
+        });
+      }
+    }
+
+    return rows;
+  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, columns, metadataFilters]);
+
+  // ---- Sorting ----
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
@@ -164,7 +416,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setDropdownOpen(false);
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
+    setMetadataFilters({ ...EMPTY_FILTERS });
   };
+
+  const totalCount = isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
 
   return (
     <div className="h-full flex flex-col bg-base-200/50">
@@ -234,6 +489,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             />
           </div>
         </div>
+
+        {/* Metadata filter bar – only for nestandartiniai */}
+        {isNestandartiniai && !currentLoading && nestandartiniaiData.length > 0 && (
+          <FilterBar
+            filters={metadataFilters}
+            onChange={setMetadataFilters}
+            options={filterOptions}
+          />
+        )}
       </div>
 
       {/* Error */}
@@ -258,11 +522,11 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <div className="text-center">
               <Database className="w-12 h-12 mx-auto mb-4 text-base-content/20" />
               <h3 className="text-lg font-medium mb-2 text-base-content">
-                {searchQuery ? 'Nieko nerasta' : 'Nėra duomenų'}
+                {searchQuery || Object.values(metadataFilters).some(v => v) ? 'Nieko nerasta' : 'Nėra duomenų'}
               </h3>
               <p className="text-sm text-base-content/60">
-                {searchQuery
-                  ? 'Pakeiskite paieškos užklausą'
+                {searchQuery || Object.values(metadataFilters).some(v => v)
+                  ? 'Pakeiskite paieškos užklausą arba filtrus'
                   : `Lentelė ${selectedTable} tuščia`
                 }
               </p>
@@ -280,7 +544,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       className="cursor-pointer select-none whitespace-nowrap"
                     >
                       <div className="flex items-center gap-1">
-                        <span>{formatColumnName(col)}</span>
+                        <span>{isNestandartiniai ? (NESTANDARTINIAI_COLUMN_LABELS[col] || formatColumnName(col)) : formatColumnName(col)}</span>
                         <span className="inline-flex flex-col leading-none">
                           <ChevronUp
                             className={`w-3 h-3 ${
@@ -308,10 +572,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     {columns.map(col => (
                       <td
                         key={col}
-                        className="whitespace-nowrap max-w-xs truncate"
-                        title={String(row[col] ?? '')}
+                        className={`whitespace-nowrap ${col === 'metadata' ? 'max-w-[240px]' : 'max-w-xs'} truncate`}
                       >
-                        {renderCellValue(row[col])}
+                        {col === 'metadata' && isNestandartiniai ? (
+                          <MetadataCell raw={row[col]} />
+                        ) : (
+                          <span title={String(row[col] ?? '')}>{renderCellValue(row[col], col)}</span>
+                        )}
                       </td>
                     ))}
                   </tr>
@@ -322,8 +589,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             {/* Footer */}
             <div className="px-4 py-2 text-xs border-t border-base-content/10 flex items-center justify-between bg-base-200/50 text-base-content/50">
               <span>
-                {searchQuery
-                  ? `${sortedData.length} iš ${currentData.length} įrašų`
+                {sortedData.length < totalCount
+                  ? `${sortedData.length} iš ${totalCount} įrašų`
                   : `${sortedData.length} įrašų`
                 }
               </span>
