@@ -1,18 +1,16 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { ChevronLeft, ChevronRight, Download, Lock, Maximize2, Minimize2, Unlock, ZoomIn, ZoomOut } from 'lucide-react';
-import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe, PAGE_SPLIT_MARKER } from '../lib/documentTemplateService';
+import { renderTemplate, renderTemplateForPrint, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe, PAGE_SPLIT_MARKER } from '../lib/documentTemplateService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
   clearActiveVariable: () => void;
-  /** Get the full innerHTML of the iframe body (includes user text edits). */
   getEditedHtml: () => string | null;
 }
 
 export interface VariableClickInfo {
   key: string;
   filled: boolean;
-  /** Position relative to the DocumentPreview container */
   x: number;
   y: number;
 }
@@ -20,19 +18,13 @@ export interface VariableClickInfo {
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
-  /** Bump to force re-reading the global template from localStorage. */
   templateVersion?: number;
   onVariableClick?: (info: VariableClickInfo | null) => void;
   onScroll?: () => void;
-  /** Whether the document body is contentEditable. Default false. */
   editable?: boolean;
-  /** Conversation ID — used for localStorage persistence of manual edits. */
   conversationId?: string;
-  /** Callback to trigger print/download from parent. */
   onPrint?: () => void;
-  /** Callback to toggle edit mode. */
   onToggleEdit?: () => void;
-  /** Whether to show the edit toggle (only when not read-only). */
   showEditToggle?: boolean;
 }
 
@@ -69,7 +61,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     const fullscreenRef = useRef<HTMLDivElement>(null);
     const [containerWidth, setContainerWidth] = useState(0);
 
-    // Auto-measure available width
     useEffect(() => {
       const el = scrollAreaRef.current;
       if (!el) return;
@@ -91,56 +82,59 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     const renderedHtml = useMemo(() => renderTemplate(templateHtml, variables), [templateHtml, variables]);
     const unfilled = useMemo(() => getUnfilledVariables(templateHtml, variables), [templateHtml, variables]);
 
-    // ── CSS injected into every page iframe ──
-    // Variables render as plain text — no backgrounds, no borders, no chips.
-    // Only .template-var.active gets a subtle underline so click-to-edit still works.
+    // ── Preview CSS (injected into each page iframe) ──
     const previewCss = `
       html, body { margin: 0; padding: 0; background: #fff; overflow: hidden; }
       body.c47.doc-content {
-        max-width: none;
-        margin: 0;
-        background: #fff;
+        max-width: none; margin: 0; background: #fff;
         padding: 24pt 28pt;
       }
       .template-var { cursor: pointer; }
-      .template-var.filled { /* plain text — no styling */ }
+      .template-var.filled { }
       .template-var.unfilled {
-        color: inherit;
-        background: none !important;
-        border: none !important;
-        padding: 0 !important;
-        font-size: inherit !important;
-        white-space: normal !important;
+        color: inherit; background: none !important;
+        border: none !important; padding: 0 !important;
+        font-size: inherit !important; white-space: normal !important;
       }
       .template-var.active {
-        background: rgba(59,130,246,0.08) !important;
-        border-radius: 2px;
+        background: rgba(59,130,246,0.08) !important; border-radius: 2px;
       }
       .page-number {
-        text-align: right;
-        padding: 16px 0 4px;
-        font-size: 9px;
-        color: #9ca3af;
-        font-family: Arial, sans-serif;
-        letter-spacing: 0.5px;
-      }
-      @media print {
-        html, body { margin: 0!important; padding: 0!important; background: #fff!important; overflow: visible!important; -webkit-print-color-adjust: exact!important; print-color-adjust: exact!important; }
-        body.c47.doc-content { max-width: none!important; margin: 0!important; padding: 36pt!important; box-shadow: none!important; }
-        .template-var { cursor: default; }
-        .page-number { font-size: 8px; padding: 8px 0 0; }
-        img { max-width: 100%!important; -webkit-print-color-adjust: exact!important; print-color-adjust: exact!important; }
-        @page { size: A4; margin: 0; }
+        text-align: right; padding: 16px 0 4px;
+        font-size: 9px; color: #9ca3af;
+        font-family: Arial, sans-serif; letter-spacing: 0.5px;
       }
     </style>`;
 
-    const fullSrcdoc = useMemo(() => {
-      return sanitizeHtmlForIframe(renderedHtml).replace('</style>', previewCss);
-    }, [renderedHtml]);
+    // ── Print CSS (for the hidden print iframe) ──
+    const printCss = `
+      html, body {
+        margin: 0; padding: 0; background: #fff;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      body.c47.doc-content {
+        max-width: none; margin: 0; background: #fff;
+        padding: 36pt;
+      }
+      img {
+        max-width: 100% !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      @page { size: A4; margin: 0; }
+    </style>`;
 
+    // Preview: split at markers
     const pageSrcdocs = useMemo(() => {
       return splitIntoPages(sanitizeHtmlForIframe(renderedHtml).replace('</style>', previewCss));
     }, [renderedHtml]);
+
+    // Print: separate render that keeps original <hr page-break> tags
+    const printSrcdoc = useMemo(() => {
+      const printHtml = renderTemplateForPrint(templateHtml, variables);
+      return sanitizeHtmlForIframe(printHtml).replace('</style>', printCss);
+    }, [templateHtml, variables]);
 
     const totalPages = pageSrcdocs.length;
 
@@ -172,7 +166,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       doc.body.contentEditable = editableRef.current ? 'true' : 'false';
       doc.body.style.outline = 'none';
 
-      // Restore saved manual edits
       if (conversationId) {
         try {
           const saved = localStorage.getItem(DOC_EDIT_PREFIX + conversationId);
@@ -188,7 +181,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         } catch { /* ignore */ }
       }
 
-      // Auto-save on input
       doc.body.addEventListener('input', () => {
         if (!editableRef.current || !conversationId) return;
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -203,13 +195,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         }, 500);
       });
 
-      // Click on body clears active state
       doc.body.addEventListener('click', () => {
         doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
         onVariableClickRef.current?.(null);
       });
 
-      // Variable click handlers
       doc.querySelectorAll<HTMLSpanElement>('[data-var]').forEach((span) => {
         span.addEventListener('click', (e) => {
           e.preventDefault();
@@ -257,7 +247,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       if (doc?.body) doc.body.contentEditable = editable ? 'true' : 'false';
     }, [editable]);
 
-    // Fullscreen
     const toggleFullscreen = useCallback(() => {
       if (!isFullscreen) {
         fullscreenRef.current?.requestFullscreen?.();
@@ -272,7 +261,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       return () => document.removeEventListener('fullscreenchange', h);
     }, []);
 
-    // Zoom
     const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
 
@@ -308,19 +296,17 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       <div
         ref={fullscreenRef}
         className="flex flex-col h-full min-h-0 relative"
-        style={{ background: isFullscreen ? '#1a1a1a' : undefined }}
+        style={{ background: isFullscreen ? '#fff' : undefined }}
       >
         <div ref={containerRef} className="flex flex-col h-full min-h-0 relative">
 
-          {/* ── Top toolbar ──────────────────────────────────────────
-              [page nav]   [zoom]   [edit · download · fullscreen]
-          ──────────────────────────────────────────────────────── */}
+          {/* ── Top toolbar ── */}
           <div
             className="flex items-center justify-between px-2 flex-shrink-0 select-none"
             style={{
               height: '40px',
-              background: isFullscreen ? '#2a2a2a' : '#fafafa',
-              borderBottom: isFullscreen ? '1px solid #333' : '1px solid #eee',
+              background: '#fafafa',
+              borderBottom: '1px solid #eee',
             }}
           >
             {/* Left: page navigation */}
@@ -337,7 +323,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               </button>
               <span
                 className="text-[12px] tabular-nums px-1"
-                style={{ color: isFullscreen ? '#aaa' : '#666', minWidth: '44px', textAlign: 'center' }}
+                style={{ color: '#666', minWidth: '44px', textAlign: 'center' }}
               >
                 {currentPage + 1} <span style={{ opacity: 0.5 }}>/ {totalPages}</span>
               </span>
@@ -358,7 +344,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               <button onClick={handleZoomOut} style={btn(zoom <= 0.3)} onMouseEnter={(e) => onEnter(e, zoom <= 0.3)} onMouseLeave={onLeave} title="Sumažinti">
                 <ZoomOut className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[11px] tabular-nums" style={{ color: isFullscreen ? '#aaa' : '#888', minWidth: '36px', textAlign: 'center' }}>
+              <span className="text-[11px] tabular-nums" style={{ color: '#888', minWidth: '36px', textAlign: 'center' }}>
                 {displayZoom}%
               </span>
               <button onClick={handleZoomIn} style={btn(zoom >= 1.3)} onMouseEnter={(e) => onEnter(e, zoom >= 1.3)} onMouseLeave={onLeave} title="Padidinti">
@@ -368,9 +354,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
 
             {/* Right: edit · download · fullscreen */}
             <div className="flex items-center gap-0.5" style={{ minWidth: '110px', justifyContent: 'flex-end' }}>
-              {/* Unfilled count — subtle inline indicator */}
               {unfilled.length > 0 && (
-                <span className="text-[10px] mr-1" style={{ color: isFullscreen ? '#888' : '#b0a090' }}>
+                <span className="text-[10px] mr-1" style={{ color: '#b0a090' }}>
                   {unfilled.length} liko
                 </span>
               )}
@@ -412,13 +397,12 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             </div>
           </div>
 
-          {/* ── Document area ──
-              Centered, clean background, no extra margins in fullscreen */}
+          {/* ── Document area ── */}
           <div
             ref={scrollAreaRef}
             className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex"
             style={{
-              background: isFullscreen ? '#1a1a1a' : '#f0f0f0',
+              background: isFullscreen ? '#f7f7f7' : '#f0f0f0',
               justifyContent: 'center',
               alignItems: 'flex-start',
             }}
@@ -427,13 +411,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             <div
               style={{
                 width: `${scaledWidth}px`,
-                height: `${scaledHeight}px`,
-                margin: isFullscreen ? '32px auto' : '12px auto',
+                minHeight: `${scaledHeight}px`,
+                margin: '12px auto',
                 overflow: 'hidden',
                 background: '#fff',
-                boxShadow: isFullscreen
-                  ? '0 4px 24px rgba(0,0,0,0.4)'
-                  : '0 1px 3px rgba(0,0,0,0.08)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                 borderRadius: '2px',
                 flexShrink: 0,
               }}
@@ -458,10 +440,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           </div>
         </div>
 
-        {/* Hidden iframe for printing full document (all pages) */}
+        {/* Hidden iframe for printing — uses renderTemplateForPrint which
+            keeps original <hr page-break> tags for correct page breaks */}
         <iframe
           ref={printIframeRef}
-          srcDoc={fullSrcdoc}
+          srcDoc={printSrcdoc}
           title="Spausdinimo peržiūra"
           style={{ position: 'absolute', width: 0, height: 0, border: 'none', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
           tabIndex={-1}
