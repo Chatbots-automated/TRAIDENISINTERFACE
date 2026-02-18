@@ -7,6 +7,7 @@ import AdminUsersInterface from './components/AdminUsersInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
 import SDKInterface from './components/SDKInterfaceNew';
+import PaklausimoKortelePage from './components/PaklausimoKortele';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
@@ -133,8 +134,21 @@ function AppContent() {
     );
   }
 
-  if (!user) {
+  // Public routes – accessible without authentication
+  const isPublicRoute = location.pathname.startsWith('/paklausimas/');
+
+  if (!user && !isPublicRoute) {
     return <AuthForm onSuccess={handleAuthSuccess} />;
+  }
+
+  // Render public route without Layout wrapper
+  if (!user && isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
+        <Route path="*" element={<AuthForm onSuccess={handleAuthSuccess} />} />
+      </Routes>
+    );
   }
 
   if (loading) {
@@ -180,6 +194,10 @@ function AppContent() {
         <Route
           path="/sdk/:conversationId?"
           element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} onRequestMainSidebarCollapse={setForceMainSidebarCollapsed} />}
+        />
+        <Route
+          path="/paklausimas/:id"
+          element={<PaklausimoKortelePage />}
         />
         {/* Catch-all redirect to sdk */}
         <Route path="*" element={<Navigate to="/sdk" replace />} />

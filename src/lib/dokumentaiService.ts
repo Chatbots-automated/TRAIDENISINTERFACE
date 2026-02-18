@@ -23,7 +23,7 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,ai';
 
 export interface NestandartiniaiRecord {
   id: number;
@@ -32,6 +32,8 @@ export interface NestandartiniaiRecord {
   project_name: string | null;
   pateikimo_data: string | null;
   klientas: string | null;
+  atsakymas: string | null;
+  ai: string | null;
 }
 
 /**
@@ -52,6 +54,29 @@ export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiR
     return (data as NestandartiniaiRecord[] | null) || [];
   } catch (error: any) {
     console.error('Error in fetchNestandartiniaiDokumentai:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch a single record from n8n_vector_store by ID
+ */
+export const fetchNestandartiniaiById = async (id: number): Promise<NestandartiniaiRecord | null> => {
+  try {
+    const { data, error } = await db
+      .from('n8n_vector_store')
+      .select(NESTANDARTINIAI_FIELDS)
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      console.error('Error fetching n8n_vector_store record:', error);
+      throw error;
+    }
+
+    return (data as NestandartiniaiRecord | null) || null;
+  } catch (error: any) {
+    console.error('Error in fetchNestandartiniaiById:', error);
     throw error;
   }
 };

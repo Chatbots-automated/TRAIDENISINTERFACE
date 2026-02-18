@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Filter, X } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Filter, X, FileText } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai } from '../lib/dokumentaiService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
+import { PaklausimoModal } from './PaklausimoKortele';
 
 interface DocumentsInterfaceProps {
   user: AppUser;
@@ -40,7 +41,7 @@ const TABLE_OPTIONS: { value: TableName; label: string }[] = [
 ];
 
 /** Columns shown for nestandartiniai table */
-const NESTANDARTINIAI_COLUMNS = ['id', 'description', 'metadata', 'project_name', 'pateikimo_data', 'klientas'];
+const NESTANDARTINIAI_COLUMNS = ['id', 'description', 'metadata', 'project_name', 'pateikimo_data', 'klientas', 'atsakymas', 'ai'];
 
 const NESTANDARTINIAI_COLUMN_LABELS: Record<string, string> = {
   id: 'ID',
@@ -49,6 +50,8 @@ const NESTANDARTINIAI_COLUMN_LABELS: Record<string, string> = {
   project_name: 'Project name',
   pateikimo_data: 'Pateikimo data',
   klientas: 'Klientas',
+  atsakymas: 'Atsakymas',
+  ai: 'AI',
 };
 
 // ---------------------------------------------------------------------------
@@ -321,6 +324,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
+  const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -589,6 +593,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <table className="table-striped table">
               <thead>
                 <tr>
+                  {isNestandartiniai && (
+                    <th className="w-10"></th>
+                  )}
                   {columns.map(col => (
                     <th
                       key={col}
@@ -620,7 +627,22 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </thead>
               <tbody>
                 {sortedData.map((row, rowIndex) => (
-                  <tr key={row.id ?? rowIndex}>
+                  <tr
+                    key={row.id ?? rowIndex}
+                    className={isNestandartiniai ? 'cursor-pointer hover:bg-primary/5 transition-colors' : ''}
+                    onClick={isNestandartiniai ? () => setSelectedCard(row as NestandartiniaiRecord) : undefined}
+                  >
+                    {isNestandartiniai && (
+                      <td className="w-10 px-2">
+                        <button
+                          className="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-base-content/40 hover:text-primary"
+                          title="Atidaryti kortelę"
+                          onClick={(e) => { e.stopPropagation(); setSelectedCard(row as NestandartiniaiRecord); }}
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                     {columns.map(col => (
                       <td
                         key={col}
@@ -653,6 +675,11 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
         )}
       </div>
+
+      {/* Paklausimo kortelė modal */}
+      {selectedCard && (
+        <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} />
+      )}
     </div>
   );
 }
