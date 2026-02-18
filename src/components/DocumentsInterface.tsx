@@ -160,6 +160,83 @@ function MetadataCell({ raw }: { raw: string | Record<string, string> | null }) 
 }
 
 // ---------------------------------------------------------------------------
+// FilterDropdown – custom styled dropdown that replaces native <select>
+// ---------------------------------------------------------------------------
+
+function FilterDropdown({ label, value, options, onChange }: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const isActive = value !== '';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={`
+          inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+          transition-all duration-150 cursor-pointer
+          ${isActive
+            ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+            : 'bg-base-200/80 text-base-content/70 border border-base-content/10 hover:bg-base-200 hover:border-base-content/20'
+          }
+        `}
+      >
+        <span>{isActive ? `${label}: ${value}` : label}</span>
+        {isActive ? (
+          <X
+            className="w-3 h-3 hover:text-error transition-colors"
+            onClick={(e) => { e.stopPropagation(); onChange(''); }}
+          />
+        ) : (
+          <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+        )}
+      </button>
+
+      {open && options.length > 0 && (
+        <div className="absolute z-50 top-full left-0 mt-1.5 min-w-[160px] max-h-56 overflow-auto bg-base-100 border border-base-content/10 rounded-xl shadow-lg py-1">
+          {value && (
+            <button
+              onClick={() => { onChange(''); setOpen(false); }}
+              className="w-full text-left px-3 py-1.5 text-xs text-base-content/50 hover:bg-base-200/60 transition-colors"
+            >
+              Visi
+            </button>
+          )}
+          {options.map(opt => (
+            <button
+              key={opt}
+              onClick={() => { onChange(opt); setOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                opt === value
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'text-base-content hover:bg-base-200/60'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // FilterBar – metadata filters for nestandartiniai table
 // ---------------------------------------------------------------------------
 
@@ -181,59 +258,34 @@ function FilterBar({ filters, onChange, options }: FilterBarProps) {
     onChange({ ...filters, [key]: value });
   };
 
+  const activeCount = [filters.orientacija, filters.derva, filters.talpa_tipas, filters.DN, filters.metadataSearch].filter(Boolean).length;
+
   return (
-    <div className="flex flex-wrap items-center gap-2 py-2">
-      <Filter className="w-4 h-4 text-base-content/40 shrink-0" />
+    <div className="flex flex-wrap items-center gap-2 pt-3">
+      <div className="flex items-center gap-1.5 text-xs text-base-content/40 shrink-0 mr-1">
+        <Filter className="w-3.5 h-3.5" />
+        <span className="font-medium">Filtrai</span>
+        {activeCount > 0 && (
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-primary-content text-[10px] font-bold">
+            {activeCount}
+          </span>
+        )}
+      </div>
 
-      {/* Orientacija */}
-      <select
-        value={filters.orientacija}
-        onChange={e => update('orientacija', e.target.value)}
-        className="select select-xs select-bordered min-w-[130px]"
-      >
-        <option value="">Orientacija</option>
-        {options.orientacija.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
+      <FilterDropdown label="Orientacija" value={filters.orientacija} options={options.orientacija} onChange={v => update('orientacija', v)} />
+      <FilterDropdown label="Derva" value={filters.derva} options={options.derva} onChange={v => update('derva', v)} />
+      <FilterDropdown label="Talpa tipas" value={filters.talpa_tipas} options={options.talpa_tipas} onChange={v => update('talpa_tipas', v)} />
+      <FilterDropdown label="DN" value={filters.DN} options={options.DN} onChange={v => update('DN', v)} />
 
-      {/* Derva */}
-      <select
-        value={filters.derva}
-        onChange={e => update('derva', e.target.value)}
-        className="select select-xs select-bordered min-w-[130px]"
-      >
-        <option value="">Derva</option>
-        {options.derva.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
-
-      {/* Talpa tipas */}
-      <select
-        value={filters.talpa_tipas}
-        onChange={e => update('talpa_tipas', e.target.value)}
-        className="select select-xs select-bordered min-w-[130px]"
-      >
-        <option value="">Talpa tipas</option>
-        {options.talpa_tipas.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
-
-      {/* DN (diametras) */}
-      <select
-        value={filters.DN}
-        onChange={e => update('DN', e.target.value)}
-        className="select select-xs select-bordered min-w-[110px]"
-      >
-        <option value="">DN</option>
-        {options.DN.map(v => <option key={v} value={v}>{v}</option>)}
-      </select>
-
-      {/* Free-text metadata search */}
+      {/* Metadata text search */}
       <div className="relative">
-        <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-base-content/40" />
+        <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40" />
         <input
           type="text"
           placeholder="Ieškoti metadata..."
           value={filters.metadataSearch}
           onChange={e => update('metadataSearch', e.target.value)}
-          className="input input-xs input-bordered pl-6 w-[180px]"
+          className="h-7 text-xs rounded-full border border-base-content/10 bg-base-200/80 pl-7 pr-3 w-[170px] outline-none focus:border-primary/40 focus:bg-base-100 transition-all placeholder:text-base-content/30"
         />
       </div>
 
@@ -241,7 +293,7 @@ function FilterBar({ filters, onChange, options }: FilterBarProps) {
       {hasActiveFilters && (
         <button
           onClick={() => onChange({ ...EMPTY_FILTERS })}
-          className="btn btn-xs btn-ghost text-error gap-1"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium text-error/80 hover:text-error hover:bg-error/10 transition-all"
         >
           <X className="w-3 h-3" />
           Išvalyti
