@@ -574,8 +574,8 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
             metadata: meta,
             klientas: record.klientas,
             ai_recommendation: record.ai,
-            conversation: withUserMsg,
-            user_message: text,
+            chat_history: withUserMsg,
+            user_request: text,
           }),
         });
 
