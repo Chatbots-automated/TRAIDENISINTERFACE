@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { X, ExternalLink, ArrowLeft, Link2, ChevronDown, Plus } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
+import { X, ExternalLink, Link2, ChevronDown, Plus } from 'lucide-react';
 import { fetchNestandartiniaiById, updateNestandartiniaiAtsakymas } from '../lib/dokumentaiService';
 import type { NestandartiniaiRecord, AtsakymasMessage } from '../lib/dokumentaiService';
 
@@ -27,21 +27,24 @@ function parseAtsakymas(raw: string | AtsakymasMessage[] | null): AtsakymasMessa
   return [];
 }
 
-// Fields that appear in the "main info" grid (from metadata)
-const MAIN_META_KEYS = ['orientacija', 'talpa', 'derva', 'DN', 'koncentracija', 'talpa_tipas'];
+// The ordered metadata fields for the info grid
+const INFO_ROW_1 = [
+  { key: 'orientacija', label: 'Orientacija' },
+  { key: 'talpa_tipas', label: 'Talpos tipas' },
+  { key: 'DN', label: 'Diametras (DN)' },
+];
 
-function isMainMetaKey(key: string): boolean {
-  return MAIN_META_KEYS.includes(key);
-}
+const INFO_ROW_2 = [
+  { key: 'chemija', label: 'Chemija' },
+  { key: 'derva', label: 'Derva' },
+  { key: 'koncentracija', label: 'Koncentracija' },
+];
 
-const META_LABELS: Record<string, string> = {
-  orientacija: 'Orientacija',
-  talpa: 'Talpa',
-  derva: 'Derva',
-  DN: 'Diametras (DN)',
-  koncentracija: 'Koncentracija',
-  talpa_tipas: 'Talpos tipas',
-};
+const ALL_MAIN_KEYS = new Set([
+  ...INFO_ROW_1.map(r => r.key),
+  ...INFO_ROW_2.map(r => r.key),
+  'pritaikymas', 'talpa',
+]);
 
 // ---------------------------------------------------------------------------
 // Collapsible section
@@ -62,10 +65,11 @@ function CollapsibleSection({
     <div>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 w-full text-left py-2 text-sm font-medium text-macos-gray-500 hover:text-macos-gray-700 transition-colors"
+        className="flex items-center gap-1.5 w-full text-left py-2.5 text-sm font-medium transition-colors"
+        style={{ color: '#5a5550' }}
       >
         <ChevronDown
-          className={`w-4 h-4 transition-transform duration-200 ${open ? '' : '-rotate-90'}`}
+          className={`w-4 h-4 shrink-0 transition-transform duration-200 ${open ? '' : '-rotate-90'}`}
         />
         {title}
       </button>
@@ -75,7 +79,7 @@ function CollapsibleSection({
 }
 
 // ---------------------------------------------------------------------------
-// Chat bubble (matches SDK style)
+// Chat bubble (matches SDK style) - auto-sizes 1→4 lines then scrolls
 // ---------------------------------------------------------------------------
 
 function ChatBubble({
@@ -86,34 +90,76 @@ function ChatBubble({
   side: 'left' | 'right';
 }) {
   return (
-    <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-3`}>
+    <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5`}>
       <div
-        className={`max-w-[80%] rounded-3xl px-4 py-2.5 ${
-          side === 'right'
-            ? 'text-white'
-            : 'text-macos-gray-900'
+        className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
+          side === 'right' ? 'text-white' : 'text-macos-gray-900'
         }`}
         style={
           side === 'right'
-            ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }
-            : { background: '#f8f8f9', border: '1px solid #e5e5e6' }
+            ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
+            : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
         }
       >
         {(message.from || message.date) && (
-          <p className={`text-xs mb-1 ${side === 'right' ? 'text-white/70' : 'text-macos-gray-400'}`}>
+          <p className={`text-xs mb-1 ${side === 'right' ? 'text-white/60' : 'text-macos-gray-400'}`}>
             {message.from && <span className="font-medium">{message.from}</span>}
             {message.from && message.date && ' · '}
             {message.date}
           </p>
         )}
         <div
-          className="text-[15px] leading-relaxed whitespace-pre-wrap overflow-y-auto"
-          style={{ maxHeight: '6.5em' }}
+          className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto"
+          style={{ maxHeight: 'calc(1.625rem * 4)' }}
         >
           {message.text}
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-growing textarea (1 line → 4 lines max, then scrolls)
+// ---------------------------------------------------------------------------
+
+function AutoTextarea({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { ref.current?.focus(); }, []);
+
+  const adjustHeight = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const lineHeight = 22; // ~text-sm leading-relaxed
+    const maxHeight = lineHeight * 4;
+    el.style.height = Math.min(el.scrollHeight, maxHeight) + 'px';
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, []);
+
+  useEffect(() => { adjustHeight(); }, [value, adjustHeight]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={placeholder}
+      className={className}
+      style={{ resize: 'none', minHeight: '22px' }}
+      rows={1}
+    />
   );
 }
 
@@ -131,11 +177,6 @@ function NewMessageBubble({
   onCancel: () => void;
 }) {
   const [text, setText] = useState('');
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
 
   const handleSave = () => {
     const trimmed = text.trim();
@@ -144,30 +185,26 @@ function NewMessageBubble({
   };
 
   return (
-    <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-3`}>
+    <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5`}>
       <div
-        className={`max-w-[80%] w-72 rounded-3xl px-4 py-2.5 ${
-          side === 'right'
-            ? 'text-white'
-            : 'text-macos-gray-900'
+        className={`max-w-[80%] w-72 rounded-2xl px-4 py-2.5 ${
+          side === 'right' ? 'text-white' : 'text-macos-gray-900'
         }`}
         style={
           side === 'right'
-            ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }
-            : { background: '#f8f8f9', border: '1px solid #e5e5e6' }
+            ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
+            : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
         }
       >
-        <textarea
-          ref={ref}
+        <AutoTextarea
           value={text}
-          onChange={e => setText(e.target.value)}
+          onChange={setText}
           placeholder={side === 'right' ? 'Komandos žinutė...' : 'Gavėjo žinutė...'}
-          rows={4}
-          className={`w-full bg-transparent border-none outline-none resize-none text-[15px] leading-relaxed placeholder:opacity-50 ${
+          className={`w-full bg-transparent border-none outline-none text-sm leading-relaxed placeholder:opacity-50 ${
             side === 'right' ? 'text-white placeholder:text-white/40' : 'text-macos-gray-900 placeholder:text-macos-gray-400'
           }`}
         />
-        <div className={`flex gap-2 justify-end mt-1 pt-1 ${side === 'right' ? 'border-t border-white/20' : 'border-t border-macos-gray-200'}`}>
+        <div className={`flex gap-2 justify-end mt-1.5 pt-1.5 ${side === 'right' ? 'border-t border-white/20' : 'border-t border-macos-gray-200'}`}>
           <button
             onClick={onCancel}
             className={`text-xs px-2.5 py-1 rounded-full transition-colors ${
@@ -195,16 +232,32 @@ function NewMessageBubble({
 }
 
 // ---------------------------------------------------------------------------
+// Info field component
+// ---------------------------------------------------------------------------
+
+function InfoField({ label, value }: { label: string; value: string | undefined | null }) {
+  if (!value) return <div />;
+  return (
+    <div>
+      <dt className="text-xs" style={{ color: '#8a857f' }}>{label}</dt>
+      <dd className="text-sm font-medium mt-0.5" style={{ color: '#3d3935' }}>{value}</dd>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Card Content (shared between modal & standalone page)
 // ---------------------------------------------------------------------------
 
 function CardContent({
   record,
   cardUrl,
+  readOnly = false,
   onMessagesUpdate,
 }: {
   record: NestandartiniaiRecord;
   cardUrl: string;
+  readOnly?: boolean;
   onMessagesUpdate?: (messages: AtsakymasMessage[]) => void;
 }) {
   const meta = parseMetadata(record.metadata);
@@ -213,8 +266,9 @@ function CardContent({
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const mainMeta = Object.entries(meta).filter(([k]) => isMainMetaKey(k));
-  const extraMeta = Object.entries(meta).filter(([k]) => !isMainMetaKey(k));
+  const extraMeta = Object.entries(meta).filter(([k]) => !ALL_MAIN_KEYS.has(k));
+  const hasInfoRow1 = INFO_ROW_1.some(f => meta[f.key]);
+  const hasInfoRow2 = INFO_ROW_2.some(f => meta[f.key]);
 
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => {
@@ -245,165 +299,179 @@ function CardContent({
   };
 
   return (
-    <div className="bg-white rounded-macos-lg overflow-hidden" style={{ border: '0.5px solid rgba(0,0,0,0.06)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)' }}>
+    <div
+      className="bg-white rounded-macos-lg overflow-hidden flex flex-col"
+      style={{
+        border: '0.5px solid rgba(0,0,0,0.08)',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+        height: '100%',
+      }}
+    >
       {/* Top accent strip */}
-      <div className="h-1.5" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+      <div className="h-1.5 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
-      {/* Header */}
-      <div className="px-6 pt-5 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
-              {record.project_name || 'Paklausimas'}
-            </h2>
-            <p className="text-sm mt-0.5" style={{ color: '#8a857f' }}>
-              Nr. {record.id}
-              {record.pateikimo_data && ` · ${record.pateikimo_data}`}
-            </p>
-          </div>
-          {record.klientas && (
-            <span
-              className="shrink-0 text-xs font-medium px-3 py-1 rounded-full"
-              style={{ background: 'rgba(0, 122, 255, 0.08)', color: '#007AFF' }}
-            >
-              {record.klientas}
-            </span>
-          )}
-        </div>
-
-        {/* Copy link */}
-        <button
-          onClick={copy}
-          className="flex items-center gap-1.5 mt-3 text-xs transition-colors"
-          style={{ color: '#8a857f' }}
-          onMouseEnter={e => (e.currentTarget.style.color = '#3d3935')}
-          onMouseLeave={e => (e.currentTarget.style.color = '#8a857f')}
-        >
-          <Link2 className="w-3.5 h-3.5" />
-          {copied ? 'Nukopijuota!' : 'Kopijuoti nuorodą'}
-        </button>
-      </div>
-
-      {/* Main info grid */}
-      {mainMeta.length > 0 && (
-        <div className="px-6 py-4 grid grid-cols-2 gap-x-8 gap-y-3" style={{ borderTop: '1px solid #f0ede8' }}>
-          {mainMeta.map(([key, value]) => (
-            <div key={key}>
-              <dt className="text-xs" style={{ color: '#8a857f' }}>
-                {META_LABELS[key] || key.replace(/_/g, ' ')}
-              </dt>
-              <dd className="text-sm font-medium mt-0.5" style={{ color: '#3d3935' }}>
-                {String(value)}
-              </dd>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Collapsible description */}
-      {record.description && (
-        <div className="px-6" style={{ borderTop: '1px solid #f0ede8' }}>
-          <CollapsibleSection title="Aprašymas">
-            <div
-              className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto rounded-macos p-3 mb-3"
-              style={{ color: '#3d3935', background: '#faf9f7', border: '1px solid #f0ede8', maxHeight: '160px' }}
-            >
-              {record.description}
-            </div>
-          </CollapsibleSection>
-        </div>
-      )}
-
-      {/* Collapsible extra metadata */}
-      {(extraMeta.length > 0 || record.ai) && (
-        <div className="px-6" style={{ borderTop: '1px solid #f0ede8' }}>
-          <CollapsibleSection title="Papildomi duomenys">
-            <div className="grid grid-cols-2 gap-x-8 gap-y-2 pb-3">
-              {record.ai && (
-                <div>
-                  <dt className="text-xs" style={{ color: '#8a857f' }}>AI</dt>
-                  <dd className="text-sm mt-0.5" style={{ color: '#3d3935' }}>{record.ai}</dd>
-                </div>
+      {/* Scrollable content area */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold" style={{ color: '#3d3935' }}>
+                {record.project_name || 'Paklausimas'}
+              </h2>
+              {meta.pritaikymas && (
+                <p className="text-sm mt-0.5" style={{ color: '#5a5550' }}>
+                  {meta.pritaikymas}
+                </p>
               )}
-              {extraMeta.map(([key, value]) => (
-                <div key={key}>
-                  <dt className="text-xs capitalize" style={{ color: '#8a857f' }}>{key.replace(/_/g, ' ')}</dt>
-                  <dd className="text-sm mt-0.5" style={{ color: '#3d3935' }}>{String(value)}</dd>
-                </div>
-              ))}
+              {!meta.pritaikymas && (
+                <p className="text-sm mt-0.5" style={{ color: '#8a857f' }}>
+                  Nr. {record.id}
+                  {record.pateikimo_data && ` · ${record.pateikimo_data}`}
+                </p>
+              )}
             </div>
-          </CollapsibleSection>
-        </div>
-      )}
-
-      {/* Susirašinėjimas */}
-      <div className="px-6 pb-5" style={{ borderTop: '1px solid #f0ede8' }}>
-        <div className="flex items-center justify-between pt-4 pb-3">
-          <h3 className="text-sm font-medium" style={{ color: '#5a5550' }}>
-            Susirašinėjimas
-            {messages.length > 0 && (
-              <span className="ml-1.5 text-xs font-normal" style={{ color: '#8a857f' }}>
-                ({messages.length})
+            {record.klientas && (
+              <span
+                className="shrink-0 text-xs font-medium px-3 py-1 rounded-full"
+                style={{ background: 'rgba(0, 122, 255, 0.08)', color: '#007AFF' }}
+              >
+                {record.klientas}
               </span>
             )}
-          </h3>
-          {saving && (
-            <span className="text-xs" style={{ color: '#8a857f' }}>Saugoma...</span>
+          </div>
+
+          {/* Copy link – only in editable mode */}
+          {!readOnly && (
+            <button
+              onClick={copy}
+              className="flex items-center gap-1.5 mt-3 text-xs transition-colors hover:opacity-70"
+              style={{ color: '#8a857f' }}
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              {copied ? 'Nukopijuota!' : 'Kopijuoti nuorodą'}
+            </button>
           )}
         </div>
 
-        {/* Messages */}
-        <div className="mb-3">
-          {messages.map((msg, i) => (
-            <ChatBubble
-              key={i}
-              message={msg}
-              side={msg.role === 'team' ? 'right' : 'left'}
-            />
-          ))}
-
-          {/* New message input */}
-          {addingSide && (
-            <NewMessageBubble
-              side={addingSide}
-              onSave={text => handleSaveMessage(text, addingSide)}
-              onCancel={() => setAddingSide(null)}
-            />
-          )}
-        </div>
-
-        {/* Add message buttons */}
-        {!addingSide && (
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setAddingSide('left')}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full transition-all"
-              style={{ background: '#f8f8f9', border: '1px solid #e5e5e6', color: '#5a5550' }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f0f0f2'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#f8f8f9'; }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Gavėjas
-            </button>
-            <button
-              onClick={() => setAddingSide('right')}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full text-white transition-all"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.1)' }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '0.9'; }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Komanda
-            </button>
+        {/* Main info grid – 3 columns, 2 rows */}
+        {(hasInfoRow1 || hasInfoRow2) && (
+          <div className="px-6 py-4" style={{ borderTop: '1px solid #f0ede8' }}>
+            <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+              {INFO_ROW_1.map(f => (
+                <InfoField key={f.key} label={f.label} value={meta[f.key]} />
+              ))}
+              {INFO_ROW_2.map(f => (
+                <InfoField key={f.key} label={f.label} value={meta[f.key]} />
+              ))}
+            </div>
           </div>
         )}
+
+        {/* Collapsible description */}
+        {record.description && (
+          <div className="px-6" style={{ borderTop: '1px solid #f0ede8' }}>
+            <CollapsibleSection title="Aprašymas">
+              <div
+                className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto rounded-macos p-3 mb-3"
+                style={{ color: '#3d3935', background: '#faf9f7', border: '1px solid #f0ede8', maxHeight: '160px' }}
+              >
+                {record.description}
+              </div>
+            </CollapsibleSection>
+          </div>
+        )}
+
+        {/* Collapsible extra metadata */}
+        {(extraMeta.length > 0 || record.ai || meta.talpa) && (
+          <div className="px-6" style={{ borderTop: '1px solid #f0ede8' }}>
+            <CollapsibleSection title="Papildomi duomenys">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
+                {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
+                {record.ai && <InfoField label="AI" value={record.ai} />}
+                {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
+                {extraMeta.map(([key, value]) => (
+                  <InfoField key={key} label={key.replace(/_/g, ' ')} value={String(value)} />
+                ))}
+              </div>
+            </CollapsibleSection>
+          </div>
+        )}
+
+        {/* Susirašinėjimas */}
+        <div className="px-6 pb-5" style={{ borderTop: '1px solid #f0ede8' }}>
+          <div className="flex items-center justify-between pt-4 pb-3">
+            <h3 className="text-sm font-medium" style={{ color: '#5a5550' }}>
+              Susirašinėjimas
+              {messages.length > 0 && (
+                <span className="ml-1.5 text-xs font-normal" style={{ color: '#8a857f' }}>
+                  ({messages.length})
+                </span>
+              )}
+            </h3>
+            {saving && (
+              <span className="text-xs" style={{ color: '#8a857f' }}>Saugoma...</span>
+            )}
+          </div>
+
+          {/* Messages */}
+          {messages.length > 0 && (
+            <div className="mb-3">
+              {messages.map((msg, i) => (
+                <ChatBubble
+                  key={i}
+                  message={msg}
+                  side={msg.role === 'team' ? 'right' : 'left'}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* New message input */}
+          {!readOnly && addingSide && (
+            <div className="mb-3">
+              <NewMessageBubble
+                side={addingSide}
+                onSave={text => handleSaveMessage(text, addingSide)}
+                onCancel={() => setAddingSide(null)}
+              />
+            </div>
+          )}
+
+          {/* Add message buttons – only in editable mode */}
+          {!readOnly && !addingSide && (
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setAddingSide('left')}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full transition-all hover:brightness-95"
+                style={{ background: '#f0f0f2', border: '1px solid #e5e5e6', color: '#5a5550' }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Gavėjas
+              </button>
+              <button
+                onClick={() => setAddingSide('right')}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full text-white transition-all hover:brightness-95"
+                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Komanda
+              </button>
+            </div>
+          )}
+
+          {/* Empty state for read-only */}
+          {readOnly && messages.length === 0 && (
+            <p className="text-sm py-2" style={{ color: '#8a857f' }}>Nėra žinučių.</p>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Modal
+// Modal (editable, used from within the app)
 // ---------------------------------------------------------------------------
 
 export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRecord; onClose: () => void }) {
@@ -416,8 +484,12 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col bg-white rounded-macos-xl"
-        style={{ boxShadow: '0 24px 48px rgba(0,0,0,0.12), 0 8px 16px rgba(0,0,0,0.06)' }}
+        className="w-full flex flex-col bg-white rounded-macos-xl overflow-hidden"
+        style={{
+          maxWidth: '640px',
+          height: 'min(85vh, 720px)',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.12), 0 8px 16px rgba(0,0,0,0.06)',
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Toolbar */}
@@ -436,8 +508,8 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           </button>
         </div>
 
-        {/* Scrollable card */}
-        <div className="overflow-y-auto flex-1 px-4 pb-4">
+        {/* Card fills the modal */}
+        <div className="flex-1 min-h-0 px-4 pb-4">
           <CardContent record={record} cardUrl={cardUrl} />
         </div>
       </div>
@@ -446,12 +518,11 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
 }
 
 // ---------------------------------------------------------------------------
-// Standalone page – /paklausimas/:id
+// Standalone page – /paklausimas/:id (read-only, shareable)
 // ---------------------------------------------------------------------------
 
 export default function PaklausimoKortelePage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [record, setRecord] = useState<NestandartiniaiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -474,7 +545,7 @@ export default function PaklausimoKortelePage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-macos-gray-50">
+      <div className="h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
         <span className="loading loading-spinner loading-md text-macos-blue"></span>
       </div>
     );
@@ -482,18 +553,10 @@ export default function PaklausimoKortelePage() {
 
   if (error || !record) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-macos-gray-50">
+      <div className="h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
         <div className="text-center">
           <p className="text-lg font-medium mb-1" style={{ color: '#3d3935' }}>{error || 'Nerastas'}</p>
-          <p className="text-sm mb-4" style={{ color: '#8a857f' }}>Patikrinkite nuorodą arba grįžkite atgal.</p>
-          <button
-            onClick={() => navigate('/documents')}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-macos text-sm font-medium text-white transition-all"
-            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Grįžti
-          </button>
+          <p className="text-sm" style={{ color: '#8a857f' }}>Patikrinkite nuorodą.</p>
         </div>
       </div>
     );
@@ -502,25 +565,15 @@ export default function PaklausimoKortelePage() {
   const cardUrl = window.location.href;
 
   return (
-    <div className="min-h-screen bg-macos-gray-50">
-      {/* Top bar */}
+    <div
+      className="h-screen flex items-center justify-center p-6 overflow-hidden"
+      style={{ background: '#fdfcfb' }}
+    >
       <div
-        className="sticky top-0 z-10 bg-white/80 px-6 py-3 flex items-center"
-        style={{ backdropFilter: 'blur(20px) saturate(180%)', borderBottom: '0.5px solid rgba(0,0,0,0.1)' }}
+        className="w-full"
+        style={{ maxWidth: '640px', height: 'min(90vh, 780px)' }}
       >
-        <button
-          onClick={() => navigate('/documents')}
-          className="flex items-center gap-1.5 text-sm transition-colors"
-          style={{ color: '#007AFF' }}
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Atgal
-        </button>
-      </div>
-
-      {/* Card */}
-      <div className="max-w-xl mx-auto p-6">
-        <CardContent record={record} cardUrl={cardUrl} />
+        <CardContent record={record} cardUrl={cardUrl} readOnly />
       </div>
     </div>
   );

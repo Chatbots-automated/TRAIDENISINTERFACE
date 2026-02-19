@@ -162,6 +162,16 @@ function AppContent() {
     );
   }
 
+  // Standalone card page – always rendered outside Layout (read-only, shareable)
+  if (isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
+        <Route path="*" element={<Navigate to="/sdk" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <Layout
       user={user}
@@ -194,10 +204,6 @@ function AppContent() {
         <Route
           path="/sdk/:conversationId?"
           element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} onRequestMainSidebarCollapse={setForceMainSidebarCollapsed} />}
-        />
-        <Route
-          path="/paklausimas/:id"
-          element={<PaklausimoKortelePage />}
         />
         {/* Catch-all redirect to sdk */}
         <Route path="*" element={<Navigate to="/sdk" replace />} />

@@ -98,7 +98,7 @@ export const updateNestandartiniaiAtsakymas = async (
 ): Promise<void> => {
   const { error } = await db
     .from('n8n_vector_store')
-    .update({ atsakymas: JSON.stringify(messages) })
+    .update({ atsakymas: messages as any })
     .eq('id', id);
 
   if (error) {
