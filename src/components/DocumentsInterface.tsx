@@ -278,7 +278,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   // Filtering
   const filteredData = useMemo(() => {
     let rows: any[] = isNestandartiniai ? nestandartiniaiData : standartiniaiData;
-    const searchCols = isNestandartiniai ? ['id', 'project_name', 'klientas', 'pateikimo_data', 'ai', 'description'] : genericCols;
+    const searchCols = isNestandartiniai ? ['id', 'project_name', 'klientas', 'pateikimo_data', 'derva', 'description'] : genericCols;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

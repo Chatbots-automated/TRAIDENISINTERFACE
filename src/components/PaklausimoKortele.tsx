@@ -196,7 +196,7 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
       )}
 
       {/* Extra metadata */}
-      {(extraMeta.length > 0 || record.ai || meta.talpa) && (
+      {(extraMeta.length > 0 || record.derva || meta.talpa) && (
         <div style={{ borderTop: '1px solid #f0ede8' }}>
           <CollapsibleSection title="Papildomi duomenys">
             <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
@@ -573,7 +573,7 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
             description: record.description,
             metadata: meta,
             klientas: record.klientas,
-            ai_recommendation: record.ai,
+            derva: record.derva,
             chat_history: withUserMsg,
             user_request: text,
           }),
@@ -602,12 +602,12 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
 
   return (
     <div>
-      {/* AI recommendation */}
-      {record.ai && (
+      {/* Derva recommendation */}
+      {record.derva && (
         <div className="mb-5">
-          <p className="text-xs font-medium mb-2" style={{ color: '#8a857f' }}>AI rekomendacija</p>
+          <p className="text-xs font-medium mb-2" style={{ color: '#8a857f' }}>Dervos rekomendacija</p>
           <div className="text-sm leading-[1.7] whitespace-pre-wrap rounded-macos p-4" style={{ color: '#3d3935', background: 'linear-gradient(135deg, rgba(0,122,255,0.04) 0%, rgba(175,82,222,0.04) 100%)', border: '1px solid rgba(0,122,255,0.1)' }}>
-            {record.ai}
+            {record.derva}
           </div>
         </div>
       )}
@@ -655,7 +655,7 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
 
       {/* Input */}
       {!readOnly && (
-        <div className="flex items-end gap-2 pt-3" style={{ borderTop: conversation.length > 0 || record.ai ? '1px solid #f0ede8' : 'none' }}>
+        <div className="flex items-end gap-2 pt-3" style={{ borderTop: conversation.length > 0 || record.derva ? '1px solid #f0ede8' : 'none' }}>
           <AutoTextarea
             value={input}
             onChange={setInput}
