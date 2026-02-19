@@ -30,6 +30,7 @@ export interface AtsakymasMessage {
   from?: string;
   date?: string;
   text: string;
+  role?: 'recipient' | 'team';
 }
 
 export interface NestandartiniaiRecord {
@@ -84,6 +85,24 @@ export const fetchNestandartiniaiById = async (id: number): Promise<Nestandartin
     return (data as NestandartiniaiRecord | null) || null;
   } catch (error: any) {
     console.error('Error in fetchNestandartiniaiById:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update the atsakymas (conversation) field for a record
+ */
+export const updateNestandartiniaiAtsakymas = async (
+  id: number,
+  messages: AtsakymasMessage[]
+): Promise<void> => {
+  const { error } = await db
+    .from('n8n_vector_store')
+    .update({ atsakymas: JSON.stringify(messages) })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating atsakymas:', error);
     throw error;
   }
 };
