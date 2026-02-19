@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, AlertCircle, RefreshCw, Database, ChevronDown, ChevronUp, Filter, X, FileText } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai } from '../lib/dokumentaiService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
@@ -18,7 +18,6 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-/** Filters applied to metadata JSON fields */
 interface MetadataFilters {
   orientacija: string;
   derva: string;
@@ -35,24 +34,29 @@ const EMPTY_FILTERS: MetadataFilters = {
   metadataSearch: '',
 };
 
-const TABLE_OPTIONS: { value: TableName; label: string }[] = [
-  { value: 'standartiniai_projektai', label: 'Standartiniai projektai' },
-  { value: 'n8n_vector_store', label: 'Nestandartiniai (vector store)' },
+// ---------------------------------------------------------------------------
+// Column config for nestandartiniai – metadata fields shown as own columns
+// ---------------------------------------------------------------------------
+
+interface ColumnDef {
+  key: string;
+  label: string;
+  /** If set, value comes from metadata[metaKey] instead of row[key] */
+  metaKey?: string;
+  width?: string;
+  badge?: boolean;
+}
+
+const NESTANDARTINIAI_COLS: ColumnDef[] = [
+  { key: 'id', label: 'ID', width: 'w-16' },
+  { key: 'project_name', label: 'Projektas' },
+  { key: 'klientas', label: 'Klientas', badge: true },
+  { key: 'meta_orientacija', label: 'Orientacija', metaKey: 'orientacija' },
+  { key: 'meta_talpa_tipas', label: 'Talpos tipas', metaKey: 'talpa_tipas' },
+  { key: 'meta_DN', label: 'DN', metaKey: 'DN', width: 'w-20' },
+  { key: 'meta_derva', label: 'Derva', metaKey: 'derva' },
+  { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
-
-/** Columns shown for nestandartiniai table */
-const NESTANDARTINIAI_COLUMNS = ['id', 'description', 'metadata', 'project_name', 'pateikimo_data', 'klientas', 'atsakymas', 'ai'];
-
-const NESTANDARTINIAI_COLUMN_LABELS: Record<string, string> = {
-  id: 'ID',
-  description: 'Description',
-  metadata: 'Metadata',
-  project_name: 'Project name',
-  pateikimo_data: 'Pateikimo data',
-  klientas: 'Klientas',
-  atsakymas: 'Atsakymas',
-  ai: 'AI',
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -61,42 +65,25 @@ const NESTANDARTINIAI_COLUMN_LABELS: Record<string, string> = {
 function parseMetadata(raw: string | Record<string, string> | null | undefined): Record<string, string> | null {
   if (!raw) return null;
   if (typeof raw === 'object') return raw as Record<string, string>;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(raw); } catch { return null; }
 }
 
-function renderCellValue(value: any, column?: string): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'boolean') return value ? 'Taip' : 'Ne';
-  if (typeof value === 'object') {
-    try {
-      const str = JSON.stringify(value);
-      return str.length > 100 ? str.slice(0, 100) + '...' : str;
-    } catch {
-      return String(value);
-    }
+function getCellValue(row: any, col: ColumnDef): string {
+  if (col.metaKey) {
+    const meta = parseMetadata(row.metadata);
+    return meta?.[col.metaKey] || '—';
   }
-  const str = String(value);
-  if (column === 'metadata') {
-    return str.length > 80 ? str.slice(0, 80) + '...' : str;
-  }
-  return str.length > 150 ? str.slice(0, 150) + '...' : str;
+  const val = row[col.key];
+  if (val === null || val === undefined) return '—';
+  const str = String(val);
+  return str.length > 120 ? str.slice(0, 120) + '…' : str;
 }
 
 function getColumns(rows: any[]): string[] {
   if (rows.length === 0) return [];
   const keys = Object.keys(rows[0]);
   const idIndex = keys.indexOf('id');
-  if (idIndex > -1) {
-    keys.splice(idIndex, 1);
-    keys.sort();
-    keys.unshift('id');
-  } else {
-    keys.sort();
-  }
+  if (idIndex > -1) { keys.splice(idIndex, 1); keys.sort(); keys.unshift('id'); } else { keys.sort(); }
   return keys;
 }
 
@@ -104,82 +91,28 @@ function formatColumnName(col: string): string {
   return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
-/** Extract unique metadata values for a given key across all records */
 function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string): string[] {
   const set = new Set<string>();
   for (const r of records) {
     const meta = parseMetadata(r.metadata);
-    if (meta && meta[key]) {
-      set.add(meta[key]);
-    }
+    if (meta && meta[key]) set.add(meta[key]);
   }
   return Array.from(set).sort();
 }
 
 // ---------------------------------------------------------------------------
-// MetadataCell – renders the JSON object in a readable popover
-// ---------------------------------------------------------------------------
-
-function MetadataCell({ raw }: { raw: string | Record<string, string> | null }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const meta = parseMetadata(raw);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  if (!meta) return <span className="text-base-content/40">—</span>;
-
-  const preview = Object.entries(meta).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ');
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="text-left text-xs font-mono text-primary/80 hover:text-primary truncate max-w-[220px] block"
-        title="Spustelėkite, kad matytumėte visą metadata"
-      >
-        {preview.length > 60 ? preview.slice(0, 60) + '...' : preview}
-      </button>
-
-      {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 w-80 max-h-72 overflow-auto bg-base-100 border border-base-content/15 rounded-lg shadow-xl p-3 text-xs font-mono space-y-0.5">
-          {Object.entries(meta).map(([k, v]) => (
-            <div key={k} className="flex gap-2">
-              <span className="text-base-content/50 min-w-[120px] shrink-0">{k}:</span>
-              <span className="text-base-content break-all">{String(v)}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// FilterDropdown – custom styled dropdown that replaces native <select>
+// FilterDropdown
 // ---------------------------------------------------------------------------
 
 function FilterDropdown({ label, value, options, onChange }: {
-  label: string;
-  value: string;
-  options: string[];
-  onChange: (v: string) => void;
+  label: string; value: string; options: string[]; onChange: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
@@ -190,32 +123,30 @@ function FilterDropdown({ label, value, options, onChange }: {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className={`
-          inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
-          transition-all duration-150 cursor-pointer
-          ${isActive
-            ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
-            : 'bg-base-200/80 text-base-content/70 border border-base-content/10 hover:bg-base-200 hover:border-base-content/20'
-          }
-        `}
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-150 cursor-pointer ${
+          isActive
+            ? 'text-white shadow-sm'
+            : 'text-macos-gray-500 hover:text-macos-gray-700 hover:bg-macos-gray-100'
+        }`}
+        style={isActive ? { background: '#007AFF' } : { background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)' }}
       >
         <span>{isActive ? `${label}: ${value}` : label}</span>
         {isActive ? (
-          <X
-            className="w-3 h-3 hover:text-error transition-colors"
-            onClick={(e) => { e.stopPropagation(); onChange(''); }}
-          />
+          <X className="w-3 h-3 opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onChange(''); }} />
         ) : (
           <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
         )}
       </button>
 
       {open && options.length > 0 && (
-        <div className="absolute z-50 top-full left-0 mt-1.5 min-w-[160px] max-h-56 overflow-auto bg-base-100 border border-base-content/10 rounded-xl shadow-lg py-1">
+        <div
+          className="absolute z-50 top-full left-0 mt-1.5 min-w-[160px] max-h-56 overflow-auto bg-white rounded-macos-lg py-1"
+          style={{ border: '0.5px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}
+        >
           {value && (
             <button
               onClick={() => { onChange(''); setOpen(false); }}
-              className="w-full text-left px-3 py-1.5 text-xs text-base-content/50 hover:bg-base-200/60 transition-colors"
+              className="w-full text-left px-3 py-1.5 text-xs text-macos-gray-400 hover:bg-macos-gray-50 transition-colors"
             >
               Visi
             </button>
@@ -225,10 +156,9 @@ function FilterDropdown({ label, value, options, onChange }: {
               key={opt}
               onClick={() => { onChange(opt); setOpen(false); }}
               className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
-                opt === value
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'text-base-content hover:bg-base-200/60'
+                opt === value ? 'font-medium' : 'text-macos-gray-700 hover:bg-macos-gray-50'
               }`}
+              style={opt === value ? { color: '#007AFF', background: 'rgba(0,122,255,0.06)' } : undefined}
             >
               {opt}
             </button>
@@ -240,36 +170,28 @@ function FilterDropdown({ label, value, options, onChange }: {
 }
 
 // ---------------------------------------------------------------------------
-// FilterBar – metadata filters for nestandartiniai table
+// FilterBar
 // ---------------------------------------------------------------------------
 
-interface FilterBarProps {
+function FilterBar({ filters, onChange, options }: {
   filters: MetadataFilters;
   onChange: (f: MetadataFilters) => void;
-  options: {
-    orientacija: string[];
-    derva: string[];
-    talpa_tipas: string[];
-    DN: string[];
-  };
-}
-
-function FilterBar({ filters, onChange, options }: FilterBarProps) {
-  const hasActiveFilters = Object.values(filters).some(v => v !== '');
-
-  const update = (key: keyof MetadataFilters, value: string) => {
-    onChange({ ...filters, [key]: value });
-  };
-
+  options: { orientacija: string[]; derva: string[]; talpa_tipas: string[]; DN: string[] };
+}) {
+  const hasActive = Object.values(filters).some(v => v !== '');
+  const update = (key: keyof MetadataFilters, value: string) => onChange({ ...filters, [key]: value });
   const activeCount = [filters.orientacija, filters.derva, filters.talpa_tipas, filters.DN, filters.metadataSearch].filter(Boolean).length;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 pt-3">
-      <div className="flex items-center gap-1.5 text-xs text-base-content/40 shrink-0 mr-1">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1.5 text-xs shrink-0 mr-1" style={{ color: '#8a857f' }}>
         <Filter className="w-3.5 h-3.5" />
         <span className="font-medium">Filtrai</span>
         {activeCount > 0 && (
-          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-primary-content text-[10px] font-bold">
+          <span
+            className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold"
+            style={{ background: '#007AFF' }}
+          >
             {activeCount}
           </span>
         )}
@@ -280,23 +202,25 @@ function FilterBar({ filters, onChange, options }: FilterBarProps) {
       <FilterDropdown label="Talpa tipas" value={filters.talpa_tipas} options={options.talpa_tipas} onChange={v => update('talpa_tipas', v)} />
       <FilterDropdown label="DN" value={filters.DN} options={options.DN} onChange={v => update('DN', v)} />
 
-      {/* Metadata text search */}
       <div className="relative">
-        <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40" />
+        <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
         <input
           type="text"
           placeholder="Ieškoti metadata..."
           value={filters.metadataSearch}
           onChange={e => update('metadataSearch', e.target.value)}
-          className="h-7 text-xs rounded-full border border-base-content/10 bg-base-200/80 pl-7 pr-3 w-[170px] outline-none focus:border-primary/40 focus:bg-base-100 transition-all placeholder:text-base-content/30"
+          className="h-7 text-xs rounded-full pl-7 pr-3 w-[170px] outline-none transition-all"
+          style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
+          onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
         />
       </div>
 
-      {/* Clear all */}
-      {hasActiveFilters && (
+      {hasActive && (
         <button
           onClick={() => onChange({ ...EMPTY_FILTERS })}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium text-error/80 hover:text-error hover:bg-error/10 transition-all"
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium transition-all"
+          style={{ color: '#FF3B30' }}
         >
           <X className="w-3 h-3" />
           Išvalyti
@@ -311,10 +235,7 @@ function FilterBar({ filters, onChange, options }: FilterBarProps) {
 // ---------------------------------------------------------------------------
 
 export default function DocumentsInterface({ user, projectId }: DocumentsInterfaceProps) {
-  const [selectedTable, setSelectedTable] = useState<TableName>('standartiniai_projektai');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
+  const [selectedTable, setSelectedTable] = useState<TableName>('n8n_vector_store');
   const [standartiniaiData, setStandartiniaiData] = useState<any[]>([]);
   const [nestandartiniaiData, setNestandartiniaiData] = useState<NestandartiniaiRecord[]>([]);
   const [loadingStandartiniai, setLoadingStandartiniai] = useState(true);
@@ -326,51 +247,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
 
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    if (dropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [dropdownOpen]);
-
-  useEffect(() => {
-    loadStandartiniai();
-    loadNestandartiniai();
-  }, []);
+  useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
   const loadStandartiniai = async () => {
-    try {
-      setLoadingStandartiniai(true);
-      setErrorStandartiniai(null);
-      const data = await fetchStandartiniaiProjektai();
-      setStandartiniaiData(data);
-    } catch (err: any) {
-      setErrorStandartiniai(err?.message || 'Nepavyko gauti duomenų');
-    } finally {
-      setLoadingStandartiniai(false);
-    }
+    try { setLoadingStandartiniai(true); setErrorStandartiniai(null); setStandartiniaiData(await fetchStandartiniaiProjektai()); }
+    catch (err: any) { setErrorStandartiniai(err?.message || 'Nepavyko gauti duomenų'); }
+    finally { setLoadingStandartiniai(false); }
   };
-
   const loadNestandartiniai = async () => {
-    try {
-      setLoadingNestandartiniai(true);
-      setErrorNestandartiniai(null);
-      const data = await fetchNestandartiniaiDokumentai();
-      setNestandartiniaiData(data);
-    } catch (err: any) {
-      setErrorNestandartiniai(err?.message || 'Nepavyko gauti duomenų');
-    } finally {
-      setLoadingNestandartiniai(false);
-    }
+    try { setLoadingNestandartiniai(true); setErrorNestandartiniai(null); setNestandartiniaiData(await fetchNestandartiniaiDokumentai()); }
+    catch (err: any) { setErrorNestandartiniai(err?.message || 'Nepavyko gauti duomenų'); }
+    finally { setLoadingNestandartiniai(false); }
   };
 
-  // ---- Derived state for nestandartiniai filter options (computed once per data load) ----
   const filterOptions = useMemo(() => ({
     orientacija: extractUniqueMetaValues(nestandartiniaiData, 'orientacija'),
     derva: extractUniqueMetaValues(nestandartiniaiData, 'derva'),
@@ -378,98 +267,85 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
   }), [nestandartiniaiData]);
 
-  // ---- Table data, columns, loading, error based on selection ----
   const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const currentLoading = isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
   const currentError = isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
   const currentReload = isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
-  const currentLabel = TABLE_OPTIONS.find(o => o.value === selectedTable)!.label;
 
-  const columns = useMemo(() => {
-    if (isNestandartiniai) return NESTANDARTINIAI_COLUMNS;
-    return getColumns(standartiniaiData);
-  }, [isNestandartiniai, standartiniaiData]);
+  // Generic columns for standartiniai
+  const genericCols = useMemo(() => getColumns(standartiniaiData), [standartiniaiData]);
 
-  // ---- Filtering ----
+  // Filtering
   const filteredData = useMemo(() => {
     let rows: any[] = isNestandartiniai ? nestandartiniaiData : standartiniaiData;
+    const searchCols = isNestandartiniai ? ['id', 'project_name', 'klientas', 'pateikimo_data', 'ai', 'description'] : genericCols;
 
-    // Global text search across visible columns
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      rows = rows.filter(row =>
-        columns.some(col => {
+      rows = rows.filter(row => {
+        // Search across direct fields
+        const directMatch = searchCols.some(col => {
           const val = row[col];
           if (val === null || val === undefined) return false;
-          if (typeof val === 'object') {
-            return JSON.stringify(val).toLowerCase().includes(q);
-          }
           return String(val).toLowerCase().includes(q);
-        })
-      );
+        });
+        if (directMatch) return true;
+        // Also search metadata
+        if (isNestandartiniai) {
+          const meta = parseMetadata(row.metadata);
+          if (meta) return Object.values(meta).some(v => String(v).toLowerCase().includes(q));
+        }
+        return false;
+      });
     }
 
-    // Metadata-specific filters (only for nestandartiniai)
     if (isNestandartiniai) {
       const { orientacija, derva, talpa_tipas, DN, metadataSearch } = metadataFilters;
-
       if (orientacija || derva || talpa_tipas || DN || metadataSearch) {
         rows = rows.filter((row: NestandartiniaiRecord) => {
           const meta = parseMetadata(row.metadata);
           if (!meta) return false;
-
           if (orientacija && meta.orientacija !== orientacija) return false;
           if (derva && meta.derva !== derva) return false;
           if (talpa_tipas && meta.talpa_tipas !== talpa_tipas) return false;
           if (DN && meta.DN !== DN) return false;
-
           if (metadataSearch) {
-            const q = metadataSearch.toLowerCase();
-            const found = Object.entries(meta).some(
-              ([k, v]) => k.toLowerCase().includes(q) || String(v).toLowerCase().includes(q)
-            );
-            if (!found) return false;
+            const mq = metadataSearch.toLowerCase();
+            if (!Object.entries(meta).some(([k, v]) => k.toLowerCase().includes(mq) || String(v).toLowerCase().includes(mq))) return false;
           }
-
           return true;
         });
       }
     }
 
     return rows;
-  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, columns, metadataFilters]);
+  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, genericCols, metadataFilters]);
 
-  // ---- Sorting ----
+  // Sorting
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
-      const aVal = a[sortConfig.column];
-      const bVal = b[sortConfig.column];
+      // For metadata columns, get value from metadata
+      const colDef = isNestandartiniai ? NESTANDARTINIAI_COLS.find(c => c.key === sortConfig.column) : null;
+      let aVal = colDef?.metaKey ? (parseMetadata(a.metadata)?.[colDef.metaKey] ?? null) : a[sortConfig.column];
+      let bVal = colDef?.metaKey ? (parseMetadata(b.metadata)?.[colDef.metaKey] ?? null) : b[sortConfig.column];
       if (aVal === null || aVal === undefined) return 1;
       if (bVal === null || bVal === undefined) return -1;
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-      }
+      if (typeof aVal === 'number' && typeof bVal === 'number') return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
       const aStr = String(aVal).toLowerCase();
       const bStr = String(bVal).toLowerCase();
       if (aStr < bStr) return sortConfig.direction === 'asc' ? -1 : 1;
       if (aStr > bStr) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredData, sortConfig]);
+  }, [filteredData, sortConfig, isNestandartiniai]);
 
   const handleSort = (column: string) => {
-    setSortConfig(prev => {
-      if (prev.column === column) {
-        return { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
-      }
-      return { column, direction: 'asc' };
-    });
+    setSortConfig(prev => prev.column === column ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { column, direction: 'asc' });
   };
 
   const handleTableChange = (table: TableName) => {
     setSelectedTable(table);
-    setDropdownOpen(false);
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
     setMetadataFilters({ ...EMPTY_FILTERS });
@@ -478,147 +354,121 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const totalCount = isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
 
   return (
-    <div className="h-full flex flex-col bg-base-200/50">
+    <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
       {/* Header */}
-      <div className="p-6 border-b border-base-content/10 bg-base-100/80">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-2xl font-semibold text-base-content">Dokumentai</h2>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Refresh button */}
-            <button
-              onClick={currentReload}
-              disabled={currentLoading}
-              className="btn btn-soft btn-sm"
-            >
-              <RefreshCw className={`w-4 h-4 ${currentLoading ? 'animate-spin' : ''}`} />
-              Atnaujinti
-            </button>
-          </div>
+      <div className="px-6 pt-6 pb-4 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+        {/* Top row: title + actions */}
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Dokumentai</h2>
+          <button
+            onClick={currentReload}
+            disabled={currentLoading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95"
+            style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${currentLoading ? 'animate-spin' : ''}`} />
+            Atnaujinti
+          </button>
         </div>
 
-        {/* Toolbar: table selector + search */}
-        <div className="flex items-center gap-3">
-          {/* Table selector dropdown */}
-          <div className="relative" ref={dropdownRef}>
+        {/* Segmented control + search */}
+        <div className="flex items-center gap-4 mb-4">
+          {/* macOS segmented control */}
+          <div className="inline-flex rounded-macos p-0.5 shrink-0" style={{ background: 'rgba(0,0,0,0.06)' }}>
             <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              className="btn btn-sm btn-outline gap-2 min-w-[240px] justify-between"
+              onClick={() => handleTableChange('standartiniai_projektai')}
+              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
+                selectedTable === 'standartiniai_projektai' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
+              }`}
+              style={selectedTable === 'standartiniai_projektai' ? {
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+              } : undefined}
             >
-              <span className="flex items-center gap-2">
-                <Database className="w-4 h-4" />
-                {currentLabel}
-              </span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+              Standartiniai
             </button>
-
-            {dropdownOpen && (
-              <ul className="absolute z-50 mt-1 w-full bg-base-100 rounded-lg border border-base-content/10 shadow-lg py-1 macos-animate-slide-down">
-                {TABLE_OPTIONS.map(opt => (
-                  <li key={opt.value}>
-                    <button
-                      onClick={() => handleTableChange(opt.value)}
-                      className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-base-200 ${
-                        selectedTable === opt.value ? 'bg-primary/10 text-primary font-medium' : 'text-base-content'
-                      }`}
-                    >
-                      {opt.label}
-                      <span className="block text-xs text-base-content/40 font-mono">{opt.value}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <button
+              onClick={() => handleTableChange('n8n_vector_store')}
+              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
+                selectedTable === 'n8n_vector_store' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
+              }`}
+              style={selectedTable === 'n8n_vector_store' ? {
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+              } : undefined}
+            >
+              Nestandartiniai
+            </button>
           </div>
 
-          {/* Search input */}
+          {/* Search */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/40" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
             <input
               type="text"
               placeholder="Ieškoti..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="input input-sm w-full pl-9"
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full h-9 text-sm rounded-macos pl-9 pr-3 outline-none transition-all"
+              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
+              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
             />
           </div>
         </div>
 
-        {/* Metadata filter bar – only for nestandartiniai */}
+        {/* Filters – only for nestandartiniai */}
         {isNestandartiniai && !currentLoading && nestandartiniaiData.length > 0 && (
-          <FilterBar
-            filters={metadataFilters}
-            onChange={setMetadataFilters}
-            options={filterOptions}
-          />
+          <FilterBar filters={metadataFilters} onChange={setMetadataFilters} options={filterOptions} />
         )}
       </div>
 
       {/* Error */}
       {currentError && (
-        <div className="mx-6 mt-4 alert alert-error alert-soft">
-          <AlertCircle className="w-5 h-5" />
+        <div className="mx-6 mt-4 flex items-center gap-2 px-4 py-3 rounded-macos text-sm" style={{ background: 'rgba(255,59,48,0.08)', color: '#FF3B30' }}>
+          <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{currentError}</span>
         </div>
       )}
 
-      {/* Table content */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Table */}
+      <div className="flex-1 overflow-auto px-6 py-4">
         {currentLoading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <span className="loading loading-spinner loading-lg text-primary"></span>
-              <p className="text-sm mt-4 text-base-content/60">Kraunama...</p>
-            </div>
+            <span className="loading loading-spinner loading-md text-macos-blue"></span>
           </div>
         ) : sortedData.length === 0 ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <Database className="w-12 h-12 mx-auto mb-4 text-base-content/20" />
-              <h3 className="text-lg font-medium mb-2 text-base-content">
+          <div className="flex items-center justify-center h-64 text-center">
+            <div>
+              <p className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>
                 {searchQuery || Object.values(metadataFilters).some(v => v) ? 'Nieko nerasta' : 'Nėra duomenų'}
-              </h3>
-              <p className="text-sm text-base-content/60">
-                {searchQuery || Object.values(metadataFilters).some(v => v)
-                  ? 'Pakeiskite paieškos užklausą arba filtrus'
-                  : `Lentelė ${selectedTable} tuščia`
-                }
+              </p>
+              <p className="text-sm" style={{ color: '#8a857f' }}>
+                {searchQuery || Object.values(metadataFilters).some(v => v) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
               </p>
             </div>
           </div>
-        ) : (
-          <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
-            <table className="table-striped table">
+        ) : isNestandartiniai ? (
+          /* ---- Nestandartiniai table (custom columns from metadata) ---- */
+          <div
+            className="w-full overflow-x-auto rounded-macos-lg bg-white"
+            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+          >
+            <table className="w-full text-sm">
               <thead>
-                <tr>
-                  {isNestandartiniai && (
-                    <th className="w-10"></th>
-                  )}
-                  {columns.map(col => (
+                <tr style={{ borderBottom: '1px solid #f0ede8' }}>
+                  <th className="w-10 px-2 py-3"></th>
+                  {NESTANDARTINIAI_COLS.map(col => (
                     <th
-                      key={col}
-                      onClick={() => handleSort(col)}
-                      className="cursor-pointer select-none whitespace-nowrap"
+                      key={col.key}
+                      onClick={() => handleSort(col.key)}
+                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
-                        <span>{isNestandartiniai ? (NESTANDARTINIAI_COLUMN_LABELS[col] || formatColumnName(col)) : formatColumnName(col)}</span>
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
-                          <ChevronUp
-                            className={`w-3 h-3 ${
-                              sortConfig.column === col && sortConfig.direction === 'asc'
-                                ? 'text-primary'
-                                : 'text-base-content/20'
-                            }`}
-                          />
-                          <ChevronDown
-                            className={`w-3 h-3 -mt-0.5 ${
-                              sortConfig.column === col && sortConfig.direction === 'desc'
-                                ? 'text-primary'
-                                : 'text-base-content/20'
-                            }`}
-                          />
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col.key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
                         </span>
                       </div>
                     </th>
@@ -626,57 +476,114 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </tr>
               </thead>
               <tbody>
-                {sortedData.map((row, rowIndex) => (
+                {sortedData.map((row, i) => (
                   <tr
-                    key={row.id ?? rowIndex}
-                    className={isNestandartiniai ? 'cursor-pointer hover:bg-primary/5 transition-colors' : ''}
-                    onClick={isNestandartiniai ? () => setSelectedCard(row as NestandartiniaiRecord) : undefined}
+                    key={row.id ?? i}
+                    className="cursor-pointer transition-colors"
+                    style={{ borderBottom: '1px solid #f8f6f3' }}
+                    onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
-                    {isNestandartiniai && (
-                      <td className="w-10 px-2">
-                        <button
-                          className="p-1.5 rounded-md hover:bg-primary/10 transition-colors text-base-content/40 hover:text-primary"
-                          title="Atidaryti kortelę"
-                          onClick={(e) => { e.stopPropagation(); setSelectedCard(row as NestandartiniaiRecord); }}
-                        >
-                          <FileText className="w-4 h-4" />
-                        </button>
-                      </td>
-                    )}
-                    {columns.map(col => (
-                      <td
-                        key={col}
-                        className={`whitespace-nowrap ${col === 'metadata' ? 'max-w-[240px]' : 'max-w-xs'} truncate`}
+                    <td className="w-10 px-2 py-2.5">
+                      <button
+                        className="p-1.5 rounded-md transition-colors"
+                        style={{ color: '#8a857f' }}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
+                        onClick={e => { e.stopPropagation(); setSelectedCard(row as NestandartiniaiRecord); }}
+                        title="Atidaryti kortelę"
                       >
-                        {col === 'metadata' && isNestandartiniai ? (
-                          <MetadataCell raw={row[col]} />
-                        ) : (
-                          <span title={String(row[col] ?? '')}>{renderCellValue(row[col], col)}</span>
-                        )}
-                      </td>
-                    ))}
+                        <FileText className="w-4 h-4" />
+                      </button>
+                    </td>
+                    {NESTANDARTINIAI_COLS.map(col => {
+                      const val = getCellValue(row, col);
+                      return (
+                        <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
+                          {col.badge && val !== '—' ? (
+                            <span
+                              className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full truncate max-w-[140px]"
+                              style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
+                            >
+                              {val}
+                            </span>
+                          ) : (
+                            <span
+                              className="block truncate max-w-[200px]"
+                              style={{ color: col.key === 'id' ? '#8a857f' : '#3d3935', fontSize: col.key === 'id' ? '12px' : '13px' }}
+                              title={val}
+                            >
+                              {val}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            {/* Footer */}
-            <div className="px-4 py-2 text-xs border-t border-base-content/10 flex items-center justify-between bg-base-200/50 text-base-content/50">
+            <div
+              className="px-4 py-2 text-xs flex items-center justify-between"
+              style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}
+            >
               <span>
-                {sortedData.length < totalCount
-                  ? `${sortedData.length} iš ${totalCount} įrašų`
-                  : `${sortedData.length} įrašų`
-                }
+                {sortedData.length < totalCount ? `${sortedData.length} iš ${totalCount} įrašų` : `${sortedData.length} įrašų`}
               </span>
-              <span className="font-mono text-base-content/30">
-                {selectedTable}
-              </span>
+            </div>
+          </div>
+        ) : (
+          /* ---- Standartiniai table (generic columns) ---- */
+          <div
+            className="w-full overflow-x-auto rounded-macos-lg bg-white"
+            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid #f0ede8' }}>
+                  {genericCols.map(col => (
+                    <th
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{formatColumnName(col)}</span>
+                        <span className="inline-flex flex-col leading-none">
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                        </span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedData.map((row, i) => (
+                  <tr key={row.id ?? i} style={{ borderBottom: '1px solid #f8f6f3' }}>
+                    {genericCols.map(col => {
+                      const val = row[col];
+                      const display = val === null || val === undefined ? '—' : String(val).length > 120 ? String(val).slice(0, 120) + '…' : String(val);
+                      return (
+                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                          {display}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="px-4 py-2 text-xs flex items-center justify-between" style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}>
+              <span>{sortedData.length < totalCount ? `${sortedData.length} iš ${totalCount} įrašų` : `${sortedData.length} įrašų`}</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Paklausimo kortelė modal */}
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} />
       )}

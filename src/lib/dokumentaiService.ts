@@ -23,7 +23,11 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,ai';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,ai,tasks,files,ai_conversation,similar_projects';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 /** A single message in the atsakymas conversation thread */
 export interface AtsakymasMessage {
@@ -31,6 +35,28 @@ export interface AtsakymasMessage {
   date?: string;
   text: string;
   role?: 'recipient' | 'team';
+}
+
+export interface TaskItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  created_at: string;
+  due_date?: string | null;
+  assigned_to?: string | null;
+  priority?: 'high' | 'medium' | 'low';
+}
+
+export interface AiConversationMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+}
+
+export interface SimilarProject {
+  id: number;
+  project_name: string;
+  similarity_score: number;
 }
 
 export interface NestandartiniaiRecord {
@@ -42,11 +68,16 @@ export interface NestandartiniaiRecord {
   klientas: string | null;
   atsakymas: string | AtsakymasMessage[] | null;
   ai: string | null;
+  tasks: TaskItem[] | string | null;
+  files: string | null;
+  ai_conversation: AiConversationMessage[] | string | null;
+  similar_projects: SimilarProject[] | string | null;
 }
 
-/**
- * Fetch records from n8n_vector_store table (only the columns we need)
- */
+// ---------------------------------------------------------------------------
+// Fetch
+// ---------------------------------------------------------------------------
+
 export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiRecord[]> => {
   try {
     const { data, error } = await db
@@ -66,9 +97,6 @@ export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiR
   }
 };
 
-/**
- * Fetch a single record from n8n_vector_store by ID
- */
 export const fetchNestandartiniaiById = async (id: number): Promise<NestandartiniaiRecord | null> => {
   try {
     const { data, error } = await db
@@ -89,20 +117,44 @@ export const fetchNestandartiniaiById = async (id: number): Promise<Nestandartin
   }
 };
 
-/**
- * Update the atsakymas (conversation) field for a record
- */
+// ---------------------------------------------------------------------------
+// Update helpers
+// ---------------------------------------------------------------------------
+
+/** Generic field update for a single record */
+export const updateNestandartiniaiField = async (
+  id: number,
+  field: string,
+  value: any
+): Promise<void> => {
+  const { error } = await db
+    .from('n8n_vector_store')
+    .update({ [field]: value })
+    .eq('id', id);
+
+  if (error) {
+    console.error(`Error updating ${field}:`, error);
+    throw error;
+  }
+};
+
 export const updateNestandartiniaiAtsakymas = async (
   id: number,
   messages: AtsakymasMessage[]
 ): Promise<void> => {
-  const { error } = await db
-    .from('n8n_vector_store')
-    .update({ atsakymas: messages as any })
-    .eq('id', id);
+  await updateNestandartiniaiField(id, 'atsakymas', messages);
+};
 
-  if (error) {
-    console.error('Error updating atsakymas:', error);
-    throw error;
-  }
+export const updateNestandartiniaiTasks = async (
+  id: number,
+  tasks: TaskItem[]
+): Promise<void> => {
+  await updateNestandartiniaiField(id, 'tasks', tasks);
+};
+
+export const updateNestandartiniaiAiConversation = async (
+  id: number,
+  messages: AiConversationMessage[]
+): Promise<void> => {
+  await updateNestandartiniaiField(id, 'ai_conversation', messages);
 };
