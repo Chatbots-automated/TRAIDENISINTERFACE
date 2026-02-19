@@ -3,16 +3,19 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, Plus,
   LayoutList, MessageSquare, CheckSquare, Sparkles, GitCompareArrows, Paperclip,
+  Upload, FileText, Trash2, Download, Loader2,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
   updateNestandartiniaiAtsakymas,
   updateNestandartiniaiTasks,
   updateNestandartiniaiAiConversation,
+  updateNestandartiniaiField,
 } from '../lib/dokumentaiService';
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, SimilarProject,
 } from '../lib/dokumentaiService';
+import { getWebhookUrl } from '../lib/webhooksService';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -361,18 +364,175 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Failai (placeholder)
+// Tab: Failai
 // ---------------------------------------------------------------------------
 
-function TabFailai({ readOnly }: { readOnly?: boolean }) {
+const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
+const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+
+interface DirectusFile {
+  id: string;
+  title: string;
+  filename_download: string;
+  type: string;
+  filesize: number;
+}
+
+function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
+  const [fileInfo, setFileInfo] = useState<DirectusFile | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch file info if record.files has a UUID
+  useEffect(() => {
+    const fileId = record.files;
+    if (!fileId || typeof fileId !== 'string' || fileId.length < 10) return;
+    setLoading(true);
+    fetch(`${DIRECTUS_URL}/files/${fileId}`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, Accept: 'application/json' },
+    })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
+      .then(json => setFileInfo(json.data))
+      .catch(() => setFileInfo(null))
+      .finally(() => setLoading(false));
+  }, [record.files]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const uploadResp = await fetch(`${DIRECTUS_URL}/files`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        body: form,
+      });
+      if (!uploadResp.ok) throw new Error(`Įkėlimas nepavyko: ${uploadResp.status}`);
+      const uploadData = await uploadResp.json();
+      const newFileId = uploadData.data.id;
+
+      // Link to record
+      await updateNestandartiniaiField(record.id, 'files', newFileId);
+      setFileInfo(uploadData.data);
+    } catch (err: any) {
+      setError(err.message || 'Nepavyko įkelti failo');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemove = async () => {
+    try {
+      await updateNestandartiniaiField(record.id, 'files', null);
+      setFileInfo(null);
+    } catch (err: any) {
+      setError(err.message || 'Nepavyko pašalinti');
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#8a857f' }} />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center">
-      <Paperclip className="w-10 h-10 mb-3" style={{ color: '#d4cfc8' }} />
-      <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Failai</p>
-      <p className="text-xs max-w-[240px]" style={{ color: '#8a857f', lineHeight: '1.6' }}>
-        Brėžiniai, sutartys ir kiti dokumentai bus čia.
-        {!readOnly && ' Directus failų sistemoje reikia sukonfigūruoti M2M ryšį.'}
-      </p>
+    <div>
+      {error && (
+        <div className="text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+          {error}
+        </div>
+      )}
+
+      {fileInfo ? (
+        <div className="rounded-macos p-4" style={{ border: '1px solid #f0ede8', background: '#faf9f7' }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-macos flex items-center justify-center shrink-0" style={{ background: 'rgba(0,122,255,0.08)' }}>
+              <FileText className="w-5 h-5" style={{ color: '#007AFF' }} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium truncate" style={{ color: '#3d3935' }}>{fileInfo.filename_download || fileInfo.title}</p>
+              <p className="text-xs mt-0.5" style={{ color: '#8a857f' }}>
+                {fileInfo.type}{fileInfo.filesize ? ` · ${formatSize(fileInfo.filesize)}` : ''}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <a
+                href={`${DIRECTUS_URL}/assets/${fileInfo.id}?download`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 rounded-full transition-colors hover:bg-macos-gray-100"
+                title="Atsisiųsti"
+              >
+                <Download className="w-4 h-4" style={{ color: '#007AFF' }} />
+              </a>
+              {!readOnly && (
+                <button onClick={handleRemove} className="p-1.5 rounded-full transition-colors hover:bg-red-50" title="Pašalinti">
+                  <Trash2 className="w-4 h-4" style={{ color: '#FF3B30' }} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-12 text-center">
+          <Paperclip className="w-10 h-10 mb-3" style={{ color: '#d4cfc8' }} />
+          <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Failai</p>
+          <p className="text-xs max-w-[240px] mb-4" style={{ color: '#8a857f', lineHeight: '1.6' }}>
+            {readOnly ? 'Šiam įrašui failai nepriskirti.' : 'Pridėkite brėžinį, sutartį ar kitą dokumentą.'}
+          </p>
+          {!readOnly && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-macos text-white transition-all hover:brightness-95 disabled:opacity-50"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            >
+              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {uploading ? 'Įkeliama...' : 'Įkelti failą'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Upload replacement when file exists */}
+      {fileInfo && !readOnly && (
+        <div className="mt-3 text-center">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="text-xs font-medium transition-colors"
+            style={{ color: '#007AFF' }}
+          >
+            {uploading ? 'Įkeliama...' : 'Pakeisti failą'}
+          </button>
+        </div>
+      )}
+
+      {!readOnly && (
+        <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
+      )}
+
+      {/* Note about M2M for multiple files */}
+      {!readOnly && (
+        <p className="text-[10px] mt-4 text-center" style={{ color: '#b5b0a8' }}>
+          Vienas failas per įrašą. Keliems failams reikia M2M ryšio Directus konfigūracijoje.
+        </p>
+      )}
     </div>
   );
 }
@@ -385,16 +545,59 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
   const [conversation, setConversation] = useState<AiConversationMessage[]>(() => parseJSON<AiConversationMessage[]>(record.ai_conversation) || []);
   const [input, setInput] = useState('');
   const [saving, setSaving] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const sendMessage = async () => {
     const text = input.trim();
     if (!text) return;
+    setAiError(null);
     const userMsg: AiConversationMessage = { role: 'user', text, timestamp: new Date().toISOString() };
-    const updated = [...conversation, userMsg];
-    setConversation(updated);
+    const withUserMsg = [...conversation, userMsg];
+    setConversation(withUserMsg);
     setInput('');
-    try { setSaving(true); await updateNestandartiniaiAiConversation(record.id, updated); } catch (e) { console.error(e); } finally { setSaving(false); }
-    // TODO: Call n8n webhook for AI response
+
+    try {
+      setSaving(true);
+      await updateNestandartiniaiAiConversation(record.id, withUserMsg);
+
+      // Call n8n webhook for AI response
+      const webhookUrl = await getWebhookUrl('n8n_ai_conversation');
+      if (webhookUrl) {
+        const meta = typeof record.metadata === 'string' ? record.metadata : JSON.stringify(record.metadata);
+        const resp = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            record_id: record.id,
+            project_name: record.project_name,
+            description: record.description,
+            metadata: meta,
+            klientas: record.klientas,
+            ai_recommendation: record.ai,
+            conversation: withUserMsg,
+            user_message: text,
+          }),
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          const aiText = typeof data === 'string' ? data : (data.response || data.text || data.message || data.output || JSON.stringify(data));
+          const aiMsg: AiConversationMessage = { role: 'assistant', text: aiText, timestamp: new Date().toISOString() };
+          const withAiMsg = [...withUserMsg, aiMsg];
+          setConversation(withAiMsg);
+          await updateNestandartiniaiAiConversation(record.id, withAiMsg);
+        } else {
+          setAiError(`Webhook klaida: ${resp.status}`);
+        }
+      } else {
+        setAiError('Webhook "n8n_ai_conversation" nesukonfigūruotas. Nustatykite jį Webhooks nustatymuose.');
+      }
+    } catch (e: any) {
+      console.error(e);
+      setAiError(e.message || 'Nepavyko gauti AI atsakymo');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -431,6 +634,25 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
         </div>
       )}
 
+      {/* Typing indicator */}
+      {saving && (
+        <div className="flex justify-start mb-2.5">
+          <div className="rounded-2xl px-4 py-2.5" style={{ background: '#f0f0f2', border: '1px solid #e5e5e6' }}>
+            <div className="flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#8a857f' }} />
+              <span className="text-xs" style={{ color: '#8a857f' }}>AI rašo...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {aiError && (
+        <div className="text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+          {aiError}
+        </div>
+      )}
+
       {/* Input */}
       {!readOnly && (
         <div className="flex items-end gap-2 pt-3" style={{ borderTop: conversation.length > 0 || record.ai ? '1px solid #f0ede8' : 'none' }}>
@@ -439,7 +661,6 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
             onChange={setInput}
             placeholder="Klauskite AI..."
             className="flex-1 text-sm px-3 py-2 rounded-macos outline-none transition-all bg-transparent"
-            // Inline style on the wrapper instead
           />
           <button
             onClick={sendMessage}
@@ -595,7 +816,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
-            {activeTab === 'failai' && <TabFailai />}
+            {activeTab === 'failai' && <TabFailai record={record} />}
             {activeTab === 'ai' && <TabAI record={record} />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
@@ -630,8 +851,7 @@ export default function PaklausimoKortelePage() {
 
   const meta = parseMetadata(record.metadata);
 
-  // Read-only tabs (no Failai since it's just a placeholder)
-  const readOnlyTabs = TABS.filter(t => t.id !== 'failai');
+  const readOnlyTabs = TABS;
 
   return (
     <div className="h-screen flex items-center justify-center p-6 overflow-hidden" style={{ background: '#fdfcfb' }}>
@@ -679,6 +899,7 @@ export default function PaklausimoKortelePage() {
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
+            {activeTab === 'failai' && <TabFailai record={record} readOnly />}
             {activeTab === 'ai' && <TabAI record={record} readOnly />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>

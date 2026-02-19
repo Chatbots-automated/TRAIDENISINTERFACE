@@ -45,7 +45,8 @@ const WEBHOOK_GROUPS: WebhookGroup[] = [
     webhookKeys: [
       'n8n_upload_new',
       'n8n_find_similar',
-      'n8n_upload_solution'
+      'n8n_upload_solution',
+      'n8n_ai_conversation'
     ]
   },
   {
