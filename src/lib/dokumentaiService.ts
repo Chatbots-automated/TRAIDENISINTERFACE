@@ -25,6 +25,13 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
 /** Columns we display for nestandartiniai */
 const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,ai';
 
+/** A single message in the atsakymas conversation thread */
+export interface AtsakymasMessage {
+  from?: string;
+  date?: string;
+  text: string;
+}
+
 export interface NestandartiniaiRecord {
   id: number;
   description: string | null;
@@ -32,7 +39,7 @@ export interface NestandartiniaiRecord {
   project_name: string | null;
   pateikimo_data: string | null;
   klientas: string | null;
-  atsakymas: string | null;
+  atsakymas: string | AtsakymasMessage[] | null;
   ai: string | null;
 }
 
