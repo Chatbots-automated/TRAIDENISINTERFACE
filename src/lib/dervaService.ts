@@ -182,20 +182,45 @@ const deleteDervaRecordsByFileId = async (fileId: number): Promise<void> => {
 };
 
 // ---------------------------------------------------------------------------
-// Delete a single derva record from Directus
+// Delete a single derva record from Directus.
+// If it was the last record for that file_id, also delete the Directus
+// binary file and the derva_files DB row so nothing is orphaned.
 // ---------------------------------------------------------------------------
 
-export const deleteDervaRecord = async (recordId: number): Promise<void> => {
+export const deleteDervaRecord = async (recordId: number, fileId: number): Promise<void> => {
+  // 1. Delete the record itself
   const resp = await fetch(`${DIRECTUS_URL}/items/derva/${recordId}`, {
     method: 'DELETE',
-    headers: {
-      Authorization: `Bearer ${DIRECTUS_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
   });
   if (!resp.ok && resp.status !== 404) {
     throw new Error(`Nepavyko ištrinti įrašo (${resp.status})`);
   }
+
+  // 2. Check if any other records still reference this file_id
+  const remaining = await fetch(
+    `${DIRECTUS_URL}/items/derva?filter[file_id][_eq]=${fileId}&fields=id&limit=1`,
+    { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, Accept: 'application/json' } }
+  );
+  if (!remaining.ok) return;
+  const remainingJson = await remaining.json();
+  if ((remainingJson.data || []).length > 0) return; // other records still exist
+
+  // 3. No records left — clean up the file from Directus storage + DB
+  const { data: fileRow } = await db
+    .from('derva_files')
+    .select('directus_file_id')
+    .eq('id', fileId)
+    .maybeSingle();
+
+  if (fileRow?.directus_file_id) {
+    await fetch(`${DIRECTUS_URL}/files/${fileRow.directus_file_id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    });
+  }
+
+  await db.from('derva_files').delete().eq('id', fileId);
 };
 
 // ---------------------------------------------------------------------------
@@ -210,10 +235,7 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
   if (directusFileId) {
     const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
       method: 'DELETE',
-      headers: {
-        Authorization: `Bearer ${DIRECTUS_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
     });
     if (!resp.ok && resp.status !== 404) {
       console.error('Directus file delete failed:', resp.status, resp.statusText);
@@ -268,22 +290,16 @@ export const triggerVectorization = async (
 export const notifyFileUpload = async (
   fileId: number,
   directusFileId: string,
-  fileName: string,
-  uploadedBy: string,
 ): Promise<void> => {
   try {
-    const webhookUrl = await getWebhookUrl('n8n_derva_upload');
-    if (!webhookUrl) return; // Silent — webhook not configured yet is OK
+    const webhookUrl = await getWebhookUrl('n8n_derva_file_upload');
+    if (!webhookUrl) return;
     await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        event: 'file_uploaded',
         file_id: fileId,
         directus_file_id: directusFileId,
-        file_url: `${DIRECTUS_URL}/assets/${directusFileId}`,
-        file_name: fileName,
-        uploaded_by: uploadedBy,
       }),
     });
   } catch {

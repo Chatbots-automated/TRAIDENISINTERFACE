@@ -11,7 +11,6 @@ import {
   Download,
   ChevronUp,
   ChevronDown,
-  Radio,
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
@@ -329,7 +328,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       );
 
       // 3. Notify n8n about the upload (fire-and-forget)
-      notifyFileUpload(record.id, directusFileId, selectedFile.name, user.email);
+      notifyFileUpload(record.id, directusFileId);
 
       addNotification('success', 'Įkelta', `Failas "${selectedFile.name}" sėkmingai įkeltas`);
       clearSelectedFile();
@@ -386,7 +385,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     if (!confirm(`Ar tikrai norite ištrinti įrašą #${record.id}?`)) return;
     try {
       setDeletingRecordId(record.id);
-      await deleteDervaRecord(record.id);
+      await deleteDervaRecord(record.id, record.file_id);
       addNotification('info', 'Ištrinta', `Įrašas #${record.id} pašalintas`);
       await Promise.all([loadFiles(), loadDervaData()]);
     } catch (err: any) {
@@ -611,30 +610,25 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                             <Check className="w-4 h-4" style={{ color: '#15803d' }} />
                           </span>
                         ) : (
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="inline-flex items-center justify-center w-7 h-7 rounded-full"
-                              style={{ background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.35)' }}
-                              title="Nevektorizuota"
-                            >
-                              <Radio className="w-3.5 h-3.5" style={{ color: '#ea580c' }} />
-                            </span>
-                            <button
-                              onClick={() => handleVectorize(file)}
-                              disabled={vectorizingId === file.id}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:bg-blue-50"
-                              style={{
-                                background: vectorizingId === file.id ? 'rgba(0,0,0,0.04)' : 'transparent',
-                                color: vectorizingId === file.id ? '#8a857f' : '#007AFF',
-                              }}
-                            >
-                              {vectorizingId === file.id ? (
-                                <><Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...</>
-                              ) : (
-                                'Pradėti'
-                              )}
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => handleVectorize(file)}
+                            disabled={vectorizingId === file.id}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:brightness-95"
+                            style={{
+                              background: '#fff',
+                              border: '1px solid rgba(234,88,12,0.4)',
+                              color: vectorizingId === file.id ? '#8a857f' : '#3d3935',
+                            }}
+                          >
+                            {vectorizingId === file.id ? (
+                              <><Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...</>
+                            ) : (
+                              <>
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#ea580c' }} />
+                                Pradėti
+                              </>
+                            )}
+                          </button>
                         )}
                       </td>
 
