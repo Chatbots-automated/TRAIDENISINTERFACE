@@ -152,6 +152,22 @@ export const fetchVectorizedFileIds = async (): Promise<Set<number>> => {
 // ---------------------------------------------------------------------------
 
 export const deleteDervaFile = async (id: number, directusFileId: string | null): Promise<void> => {
+  // 1. Delete the binary from Directus file storage FIRST (before losing the reference)
+  if (directusFileId) {
+    const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!resp.ok && resp.status !== 404) {
+      console.error('Directus file delete failed:', resp.status, resp.statusText);
+      throw new Error(`Nepavyko ištrinti failo iš saugyklos (${resp.status})`);
+    }
+  }
+
+  // 2. Delete the DB record (ON DELETE CASCADE handles derva rows)
   const { error } = await db
     .from('derva_files')
     .delete()
@@ -160,17 +176,6 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
   if (error) {
     console.error('Error deleting derva_file:', error);
     throw error;
-  }
-
-  if (directusFileId) {
-    try {
-      await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-      });
-    } catch (err) {
-      console.warn('Failed to delete Directus file (non-critical):', err);
-    }
   }
 };
 
@@ -237,9 +242,9 @@ export const notifyFileUpload = async (
 // ---------------------------------------------------------------------------
 
 export const getFileViewUrl = (directusFileId: string): string => {
-  return `${DIRECTUS_URL}/assets/${directusFileId}`;
+  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${DIRECTUS_TOKEN}`;
 };
 
 export const getFileDownloadUrl = (directusFileId: string): string => {
-  return `${DIRECTUS_URL}/assets/${directusFileId}?download`;
+  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${DIRECTUS_TOKEN}&download`;
 };

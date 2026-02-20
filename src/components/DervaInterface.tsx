@@ -542,11 +542,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </thead>
               <tbody>
                 {sortedFiles.length === 0 ? (
-                  <tr>
-                    <td colSpan={FILES_COLUMNS.length + 2} className="text-center py-16">
-                      <p className="text-sm" style={{ color: '#8a857f' }}>Nėra įkeltų failų</p>
-                    </td>
-                  </tr>
+                  <tr><td colSpan={FILES_COLUMNS.length + 2} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file) => {
                   const isVectorized = vectorizedIds.has(file.id);
                   return (
@@ -691,11 +687,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </thead>
               <tbody>
                 {sortedDervaRecords.length === 0 ? (
-                  <tr>
-                    <td colSpan={DATA_COLUMNS.length} className="text-center py-16">
-                      <p className="text-sm" style={{ color: '#8a857f' }}>Nėra vektorizuotų duomenų</p>
-                    </td>
-                  </tr>
+                  <tr><td colSpan={DATA_COLUMNS.length} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedDervaRecords.map((row) => (
                   <tr
                     key={row.id}
