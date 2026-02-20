@@ -148,11 +148,65 @@ export const fetchVectorizedFileIds = async (): Promise<Set<number>> => {
 };
 
 // ---------------------------------------------------------------------------
-// Delete file + Directus file (cascade deletes derva embeddings via FK)
+// Delete all derva records from Directus that reference a given file_id
+// ---------------------------------------------------------------------------
+
+const deleteDervaRecordsByFileId = async (fileId: number): Promise<void> => {
+  // First, get all record IDs with this file_id
+  const listResp = await fetch(
+    `${DIRECTUS_URL}/items/derva?filter[file_id][_eq]=${fileId}&fields=id&limit=10000`,
+    {
+      headers: {
+        Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  if (!listResp.ok) return;
+  const listJson = await listResp.json();
+  const ids: number[] = (listJson.data || []).map((r: any) => r.id);
+  if (ids.length === 0) return;
+
+  // Batch-delete all records
+  const resp = await fetch(`${DIRECTUS_URL}/items/derva`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(ids),
+  });
+  if (!resp.ok && resp.status !== 404) {
+    console.warn('Failed to delete derva records from Directus:', resp.status);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Delete a single derva record from Directus
+// ---------------------------------------------------------------------------
+
+export const deleteDervaRecord = async (recordId: number): Promise<void> => {
+  const resp = await fetch(`${DIRECTUS_URL}/items/derva/${recordId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!resp.ok && resp.status !== 404) {
+    throw new Error(`Nepavyko ištrinti įrašo (${resp.status})`);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Delete file + Directus file + associated derva records
 // ---------------------------------------------------------------------------
 
 export const deleteDervaFile = async (id: number, directusFileId: string | null): Promise<void> => {
-  // 1. Delete the binary from Directus file storage FIRST (before losing the reference)
+  // 1. Delete all derva embedding records referencing this file
+  await deleteDervaRecordsByFileId(id);
+
+  // 2. Delete the binary from Directus file storage
   if (directusFileId) {
     const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
       method: 'DELETE',
@@ -167,7 +221,7 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
     }
   }
 
-  // 2. Delete the DB record (ON DELETE CASCADE handles derva rows)
+  // 3. Delete the DB record
   const { error } = await db
     .from('derva_files')
     .delete()

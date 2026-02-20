@@ -48,10 +48,14 @@ export async function getWebhookUrl(webhookKey: string): Promise<string | null> 
     .from('webhooks')
     .select('url, is_active')
     .eq('webhook_key', webhookKey)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
+  if (error) {
     console.error('Error fetching webhook URL:', error);
+    return null;
+  }
+
+  if (!data) {
     return null;
   }
 

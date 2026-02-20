@@ -11,7 +11,7 @@ import {
   Download,
   ChevronUp,
   ChevronDown,
-  Boxes,
+  Radio,
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
@@ -21,6 +21,7 @@ import {
   fetchVectorizedFileIds,
   insertDervaFile,
   deleteDervaFile,
+  deleteDervaRecord,
   triggerVectorization,
   uploadFileToDirectus,
   notifyFileUpload,
@@ -378,6 +379,23 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     }
   };
 
+  // ---------- Delete derva record ----------
+  const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
+
+  const handleDeleteRecord = async (record: DervaRecord) => {
+    if (!confirm(`Ar tikrai norite ištrinti įrašą #${record.id}?`)) return;
+    try {
+      setDeletingRecordId(record.id);
+      await deleteDervaRecord(record.id);
+      addNotification('info', 'Ištrinta', `Įrašas #${record.id} pašalintas`);
+      await Promise.all([loadFiles(), loadDervaData()]);
+    } catch (err: any) {
+      addNotification('error', 'Klaida', err.message || 'Nepavyko ištrinti įrašo');
+    } finally {
+      setDeletingRecordId(null);
+    }
+  };
+
   // ---------- Sort arrow helper ----------
   const SortArrows = ({ column, config }: { column: string; config: { column: string; direction: string } }) => (
     <span className="inline-flex flex-col leading-none">
@@ -548,10 +566,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                   return (
                     <tr
                       key={file.id}
-                      className="transition-colors"
                       style={{ borderBottom: '1px solid #f8f6f3' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = '')}
                     >
                       <td className="px-3 py-2.5 w-14">
                         <span style={{ color: '#8a857f', fontSize: '12px' }}>{file.id}</span>
@@ -596,22 +611,30 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                             <Check className="w-4 h-4" style={{ color: '#15803d' }} />
                           </span>
                         ) : (
-                          <button
-                            onClick={() => handleVectorize(file)}
-                            disabled={vectorizingId === file.id}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer"
-                            style={{
-                              background: vectorizingId === file.id ? 'rgba(0,0,0,0.04)' : 'rgba(0,122,255,0.08)',
-                              color: vectorizingId === file.id ? '#8a857f' : '#007AFF',
-                              border: `0.5px solid ${vectorizingId === file.id ? 'rgba(0,0,0,0.08)' : 'rgba(0,122,255,0.15)'}`,
-                            }}
-                          >
-                            {vectorizingId === file.id ? (
-                              <><Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...</>
-                            ) : (
-                              <><Boxes className="w-3 h-3" /> Pradėti</>
-                            )}
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-full"
+                              style={{ background: 'rgba(234,88,12,0.08)', border: '1px solid rgba(234,88,12,0.35)' }}
+                              title="Nevektorizuota"
+                            >
+                              <Radio className="w-3.5 h-3.5" style={{ color: '#ea580c' }} />
+                            </span>
+                            <button
+                              onClick={() => handleVectorize(file)}
+                              disabled={vectorizingId === file.id}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:bg-blue-50"
+                              style={{
+                                background: vectorizingId === file.id ? 'rgba(0,0,0,0.04)' : 'transparent',
+                                color: vectorizingId === file.id ? '#8a857f' : '#007AFF',
+                              }}
+                            >
+                              {vectorizingId === file.id ? (
+                                <><Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...</>
+                              ) : (
+                                'Pradėti'
+                              )}
+                            </button>
+                          </div>
                         )}
                       </td>
 
@@ -683,18 +706,18 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </div>
                     </th>
                   ))}
+                  <th className="px-3 py-3 text-right whitespace-nowrap">
+                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Veiksmai</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {sortedDervaRecords.length === 0 ? (
-                  <tr><td colSpan={DATA_COLUMNS.length} className="py-2.5">&nbsp;</td></tr>
+                  <tr><td colSpan={DATA_COLUMNS.length + 1} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedDervaRecords.map((row) => (
                   <tr
                     key={row.id}
-                    className="transition-colors"
                     style={{ borderBottom: '1px solid #f8f6f3' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
                     <td className="px-3 py-2.5 w-14">
                       <span style={{ color: '#8a857f', fontSize: '12px' }}>{row.id}</span>
@@ -710,6 +733,19 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                     </td>
                     <td className="px-3 py-2.5 w-24">
                       <span style={{ color: '#5a5550', fontSize: '13px' }}>{row.file_id}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <button
+                        onClick={() => handleDeleteRecord(row)}
+                        disabled={deletingRecordId === row.id}
+                        className="p-1.5 rounded-md transition-colors hover:bg-red-50"
+                        title="Ištrinti"
+                      >
+                        {deletingRecordId === row.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
+                          : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />
+                        }
+                      </button>
                     </td>
                   </tr>
                 ))}
