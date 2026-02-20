@@ -9,18 +9,18 @@ CREATE TABLE IF NOT EXISTS public.derva_files (
   id SERIAL PRIMARY KEY,
   file_name TEXT NOT NULL,
   file_size INTEGER,
-  source_type TEXT DEFAULT 'unknown',
+  mime_type TEXT,
+  directus_file_id TEXT,
   uploaded_by TEXT NOT NULL,
-  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'vectorized', 'error')),
-  chunk_count INTEGER DEFAULT 0,
-  error_message TEXT
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Table: derva — stores vectorized chunks (n8n PGVector Store compatible)
+-- Managed via Directus; columns: id, content, file_id, metadata, embedding
 CREATE TABLE IF NOT EXISTS public.derva (
   id SERIAL PRIMARY KEY,
   content TEXT NOT NULL,
+  file_id INTEGER REFERENCES public.derva_files(id) ON DELETE CASCADE,
   metadata JSONB DEFAULT '{}',
   embedding vector(3072),
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -29,10 +29,8 @@ CREATE TABLE IF NOT EXISTS public.derva (
 -- Indexes
 CREATE INDEX IF NOT EXISTS derva_embedding_idx
   ON public.derva USING ivfflat (embedding vector_cosine_ops);
-CREATE INDEX IF NOT EXISTS derva_file_name_idx
-  ON public.derva ((metadata->>'file_name'));
-CREATE INDEX IF NOT EXISTS derva_files_status_idx
-  ON public.derva_files (status);
+CREATE INDEX IF NOT EXISTS derva_file_id_idx
+  ON public.derva (file_id);
 
 -- Permissions (match existing pattern from 002/003 migrations)
 ALTER TABLE public.derva_files DISABLE ROW LEVEL SECURITY;
