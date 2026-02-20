@@ -18,11 +18,18 @@ export interface DervaFile {
   uploaded_at: string;
 }
 
+export interface DervaRecord {
+  id: number;
+  content: string;
+  file_id: number;
+}
+
 // ---------------------------------------------------------------------------
 // Fields
 // ---------------------------------------------------------------------------
 
 const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at';
+const DERVA_RECORD_FIELDS = 'id,content,file_id';
 
 // ---------------------------------------------------------------------------
 // Upload file to Directus file storage → returns UUID
@@ -91,6 +98,29 @@ export const fetchDervaFiles = async (): Promise<DervaFile[]> => {
 };
 
 // ---------------------------------------------------------------------------
+// Fetch derva embedding records (content only, no embedding vector)
+// ---------------------------------------------------------------------------
+
+export const fetchDervaRecords = async (): Promise<DervaRecord[]> => {
+  try {
+    const resp = await fetch(
+      `${DIRECTUS_URL}/items/derva?fields=${DERVA_RECORD_FIELDS}&limit=10000&sort=-id`,
+      {
+        headers: {
+          Authorization: `Bearer ${DIRECTUS_TOKEN}`,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (!resp.ok) return [];
+    const json = await resp.json();
+    return (json.data as DervaRecord[]) || [];
+  } catch {
+    return [];
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Fetch file_ids that have at least one embedding in derva table
 // ---------------------------------------------------------------------------
 
@@ -122,7 +152,6 @@ export const fetchVectorizedFileIds = async (): Promise<Set<number>> => {
 // ---------------------------------------------------------------------------
 
 export const deleteDervaFile = async (id: number, directusFileId: string | null): Promise<void> => {
-  // Delete the DB record (ON DELETE CASCADE handles derva rows)
   const { error } = await db
     .from('derva_files')
     .delete()
@@ -133,7 +162,6 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
     throw error;
   }
 
-  // Also remove the binary from Directus file storage
   if (directusFileId) {
     try {
       await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
@@ -172,6 +200,36 @@ export const triggerVectorization = async (
   });
 
   return resp.ok;
+};
+
+// ---------------------------------------------------------------------------
+// Notify n8n about new file upload
+// ---------------------------------------------------------------------------
+
+export const notifyFileUpload = async (
+  fileId: number,
+  directusFileId: string,
+  fileName: string,
+  uploadedBy: string,
+): Promise<void> => {
+  try {
+    const webhookUrl = await getWebhookUrl('n8n_derva_upload');
+    if (!webhookUrl) return; // Silent — webhook not configured yet is OK
+    await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'file_uploaded',
+        file_id: fileId,
+        directus_file_id: directusFileId,
+        file_url: `${DIRECTUS_URL}/assets/${directusFileId}`,
+        file_name: fileName,
+        uploaded_by: uploadedBy,
+      }),
+    });
+  } catch {
+    // Non-critical — don't block upload if webhook fails
+  }
 };
 
 // ---------------------------------------------------------------------------

@@ -228,10 +228,10 @@ export default function Layout({
                     <button
                       onClick={() => onViewModeChange?.('derva')}
                       className={`sidebar-footer-btn ${viewMode === 'derva' ? 'bg-primary/10 text-primary' : ''}`}
-                      title={sidebarCollapsed ? 'Derva RAG' : undefined}
+                      title={sidebarCollapsed ? 'Derva' : undefined}
                     >
                       <Sparkles className="w-4 h-4 flex-shrink-0" />
-                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Derva RAG</span>
+                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Derva</span>
                     </button>
                   </>
                 )}
