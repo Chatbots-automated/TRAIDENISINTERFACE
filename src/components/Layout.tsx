@@ -183,6 +183,18 @@ export default function Layout({
                   {!sidebarCollapsed && <span className="truncate">Nestandartiniai Projektai</span>}
                 </button>
               </li>
+              {user.is_admin && (
+                <li>
+                  <button
+                    onClick={() => onViewModeChange?.('derva')}
+                    className={viewMode === 'derva' ? 'active' : ''}
+                    title={sidebarCollapsed ? 'Derva' : undefined}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {!sidebarCollapsed && <span className="whitespace-nowrap">Derva</span>}
+                  </button>
+                </li>
+              )}
             </ul>
 
           {/* Spacer to push footer to bottom */}
@@ -224,14 +236,6 @@ export default function Layout({
                     >
                       <Users className="w-4 h-4 flex-shrink-0" />
                       <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Naudotojai</span>
-                    </button>
-                    <button
-                      onClick={() => onViewModeChange?.('derva')}
-                      className={`sidebar-footer-btn ${viewMode === 'derva' ? 'bg-primary/10 text-primary' : ''}`}
-                      title={sidebarCollapsed ? 'Derva' : undefined}
-                    >
-                      <Sparkles className="w-4 h-4 flex-shrink-0" />
-                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Derva</span>
                     </button>
                   </>
                 )}
