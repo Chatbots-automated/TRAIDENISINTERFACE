@@ -207,12 +207,13 @@ export const deleteDervaRecord = async (recordId: number, fileId: number): Promi
   if ((remainingJson.data || []).length > 0) return; // other records still exist
 
   // 3. No records left — clean up the file from Directus storage + DB
-  const { data: fileRow } = await db
+  const { data: fileRows } = await db
     .from('derva_files')
     .select('directus_file_id')
     .eq('id', fileId)
-    .maybeSingle();
+    .limit(1);
 
+  const fileRow = fileRows?.[0];
   if (fileRow?.directus_file_id) {
     await fetch(`${DIRECTUS_URL}/files/${fileRow.directus_file_id}`, {
       method: 'DELETE',
