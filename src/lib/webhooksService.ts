@@ -52,15 +52,17 @@ export async function getWebhookUrl(webhookKey: string): Promise<string | null> 
     .maybeSingle();
 
   if (error) {
-    console.error('Error fetching webhook URL:', error);
+    console.error(`[getWebhookUrl] DB error for "${webhookKey}":`, error);
     return null;
   }
 
   if (!data) {
+    console.warn(`[getWebhookUrl] No row found for key "${webhookKey}" — insert it into the webhooks table`);
     return null;
   }
 
   if (!data.is_active) {
+    console.warn(`[getWebhookUrl] Webhook "${webhookKey}" exists but is_active=false`);
     return null;
   }
 

@@ -293,8 +293,12 @@ export const notifyFileUpload = async (
 ): Promise<void> => {
   try {
     const webhookUrl = await getWebhookUrl('n8n_derva_file_upload');
-    if (!webhookUrl) return;
-    await fetch(webhookUrl, {
+    if (!webhookUrl) {
+      console.warn('[notifyFileUpload] No webhook URL for "n8n_derva_file_upload" — check webhooks table (is_active, url)');
+      return;
+    }
+    console.info(`[notifyFileUpload] Triggering webhook → ${webhookUrl}`);
+    const resp = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -302,8 +306,9 @@ export const notifyFileUpload = async (
         directus_file_id: directusFileId,
       }),
     });
-  } catch {
-    // Non-critical — don't block upload if webhook fails
+    console.info(`[notifyFileUpload] Response: ${resp.status} ${resp.statusText}`);
+  } catch (err) {
+    console.warn('[notifyFileUpload] Webhook call failed:', err);
   }
 };
 
