@@ -6,12 +6,13 @@ import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
+import DervaInterface from './components/DervaInterface';
 import SDKInterface from './components/SDKInterfaceNew';
 import PaklausimoKortelePage from './components/PaklausimoKortele';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
-type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
+type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk';
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
@@ -25,6 +26,7 @@ const routeToViewMode: Record<string, ViewMode> = {
   '/users': 'users',
   '/instrukcijos': 'instrukcijos',
   '/nestandartiniai': 'nestandartiniai',
+  '/derva': 'derva',
   '/sdk': 'sdk',
 };
 
@@ -200,6 +202,10 @@ function AppContent() {
         <Route
           path="/nestandartiniai"
           element={<NestandardiniaiInterface user={user} projectId={projectId} />}
+        />
+        <Route
+          path="/derva"
+          element={<DervaInterface user={user} />}
         />
         <Route
           path="/sdk/:conversationId?"

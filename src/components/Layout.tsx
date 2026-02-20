@@ -12,7 +12,8 @@ import {
   BookOpen,
   ChevronsLeft,
   ChevronsRight,
-  FlaskConical
+  FlaskConical,
+  Sparkles
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -23,8 +24,8 @@ interface LayoutProps {
   children: React.ReactNode;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
-  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
+  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
   forceCollapsed?: boolean;
   sdkUnreadCount?: number;
@@ -223,6 +224,14 @@ export default function Layout({
                     >
                       <Users className="w-4 h-4 flex-shrink-0" />
                       <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Naudotojai</span>
+                    </button>
+                    <button
+                      onClick={() => onViewModeChange?.('derva')}
+                      className={`sidebar-footer-btn ${viewMode === 'derva' ? 'bg-primary/10 text-primary' : ''}`}
+                      title={sidebarCollapsed ? 'Derva RAG' : undefined}
+                    >
+                      <Sparkles className="w-4 h-4 flex-shrink-0" />
+                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Derva RAG</span>
                     </button>
                   </>
                 )}

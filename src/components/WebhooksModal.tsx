@@ -9,7 +9,8 @@ import {
   ExternalLink,
   Package,
   Database,
-  Settings
+  Settings,
+  FlaskConical
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import {
@@ -26,7 +27,7 @@ interface WebhooksModalProps {
   user: AppUser;
 }
 
-type WebhookCategory = 'nestandartiniai' | 'sdk_tools' | 'all';
+type WebhookCategory = 'nestandartiniai' | 'sdk_tools' | 'derva' | 'all';
 
 interface WebhookGroup {
   category: WebhookCategory;
@@ -59,6 +60,15 @@ const WEBHOOK_GROUPS: WebhookGroup[] = [
       'n8n_get_prices',
       'n8n_get_multiplier',
       'n8n_commercial_offer'
+    ]
+  },
+  {
+    category: 'derva',
+    label: 'Derva RAG',
+    icon: <FlaskConical className="w-4 h-4" />,
+    description: 'Dokumentų vektorizavimo webhook\'as dervos rekomendacijų RAG sistemai',
+    webhookKeys: [
+      'n8n_derva_vectorize'
     ]
   }
 ];
