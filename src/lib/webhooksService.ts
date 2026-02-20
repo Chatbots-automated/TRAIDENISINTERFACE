@@ -5,6 +5,7 @@ export interface Webhook {
   webhook_key: string;
   webhook_name: string;
   description: string | null;
+  category: string | null;
   url: string;
   is_active: boolean;
   last_tested_at: string | null;
@@ -95,6 +96,30 @@ export async function updateWebhook(
     return { success: true };
   } catch (error: any) {
     console.error('Error updating webhook:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Update a webhook's category
+ */
+export async function updateWebhookCategory(
+  webhookKey: string,
+  category: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await dbAdmin
+      .from('webhooks')
+      .update({
+        category,
+        updated_at: new Date().toISOString()
+      })
+      .eq('webhook_key', webhookKey);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating webhook category:', error);
     return { success: false, error: error.message };
   }
 }

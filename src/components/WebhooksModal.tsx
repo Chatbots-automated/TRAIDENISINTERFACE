@@ -1,24 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Save,
   Zap,
-  Check,
-  AlertCircle,
   Loader2,
   ExternalLink,
-  Package,
   Database,
-  Settings,
-  FlaskConical
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import {
   getWebhooks,
   updateWebhook,
+  updateWebhookCategory,
   testWebhook,
   Webhook
 } from '../lib/webhooksService';
+import NotificationContainer, { Notification } from './NotificationContainer';
 import { colors } from '../lib/designSystem';
 
 interface WebhooksModalProps {
@@ -27,54 +24,9 @@ interface WebhooksModalProps {
   user: AppUser;
 }
 
-type WebhookCategory = 'nestandartiniai' | 'sdk_tools' | 'derva' | 'all';
-
-interface WebhookGroup {
-  category: WebhookCategory;
-  label: string;
-  icon: React.ReactNode;
-  description: string;
-  webhookKeys: string[];
-}
-
-const WEBHOOK_GROUPS: WebhookGroup[] = [
-  {
-    category: 'nestandartiniai',
-    label: 'Nestandartiniai Gaminiai',
-    icon: <Package className="w-4 h-4" />,
-    description: 'EML įkėlimo ir projektų valdymo webhook\'ai',
-    webhookKeys: [
-      'n8n_upload_new',
-      'n8n_find_similar',
-      'n8n_upload_solution',
-      'n8n_ai_conversation'
-    ]
-  },
-  {
-    category: 'sdk_tools',
-    label: 'SDK įrankiai',
-    icon: <Settings className="w-4 h-4" />,
-    description: 'SDK pokalbių įrankių webhook\'ai ir komercinių pasiūlymų generavimas',
-    webhookKeys: [
-      'n8n_get_products',
-      'n8n_get_prices',
-      'n8n_get_multiplier',
-      'n8n_commercial_offer'
-    ]
-  },
-  {
-    category: 'derva',
-    label: 'Derva RAG',
-    icon: <FlaskConical className="w-4 h-4" />,
-    description: 'Dokumentų vektorizavimo webhook\'as dervos rekomendacijų RAG sistemai',
-    webhookKeys: [
-      'n8n_derva_vectorize'
-    ]
-  }
-];
+const UNCATEGORIZED = 'Kita';
 
 export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalProps) {
-  const [activeTab, setActiveTab] = useState<WebhookCategory>('nestandartiniai');
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -82,8 +34,41 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { status: number; success: boolean }>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+
+  // Category editing
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState('');
+
+  // Toast notifications
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const addNotification = (type: Notification['type'], title: string, message: string) => {
+    const id = `wh-${Date.now()}-${Math.random()}`;
+    setNotifications(prev => [...prev, { id, type, title, message }]);
+  };
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  // Build dynamic tabs from the category column
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    for (const wh of webhooks) {
+      cats.add(wh.category?.trim() || UNCATEGORIZED);
+    }
+    // Return sorted, but keep UNCATEGORIZED last
+    const sorted = [...cats].filter(c => c !== UNCATEGORIZED).sort((a, b) => a.localeCompare(b, 'lt'));
+    if (cats.has(UNCATEGORIZED)) sorted.push(UNCATEGORIZED);
+    return sorted;
+  }, [webhooks]);
+
+  const [activeTab, setActiveTab] = useState<string>('');
+
+  // Auto-select first tab when categories load
+  useEffect(() => {
+    if (categories.length > 0 && !categories.includes(activeTab)) {
+      setActiveTab(categories[0]);
+    }
+  }, [categories]);
 
   useEffect(() => {
     if (isOpen) {
@@ -94,17 +79,21 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
   const loadWebhooks = async () => {
     try {
       setLoading(true);
-      setError(null);
       const data = await getWebhooks();
       setWebhooks(data);
     } catch (err: any) {
-      setError('Nepavyko įkelti webhook\'ų');
+      addNotification('error', 'Klaida', 'Nepavyko įkelti webhook\'ų');
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
+  const filteredWebhooks = useMemo(() => {
+    return webhooks.filter(wh => (wh.category?.trim() || UNCATEGORIZED) === activeTab);
+  }, [webhooks, activeTab]);
+
+  // ---------- Edit URL ----------
   const handleEdit = (webhook: Webhook) => {
     setEditingId(webhook.id);
     setEditUrl(webhook.url);
@@ -117,32 +106,52 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
 
   const handleSave = async (webhook: Webhook) => {
     if (!editUrl.trim()) return;
-
     try {
       setSaving(true);
-      setError(null);
       const result = await updateWebhook(webhook.webhook_key, editUrl.trim());
-
       if (result.success) {
-        setSuccess('Webhook atnaujintas sėkmingai');
-        setTimeout(() => setSuccess(null), 3000);
+        addNotification('success', 'Išsaugota', 'Webhook atnaujintas sėkmingai');
         setEditingId(null);
         setEditUrl('');
         await loadWebhooks();
       } else {
-        setError(result.error || 'Nepavyko išsaugoti');
+        addNotification('error', 'Klaida', result.error || 'Nepavyko išsaugoti');
       }
     } catch (err: any) {
-      setError(err.message);
+      addNotification('error', 'Klaida', err.message);
     } finally {
       setSaving(false);
     }
   };
 
+  // ---------- Edit Category ----------
+  const handleEditCategory = (webhook: Webhook) => {
+    setEditingCategoryId(webhook.id);
+    setEditCategory(webhook.category || '');
+  };
+
+  const handleSaveCategory = async (webhook: Webhook) => {
+    const newCat = editCategory.trim();
+    if (!newCat) return;
+    try {
+      const result = await updateWebhookCategory(webhook.webhook_key, newCat);
+      if (result.success) {
+        addNotification('success', 'Išsaugota', 'Kategorija atnaujinta');
+        setEditingCategoryId(null);
+        setEditCategory('');
+        await loadWebhooks();
+      } else {
+        addNotification('error', 'Klaida', result.error || 'Nepavyko išsaugoti');
+      }
+    } catch (err: any) {
+      addNotification('error', 'Klaida', err.message);
+    }
+  };
+
+  // ---------- Test ----------
   const handleTest = async (webhook: Webhook) => {
     try {
       setTesting(webhook.id);
-      setError(null);
       const result = await testWebhook(webhook.webhook_key, webhook.url);
 
       setTestResults(prev => ({
@@ -151,22 +160,22 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
       }));
 
       if (result.success) {
-        setSuccess(`Webhook testas sėkmingas: ${result.status} OK`);
-        setTimeout(() => setSuccess(null), 3000);
+        addNotification('success', 'Testas sėkmingas', `${result.status} OK`);
+      } else {
+        addNotification('error', 'Testas nepavyko', `Statusas: ${result.status || 'Ryšio klaida'}`);
       }
 
-      // Clear result after 5 seconds
       setTimeout(() => {
         setTestResults(prev => {
-          const newResults = { ...prev };
-          delete newResults[webhook.id];
-          return newResults;
+          const next = { ...prev };
+          delete next[webhook.id];
+          return next;
         });
       }, 5000);
 
       await loadWebhooks();
     } catch (err: any) {
-      setError(err.message);
+      addNotification('error', 'Klaida', err.message);
     } finally {
       setTesting(null);
     }
@@ -183,19 +192,6 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
     if (status >= 200 && status < 300) return `${status} OK`;
     return `${status} Error`;
   };
-
-  const getFilteredWebhooks = () => {
-    const activeGroup = WEBHOOK_GROUPS.find(g => g.category === activeTab);
-    if (!activeGroup) return [];
-
-    return webhooks.filter(webhook =>
-      activeGroup.webhookKeys.some(key =>
-        webhook.webhook_key.toLowerCase().includes(key.toLowerCase())
-      )
-    );
-  };
-
-  const filteredWebhooks = getFilteredWebhooks();
 
   if (!isOpen) return null;
 
@@ -235,56 +231,25 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tab Navigation — built dynamically from DB categories */}
         <div className="px-6 pt-4 pb-2 border-b" style={{ borderColor: colors.border.default }}>
-          <div className="flex gap-2">
-            {WEBHOOK_GROUPS.map((group) => (
+          <div className="flex gap-2 flex-wrap">
+            {categories.map((cat) => (
               <button
-                key={group.category}
-                onClick={() => setActiveTab(group.category)}
+                key={cat}
+                onClick={() => setActiveTab(cat)}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all"
                 style={{
-                  background: activeTab === group.category ? colors.interactive.accent : colors.bg.secondary,
-                  color: activeTab === group.category ? '#ffffff' : colors.text.secondary,
-                  border: `1px solid ${activeTab === group.category ? colors.interactive.accent : colors.border.default}`
+                  background: activeTab === cat ? colors.interactive.accent : colors.bg.secondary,
+                  color: activeTab === cat ? '#ffffff' : colors.text.secondary,
+                  border: `1px solid ${activeTab === cat ? colors.interactive.accent : colors.border.default}`
                 }}
               >
-                {group.icon}
-                <span>{group.label}</span>
+                {cat}
               </button>
             ))}
           </div>
         </div>
-
-        {/* Messages */}
-        {error && (
-          <div className="alert alert-soft alert-error mx-6 mt-4 text-sm">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span className="flex-1">{error}</span>
-            <button
-              onClick={() => setError(null)}
-              className="opacity-60 hover:opacity-100 transition-opacity"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {success && (
-          <div className="alert alert-soft alert-success mx-6 mt-4 text-sm">
-            <Check className="w-4 h-4 flex-shrink-0" />
-            <span>{success}</span>
-          </div>
-        )}
-
-        {/* Tab Description */}
-        {WEBHOOK_GROUPS.find(g => g.category === activeTab) && (
-          <div className="px-6 pt-4">
-            <p className="text-sm" style={{ color: colors.text.secondary }}>
-              {WEBHOOK_GROUPS.find(g => g.category === activeTab)?.description}
-            </p>
-          </div>
-        )}
 
         {/* Modal Body */}
         <div className="px-6 py-5 min-h-[300px]">
@@ -312,6 +277,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                 <thead>
                   <tr>
                     <th>Pavadinimas</th>
+                    <th>Kategorija</th>
                     <th>URL</th>
                     <th>Būsena</th>
                     <th>Veiksmai</th>
@@ -322,7 +288,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                     <React.Fragment key={webhook.id}>
                       {editingId === webhook.id ? (
                         <tr>
-                          <td colSpan={4}>
+                          <td colSpan={5}>
                             <div className="space-y-2 py-1">
                               <div className="text-sm font-medium mb-1">{webhook.webhook_name}</div>
                               <input
@@ -355,6 +321,45 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
                       ) : (
                         <tr>
                           <td className="font-medium text-sm whitespace-nowrap">{webhook.webhook_name}</td>
+                          <td className="whitespace-nowrap">
+                            {editingCategoryId === webhook.id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={editCategory}
+                                  onChange={(e) => setEditCategory(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveCategory(webhook);
+                                    if (e.key === 'Escape') setEditingCategoryId(null);
+                                  }}
+                                  className="input input-sm input-xs w-28 text-xs"
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => handleSaveCategory(webhook)}
+                                  disabled={!editCategory.trim()}
+                                  className="btn btn-primary btn-sm btn-xs px-1.5"
+                                >
+                                  <Save className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => setEditingCategoryId(null)}
+                                  className="btn btn-soft btn-sm btn-xs px-1.5"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleEditCategory(webhook)}
+                                className="text-xs px-2 py-0.5 rounded-md transition-colors hover:bg-black/5"
+                                style={{ color: colors.text.secondary }}
+                                title="Spustelėkite norėdami redaguoti kategoriją"
+                              >
+                                {webhook.category || UNCATEGORIZED}
+                              </button>
+                            )}
+                          </td>
                           <td className="max-w-xs">
                             <code className="text-xs font-mono text-base-content/60 truncate block">
                               {webhook.url || 'Nesukonfigūruota'}
@@ -434,6 +439,9 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
           </div>
         </div>
       </div>
+
+      {/* Global toast notifications */}
+      <NotificationContainer notifications={notifications} onRemove={removeNotification} />
     </div>
   );
 }
