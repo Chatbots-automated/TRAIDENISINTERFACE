@@ -68,7 +68,7 @@ const FILES_COLUMNS: { key: FilesSortColumn; label: string; width?: string }[] =
 const DATA_COLUMNS: { key: DataSortColumn; label: string; width?: string }[] = [
   { key: 'id', label: '#', width: 'w-14' },
   { key: 'content', label: 'Turinys' },
-  { key: 'file_id', label: 'Failo ID', width: 'w-24' },
+  { key: 'file_id', label: 'Failo ID', width: 'w-40' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -721,8 +721,8 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         {row.content}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 w-24">
-                      <span style={{ color: '#5a5550', fontSize: '13px' }}>{row.file_id}</span>
+                    <td className="px-3 py-2.5 w-40">
+                      <div className="truncate" style={{ color: '#5a5550', fontSize: '13px' }} title={row.file_id}>{row.file_id}</div>
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <button
