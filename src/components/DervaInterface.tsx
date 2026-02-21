@@ -163,7 +163,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   // Data
   const [files, setFiles] = useState<DervaFile[]>([]);
   const [dervaRecords, setDervaRecords] = useState<DervaRecord[]>([]);
-  const [vectorizedIds, setVectorizedIds] = useState<Set<number>>(new Set());
+  const [vectorizedIds, setVectorizedIds] = useState<Set<string>>(new Set());
 
   // Loading
   const [loadingFiles, setLoadingFiles] = useState(true);
@@ -316,14 +316,15 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       setUploading(true);
 
       // 1. Upload binary to Directus file storage
-      const directusFileId = await uploadFileToDirectus(selectedFile);
+      const { id: directusFileId, filenameDisk } = await uploadFileToDirectus(selectedFile);
 
-      // 2. Insert derva_files record
+      // 2. Insert derva_files record (file_id = filename_disk from Directus)
       const record = await insertDervaFile(
         selectedFile.name,
         selectedFile.size,
         selectedFile.type || 'application/octet-stream',
         directusFileId,
+        filenameDisk,
         user.email,
       );
 
@@ -368,7 +369,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     if (!confirm(`Ar tikrai norite ištrinti "${file.file_name}"?`)) return;
     try {
       setDeletingId(file.id);
-      await deleteDervaFile(file.id, file.directus_file_id);
+      await deleteDervaFile(file.id, file.directus_file_id, file.file_id);
       addNotification('info', 'Ištrinta', `"${file.file_name}" pašalintas`);
       await Promise.all([loadFiles(), loadDervaData()]);
     } catch (err: any) {
@@ -561,7 +562,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                 {sortedFiles.length === 0 ? (
                   <tr><td colSpan={FILES_COLUMNS.length + 2} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file) => {
-                  const isVectorized = vectorizedIds.has(file.id);
+                  const isVectorized = !!file.file_id && vectorizedIds.has(file.file_id);
                   return (
                     <tr
                       key={file.id}

@@ -14,6 +14,7 @@ export interface DervaFile {
   file_size: number | null;
   mime_type: string | null;
   directus_file_id: string | null;
+  file_id: string | null;
   uploaded_by: string;
   uploaded_at: string;
 }
@@ -21,21 +22,21 @@ export interface DervaFile {
 export interface DervaRecord {
   id: number;
   content: string;
-  file_id: number;
+  file_id: string;
 }
 
 // ---------------------------------------------------------------------------
 // Fields
 // ---------------------------------------------------------------------------
 
-const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at';
+const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,file_id,uploaded_by,uploaded_at';
 const DERVA_RECORD_FIELDS = 'id,content,file_id';
 
 // ---------------------------------------------------------------------------
 // Upload file to Directus file storage → returns UUID
 // ---------------------------------------------------------------------------
 
-export const uploadFileToDirectus = async (file: File): Promise<string> => {
+export const uploadFileToDirectus = async (file: File): Promise<{ id: string; filenameDisk: string }> => {
   const form = new FormData();
   form.append('file', file);
 
@@ -47,7 +48,7 @@ export const uploadFileToDirectus = async (file: File): Promise<string> => {
 
   if (!resp.ok) throw new Error(`Failo įkėlimas nepavyko: ${resp.status}`);
   const json = await resp.json();
-  return json.data.id;
+  return { id: json.data.id, filenameDisk: json.data.filename_disk };
 };
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,7 @@ export const insertDervaFile = async (
   fileSize: number,
   mimeType: string,
   directusFileId: string,
+  fileId: string,
   uploadedBy: string,
 ): Promise<DervaFile> => {
   const { data, error } = await db
@@ -68,6 +70,7 @@ export const insertDervaFile = async (
       file_size: fileSize,
       mime_type: mimeType,
       directus_file_id: directusFileId,
+      file_id: fileId,
       uploaded_by: uploadedBy,
     })
     .select(DERVA_FILES_FIELDS)
@@ -124,7 +127,7 @@ export const fetchDervaRecords = async (): Promise<DervaRecord[]> => {
 // Fetch file_ids that have at least one embedding in derva table
 // ---------------------------------------------------------------------------
 
-export const fetchVectorizedFileIds = async (): Promise<Set<number>> => {
+export const fetchVectorizedFileIds = async (): Promise<Set<string>> => {
   try {
     const resp = await fetch(
       `${DIRECTUS_URL}/items/derva?fields=file_id&limit=10000`,
@@ -137,9 +140,9 @@ export const fetchVectorizedFileIds = async (): Promise<Set<number>> => {
     );
     if (!resp.ok) return new Set();
     const json = await resp.json();
-    const ids = new Set<number>();
+    const ids = new Set<string>();
     for (const row of json.data || []) {
-      if (row.file_id != null) ids.add(Number(row.file_id));
+      if (row.file_id != null) ids.add(String(row.file_id));
     }
     return ids;
   } catch {
@@ -151,7 +154,7 @@ export const fetchVectorizedFileIds = async (): Promise<Set<number>> => {
 // Delete all derva records from Directus that reference a given file_id
 // ---------------------------------------------------------------------------
 
-const deleteDervaRecordsByFileId = async (fileId: number): Promise<void> => {
+const deleteDervaRecordsByFileId = async (fileId: string): Promise<void> => {
   // First, get all record IDs with this file_id
   const listResp = await fetch(
     `${DIRECTUS_URL}/items/derva?filter[file_id][_eq]=${fileId}&fields=id&limit=10000`,
@@ -187,7 +190,7 @@ const deleteDervaRecordsByFileId = async (fileId: number): Promise<void> => {
 // binary file and the derva_files DB row so nothing is orphaned.
 // ---------------------------------------------------------------------------
 
-export const deleteDervaRecord = async (recordId: number, fileId: number): Promise<void> => {
+export const deleteDervaRecord = async (recordId: number, fileId: string): Promise<void> => {
   // 1. Delete the record itself
   const resp = await fetch(`${DIRECTUS_URL}/items/derva/${recordId}`, {
     method: 'DELETE',
@@ -209,8 +212,8 @@ export const deleteDervaRecord = async (recordId: number, fileId: number): Promi
   // 3. No records left — clean up the file from Directus storage + DB
   const { data: fileRows } = await db
     .from('derva_files')
-    .select('directus_file_id')
-    .eq('id', fileId)
+    .select('id,directus_file_id')
+    .eq('file_id', fileId)
     .limit(1);
 
   const fileRow = fileRows?.[0];
@@ -221,16 +224,18 @@ export const deleteDervaRecord = async (recordId: number, fileId: number): Promi
     });
   }
 
-  await db.from('derva_files').delete().eq('id', fileId);
+  if (fileRow) {
+    await db.from('derva_files').delete().eq('id', fileRow.id);
+  }
 };
 
 // ---------------------------------------------------------------------------
 // Delete file + Directus file + associated derva records
 // ---------------------------------------------------------------------------
 
-export const deleteDervaFile = async (id: number, directusFileId: string | null): Promise<void> => {
+export const deleteDervaFile = async (id: number, directusFileId: string | null, fileId: string | null): Promise<void> => {
   // 1. Delete all derva embedding records referencing this file
-  await deleteDervaRecordsByFileId(id);
+  if (fileId) await deleteDervaRecordsByFileId(fileId);
 
   // 2. Delete the binary from Directus file storage
   if (directusFileId) {
