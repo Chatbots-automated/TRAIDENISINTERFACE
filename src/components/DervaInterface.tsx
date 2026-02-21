@@ -16,17 +16,14 @@ import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import {
   fetchDervaFiles,
-  fetchDervaRecords,
   fetchVectorizedFileIds,
   insertDervaFile,
   deleteDervaFile,
-  deleteDervaRecord,
   triggerVectorization,
   uploadFileToDirectus,
   getFileViewUrl,
   getFileDownloadUrl,
   DervaFile,
-  DervaRecord,
 } from '../lib/dervaService';
 
 // ---------------------------------------------------------------------------
@@ -55,7 +52,6 @@ function formatFileSize(bytes: number | null): string {
 // ---------------------------------------------------------------------------
 
 type FilesSortColumn = 'id' | 'file_name' | 'file_size' | 'uploaded_by' | 'uploaded_at';
-type DataSortColumn = 'id' | 'content' | 'file_id';
 
 const FILES_COLUMNS: { key: FilesSortColumn; label: string; width?: string }[] = [
   { key: 'id', label: '#', width: 'w-14' },
@@ -63,12 +59,6 @@ const FILES_COLUMNS: { key: FilesSortColumn; label: string; width?: string }[] =
   { key: 'file_size', label: 'Dydis', width: 'w-24' },
   { key: 'uploaded_by', label: 'Įkėlė', width: 'w-36' },
   { key: 'uploaded_at', label: 'Data', width: 'w-28' },
-];
-
-const DATA_COLUMNS: { key: DataSortColumn; label: string; width?: string }[] = [
-  { key: 'id', label: '#', width: 'w-14' },
-  { key: 'content', label: 'Turinys' },
-  { key: 'file_id', label: 'Failo ID', width: 'w-40' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -153,20 +143,13 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
 // Main component
 // ---------------------------------------------------------------------------
 
-type TabName = 'failai' | 'duomenys';
-
 export default function DervaInterface({ user }: DervaInterfaceProps) {
-  // Tab
-  const [selectedTab, setSelectedTab] = useState<TabName>('failai');
-
   // Data
   const [files, setFiles] = useState<DervaFile[]>([]);
-  const [dervaRecords, setDervaRecords] = useState<DervaRecord[]>([]);
   const [vectorizedIds, setVectorizedIds] = useState<Set<string>>(new Set());
 
   // Loading
   const [loadingFiles, setLoadingFiles] = useState(true);
-  const [loadingData, setLoadingData] = useState(true);
 
   // UI state
   const [uploading, setUploading] = useState(false);
@@ -179,10 +162,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   // Sorting
   const [filesSortConfig, setFilesSortConfig] = useState<{ column: FilesSortColumn; direction: 'asc' | 'desc' }>({
     column: 'uploaded_at',
-    direction: 'desc',
-  });
-  const [dataSortConfig, setDataSortConfig] = useState<{ column: DataSortColumn; direction: 'asc' | 'desc' }>({
-    column: 'id',
     direction: 'desc',
   });
 
@@ -216,22 +195,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     }
   }, []);
 
-  const loadDervaData = useCallback(async () => {
-    try {
-      setLoadingData(true);
-      setDervaRecords(await fetchDervaRecords());
-    } catch (err: any) {
-      console.error('Error loading derva data:', err);
-      addNotification('error', 'Klaida', 'Nepavyko įkelti duomenų');
-    } finally {
-      setLoadingData(false);
-    }
-  }, []);
-
-  useEffect(() => { loadFiles(); loadDervaData(); }, []);
-
-  const currentLoading = selectedTab === 'failai' ? loadingFiles : loadingData;
-  const currentReload = selectedTab === 'failai' ? loadFiles : loadDervaData;
+  useEffect(() => { loadFiles(); }, []);
 
   // ---------- Sorting (files) ----------
   const sortedFiles = useMemo(() => {
@@ -251,43 +215,12 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     });
   }, [files, filesSortConfig]);
 
-  // ---------- Sorting (derva data) ----------
-  const sortedDervaRecords = useMemo(() => {
-    if (!dataSortConfig.column) return dervaRecords;
-    return [...dervaRecords].sort((a, b) => {
-      const aVal: any = a[dataSortConfig.column];
-      const bVal: any = b[dataSortConfig.column];
-      if (aVal === null || aVal === undefined) return 1;
-      if (bVal === null || bVal === undefined) return -1;
-      if (typeof aVal === 'number' && typeof bVal === 'number')
-        return dataSortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
-      const aStr = String(aVal).toLowerCase();
-      const bStr = String(bVal).toLowerCase();
-      if (aStr < bStr) return dataSortConfig.direction === 'asc' ? -1 : 1;
-      if (aStr > bStr) return dataSortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [dervaRecords, dataSortConfig]);
-
   const handleFilesSort = (column: FilesSortColumn) => {
     setFilesSortConfig(prev =>
       prev.column === column
         ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
         : { column, direction: 'asc' }
     );
-  };
-
-  const handleDataSort = (column: DataSortColumn) => {
-    setDataSortConfig(prev =>
-      prev.column === column
-        ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
-        : { column, direction: 'asc' }
-    );
-  };
-
-  // ---------- Tab change ----------
-  const handleTabChange = (tab: TabName) => {
-    setSelectedTab(tab);
   };
 
   // ---------- File selection ----------
@@ -350,7 +283,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
         // Webhook responded after workflow completed — records now exist
         // in the derva table. Re-fetch to pick up the new vectorized IDs.
-        await Promise.all([loadFiles(), loadDervaData()]);
+        await loadFiles();
       } else {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
@@ -368,28 +301,11 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       setDeletingId(file.id);
       await deleteDervaFile(file.id, file.directus_file_id);
       addNotification('info', 'Ištrinta', `"${file.file_name}" pašalintas`);
-      await Promise.all([loadFiles(), loadDervaData()]);
+      await loadFiles();
     } catch (err: any) {
       addNotification('error', 'Klaida', err.message || 'Nepavyko ištrinti');
     } finally {
       setDeletingId(null);
-    }
-  };
-
-  // ---------- Delete derva record ----------
-  const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
-
-  const handleDeleteRecord = async (record: DervaRecord) => {
-    if (!confirm(`Ar tikrai norite ištrinti įrašą #${record.id}?`)) return;
-    try {
-      setDeletingRecordId(record.id);
-      await deleteDervaRecord(record.id);
-      addNotification('info', 'Ištrinta', `Įrašas #${record.id} pašalintas`);
-      await Promise.all([loadFiles(), loadDervaData()]);
-    } catch (err: any) {
-      addNotification('error', 'Klaida', err.message || 'Nepavyko ištrinti įrašo');
-    } finally {
-      setDeletingRecordId(null);
     }
   };
 
@@ -401,77 +317,42 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     </span>
   );
 
-  const isFailai = selectedTab === 'failai';
-
   return (
     <div
       className="h-full flex flex-col"
       style={{ background: '#fdfcfb' }}
-      onDragOver={isFailai ? (e) => { e.preventDefault(); setDragOver(true); } : undefined}
-      onDragLeave={isFailai ? (e) => { if (e.currentTarget === e.target) setDragOver(false); } : undefined}
-      onDrop={isFailai ? handleDrop : undefined}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+      onDrop={handleDrop}
     >
-      {/* Header — matches Dokumentai exactly */}
+      {/* Header */}
       <div className="px-6 pt-6 pb-4 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
-        {/* Top row: title + actions */}
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Dervų Failų Valdymas</h2>
           <div className="flex items-center gap-2">
-            {isFailai && (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-macos text-xs font-medium text-white transition-all hover:brightness-95"
-                style={{ background: '#007AFF' }}
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Įkelti failą
-              </button>
-            )}
             <button
-              onClick={currentReload}
-              disabled={currentLoading}
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-macos text-xs font-medium text-white transition-all hover:brightness-95"
+              style={{ background: '#007AFF' }}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Įkelti failą
+            </button>
+            <button
+              onClick={loadFiles}
+              disabled={loadingFiles}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95"
               style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${currentLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingFiles ? 'animate-spin' : ''}`} />
               Atnaujinti
-            </button>
-          </div>
-        </div>
-
-        {/* Segmented control — same as Dokumentai */}
-        <div className="flex items-center gap-4">
-          <div className="inline-flex rounded-macos p-0.5 shrink-0" style={{ background: 'rgba(0,0,0,0.06)' }}>
-            <button
-              onClick={() => handleTabChange('failai')}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
-                selectedTab === 'failai' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
-              }`}
-              style={selectedTab === 'failai' ? {
-                background: '#fff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-              } : undefined}
-            >
-              Failai
-            </button>
-            <button
-              onClick={() => handleTabChange('duomenys')}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
-                selectedTab === 'duomenys' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
-              }`}
-              style={selectedTab === 'duomenys' ? {
-                background: '#fff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-              } : undefined}
-            >
-              Duomenys
             </button>
           </div>
         </div>
       </div>
 
-      {/* Upload preview bar (only on Failai tab) */}
-      {isFailai && (selectedFile || dragOver) && (
+      {/* Upload preview bar */}
+      {(selectedFile || dragOver) && (
         <div className="px-6 pt-3">
           {dragOver && !selectedFile && (
             <div
@@ -522,12 +403,11 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
 
       {/* Table area */}
       <div className="flex-1 overflow-auto px-6 py-4">
-        {currentLoading ? (
+        {loadingFiles ? (
           <div className="flex items-center justify-center h-64">
             <span className="loading loading-spinner loading-md text-macos-blue"></span>
           </div>
-        ) : isFailai ? (
-          /* =================== FAILAI TABLE =================== */
+        ) : (
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
@@ -669,80 +549,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}
             >
               <span>{files.length} {files.length === 1 ? 'failas' : 'failų'}</span>
-            </div>
-          </div>
-        ) : (
-          /* =================== DUOMENYS TABLE =================== */
-          <div
-            className="w-full overflow-x-auto rounded-macos-lg bg-white"
-            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-          >
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  {DATA_COLUMNS.map(col => (
-                    <th
-                      key={col.key}
-                      onClick={() => handleDataSort(col.key)}
-                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
-                        <SortArrows column={col.key} config={dataSortConfig} />
-                      </div>
-                    </th>
-                  ))}
-                  <th className="px-3 py-3 text-right whitespace-nowrap">
-                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Veiksmai</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedDervaRecords.length === 0 ? (
-                  <tr><td colSpan={DATA_COLUMNS.length + 1} className="py-2.5">&nbsp;</td></tr>
-                ) : sortedDervaRecords.map((row) => (
-                  <tr
-                    key={row.id}
-                    style={{ borderBottom: '1px solid #f8f6f3' }}
-                  >
-                    <td className="px-3 py-2.5 w-14">
-                      <span style={{ color: '#8a857f', fontSize: '12px' }}>{row.id}</span>
-                    </td>
-                    <td className="px-3 py-2.5 max-w-0">
-                      <div
-                        className="truncate"
-                        style={{ color: '#3d3935', fontSize: '13px' }}
-                        title={row.content}
-                      >
-                        {row.content}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2.5 w-40">
-                      <div className="truncate" style={{ color: '#5a5550', fontSize: '13px' }} title={row.file_id}>{row.file_id}</div>
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <button
-                        onClick={() => handleDeleteRecord(row)}
-                        disabled={deletingRecordId === row.id}
-                        className="p-1.5 rounded-md transition-colors hover:bg-red-50"
-                        title="Ištrinti"
-                      >
-                        {deletingRecordId === row.id
-                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
-                          : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />
-                        }
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div
-              className="px-4 py-2 text-xs flex items-center justify-between"
-              style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}
-            >
-              <span>{dervaRecords.length} įrašų</span>
             </div>
           </div>
         )}
