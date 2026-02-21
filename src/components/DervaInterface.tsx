@@ -348,7 +348,15 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       const ok = await triggerVectorization(file.directus_file_id, file.file_name);
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
-        await Promise.all([loadFiles(), loadDervaData()]);
+        // Optimistic update — the webhook returned OK but the n8n workflow
+        // is still processing. Mark the file as vectorized immediately so
+        // the button reflects the new state without waiting for the async
+        // embedding to finish and appear in the database.
+        setVectorizedIds(prev => {
+          const next = new Set(prev);
+          next.add(file.directus_file_id!);
+          return next;
+        });
       } else {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
