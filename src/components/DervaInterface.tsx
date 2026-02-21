@@ -23,7 +23,6 @@ import {
   deleteDervaRecord,
   triggerVectorization,
   uploadFileToDirectus,
-  notifyFileUpload,
   getFileViewUrl,
   getFileDownloadUrl,
   DervaFile,
@@ -316,20 +315,16 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       setUploading(true);
 
       // 1. Upload binary to Directus file storage
-      const { id: directusFileId, filenameDisk } = await uploadFileToDirectus(selectedFile);
+      const directusFileId = await uploadFileToDirectus(selectedFile);
 
-      // 2. Insert derva_files record (file_id = filename_disk from Directus)
-      const record = await insertDervaFile(
+      // 2. Insert derva_files record (all metadata from the file + Directus UUID)
+      await insertDervaFile(
         selectedFile.name,
         selectedFile.size,
         selectedFile.type || 'application/octet-stream',
         directusFileId,
-        filenameDisk,
         user.email,
       );
-
-      // 3. Notify n8n about the upload (fire-and-forget)
-      notifyFileUpload(record.id, directusFileId);
 
       addNotification('success', 'Įkelta', `Failas "${selectedFile.name}" sėkmingai įkeltas`);
       clearSelectedFile();
@@ -350,7 +345,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     }
     try {
       setVectorizingId(file.id);
-      const ok = await triggerVectorization(file.id, file.directus_file_id, file.file_name);
+      const ok = await triggerVectorization(file.directus_file_id, file.file_name);
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
         await Promise.all([loadFiles(), loadDervaData()]);
@@ -369,7 +364,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     if (!confirm(`Ar tikrai norite ištrinti "${file.file_name}"?`)) return;
     try {
       setDeletingId(file.id);
-      await deleteDervaFile(file.id, file.directus_file_id, file.file_id);
+      await deleteDervaFile(file.id, file.directus_file_id);
       addNotification('info', 'Ištrinta', `"${file.file_name}" pašalintas`);
       await Promise.all([loadFiles(), loadDervaData()]);
     } catch (err: any) {
@@ -562,7 +557,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                 {sortedFiles.length === 0 ? (
                   <tr><td colSpan={FILES_COLUMNS.length + 2} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file) => {
-                  const isVectorized = !!file.file_id && vectorizedIds.has(file.file_id);
+                  const isVectorized = !!file.directus_file_id && vectorizedIds.has(file.directus_file_id);
                   return (
                     <tr
                       key={file.id}
@@ -717,14 +712,14 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                     <td className="px-3 py-2.5 w-14">
                       <span style={{ color: '#8a857f', fontSize: '12px' }}>{row.id}</span>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span
-                        className="truncate max-w-[300px] inline-block align-middle"
+                    <td className="px-3 py-2.5 max-w-0">
+                      <div
+                        className="truncate"
                         style={{ color: '#3d3935', fontSize: '13px' }}
                         title={row.content}
                       >
-                        {row.content.length > 80 ? row.content.slice(0, 80) + '…' : row.content}
-                      </span>
+                        {row.content}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5 w-24">
                       <span style={{ color: '#5a5550', fontSize: '13px' }}>{row.file_id}</span>

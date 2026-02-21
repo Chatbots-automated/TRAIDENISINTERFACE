@@ -14,7 +14,6 @@ export interface DervaFile {
   file_size: number | null;
   mime_type: string | null;
   directus_file_id: string | null;
-  file_id: string | null;
   uploaded_by: string;
   uploaded_at: string;
 }
@@ -29,14 +28,14 @@ export interface DervaRecord {
 // Fields
 // ---------------------------------------------------------------------------
 
-const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,file_id,uploaded_by,uploaded_at';
+const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at';
 const DERVA_RECORD_FIELDS = 'id,content,file_id';
 
 // ---------------------------------------------------------------------------
 // Upload file to Directus file storage → returns UUID
 // ---------------------------------------------------------------------------
 
-export const uploadFileToDirectus = async (file: File): Promise<{ id: string; filenameDisk: string }> => {
+export const uploadFileToDirectus = async (file: File): Promise<string> => {
   const form = new FormData();
   form.append('file', file);
 
@@ -48,7 +47,7 @@ export const uploadFileToDirectus = async (file: File): Promise<{ id: string; fi
 
   if (!resp.ok) throw new Error(`Failo įkėlimas nepavyko: ${resp.status}`);
   const json = await resp.json();
-  return { id: json.data.id, filenameDisk: json.data.filename_disk };
+  return json.data.id;
 };
 
 // ---------------------------------------------------------------------------
@@ -60,7 +59,6 @@ export const insertDervaFile = async (
   fileSize: number,
   mimeType: string,
   directusFileId: string,
-  fileId: string,
   uploadedBy: string,
 ): Promise<DervaFile> => {
   const { data, error } = await db
@@ -70,7 +68,6 @@ export const insertDervaFile = async (
       file_size: fileSize,
       mime_type: mimeType,
       directus_file_id: directusFileId,
-      file_id: fileId,
       uploaded_by: uploadedBy,
     })
     .select(DERVA_FILES_FIELDS)
@@ -213,7 +210,7 @@ export const deleteDervaRecord = async (recordId: number, fileId: string): Promi
   const { data: fileRows } = await db
     .from('derva_files')
     .select('id,directus_file_id')
-    .eq('file_id', fileId)
+    .eq('directus_file_id', fileId)
     .limit(1);
 
   const fileRow = fileRows?.[0];
@@ -233,9 +230,9 @@ export const deleteDervaRecord = async (recordId: number, fileId: string): Promi
 // Delete file + Directus file + associated derva records
 // ---------------------------------------------------------------------------
 
-export const deleteDervaFile = async (id: number, directusFileId: string | null, fileId: string | null): Promise<void> => {
-  // 1. Delete all derva embedding records referencing this file
-  if (fileId) await deleteDervaRecordsByFileId(fileId);
+export const deleteDervaFile = async (id: number, directusFileId: string | null): Promise<void> => {
+  // 1. Delete all derva embedding records referencing this file (derva.file_id = directus UUID)
+  if (directusFileId) await deleteDervaRecordsByFileId(directusFileId);
 
   // 2. Delete the binary from Directus file storage
   if (directusFileId) {
@@ -266,7 +263,6 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null,
 // ---------------------------------------------------------------------------
 
 export const triggerVectorization = async (
-  fileId: number,
   directusFileId: string,
   fileName: string,
 ): Promise<boolean> => {
@@ -279,43 +275,12 @@ export const triggerVectorization = async (
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      file_id: fileId,
       directus_file_id: directusFileId,
-      file_url: `${DIRECTUS_URL}/assets/${directusFileId}`,
       file_name: fileName,
     }),
   });
 
   return resp.ok;
-};
-
-// ---------------------------------------------------------------------------
-// Notify n8n about new file upload
-// ---------------------------------------------------------------------------
-
-export const notifyFileUpload = async (
-  fileId: number,
-  directusFileId: string,
-): Promise<void> => {
-  try {
-    const webhookUrl = await getWebhookUrl('n8n_derva_file_upload');
-    if (!webhookUrl) {
-      console.warn('[notifyFileUpload] No webhook URL for "n8n_derva_file_upload" — check webhooks table (is_active, url)');
-      return;
-    }
-    console.info(`[notifyFileUpload] Triggering webhook → ${webhookUrl}`);
-    const resp = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        file_id: fileId,
-        directus_file_id: directusFileId,
-      }),
-    });
-    console.info(`[notifyFileUpload] Response: ${resp.status} ${resp.statusText}`);
-  } catch (err) {
-    console.warn('[notifyFileUpload] Webhook call failed:', err);
-  }
 };
 
 // ---------------------------------------------------------------------------
