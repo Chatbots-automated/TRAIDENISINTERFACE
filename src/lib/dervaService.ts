@@ -236,6 +236,7 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
 export const triggerVectorization = async (
   directusFileId: string,
   fileName: string,
+  dervaFileId: number,
 ): Promise<boolean> => {
   const webhookUrl = await getWebhookUrl('n8n_derva_vectorize');
   if (!webhookUrl) {
@@ -248,6 +249,7 @@ export const triggerVectorization = async (
     body: JSON.stringify({
       directus_file_id: directusFileId,
       file_name: fileName,
+      derva_file_id: dervaFileId,
     }),
   });
 

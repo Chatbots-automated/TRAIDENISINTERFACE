@@ -345,7 +345,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     }
     try {
       setVectorizingId(file.id);
-      const ok = await triggerVectorization(file.directus_file_id, file.file_name);
+      const ok = await triggerVectorization(file.directus_file_id, file.file_name, file.id);
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
         // Webhook responded after workflow completed — records now exist
