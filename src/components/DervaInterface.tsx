@@ -718,11 +718,11 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                     </td>
                     <td className="px-3 py-2.5">
                       <span
-                        className="block truncate max-w-[600px]"
+                        className="truncate max-w-[300px] inline-block align-middle"
                         style={{ color: '#3d3935', fontSize: '13px' }}
                         title={row.content}
                       >
-                        {row.content.length > 200 ? row.content.slice(0, 200) + '…' : row.content}
+                        {row.content.length > 80 ? row.content.slice(0, 80) + '…' : row.content}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 w-24">
