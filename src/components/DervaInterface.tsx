@@ -547,7 +547,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </div>
                     </th>
                   ))}
-                  <th className="px-3 py-3 text-left whitespace-nowrap">
+                  <th className="px-3 py-3 text-center whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vektorizacija</span>
                   </th>
                   <th className="px-3 py-3 text-right whitespace-nowrap">
@@ -598,15 +598,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </td>
 
                       {/* Vektorizacija */}
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 text-center">
                         {isVectorized ? (
-                          <span
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full"
-                            style={{ background: 'rgba(34,197,94,0.12)' }}
-                            title="Vektorizuota"
-                          >
-                            <Check className="w-4 h-4" style={{ color: '#15803d' }} />
-                          </span>
+                          <Check className="w-4 h-4 inline-block" style={{ color: '#15803d' }} />
                         ) : (
                           <button
                             onClick={() => handleVectorize(file)}
