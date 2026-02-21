@@ -187,42 +187,13 @@ const deleteDervaRecordsByFileId = async (fileId: string): Promise<void> => {
 // binary file and the derva_files DB row so nothing is orphaned.
 // ---------------------------------------------------------------------------
 
-export const deleteDervaRecord = async (recordId: number, fileId: string): Promise<void> => {
-  // 1. Delete the record itself
+export const deleteDervaRecord = async (recordId: number): Promise<void> => {
   const resp = await fetch(`${DIRECTUS_URL}/items/derva/${recordId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
   });
   if (!resp.ok && resp.status !== 404) {
     throw new Error(`Nepavyko ištrinti įrašo (${resp.status})`);
-  }
-
-  // 2. Check if any other records still reference this file_id
-  const remaining = await fetch(
-    `${DIRECTUS_URL}/items/derva?filter[file_id][_eq]=${fileId}&fields=id&limit=1`,
-    { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, Accept: 'application/json' } }
-  );
-  if (!remaining.ok) return;
-  const remainingJson = await remaining.json();
-  if ((remainingJson.data || []).length > 0) return; // other records still exist
-
-  // 3. No records left — clean up the file from Directus storage + DB
-  const { data: fileRows } = await db
-    .from('derva_files')
-    .select('id,directus_file_id')
-    .eq('directus_file_id', fileId)
-    .limit(1);
-
-  const fileRow = fileRows?.[0];
-  if (fileRow?.directus_file_id) {
-    await fetch(`${DIRECTUS_URL}/files/${fileRow.directus_file_id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-    });
-  }
-
-  if (fileRow) {
-    await db.from('derva_files').delete().eq('id', fileRow.id);
   }
 };
 

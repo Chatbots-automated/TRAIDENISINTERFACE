@@ -348,15 +348,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       const ok = await triggerVectorization(file.directus_file_id, file.file_name);
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
-        // Optimistic update — the webhook returned OK but the n8n workflow
-        // is still processing. Mark the file as vectorized immediately so
-        // the button reflects the new state without waiting for the async
-        // embedding to finish and appear in the database.
-        setVectorizedIds(prev => {
-          const next = new Set(prev);
-          next.add(file.directus_file_id!);
-          return next;
-        });
+        // Webhook responded after workflow completed — records now exist
+        // in the derva table. Re-fetch to pick up the new vectorized IDs.
+        await Promise.all([loadFiles(), loadDervaData()]);
       } else {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
@@ -389,7 +383,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     if (!confirm(`Ar tikrai norite ištrinti įrašą #${record.id}?`)) return;
     try {
       setDeletingRecordId(record.id);
-      await deleteDervaRecord(record.id, record.file_id);
+      await deleteDervaRecord(record.id);
       addNotification('info', 'Ištrinta', `Įrašas #${record.id} pašalintas`);
       await Promise.all([loadFiles(), loadDervaData()]);
     } catch (err: any) {
