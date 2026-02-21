@@ -5,6 +5,7 @@ export interface Webhook {
   webhook_key: string;
   webhook_name: string;
   description: string | null;
+  category: string | null;
   url: string;
   is_active: boolean;
   last_tested_at: string | null;
@@ -48,21 +49,29 @@ export async function getWebhookUrl(webhookKey: string): Promise<string | null> 
     .from('webhooks')
     .select('url, is_active')
     .eq('webhook_key', webhookKey)
-    .single();
+    .limit(1);
 
-  if (error || !data) {
-    console.error('Error fetching webhook URL:', error);
+  if (error) {
+    console.error(`[getWebhookUrl] DB error for "${webhookKey}":`, error);
     return null;
   }
 
-  if (!data.is_active) {
+  const row = data?.[0];
+
+  if (!row) {
+    console.warn(`[getWebhookUrl] No row found for key "${webhookKey}" — insert it into the webhooks table`);
+    return null;
+  }
+
+  if (!row.is_active) {
+    console.warn(`[getWebhookUrl] Webhook "${webhookKey}" exists but is_active=false`);
     return null;
   }
 
   // Update cache
-  webhookCache.set(webhookKey, { url: data.url, timestamp: Date.now() });
+  webhookCache.set(webhookKey, { url: row.url, timestamp: Date.now() });
 
-  return data.url;
+  return row.url;
 }
 
 /**
@@ -91,6 +100,30 @@ export async function updateWebhook(
     return { success: true };
   } catch (error: any) {
     console.error('Error updating webhook:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Update a webhook's category
+ */
+export async function updateWebhookCategory(
+  webhookKey: string,
+  category: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await dbAdmin
+      .from('webhooks')
+      .update({
+        category,
+        updated_at: new Date().toISOString()
+      })
+      .eq('webhook_key', webhookKey);
+
+    if (error) throw error;
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating webhook category:', error);
     return { success: false, error: error.message };
   }
 }

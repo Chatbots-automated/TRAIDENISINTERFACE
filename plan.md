@@ -1,135 +1,192 @@
-# Plan: Live Document Preview Feature
+# Derva RAG Feature - Implementation Plan
 
-## Overview
+## Architecture Overview
 
-Add a split-pane document preview to the artifact panel that shows a live, formatted preview of the commercial offer document as variables are filled in by the chat and user.
-
-## Current Architecture
-
-- Chat (Claude) generates YAML variables → stored as artifact in `sdk_conversations.artifact`
-- User fills offer parameters + selects team in the artifact panel
-- "Generuoti" button sends everything to n8n webhook → n8n creates a Google Doc from a template → returns URL
-- User opens the finished Google Doc externally (no preview before sending)
-
-**The gap:** Users can't see what the final document will look like until after it's generated and opened in Google Docs.
+Two PostgreSQL tables + one new page + one new webhook + pgvector tool config for n8n.
 
 ---
 
-## Proposed Approach: HTML Template Preview (Client-Side)
+## 1. Database: Migration `005_derva_rag.sql`
 
-### Why this approach
+### Table `derva_files` — tracks uploaded files (for UI listing)
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **A: HTML template (recommended)** | Real-time, no network calls, instant feedback | Need to keep HTML template in sync with Google Docs template |
-| B: n8n preview endpoint | Exact match to final output | Slow (network round-trip per change), needs n8n changes |
-| C: PDF.js viewer | Renders actual PDF | Still needs server-side PDF generation, heavy library (~2MB) |
+```sql
+CREATE TABLE IF NOT EXISTS public.derva_files (
+  id SERIAL PRIMARY KEY,
+  file_name TEXT NOT NULL,
+  file_size INTEGER,
+  source_type TEXT DEFAULT 'unknown',
+  uploaded_by TEXT NOT NULL,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'vectorized', 'error')),
+  chunk_count INTEGER DEFAULT 0,
+  error_message TEXT
+);
+```
 
-**Recommendation: Approach A** — Store an HTML template that mirrors the Google Docs template structure. Replace `{{variable}}` placeholders with live values as user/chat fills them in. This gives instant visual feedback. The actual final document is still generated through n8n for accuracy.
+### Table `derva` — stores vectorized chunks (n8n PGVector Store compatible)
+
+```sql
+CREATE TABLE IF NOT EXISTS public.derva (
+  id SERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  embedding vector(3072),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS derva_embedding_idx
+  ON public.derva USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS derva_file_name_idx
+  ON public.derva ((metadata->>'file_name'));
+```
+
+**Why two tables?**
+- `derva_files`: clean UI listing of uploads + status tracking (1 row per file)
+- `derva`: chunks for RAG (many rows per file, n8n PGVector Store node expects this shape)
 
 ---
 
-## Implementation Plan
+## 2. Backend Service: `src/lib/dervaService.ts`
 
-### Step 1: Create the Document Template Service
-
-**New file:** `src/lib/documentTemplateService.ts`
-
-- Store a default HTML template string that mirrors the commercial offer Google Docs layout
-- The template uses `{{variable_key}}` placeholders (matching the YAML keys)
-- Function: `renderTemplate(template, variables) → HTML string`
-- Function: `getDefaultTemplate() → string` (hardcoded initial template)
-- Later: Allow admins to edit the template via a settings modal and store in `instruction_variables` table with key `document_template`
-
-Template example:
-```html
-<div class="document">
-  <h1>KOMERCINIS PASIŪLYMAS</h1>
-  <p>{{object_sentence}}</p>
-  <h2>EKONOMINIS KOMPLEKTAS</h2>
-  <p>{{economy_HNV}}</p>
-  <p>Kaina be PVM: {{economy_priceNoPVM}}</p>
-  <p>PVM (21%): {{economy_PVM}}</p>
-  <p><strong>Viso su PVM: {{economy_totalWithPVM}}</strong></p>
-  ...
-</div>
-```
-
-### Step 2: Create the DocumentPreview Component
-
-**New file:** `src/components/DocumentPreview.tsx`
-
-- Receives: `templateHtml`, `variables` (merged YAML + offer params + team)
-- Renders the template with variables substituted, inside a styled container
-- Uses CSS that mimics an A4 page look (white background, page margins, professional typography)
-- Unfilled variables shown as highlighted placeholders: `[variable_name]`
-- Scrollable, zoomable preview area
-
-### Step 3: Add Preview Tab to Artifact Panel
-
-**Modify:** `src/components/SDKInterfaceNew.tsx`
-
-The artifact panel header gets two tabs:
-
-```
-┌────────────────────────────────────────────────┐
-│ Komercinis pasiūlymas    [Duomenys] [Peržiūra] │
-│                          ~~~~~~~~   ~~~~~~~~~   │
-│                          (current)  (new tab)   │
-```
-
-- **"Duomenys" tab** (Data) — the current view with collapsible sections (YAML variables, object params, team)
-- **"Peržiūra" tab** (Preview) — the new DocumentPreview component showing the live rendered document
-
-New state: `const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>('data');`
-
-When "Peržiūra" is active:
-1. Merge all variable sources: YAML artifact content + offerParameters + team info
-2. Pass to `renderTemplate()`
-3. Display the rendered HTML in the DocumentPreview component
-
-### Step 4: Template Variable Merging
-
-Create a merge function that combines all data sources:
-
-```typescript
-const mergeAllVariables = (): Record<string, string> => {
-  const yamlVars = currentConversation?.artifact
-    ? parseYAMLContent(currentConversation.artifact.content)
-    : {};
-
-  return {
-    ...yamlVars,                    // economy_HNV_price, midi_SIR, etc.
-    ...offerParameters,              // object_sentence, BDS values, etc.
-    ekonomistas: selectedEconomist?.full_name || '',
-    vadybininkas: selectedManager?.full_name || '',
-    technologas: user.full_name || user.email,
-    project_name: currentConversation?.title || '',
-  };
-};
-```
-
-### Step 5: (Optional future) Admin Template Editor
-
-**Later enhancement:** Add a template editor in the admin settings where the HTML template can be customized. Store in `instruction_variables` table with `variable_key = 'document_template'`. This allows the template to be updated without code changes.
+Functions:
+- `fetchDervaFiles()` — list all files from `derva_files`, ordered by `uploaded_at DESC`
+- `insertDervaFile(fileName, fileSize, uploadedBy)` — insert pending file record, return ID
+- `deleteDervaFile(id)` — delete file record + its chunks from `derva` where metadata->>'file_id' matches
+- `getDervaFileStatus(id)` — check single file status
 
 ---
 
-## File Changes Summary
+## 3. Frontend: `src/components/DervaInterface.tsx`
 
-| File | Action | Description |
-|------|--------|-------------|
-| `src/lib/documentTemplateService.ts` | **New** | Template storage, rendering, variable substitution |
-| `src/components/DocumentPreview.tsx` | **New** | A4-styled document preview component |
-| `src/components/SDKInterfaceNew.tsx` | **Modify** | Add tabs to artifact panel header, toggle between data/preview views |
+New page under Valdymas (admin-only). Structure:
 
-## Dependencies
+### Header
+- Title: "Derva RAG"
+- Subtitle: "Vektorizuotų dokumentų valdymas dervos rekomendacijoms"
 
-- No new npm packages needed — pure HTML/CSS rendering
-- The HTML template needs to be authored once to match the Google Docs template structure
+### Upload Section
+- Drag & drop file input (accepts `.pdf`, `.md`, `.txt`, `.doc`, `.docx`)
+- "Vektorizuoti" button — triggers webhook with binary file via FormData
+- Loader shown while waiting for 200 response
+- On success: refresh file list, show notification
 
-## Risks & Considerations
+### File List (table)
+| # | Failo pavadinimas | Dydis | Įkėlė | Data | Būsena | Veiksmai |
+|---|---|---|---|---|---|---|
+| 1 | resin_guide.pdf | 12.4 MB | admin@... | 2026-02-20 | Vektorizuota (45 chunks) | Delete |
 
-1. **Template sync:** The HTML preview template may drift from the actual Google Docs template used by n8n. Mitigation: keep the HTML template simple and focused on content layout, not pixel-perfect matching. Add a disclaimer: "Peržiūra yra apytikslė. Galutinis dokumentas gali šiek tiek skirtis."
-2. **Template authoring:** Someone needs to create the initial HTML template matching the current Google Docs structure. This is a one-time effort.
-3. **Variable coverage:** The template must use the same `{{variable_key}}` names as the YAML artifact and offer parameters. The `mergeAllVariables` function handles this mapping.
+- Status badges: `pending` (yellow), `processing` (blue spinner), `vectorized` (green), `error` (red)
+- Shows chunk_count when vectorized
+- Delete button removes file record + all associated chunks
+- Auto-polls status every 5s while any file is in `pending`/`processing` state
+
+---
+
+## 4. Routing & Sidebar Changes
+
+### `src/App.tsx`
+- Add `'derva'` to `ViewMode` type
+- Add route: `<Route path="/derva" element={<DervaInterface user={user} />} />`
+- Add to `routeToViewMode`: `'/derva': 'derva'`
+
+### `src/components/Layout.tsx`
+- Add `'derva'` to the viewMode type union
+- Add new sidebar button under Valdymas section (after Naudotojai):
+  - Uses `FlaskConical` icon (already imported in Layout.tsx line 15 but currently unused)
+  - Label: "Derva RAG"
+
+---
+
+## 5. Webhook Integration
+
+### New webhook key: `n8n_derva_vectorize`
+
+- Register in `webhooks` DB table (via WebhooksModal UI after deployment)
+- Add to `WEBHOOK_GROUPS` in `WebhooksModal.tsx` as a new "Derva" category
+
+### Upload flow:
+1. User picks file + clicks "Vektorizuoti"
+2. Frontend inserts record into `derva_files` (status: 'pending')
+3. Frontend sends `POST` to webhook with `FormData`:
+   - `file`: binary file
+   - `file_id`: the derva_files record ID
+   - `file_name`: original file name
+   - `uploaded_by`: user email
+4. n8n workflow: parse → chunk → embed → insert into `derva` table → update `derva_files` status
+5. Frontend polls/refreshes to show updated status
+
+---
+
+## 6. Webhook URL Issue (localhost vs n8n.traidenis.org)
+
+Your webhook URLs live in the **`webhooks` database table**, not `.env`. The URL you pasted (`http://localhost:5678/webhook-test/...`) has two problems:
+1. **`localhost`** — only works when browser runs on same machine as n8n
+2. **`webhook-test`** — n8n test mode URL, only active while workflow is open in n8n editor
+
+**Fix:** In the Webhooks modal, update URLs to `https://n8n.traidenis.org/webhook/...` (production path, no `-test`). Activate the workflow in n8n first so the production webhook becomes live.
+
+No code change needed — pure configuration fix in your webhooks table.
+
+---
+
+## 7. PGVector Store Tool Description for n8n Anthropic Node
+
+```
+Dervos žinių bazė – vektorizuotų dokumentų paieška.
+
+Šioje duomenų bazėje saugomi trys tipų dokumentai:
+1. DERVOS PARINKIMO VADOVAS – išsamus ~60 puslapių dokumentas apie dervų
+   (epoksidinių, poliesterinių, vinilesterinių ir kt.) parinkimą pagal aplinkos
+   sąlygas, cheminį atsparumą, temperatūrą ir mechaninius reikalavimus.
+2. GAMINTOJŲ KOMPONENTŲ LAPAI – ~30 vieno puslapio techninių duomenų lapų iš
+   gamintojų (pvz. Ashland, AOC, Scott Bader ir kt.) apie konkrečias chemines
+   medžiagas, jų savybes ir pritaikymą.
+3. KOMPONENTŲ PARINKIMO LENTELĖ – bendroji lentelė su cheminių komponentų
+   palyginimais ir rekomendacijomis pagal terpę.
+
+NAUDOJIMO INSTRUKCIJOS:
+- Ieškok pagal konkrečius terminus: cheminės medžiagos pavadinimą, terpės tipą
+  (rūgštys, šarmai, tirpikliai), temperatūros diapazoną, arba gamintojo pavadinimą.
+- VISADA atlik kelias paieškas skirtingais terminais, jei pirma paieška neduoda
+  pakankamai rezultatų.
+- Grąžink VISUS susijusius radinius – nefiltruok ir neapsiribok vienu rezultatu.
+- Nurodyk iš kurio dokumento (file_name metadata lauke) informacija gauta.
+- Jei randi prieštaringą informaciją tarp šaltinių, pateik abu variantus ir
+  paaiškink skirtumą.
+```
+
+### n8n PGVector Store node config:
+- **Table**: `derva`
+- **Embedding column**: `embedding`
+- **Content column**: `content`
+- **Metadata column**: `metadata`
+- **Top K**: `6` (ensures big guide + manufacturer sheets + table all get a chance)
+- **Embedding model**: must match vectorization workflow (e.g. `text-embedding-3-large` = 3072 dims)
+
+### On citing sources:
+Each chunk's `metadata` includes `file_name`. The tool description tells the AI to mention which document info came from. Practical source attribution without complex citation infra.
+
+### On not limiting to 1 record:
+Top K = 6 ensures multiple chunks retrieved. Tool description says "grąžink VISUS susijusius radinius". The AI synthesizes across all returned chunks.
+
+---
+
+## 8. Files to Create/Modify
+
+| Action | File |
+|--------|------|
+| CREATE | `migrations/005_derva_rag.sql` |
+| CREATE | `src/lib/dervaService.ts` |
+| CREATE | `src/components/DervaInterface.tsx` |
+| MODIFY | `src/App.tsx` — add route + ViewMode |
+| MODIFY | `src/components/Layout.tsx` — add sidebar button |
+| MODIFY | `src/components/WebhooksModal.tsx` — add derva webhook group |
+
+## 9. Implementation Order
+
+1. Migration SQL
+2. `dervaService.ts`
+3. `DervaInterface.tsx`
+4. `App.tsx` + `Layout.tsx` (routing + sidebar)
+5. `WebhooksModal.tsx` (webhook group)

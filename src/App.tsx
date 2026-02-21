@@ -6,11 +6,13 @@ import DocumentsInterface from './components/DocumentsInterface';
 import AdminUsersInterface from './components/AdminUsersInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
+import DervaInterface from './components/DervaInterface';
 import SDKInterface from './components/SDKInterfaceNew';
+import PaklausimoKortelePage from './components/PaklausimoKortele';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
-type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
+type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk';
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
@@ -24,6 +26,7 @@ const routeToViewMode: Record<string, ViewMode> = {
   '/users': 'users',
   '/instrukcijos': 'instrukcijos',
   '/nestandartiniai': 'nestandartiniai',
+  '/derva': 'derva',
   '/sdk': 'sdk',
 };
 
@@ -133,8 +136,21 @@ function AppContent() {
     );
   }
 
-  if (!user) {
+  // Public routes – accessible without authentication
+  const isPublicRoute = location.pathname.startsWith('/paklausimas/');
+
+  if (!user && !isPublicRoute) {
     return <AuthForm onSuccess={handleAuthSuccess} />;
+  }
+
+  // Render public route without Layout wrapper
+  if (!user && isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
+        <Route path="*" element={<AuthForm onSuccess={handleAuthSuccess} />} />
+      </Routes>
+    );
   }
 
   if (loading) {
@@ -145,6 +161,16 @@ function AppContent() {
           <p className="text-sm" style={{ color: '#8a857f' }}>Loading...</p>
         </div>
       </div>
+    );
+  }
+
+  // Standalone card page – always rendered outside Layout (read-only, shareable)
+  if (isPublicRoute) {
+    return (
+      <Routes>
+        <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
+        <Route path="*" element={<Navigate to="/sdk" replace />} />
+      </Routes>
     );
   }
 
@@ -176,6 +202,10 @@ function AppContent() {
         <Route
           path="/nestandartiniai"
           element={<NestandardiniaiInterface user={user} projectId={projectId} />}
+        />
+        <Route
+          path="/derva"
+          element={<DervaInterface user={user} />}
         />
         <Route
           path="/sdk/:conversationId?"
