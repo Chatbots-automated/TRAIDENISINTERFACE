@@ -165,9 +165,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   const [dervaRecords, setDervaRecords] = useState<DervaRecord[]>([]);
   const [vectorizedIds, setVectorizedIds] = useState<Set<number>>(new Set());
 
-  // Polling ref for post-upload vectorization check
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   // Loading
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [loadingData, setLoadingData] = useState(true);
@@ -233,13 +230,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   }, []);
 
   useEffect(() => { loadFiles(); loadDervaData(); }, []);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
 
   const currentLoading = selectedTab === 'failai' ? loadingFiles : loadingData;
   const currentReload = selectedTab === 'failai' ? loadFiles : loadDervaData;
@@ -343,25 +333,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       addNotification('success', 'Įkelta', `Failas "${selectedFile.name}" sėkmingai įkeltas`);
       clearSelectedFile();
       await loadFiles();
-
-      // 4. Poll for vectorization — the n8n workflow runs async, so we
-      //    check every 3 s (up to 60 s) until derva records appear for this file.
-      if (pollRef.current) clearInterval(pollRef.current);
-      const uploadedFileId = record.id;
-      let elapsed = 0;
-      pollRef.current = setInterval(async () => {
-        elapsed += 3000;
-        const vecIds = await fetchVectorizedFileIds();
-        if (vecIds.has(uploadedFileId)) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-          setVectorizedIds(vecIds);
-          await loadDervaData();
-        } else if (elapsed >= 60000) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      }, 3000);
     } catch (err: any) {
       console.error('Upload error:', err);
       addNotification('error', 'Klaida', err.message || 'Nepavyko įkelti failo');
