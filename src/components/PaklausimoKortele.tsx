@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -432,169 +432,216 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 
-interface DirectusFile {
-  id: string;
-  title: string;
-  filename_download: string;
-  type: string;
-  filesize: number;
+// Tabs that provide project context (visually marked)
+const CONTEXT_TABS = new Set<ModalTab>(['susirasinejimas', 'failai']);
+
+interface AttachedFile {
+  directus_file_id: string;
+  file_name: string;
+  filename_disk: string;
+  file_size: number;
+  mime_type: string;
+  uploaded_at: string;
+}
+
+function parseFiles(raw: string | null): AttachedFile[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {}
+  // Legacy: single UUID string
+  if (typeof raw === 'string' && raw.length >= 32 && !raw.includes(' ')) {
+    return [{ directus_file_id: raw, file_name: 'Failas', filename_disk: '', file_size: 0, mime_type: '', uploaded_at: '' }];
+  }
+  return [];
 }
 
 function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
-  const [fileInfo, setFileInfo] = useState<DirectusFile | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState<AttachedFile[]>(() => parseFiles(record.files));
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch file info if record.files has a UUID
-  useEffect(() => {
-    const fileId = record.files;
-    if (!fileId || typeof fileId !== 'string' || fileId.length < 10) return;
-    setLoading(true);
-    fetch(`${DIRECTUS_URL}/files/${fileId}`, {
-      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, Accept: 'application/json' },
-    })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`${r.status}`)))
-      .then(json => setFileInfo(json.data))
-      .catch(() => setFileInfo(null))
-      .finally(() => setLoading(false));
-  }, [record.files]);
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    setUploading(true);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const uploadResp = await fetch(`${DIRECTUS_URL}/files`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-        body: form,
-      });
-      if (!uploadResp.ok) throw new Error(`Įkėlimas nepavyko: ${uploadResp.status}`);
-      const uploadData = await uploadResp.json();
-      const newFileId = uploadData.data.id;
-
-      // Link to record
-      await updateNestandartiniaiField(record.id, 'files', newFileId);
-      setFileInfo(uploadData.data);
-    } catch (err: any) {
-      setError(err.message || 'Nepavyko įkelti failo');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const handleRemove = async () => {
-    try {
-      await updateNestandartiniaiField(record.id, 'files', null);
-      setFileInfo(null);
-    } catch (err: any) {
-      setError(err.message || 'Nepavyko pašalinti');
-    }
-  };
-
   const formatSize = (bytes: number) => {
+    if (!bytes) return '—';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#8a857f' }} />
-      </div>
-    );
-  }
+  const saveFiles = async (updated: AttachedFile[]) => {
+    setFiles(updated);
+    await updateNestandartiniaiField(record.id, 'files', JSON.stringify(updated));
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files;
+    if (!selected?.length) return;
+    setError(null);
+    setUploading(true);
+    const toUpload = Array.from(selected);
+    setUploadProgress({ current: 0, total: toUpload.length });
+
+    const newFiles: AttachedFile[] = [...files];
+    let failed = 0;
+
+    for (let i = 0; i < toUpload.length; i++) {
+      const file = toUpload[i];
+      setUploadProgress({ current: i + 1, total: toUpload.length });
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const resp = await fetch(`${DIRECTUS_URL}/files`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+          body: form,
+        });
+        if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+        const json = await resp.json();
+        const d = json.data;
+        newFiles.push({
+          directus_file_id: d.id,
+          file_name: d.filename_download || file.name,
+          filename_disk: d.filename_disk || '',
+          file_size: d.filesize || file.size,
+          mime_type: d.type || file.type,
+          uploaded_at: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.error(`Upload error for "${file.name}":`, err);
+        failed++;
+      }
+    }
+
+    try {
+      await saveFiles(newFiles);
+    } catch {
+      setError('Nepavyko išsaugoti failų sąrašo');
+    }
+
+    if (failed > 0) setError(`${failed} ${failed === 1 ? 'failas neįkeltas' : 'failai neįkelti'}`);
+    setUploading(false);
+    setUploadProgress(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleDelete = async (fileId: string) => {
+    setDeletingId(fileId);
+    try {
+      await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      });
+      await saveFiles(files.filter(f => f.directus_file_id !== fileId));
+    } catch (err: any) {
+      setError(err.message || 'Nepavyko ištrinti');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div>
-      {error && (
-        <div className="text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
-          {error}
-        </div>
-      )}
-
-      {fileInfo ? (
-        <div className="rounded-xl p-4 border border-base-content/10 bg-base-content/[0.02]">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-primary/10">
-              <FileText className="w-5 h-5 text-primary" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium truncate text-base-content">{fileInfo.filename_download || fileInfo.title}</p>
-              <p className="text-xs mt-0.5 text-base-content/40">
-                {fileInfo.type}{fileInfo.filesize ? ` · ${formatSize(fileInfo.filesize)}` : ''}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <a
-                href={`${DIRECTUS_URL}/assets/${fileInfo.id}?download`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5"
-                title="Atsisiųsti"
-              >
-                <Download className="w-4 h-4 text-primary" />
-              </a>
-              {!readOnly && (
-                <button onClick={handleRemove} className="p-1.5 rounded-lg transition-colors hover:bg-error/10" title="Pašalinti">
-                  <Trash2 className="w-4 h-4 text-error" />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
-            <Paperclip className="w-5 h-5 text-base-content/30" />
-          </div>
-          <p className="text-sm font-medium mb-1 text-base-content">Failai</p>
-          <p className="text-xs max-w-[240px] mb-4 text-base-content/40" style={{ lineHeight: '1.6' }}>
-            {readOnly ? 'Šiam įrašui failai nepriskirti.' : 'Pridėkite brėžinį, sutartį ar kitą dokumentą.'}
-          </p>
-          {!readOnly && (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-50"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-            >
-              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-              {uploading ? 'Įkeliama...' : 'Įkelti failą'}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Upload replacement when file exists */}
-      {fileInfo && !readOnly && (
-        <div className="mt-3 text-center">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-base-content/40">
+          {files.length > 0 ? `${files.length} ${files.length === 1 ? 'failas' : 'failai'}` : 'Nėra failų'}
+        </p>
+        {!readOnly && (
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="text-xs font-medium transition-colors text-primary hover:text-primary/80"
+            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-50"
+            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
           >
-            {uploading ? 'Įkeliama...' : 'Pakeisti failą'}
+            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {uploading && uploadProgress ? `${uploadProgress.current}/${uploadProgress.total}` : 'Įkelti'}
           </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">{error}</div>
+      )}
+
+      {files.length > 0 ? (
+        <div className="rounded-xl overflow-hidden border border-base-content/10">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-base-content/10 bg-base-content/[0.02]">
+                <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-8">#</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40">Pavadinimas</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-20">Dydis</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-24">Data</th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-base-content/40 w-24">Veiksmai</th>
+              </tr>
+            </thead>
+            <tbody>
+              {files.map((file, idx) => (
+                <tr key={file.directus_file_id} className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02] transition-colors">
+                  <td className="px-3 py-2 text-xs text-base-content/40">{idx + 1}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5 shrink-0 text-primary" />
+                      <span className="text-sm text-base-content truncate max-w-[200px]" title={file.file_name}>{file.file_name}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-base-content/40">{formatSize(file.file_size)}</td>
+                  <td className="px-3 py-2 text-xs text-base-content/40 whitespace-nowrap">
+                    {file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString('lt-LT') : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-0.5">
+                      <a
+                        href={`${DIRECTUS_URL}/assets/${file.directus_file_id}?access_token=${DIRECTUS_TOKEN}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
+                        title="Peržiūrėti"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-base-content/40" />
+                      </a>
+                      <a
+                        href={`${DIRECTUS_URL}/assets/${file.directus_file_id}?access_token=${DIRECTUS_TOKEN}&download`}
+                        className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
+                        title="Atsisiųsti"
+                      >
+                        <Download className="w-3.5 h-3.5 text-base-content/40" />
+                      </a>
+                      {!readOnly && (
+                        <button
+                          onClick={() => handleDelete(file.directus_file_id)}
+                          disabled={deletingId === file.directus_file_id}
+                          className="p-1 rounded-lg transition-colors hover:bg-error/10"
+                          title="Ištrinti"
+                        >
+                          {deletingId === file.directus_file_id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-error" />
+                            : <Trash2 className="w-3.5 h-3.5 text-error" />
+                          }
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
+            <Paperclip className="w-5 h-5 text-base-content/30" />
+          </div>
+          <p className="text-sm font-semibold text-base-content">Nėra failų</p>
         </div>
       )}
 
       {!readOnly && (
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload} />
-      )}
-
-      {/* Note about M2M for multiple files */}
-      {!readOnly && (
-        <p className="text-[10px] mt-4 text-center text-base-content/30">
-          Vienas failas per įrašą. Keliems failams reikia M2M ryšio Directus konfigūracijoje.
-        </p>
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} />
       )}
     </div>
   );
@@ -914,12 +961,37 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
 
 export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRecord; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
+  const [updating, setUpdating] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const meta = parseMetadata(record.metadata);
   const cardUrl = `${window.location.origin}/paklausimas/${record.id}`;
   const [copied, setCopied] = useState(false);
 
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  const handleUpdate = async () => {
+    setUpdating(true);
+    setUpdateStatus('idle');
+    try {
+      const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
+      if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: record.id }),
+      });
+      if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
+      setUpdateStatus('success');
+      setTimeout(() => setUpdateStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error('Update error:', err);
+      setUpdateStatus('error');
+      setTimeout(() => setUpdateStatus('idle'), 3000);
+    } finally {
+      setUpdating(false);
+    }
   };
 
   return (
@@ -973,21 +1045,48 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
-            {TABS.map(tab => {
-              const Icon = tab.icon;
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-              );
-            })}
+          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40 flex flex-col">
+            <div>
+              {TABS.map(tab => {
+                const Icon = tab.icon;
+                const active = activeTab === tab.id;
+                const isContext = CONTEXT_TABS.has(tab.id);
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate flex-1">{tab.label}</span>
+                    {isContext && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Context update button */}
+            <div className="mt-auto pt-3 px-1 border-t border-base-content/10">
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
+                  updateStatus === 'success'
+                    ? 'text-success bg-success/10 border-success/20'
+                    : updateStatus === 'error'
+                      ? 'text-error bg-error/5 border-error/15'
+                      : 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100'
+                } disabled:opacity-60`}
+              >
+                {updating
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
+                  : updateStatus === 'success'
+                    ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
+                    : updateStatus === 'error'
+                      ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
+                      : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
+                }
+              </button>
+            </div>
           </div>
 
           {/* Tab content */}
@@ -1061,6 +1160,7 @@ export default function PaklausimoKortelePage() {
             {readOnlyTabs.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
+              const isContext = CONTEXT_TABS.has(tab.id);
               return (
                 <button
                   key={tab.id}
@@ -1068,7 +1168,8 @@ export default function PaklausimoKortelePage() {
                   className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span className="truncate">{tab.label}</span>
+                  <span className="truncate flex-1">{tab.label}</span>
+                  {isContext && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
                 </button>
               );
             })}
