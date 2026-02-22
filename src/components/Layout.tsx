@@ -12,7 +12,8 @@ import {
   BookOpen,
   ChevronsLeft,
   ChevronsRight,
-  FlaskConical
+  FlaskConical,
+  Sparkles
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -23,8 +24,8 @@ interface LayoutProps {
   children: React.ReactNode;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk';
-  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'sdk') => void;
+  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
   forceCollapsed?: boolean;
   sdkUnreadCount?: number;
@@ -182,6 +183,18 @@ export default function Layout({
                   {!sidebarCollapsed && <span className="truncate">Nestandartiniai Projektai</span>}
                 </button>
               </li>
+              {user.is_admin && (
+                <li>
+                  <button
+                    onClick={() => onViewModeChange?.('derva')}
+                    className={viewMode === 'derva' ? 'active' : ''}
+                    title={sidebarCollapsed ? 'Derva' : undefined}
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {!sidebarCollapsed && <span className="whitespace-nowrap">Derva</span>}
+                  </button>
+                </li>
+              )}
             </ul>
 
           {/* Spacer to push footer to bottom */}
