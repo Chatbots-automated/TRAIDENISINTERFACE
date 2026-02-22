@@ -339,7 +339,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO authenticated, anon;
 -- COMMENTS
 -- ============================================================================
 
-COMMENT ON VIEW public.nestandartiniai_projects IS 'Compatibility view mapping n8n_vector_store to nestandartiniai_projects interface. Since nestandartiniai_projects table was dropped from Supabase, this view provides the same interface using existing data.';
+COMMENT ON VIEW public.nestandartiniai_projects IS 'Compatibility view mapping n8n_vector_store to nestandartiniai_projects interface. This view provides the same interface using existing data.';
 COMMENT ON TABLE public.n8n_vector_store IS 'Vector embeddings storage for project documents. Contains embeddings, metadata, and paths to commercial offers and requests.';
 COMMENT ON TABLE public.webhooks IS 'Webhook configuration for n8n integrations. Stores URLs, active status, and test results.';
 COMMENT ON TABLE public.application_logs IS 'Application-level logging for auth, chat, document operations, and errors.';
