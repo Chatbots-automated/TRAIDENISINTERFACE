@@ -249,7 +249,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         selectedFile.size,
         selectedFile.type || 'application/octet-stream',
         directusFileId,
-        user.email,
+        user.full_name || user.display_name || user.email,
       );
 
       addNotification('success', 'Įkelta', `Failas "${selectedFile.name}" sėkmingai įkeltas`);
