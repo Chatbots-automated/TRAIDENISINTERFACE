@@ -58,7 +58,6 @@ type FilesSortColumn = 'id' | 'file_name' | 'file_size' | 'uploaded_by' | 'uploa
 const FILES_COLUMNS: { key: FilesSortColumn; label: string; width?: string }[] = [
   { key: 'id', label: '#', width: 'w-14' },
   { key: 'file_name', label: 'Failo pavadinimas' },
-  { key: 'file_size', label: 'Dydis', width: 'w-24' },
   { key: 'uploaded_by', label: 'Įkėlė', width: 'w-36' },
   { key: 'uploaded_at', label: 'Data', width: 'w-28' },
 ];
@@ -528,11 +527,20 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </div>
                     </th>
                   ))}
+                  <th className="px-3 py-3 text-center whitespace-nowrap">
+                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vektorizacija</span>
+                  </th>
                   <th className="px-3 py-3 text-left whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Embedding</span>
                   </th>
-                  <th className="px-3 py-3 text-center whitespace-nowrap">
-                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vektorizacija</span>
+                  <th
+                    onClick={() => handleFilesSort('file_size')}
+                    className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap w-24"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Dydis</span>
+                      <SortArrows column="file_size" config={filesSortConfig} />
+                    </div>
                   </th>
                   <th className="px-3 py-3 text-right whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Veiksmai</span>
@@ -569,10 +577,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         </div>
                       </td>
 
-                      <td className="px-3 py-2.5 w-24">
-                        <span style={{ color: '#5a5550', fontSize: '13px' }}>{formatFileSize(file.file_size)}</span>
-                      </td>
-
                       <td className="px-3 py-2.5 w-36">
                         <span style={{ color: '#5a5550', fontSize: '13px' }}>{file.uploaded_by.split('@')[0]}</span>
                       </td>
@@ -581,21 +585,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         <span className="whitespace-nowrap" style={{ color: '#5a5550', fontSize: '13px' }}>
                           {new Date(file.uploaded_at).toLocaleDateString('lt-LT')}
                         </span>
-                      </td>
-
-                      {/* Embedding snippet */}
-                      <td className="px-3 py-2.5 max-w-[120px]">
-                        {file.embedding ? (
-                          <span
-                            className="font-mono truncate block"
-                            style={{ color: '#8a857f', fontSize: '11px' }}
-                            title={file.embedding}
-                          >
-                            {file.embedding.slice(0, 30)}...
-                          </span>
-                        ) : (
-                          <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
-                        )}
                       </td>
 
                       {/* Vektorizacija */}
@@ -627,6 +616,26 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                             {isFailed ? 'Pakartoti' : 'Pradėti'}
                           </button>
                         )}
+                      </td>
+
+                      {/* Embedding snippet */}
+                      <td className="px-3 py-2.5 max-w-[120px]">
+                        {file.embedding ? (
+                          <span
+                            className="font-mono truncate block"
+                            style={{ color: '#8a857f', fontSize: '11px' }}
+                            title={file.embedding}
+                          >
+                            {file.embedding.slice(0, 30)}...
+                          </span>
+                        ) : (
+                          <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Dydis */}
+                      <td className="px-3 py-2.5 w-24">
+                        <span style={{ color: '#5a5550', fontSize: '13px' }}>{formatFileSize(file.file_size)}</span>
                       </td>
 
                       {/* Actions */}
