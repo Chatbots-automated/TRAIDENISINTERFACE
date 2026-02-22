@@ -151,8 +151,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
 
   // UI state
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [vectorizingId, setVectorizingId] = useState<number | null>(null);
   const [previewFile, setPreviewFile] = useState<DervaFile | null>(null);
@@ -217,49 +218,86 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   };
 
   // ---------- File selection ----------
+  const MAX_FILES = 30;
+
+  const addFiles = (incoming: FileList | File[]) => {
+    const arr = Array.from(incoming);
+    setSelectedFiles(prev => {
+      const combined = [...prev, ...arr];
+      if (combined.length > MAX_FILES) {
+        addNotification('warning', 'Limitas', `Maksimalus failų skaičius – ${MAX_FILES}. Pertekliniai failai pašalinti.`);
+        return combined.slice(0, MAX_FILES);
+      }
+      return combined;
+    });
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) setSelectedFile(file);
+    if (e.target.files?.length) addFiles(e.target.files);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) setSelectedFile(file);
+    if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
   };
 
-  const clearSelectedFile = () => {
-    setSelectedFile(null);
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const clearSelectedFiles = () => {
+    setSelectedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // ---------- Upload ----------
   const handleUpload = async () => {
-    if (!selectedFile) return;
+    if (selectedFiles.length === 0) return;
+    const toUpload = [...selectedFiles];
+    let succeeded = 0;
+    let failed = 0;
+
     try {
       setUploading(true);
+      setUploadProgress({ current: 0, total: toUpload.length });
 
-      // 1. Upload binary to Directus file storage
-      const directusFileId = await uploadFileToDirectus(selectedFile);
+      for (let i = 0; i < toUpload.length; i++) {
+        const file = toUpload[i];
+        setUploadProgress({ current: i + 1, total: toUpload.length });
+        try {
+          const directusFileId = await uploadFileToDirectus(file);
+          await insertDervaFile(
+            file.name,
+            file.size,
+            file.type || 'application/octet-stream',
+            directusFileId,
+            user.full_name || user.display_name || user.email,
+          );
+          succeeded++;
+        } catch (err: any) {
+          console.error(`Upload error for "${file.name}":`, err);
+          failed++;
+        }
+      }
 
-      // 2. Insert derva_files record (all metadata from the file + Directus UUID)
-      await insertDervaFile(
-        selectedFile.name,
-        selectedFile.size,
-        selectedFile.type || 'application/octet-stream',
-        directusFileId,
-        user.full_name || user.display_name || user.email,
-      );
+      if (failed === 0) {
+        addNotification('success', 'Įkelta', succeeded === 1
+          ? `Failas sėkmingai įkeltas`
+          : `${succeeded} failai sėkmingai įkelti`);
+      } else {
+        addNotification('warning', 'Dalinė sėkmė', `Įkelta: ${succeeded}, nepavyko: ${failed}`);
+      }
 
-      addNotification('success', 'Įkelta', `Failas "${selectedFile.name}" sėkmingai įkeltas`);
-      clearSelectedFile();
+      clearSelectedFiles();
       await loadFiles();
     } catch (err: any) {
       console.error('Upload error:', err);
-      addNotification('error', 'Klaida', err.message || 'Nepavyko įkelti failo');
+      addNotification('error', 'Klaida', err.message || 'Nepavyko įkelti failų');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -329,7 +367,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               style={{ background: '#007AFF' }}
             >
               <Upload className="w-3.5 h-3.5" />
-              Įkelti failą
+              Įkelti failus
             </button>
             <button
               onClick={loadFiles}
@@ -345,42 +383,66 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       </div>
 
       {/* Upload preview bar */}
-      {(selectedFile || dragOver) && (
+      {(selectedFiles.length > 0 || dragOver) && (
         <div className="px-6 pt-3">
-          {dragOver && !selectedFile && (
+          {dragOver && selectedFiles.length === 0 && (
             <div
               className="flex items-center gap-2 px-4 py-3 rounded-macos-lg text-sm font-medium"
               style={{ background: 'rgba(0,122,255,0.06)', color: '#007AFF', border: '2px dashed rgba(0,122,255,0.3)' }}
             >
               <Upload className="w-4 h-4" />
-              Numeskite failą čia
+              Numeskite failus čia (maks. {MAX_FILES})
             </div>
           )}
-          {selectedFile && (
+          {selectedFiles.length > 0 && (
             <div
-              className="flex items-center gap-3 px-4 py-3 rounded-macos-lg"
+              className="rounded-macos-lg overflow-hidden"
               style={{ background: '#fff', border: '1px solid rgba(0,122,255,0.2)' }}
             >
-              <FileText className="w-5 h-5 shrink-0" style={{ color: '#007AFF' }} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate" style={{ color: '#3d3935' }}>{selectedFile.name}</p>
-                <p className="text-xs" style={{ color: '#8a857f' }}>{formatFileSize(selectedFile.size)}</p>
+              {/* File list */}
+              <div className="max-h-[180px] overflow-y-auto divide-y" style={{ borderColor: '#f0ede8' }}>
+                {selectedFiles.map((file, idx) => (
+                  <div key={`${file.name}-${idx}`} className="flex items-center gap-3 px-4 py-2">
+                    <FileText className="w-4 h-4 shrink-0" style={{ color: '#007AFF' }} />
+                    <p className="text-sm font-medium truncate flex-1 min-w-0" style={{ color: '#3d3935' }}>{file.name}</p>
+                    <span className="text-xs shrink-0" style={{ color: '#8a857f' }}>{formatFileSize(file.size)}</span>
+                    {!uploading && (
+                      <button onClick={() => removeSelectedFile(idx)} className="p-0.5 rounded-full hover:bg-black/5 transition-colors shrink-0">
+                        <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-macos text-xs font-medium text-white transition-all"
-                style={{ background: uploading ? '#9ca3af' : '#007AFF' }}
-              >
-                {uploading ? (
-                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Įkeliama...</>
-                ) : (
-                  <><Upload className="w-3.5 h-3.5" /> Įkelti</>
-                )}
-              </button>
-              <button onClick={clearSelectedFile} className="p-1 rounded-full hover:bg-black/5 transition-colors">
-                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
-              </button>
+
+              {/* Actions bar */}
+              <div className="flex items-center justify-between px-4 py-2.5" style={{ borderTop: '1px solid #f0ede8', background: '#faf9f7' }}>
+                <span className="text-xs" style={{ color: '#8a857f' }}>
+                  {uploading && uploadProgress
+                    ? `Įkeliama ${uploadProgress.current} / ${uploadProgress.total}...`
+                    : `${selectedFiles.length} ${selectedFiles.length === 1 ? 'failas' : 'failai'} pasirinkti`
+                  }
+                </span>
+                <div className="flex items-center gap-2">
+                  {!uploading && (
+                    <button onClick={clearSelectedFiles} className="text-xs px-3 py-1.5 rounded-macos transition-colors hover:bg-black/5" style={{ color: '#5a5550' }}>
+                      Atšaukti
+                    </button>
+                  )}
+                  <button
+                    onClick={handleUpload}
+                    disabled={uploading}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-macos text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
+                    style={{ background: '#007AFF' }}
+                  >
+                    {uploading ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Įkeliama...</>
+                    ) : (
+                      <><Upload className="w-3.5 h-3.5" /> Įkelti {selectedFiles.length > 1 ? `(${selectedFiles.length})` : ''}</>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -390,6 +452,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         ref={fileInputRef}
         type="file"
         accept={ACCEPTED_TYPES}
+        multiple
         onChange={handleFileSelect}
         className="hidden"
       />
