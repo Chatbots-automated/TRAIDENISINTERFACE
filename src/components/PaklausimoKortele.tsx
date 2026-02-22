@@ -143,7 +143,7 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 w-full text-left py-2.5 text-sm font-medium transition-colors" style={{ color: '#5a5550' }}>
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 w-full text-left py-2.5 text-sm font-medium transition-colors text-base-content/60 hover:text-base-content/80">
         <ChevronDown className={`w-4 h-4 shrink-0 transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
         {title}
       </button>
@@ -156,8 +156,8 @@ function InfoField({ label, value }: { label: string; value: string | undefined 
   if (!value) return <div />;
   return (
     <div>
-      <dt className="text-xs" style={{ color: '#8a857f' }}>{label}</dt>
-      <dd className="text-sm font-medium mt-0.5" style={{ color: '#3d3935' }}>{value}</dd>
+      <dt className="text-xs text-base-content/40">{label}</dt>
+      <dd className="text-sm font-medium mt-0.5 text-base-content">{value}</dd>
     </div>
   );
 }
@@ -170,19 +170,19 @@ function ChatBubble({ message, side }: { message: AtsakymasMessage; side: 'left'
   return (
     <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5`}>
       <div
-        className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${side === 'right' ? 'text-white' : 'text-macos-gray-900'}`}
+        className={`max-w-[80%] rounded-3xl px-4 py-2.5 ${side === 'right' ? 'text-white' : 'text-base-content'}`}
         style={side === 'right'
           ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
-          : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
+          : { background: '#f8f8f9', border: '1px solid #e5e5e6' }
         }
       >
         {(message.from || message.date) && (
-          <p className={`text-xs mb-1 ${side === 'right' ? 'text-white/60' : 'text-macos-gray-400'}`}>
+          <p className={`text-xs mb-1 ${side === 'right' ? 'text-white/60' : 'text-base-content/40'}`}>
             {message.from && <span className="font-medium">{message.from}</span>}
             {message.from && message.date && ' · '}{message.date}
           </p>
         )}
-        <div className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 4)' }}>
+        <div className="text-[15px] leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 4)' }}>
           {message.text}
         </div>
       </div>
@@ -208,16 +208,16 @@ function NewMessageBubble({ side, onSave, onCancel }: { side: 'left' | 'right'; 
   const [text, setText] = useState('');
   return (
     <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5`}>
-      <div className={`max-w-[80%] w-72 rounded-2xl px-4 py-2.5 ${side === 'right' ? 'text-white' : 'text-macos-gray-900'}`}
+      <div className={`max-w-[80%] w-72 rounded-3xl px-4 py-2.5 ${side === 'right' ? 'text-white' : 'text-base-content'}`}
         style={side === 'right'
           ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
-          : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
+          : { background: '#f8f8f9', border: '1px solid #e5e5e6' }
         }
       >
-        <AutoTextarea value={text} onChange={setText} placeholder={side === 'right' ? 'Komandos žinutė...' : 'Gavėjo žinutė...'} className={`w-full bg-transparent border-none outline-none text-sm leading-relaxed placeholder:opacity-50 ${side === 'right' ? 'text-white placeholder:text-white/40' : 'text-macos-gray-900 placeholder:text-macos-gray-400'}`} />
-        <div className={`flex gap-2 justify-end mt-1.5 pt-1.5 ${side === 'right' ? 'border-t border-white/20' : 'border-t border-macos-gray-200'}`}>
-          <button onClick={onCancel} className={`text-xs px-2.5 py-1 rounded-full transition-colors ${side === 'right' ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-macos-gray-400 hover:text-macos-gray-600 hover:bg-macos-gray-100'}`}>Atšaukti</button>
-          <button onClick={() => { const t = text.trim(); if (t) onSave(t); }} className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${side === 'right' ? 'text-white bg-white/20 hover:bg-white/30' : 'text-macos-blue bg-macos-blue/10 hover:bg-macos-blue/20'}`}>Išsaugoti</button>
+        <AutoTextarea value={text} onChange={setText} placeholder={side === 'right' ? 'Komandos žinutė...' : 'Gavėjo žinutė...'} className={`w-full bg-transparent border-none outline-none text-[15px] leading-relaxed placeholder:opacity-50 ${side === 'right' ? 'text-white placeholder:text-white/40' : 'text-base-content placeholder:text-base-content/30'}`} />
+        <div className={`flex gap-2 justify-end mt-1.5 pt-1.5 ${side === 'right' ? 'border-t border-white/20' : 'border-t border-base-content/10'}`}>
+          <button onClick={onCancel} className={`text-xs px-2.5 py-1 rounded-full transition-colors ${side === 'right' ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-base-content/40 hover:text-base-content/60 hover:bg-base-content/5'}`}>Atšaukti</button>
+          <button onClick={() => { const t = text.trim(); if (t) onSave(t); }} className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${side === 'right' ? 'text-white bg-white/20 hover:bg-white/30' : 'text-primary bg-primary/10 hover:bg-primary/20'}`}>Išsaugoti</button>
         </div>
       </div>
     </div>
@@ -247,9 +247,9 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
 
       {/* Description */}
       {record.description && (
-        <div style={{ borderTop: '1px solid #f0ede8' }}>
+        <div className="border-t border-base-content/10">
           <CollapsibleSection title="Aprašymas" defaultOpen>
-            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-macos p-4 mb-3" style={{ color: '#3d3935', background: '#faf9f7', border: '1px solid #f0ede8', maxHeight: '220px' }}>
+            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
               {record.description}
             </div>
           </CollapsibleSection>
@@ -258,7 +258,7 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
 
       {/* Extra metadata */}
       {(extraMeta.length > 0 || record.derva || meta.talpa) && (
-        <div style={{ borderTop: '1px solid #f0ede8' }}>
+        <div className="border-t border-base-content/10">
           <CollapsibleSection title="Papildomi duomenys">
             <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
               {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
@@ -292,10 +292,10 @@ function TabSusirasinejimas({ record, readOnly }: { record: NestandartiniaiRecor
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs" style={{ color: '#8a857f' }}>
+        <p className="text-xs text-base-content/40">
           {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
         </p>
-        {saving && <span className="text-xs" style={{ color: '#8a857f' }}>Saugoma...</span>}
+        {saving && <span className="text-xs text-base-content/40">Saugoma...</span>}
       </div>
 
       {messages.map((msg, i) => (
@@ -307,11 +307,11 @@ function TabSusirasinejimas({ record, readOnly }: { record: NestandartiniaiRecor
       )}
 
       {!readOnly && !addingSide && (
-        <div className="flex items-center justify-between mt-4 pt-4" style={{ borderTop: '1px solid #f0ede8' }}>
-          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full transition-all hover:brightness-95" style={{ background: '#f0f0f2', border: '1px solid #e5e5e6', color: '#5a5550' }}>
+        <div className="flex items-center justify-between mt-4 pt-4 border-t border-base-content/10">
+          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl transition-all text-base-content" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
             <Plus className="w-3.5 h-3.5" /> Gavėjas
           </button>
-          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full text-white transition-all hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
+          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl text-white transition-all hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
             <Plus className="w-3.5 h-3.5" /> Komanda
           </button>
         </div>
@@ -353,10 +353,10 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <p className="text-xs" style={{ color: '#8a857f' }}>
+        <p className="text-xs text-base-content/40">
           {tasks.length > 0 ? `${tasks.filter(t => t.completed).length}/${tasks.length} atlikta` : 'Nėra užduočių'}
         </p>
-        {saving && <span className="text-xs" style={{ color: '#8a857f' }}>Saugoma...</span>}
+        {saving && <span className="text-xs text-base-content/40">Saugoma...</span>}
       </div>
 
       <div className="space-y-1.5">
@@ -385,13 +385,13 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
               </div>
             )}
             <div className="flex-1 min-w-0">
-              <p className={`text-sm leading-snug ${task.completed ? 'line-through' : ''}`} style={{ color: task.completed ? '#8a857f' : '#3d3935' }}>
+              <p className={`text-sm leading-snug ${task.completed ? 'line-through text-base-content/40' : 'text-base-content'}`}>
                 {task.title}
               </p>
               <div className="flex items-center gap-2 mt-1">
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: priorityColor(task.priority) }} />
-                <span className="text-xs" style={{ color: '#8a857f' }}>{task.created_at}</span>
-                {task.due_date && <span className="text-xs" style={{ color: '#8a857f' }}>→ {task.due_date}</span>}
+                <span className="text-xs text-base-content/40">{task.created_at}</span>
+                {task.due_date && <span className="text-xs text-base-content/40">→ {task.due_date}</span>}
               </div>
             </div>
             {!readOnly && (
@@ -405,18 +405,19 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
 
       {/* Add task */}
       {!readOnly && (
-        <div className="flex items-center gap-2 mt-4 pt-4" style={{ borderTop: '1px solid #f0ede8' }}>
-          <input
-            type="text"
-            value={newTitle}
-            onChange={e => setNewTitle(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addTask()}
-            placeholder="Nauja užduotis..."
-            className="flex-1 text-sm px-3 py-2 rounded-macos outline-none transition-all"
-            style={{ background: 'rgba(0,0,0,0.03)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
-          />
-          <button onClick={addTask} className="text-xs px-3 py-2 rounded-macos font-medium text-white transition-all hover:brightness-95" style={{ background: '#007AFF' }}>
-            Pridėti
+        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-base-content/10">
+          <div className="flex-1 flex items-center rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f8f8f9' }}>
+            <input
+              type="text"
+              value={newTitle}
+              onChange={e => setNewTitle(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addTask()}
+              placeholder="Nauja užduotis..."
+              className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 outline-none border-none"
+            />
+          </div>
+          <button onClick={addTask} className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-all bg-base-content text-base-100 hover:opacity-80">
+            <Plus className="w-4 h-4" strokeWidth={2.5} />
           </button>
         </div>
       )}
@@ -514,20 +515,20 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
   return (
     <div>
       {error && (
-        <div className="text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+        <div className="text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
           {error}
         </div>
       )}
 
       {fileInfo ? (
-        <div className="rounded-macos p-4" style={{ border: '1px solid #f0ede8', background: '#faf9f7' }}>
+        <div className="rounded-xl p-4 border border-base-content/10 bg-base-content/[0.02]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-macos flex items-center justify-center shrink-0" style={{ background: 'rgba(0,122,255,0.08)' }}>
-              <FileText className="w-5 h-5" style={{ color: '#007AFF' }} />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-primary/10">
+              <FileText className="w-5 h-5 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium truncate" style={{ color: '#3d3935' }}>{fileInfo.filename_download || fileInfo.title}</p>
-              <p className="text-xs mt-0.5" style={{ color: '#8a857f' }}>
+              <p className="text-sm font-medium truncate text-base-content">{fileInfo.filename_download || fileInfo.title}</p>
+              <p className="text-xs mt-0.5 text-base-content/40">
                 {fileInfo.type}{fileInfo.filesize ? ` · ${formatSize(fileInfo.filesize)}` : ''}
               </p>
             </div>
@@ -536,14 +537,14 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
                 href={`${DIRECTUS_URL}/assets/${fileInfo.id}?download`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="p-1.5 rounded-full transition-colors hover:bg-macos-gray-100"
+                className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5"
                 title="Atsisiųsti"
               >
-                <Download className="w-4 h-4" style={{ color: '#007AFF' }} />
+                <Download className="w-4 h-4 text-primary" />
               </a>
               {!readOnly && (
-                <button onClick={handleRemove} className="p-1.5 rounded-full transition-colors hover:bg-red-50" title="Pašalinti">
-                  <Trash2 className="w-4 h-4" style={{ color: '#FF3B30' }} />
+                <button onClick={handleRemove} className="p-1.5 rounded-lg transition-colors hover:bg-error/10" title="Pašalinti">
+                  <Trash2 className="w-4 h-4 text-error" />
                 </button>
               )}
             </div>
@@ -551,16 +552,18 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Paperclip className="w-10 h-10 mb-3" style={{ color: '#d4cfc8' }} />
-          <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Failai</p>
-          <p className="text-xs max-w-[240px] mb-4" style={{ color: '#8a857f', lineHeight: '1.6' }}>
+          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
+            <Paperclip className="w-5 h-5 text-base-content/30" />
+          </div>
+          <p className="text-sm font-medium mb-1 text-base-content">Failai</p>
+          <p className="text-xs max-w-[240px] mb-4 text-base-content/40" style={{ lineHeight: '1.6' }}>
             {readOnly ? 'Šiam įrašui failai nepriskirti.' : 'Pridėkite brėžinį, sutartį ar kitą dokumentą.'}
           </p>
           {!readOnly && (
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-macos text-white transition-all hover:brightness-95 disabled:opacity-50"
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-50"
               style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
             >
               {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
@@ -576,8 +579,7 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="text-xs font-medium transition-colors"
-            style={{ color: '#007AFF' }}
+            className="text-xs font-medium transition-colors text-primary hover:text-primary/80"
           >
             {uploading ? 'Įkeliama...' : 'Pakeisti failą'}
           </button>
@@ -590,7 +592,7 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
 
       {/* Note about M2M for multiple files */}
       {!readOnly && (
-        <p className="text-[10px] mt-4 text-center" style={{ color: '#b5b0a8' }}>
+        <p className="text-[10px] mt-4 text-center text-base-content/30">
           Vienas failas per įrašą. Keliems failams reikia M2M ryšio Directus konfigūracijoje.
         </p>
       )}
@@ -722,15 +724,15 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Beaker className="w-4 h-4" style={{ color: '#007AFF' }} />
-            <p className="text-sm font-medium" style={{ color: '#3d3935' }}>Dervos parinkimas</p>
+            <Beaker className="w-4 h-4 text-primary" />
+            <p className="text-sm font-medium text-base-content">Dervos parinkimas</p>
           </div>
           {!readOnly && (
             <button
               onClick={triggerDervaSelect}
               disabled={selecting}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-macos text-white transition-all hover:brightness-95 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
             >
               {selecting
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
@@ -742,24 +744,20 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
           )}
         </div>
 
-        <p className="text-xs mb-4" style={{ color: '#8a857f', lineHeight: '1.6' }}>
-          AI analizuoja projekto parametrus ir parenka tinkamiausią dervą iš duomenų bazės.
-        </p>
 
         {/* Loading state */}
         {selecting && (
-          <div className="rounded-macos-lg p-6 mb-4 text-center" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.06) 0%, rgba(175,82,222,0.06) 100%)', border: '1px solid rgba(0,122,255,0.15)' }}>
-            <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.12) 0%, rgba(175,82,222,0.12) 100%)' }}>
-              <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#007AFF' }} />
+          <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
+            <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
-            <p className="text-sm font-semibold mb-1.5" style={{ color: '#3d3935' }}>Vyksta dervos parinkimas...</p>
-            <p className="text-xs max-w-[280px] mx-auto" style={{ color: '#5a5550', lineHeight: '1.6' }}>RAG procesas analizuoja projekto duomenis ir ieško tinkamiausios dervos.</p>
+            <p className="text-sm font-semibold text-base-content">Vyksta dervos parinkimas...</p>
           </div>
         )}
 
         {/* Success toast */}
         {success && !selecting && (
-          <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(52,199,89,0.08)', color: '#34C759', border: '1px solid rgba(52,199,89,0.15)' }}>
+          <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-success/10 text-success border border-success/15">
             <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
             Dervos rekomendacija sėkmingai atnaujinta
           </div>
@@ -767,7 +765,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 
         {/* Error */}
         {dervaError && (
-          <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+          <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>{dervaError}</span>
           </div>
@@ -775,46 +773,38 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 
         {/* Recommendation display */}
         {dervaResult && !selecting ? (
-          <div className="rounded-macos p-4" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.04) 0%, rgba(175,82,222,0.04) 100%)', border: '1px solid rgba(0,122,255,0.1)' }}>
+          <div className="rounded-xl p-4 bg-base-content/[0.02] border border-base-content/10">
             <div className="flex items-center gap-1.5 mb-2">
-              <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-              <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Rekomendacija</p>
+              <Beaker className="w-3.5 h-3.5 text-primary" />
+              <p className="text-xs font-medium text-primary">Rekomendacija</p>
             </div>
             <MarkdownText text={dervaResult} />
           </div>
         ) : !selecting && !dervaResult && (
-          <div className="flex flex-col items-center justify-center py-10 text-center rounded-macos-lg" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.04) 0%, rgba(175,82,222,0.04) 100%)', border: '1px dashed rgba(0,122,255,0.2)' }}>
-            <div className="w-14 h-14 rounded-full mb-3 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.08) 0%, rgba(175,82,222,0.08) 100%)' }}>
-              <Beaker className="w-7 h-7" style={{ color: '#007AFF', opacity: 0.7 }} />
+          <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+            <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
+              <Beaker className="w-5 h-5 text-primary" />
             </div>
-            <p className="text-sm font-semibold mb-1.5" style={{ color: '#3d3935' }}>Derva dar neparinkta</p>
-            <p className="text-xs max-w-[280px]" style={{ color: '#5a5550', lineHeight: '1.6' }}>
-              {readOnly
-                ? 'Šiam projektui dervos rekomendacija dar nesugeneruota.'
-                : 'Spauskite „Parinkti dervą" – AI analizuos projekto parametrus ir pasiūlys tinkamiausią dervą.'}
-            </p>
+            <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
           </div>
         )}
       </div>
 
       {/* ── AI conversation section ── */}
-      <div style={{ borderTop: '1px solid #f0ede8' }} className="pt-5">
+      <div className="pt-5 border-t border-base-content/10">
         <CollapsibleSection title="AI pokalbis" defaultOpen={conversation.length > 0}>
           {conversation.length > 0 && (
             <div className="mb-4">
               {conversation.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2.5`}>
                   <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${msg.role === 'user' ? 'text-white' : 'text-macos-gray-900'}`}
-                    style={msg.role === 'user'
-                      ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }
-                      : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
-                    }
+                    className={`max-w-[80%] rounded-3xl px-4 py-2.5 ${msg.role === 'user' ? 'text-base-content' : 'text-base-content'}`}
+                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                   >
                     <div className="overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
                       {msg.role === 'assistant'
                         ? <MarkdownText text={msg.text} />
-                        : <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                        : <div className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.text}</div>
                       }
                     </div>
                   </div>
@@ -826,46 +816,45 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
           {/* Typing indicator */}
           {chatSaving && (
             <div className="flex justify-start mb-2.5">
-              <div className="rounded-2xl px-4 py-2.5" style={{ background: '#f0f0f2', border: '1px solid #e5e5e6' }}>
+              <div className="rounded-3xl px-4 py-2.5" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
                 <div className="flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#8a857f' }} />
-                  <span className="text-xs" style={{ color: '#8a857f' }}>AI rašo...</span>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-base-content/40" />
+                  <span className="text-xs text-base-content/40">AI rašo...</span>
                 </div>
               </div>
             </div>
           )}
 
           {chatError && (
-            <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+            <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
               <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>{chatError}</span>
             </div>
           )}
 
           {!readOnly && (
-            <div className="flex items-end gap-2 pt-3" style={{ borderTop: conversation.length > 0 ? '1px solid #f0ede8' : 'none' }}>
-              <AutoTextarea
-                value={input}
-                onChange={setInput}
-                placeholder="Klauskite AI apie dervą..."
-                className="flex-1 text-sm px-3 py-2 rounded-macos outline-none transition-all bg-transparent"
-              />
+            <div className={`flex items-end gap-2 pt-3 ${conversation.length > 0 ? 'border-t border-base-content/10' : ''}`}>
+              <div className="flex-1 flex items-end rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f8f8f9' }}>
+                <AutoTextarea
+                  value={input}
+                  onChange={setInput}
+                  placeholder="Klauskite AI apie dervą..."
+                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 outline-none border-none py-0.5"
+                />
+              </div>
               <button
                 onClick={sendMessage}
                 disabled={chatSaving || !input.trim()}
-                className="text-xs px-3 py-2 rounded-macos font-medium text-white transition-all hover:brightness-95 disabled:opacity-40"
-                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                className="flex-shrink-0 w-8 h-8 mb-0.5 flex items-center justify-center rounded-full transition-all disabled:cursor-not-allowed disabled:bg-base-content/10 disabled:text-base-content/25 bg-base-content text-base-100 hover:opacity-80"
               >
-                {chatSaving ? '...' : 'Siųsti'}
+                {chatSaving
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                }
               </button>
             </div>
           )}
 
-          {conversation.length === 0 && !readOnly && (
-            <p className="text-xs mt-2" style={{ color: '#b5b0a8' }}>
-              Galite klausti AI papildomų klausimų apie parinktą dervą ar projekto parametrus.
-            </p>
-          )}
         </CollapsibleSection>
       </div>
     </div>
@@ -882,25 +871,23 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
   return (
     <div>
       {projects.length > 0 ? (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {projects.map((p, i) => (
             <a
               key={p.id}
               href={`/paklausimas/${p.id}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-between px-3 py-2.5 rounded-macos transition-colors"
-              style={{ background: 'rgba(0,0,0,0.02)', border: '0.5px solid rgba(0,0,0,0.06)' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.04)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
+              className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
+              style={{ background: 'rgba(0,0,0,0.02)' }}
             >
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate" style={{ color: '#3d3935' }}>
+                <p className="text-sm font-medium truncate text-base-content">
                   {p.project_name || `Projektas #${p.id}`}
                 </p>
-                <p className="text-xs mt-0.5" style={{ color: '#8a857f' }}>ID: {p.id}</p>
+                <p className="text-xs mt-0.5 text-base-content/40">ID: {p.id}</p>
               </div>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
                 {Math.round(p.similarity_score * 100)}%
               </span>
             </a>
@@ -908,9 +895,11 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
-          <GitCompareArrows className="w-10 h-10 mb-3" style={{ color: '#d4cfc8' }} />
-          <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Panašūs projektai</p>
-          <p className="text-xs max-w-[240px]" style={{ color: '#8a857f', lineHeight: '1.6' }}>
+          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
+            <GitCompareArrows className="w-5 h-5 text-base-content/30" />
+          </div>
+          <p className="text-sm font-medium mb-1 text-base-content">Panašūs projektai</p>
+          <p className="text-xs max-w-[240px] text-base-content/40" style={{ lineHeight: '1.6' }}>
             Panašiausi projektai bus rodomi, kai bus sugeneruoti per n8n.
           </p>
         </div>
@@ -936,46 +925,46 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
-      style={{ background: 'rgba(0,0,0,0.2)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full flex flex-col bg-white rounded-macos-xl overflow-hidden"
-        style={{ maxWidth: '960px', height: 'min(90vh, 860px)', boxShadow: '0 32px 64px rgba(0,0,0,0.14), 0 12px 24px rgba(0,0,0,0.06)' }}
+        className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl"
+        style={{ maxWidth: '960px', height: 'min(90vh, 860px)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Accent strip */}
-        <div className="h-1.5 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+        <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+        <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold truncate" style={{ color: '#3d3935' }}>
+              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
                 {record.project_name || 'Paklausimas'}
               </h2>
               {meta.pritaikymas ? (
-                <p className="text-sm mt-0.5 truncate" style={{ color: '#5a5550' }}>{meta.pritaikymas}</p>
+                <p className="text-sm mt-0.5 truncate text-base-content/50">{meta.pritaikymas}</p>
               ) : (
-                <p className="text-sm mt-0.5" style={{ color: '#8a857f' }}>
+                <p className="text-sm mt-0.5 text-base-content/40">
                   Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
                 </p>
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {record.klientas && (
-                <span className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+                <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">
                   {record.klientas}
                 </span>
               )}
-              <button onClick={copy} className="p-1.5 rounded-full transition-colors hover:bg-macos-gray-100" title="Kopijuoti nuorodą">
-                <Link2 className="w-4 h-4" style={{ color: copied ? '#34C759' : '#8a857f' }} />
+              <button onClick={copy} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Kopijuoti nuorodą">
+                <Link2 className={`w-4 h-4 ${copied ? '' : 'text-base-content/40'}`} style={copied ? { color: '#34C759' } : undefined} />
               </button>
-              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-full transition-colors hover:bg-macos-gray-100" title="Atidaryti naujame lange">
-                <ExternalLink className="w-4 h-4" style={{ color: '#8a857f' }} />
+              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atidaryti naujame lange">
+                <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
-              <button onClick={onClose} className="p-1.5 rounded-full transition-colors hover:bg-macos-gray-100">
-                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+              <button onClick={onClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
+                <X className="w-4 h-4 text-base-content/40" />
               </button>
             </div>
           </div>
@@ -984,7 +973,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[160px] shrink-0 py-3 px-2" style={{ borderRight: '1px solid #f0ede8', background: '#faf9f7' }}>
+          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -992,13 +981,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-macos text-left text-sm transition-all mb-0.5 ${active ? 'font-medium' : ''}`}
-                  style={active
-                    ? { background: '#fff', color: '#007AFF', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }
-                    : { color: '#5a5550' }
-                  }
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(0,0,0,0.03)'; }}
-                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = ''; }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate">{tab.label}</span>
@@ -1008,7 +991,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto p-6 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
@@ -1042,39 +1025,39 @@ export default function PaklausimoKortelePage() {
     })();
   }, [id]);
 
-  if (loading) return <div className="h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}><span className="loading loading-spinner loading-md text-macos-blue"></span></div>;
-  if (error || !record) return <div className="h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}><div className="text-center"><p className="text-lg font-medium mb-1" style={{ color: '#3d3935' }}>{error || 'Nerastas'}</p><p className="text-sm" style={{ color: '#8a857f' }}>Patikrinkite nuorodą.</p></div></div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-base-100"><span className="loading loading-spinner loading-md text-primary"></span></div>;
+  if (error || !record) return <div className="h-screen flex items-center justify-center bg-base-100"><div className="text-center"><p className="text-lg font-medium mb-1 text-base-content">{error || 'Nerastas'}</p><p className="text-sm text-base-content/40">Patikrinkite nuorodą.</p></div></div>;
 
   const meta = parseMetadata(record.metadata);
 
   const readOnlyTabs = TABS;
 
   return (
-    <div className="h-screen flex items-center justify-center p-6 overflow-hidden" style={{ background: '#fdfcfb' }}>
-      <div className="w-full flex flex-col bg-white rounded-macos-xl overflow-hidden" style={{ maxWidth: '960px', height: 'min(90vh, 860px)', border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
+    <div className="h-screen flex items-center justify-center p-6 overflow-hidden bg-base-100">
+      <div className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl" style={{ maxWidth: '960px', height: 'min(90vh, 860px)' }}>
         {/* Accent strip */}
-        <div className="h-1.5 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+        <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+        <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold truncate" style={{ color: '#3d3935' }}>{record.project_name || 'Paklausimas'}</h2>
+              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || 'Paklausimas'}</h2>
               {meta.pritaikymas ? (
-                <p className="text-sm mt-0.5 truncate" style={{ color: '#5a5550' }}>{meta.pritaikymas}</p>
+                <p className="text-sm mt-0.5 truncate text-base-content/50">{meta.pritaikymas}</p>
               ) : (
-                <p className="text-sm mt-0.5" style={{ color: '#8a857f' }}>Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}</p>
+                <p className="text-sm mt-0.5 text-base-content/40">Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}</p>
               )}
             </div>
             {record.klientas && (
-              <span className="text-xs font-medium px-3 py-1 rounded-full shrink-0" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>{record.klientas}</span>
+              <span className="text-xs font-medium px-3 py-1 rounded-full shrink-0 bg-primary/10 text-primary">{record.klientas}</span>
             )}
           </div>
         </div>
 
         {/* Body */}
         <div className="flex flex-1 min-h-0">
-          <div className="w-[160px] shrink-0 py-3 px-2" style={{ borderRight: '1px solid #f0ede8', background: '#faf9f7' }}>
+          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
             {readOnlyTabs.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -1082,8 +1065,7 @@ export default function PaklausimoKortelePage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-macos text-left text-sm transition-all mb-0.5 ${active ? 'font-medium' : ''}`}
-                  style={active ? { background: '#fff', color: '#007AFF', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' } : { color: '#5a5550' }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate">{tab.label}</span>
@@ -1091,7 +1073,7 @@ export default function PaklausimoKortelePage() {
               );
             })}
           </div>
-          <div className="flex-1 overflow-y-auto p-6 min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
