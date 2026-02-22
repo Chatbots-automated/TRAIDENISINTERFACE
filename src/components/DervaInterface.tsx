@@ -421,7 +421,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                     </th>
                   ))}
                   <th className="px-3 py-3 text-left whitespace-nowrap">
-                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Turinys</span>
+                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Embedding</span>
                   </th>
                   <th className="px-3 py-3 text-center whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vektorizacija</span>
@@ -473,16 +473,16 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         </span>
                       </td>
 
-                      {/* Turinys snippet */}
-                      <td className="px-3 py-2.5 max-w-[200px]">
-                        {file.content ? (
-                          <div
-                            className="truncate"
-                            style={{ color: '#5a5550', fontSize: '12px' }}
-                            title={file.content}
+                      {/* Embedding snippet */}
+                      <td className="px-3 py-2.5 max-w-[120px]">
+                        {file.embedding ? (
+                          <span
+                            className="font-mono truncate block"
+                            style={{ color: '#8a857f', fontSize: '11px' }}
+                            title={file.embedding}
                           >
-                            {file.content}
-                          </div>
+                            {file.embedding.slice(0, 30)}...
+                          </span>
                         ) : (
                           <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
                         )}
