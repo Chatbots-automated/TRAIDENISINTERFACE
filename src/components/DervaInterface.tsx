@@ -155,7 +155,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   const [dragOver, setDragOver] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [vectorizingId, setVectorizingId] = useState<number | null>(null);
+  const [vectorizingIds, setVectorizingIds] = useState<Set<number>>(new Set());
   const [previewFile, setPreviewFile] = useState<DervaFile | null>(null);
 
   // Sorting
@@ -308,7 +308,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       return;
     }
     try {
-      setVectorizingId(file.id);
+      setVectorizingIds(prev => new Set(prev).add(file.id));
       const ok = await triggerVectorization(file.directus_file_id, file.file_name, file.id);
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
@@ -319,7 +319,11 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     } catch (err: any) {
       addNotification('error', 'Klaida', err.message || 'Nepavyko paleisti vektorizavimo');
     } finally {
-      setVectorizingId(null);
+      setVectorizingIds(prev => {
+        const next = new Set(prev);
+        next.delete(file.id);
+        return next;
+      });
     }
   };
 
@@ -556,15 +560,15 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         ) : (
                           <button
                             onClick={() => handleVectorize(file)}
-                            disabled={vectorizingId === file.id}
+                            disabled={vectorizingIds.has(file.id)}
                             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:brightness-95"
                             style={{
                               background: '#fff',
                               border: '1px solid rgba(234,88,12,0.4)',
-                              color: vectorizingId === file.id ? '#8a857f' : '#3d3935',
+                              color: vectorizingIds.has(file.id) ? '#8a857f' : '#3d3935',
                             }}
                           >
-                            {vectorizingId === file.id ? (
+                            {vectorizingIds.has(file.id) ? (
                               <><Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...</>
                             ) : (
                               <>
