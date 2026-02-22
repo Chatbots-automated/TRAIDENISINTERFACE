@@ -276,7 +276,7 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
+function TabSusirasinejimas({ record, readOnly, onContextChange }: { record: NestandartiniaiRecord; readOnly?: boolean; onContextChange?: () => void }) {
   const [messages, setMessages] = useState<AtsakymasMessage[]>(() => parseAtsakymas(record.atsakymas));
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
   const [saving, setSaving] = useState(false);
@@ -286,7 +286,7 @@ function TabSusirasinejimas({ record, readOnly }: { record: NestandartiniaiRecor
     const updated = [...messages, msg];
     setMessages(updated);
     setAddingSide(null);
-    try { setSaving(true); await updateNestandartiniaiAtsakymas(record.id, updated); } catch (e) { console.error(e); } finally { setSaving(false); }
+    try { setSaving(true); await updateNestandartiniaiAtsakymas(record.id, updated); onContextChange?.(); } catch (e) { console.error(e); } finally { setSaving(false); }
   };
 
   return (
@@ -457,7 +457,7 @@ function parseFiles(raw: string | null): AttachedFile[] {
   return [];
 }
 
-function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
+function TabFailai({ record, readOnly, onContextChange }: { record: NestandartiniaiRecord; readOnly?: boolean; onContextChange?: () => void }) {
   const [files, setFiles] = useState<AttachedFile[]>(() => parseFiles(record.files));
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
@@ -518,6 +518,7 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
 
     try {
       await saveFiles(newFiles);
+      if (newFiles.length > files.length) onContextChange?.();
     } catch {
       setError('Nepavyko išsaugoti failų sąrašo');
     }
@@ -536,6 +537,7 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       });
       await saveFiles(files.filter(f => f.directus_file_id !== fileId));
+      onContextChange?.();
     } catch (err: any) {
       setError(err.message || 'Nepavyko ištrinti');
     } finally {
@@ -963,6 +965,8 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [hasContextChanges, setHasContextChanges] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const meta = parseMetadata(record.metadata);
   const cardUrl = `${window.location.origin}/paklausimas/${record.id}`;
   const [copied, setCopied] = useState(false);
@@ -970,6 +974,8 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
+
+  const markContextDirty = useCallback(() => setHasContextChanges(true), []);
 
   const handleUpdate = async () => {
     setUpdating(true);
@@ -984,6 +990,8 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
       });
       if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
       setUpdateStatus('success');
+      setHasContextChanges(false);
+      setShowCloseConfirm(false);
       setTimeout(() => setUpdateStatus('idle'), 3000);
     } catch (err: any) {
       console.error('Update error:', err);
@@ -994,11 +1002,19 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
     }
   };
 
+  const handleClose = () => {
+    if (hasContextChanges) {
+      setShowCloseConfirm(true);
+    } else {
+      onClose();
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
       style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl"
@@ -1035,7 +1051,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
               <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atidaryti naujame lange">
                 <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
-              <button onClick={onClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
+              <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
                 <X className="w-4 h-4 text-base-content/40" />
               </button>
             </div>
@@ -1045,61 +1061,98 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40 flex flex-col">
-            <div>
-              {TABS.map(tab => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.id;
-                const isContext = CONTEXT_TABS.has(tab.id);
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="truncate flex-1">{tab.label}</span>
-                    {isContext && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
+            {TABS.map(tab => {
+              const Icon = tab.icon;
+              const active = activeTab === tab.id;
+              const isContext = CONTEXT_TABS.has(tab.id);
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate flex-1">{tab.label}</span>
+                  {isContext && hasContextChanges && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                </button>
+              );
+            })}
             {/* Context update button */}
-            <div className="mt-auto pt-3 px-1 border-t border-base-content/10">
-              <button
-                onClick={handleUpdate}
-                disabled={updating}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
-                  updateStatus === 'success'
-                    ? 'text-success bg-success/10 border-success/20'
-                    : updateStatus === 'error'
-                      ? 'text-error bg-error/5 border-error/15'
-                      : 'text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100'
-                } disabled:opacity-60`}
-              >
-                {updating
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
-                  : updateStatus === 'success'
-                    ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
-                    : updateStatus === 'error'
-                      ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
-                      : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
-                }
-              </button>
-            </div>
+            <button
+              onClick={handleUpdate}
+              disabled={updating}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-2 ${
+                updateStatus === 'success'
+                  ? 'text-success bg-success/10 border border-success/20'
+                  : updateStatus === 'error'
+                    ? 'text-error bg-error/5 border border-error/15'
+                    : hasContextChanges
+                      ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100'
+                      : 'text-base-content/40 border border-base-content/8 hover:bg-base-content/5'
+              } disabled:opacity-60`}
+              style={!hasContextChanges && updateStatus === 'idle' ? { background: '#f8f8f9' } : undefined}
+            >
+              {updating
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
+                : updateStatus === 'success'
+                  ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
+                  : updateStatus === 'error'
+                    ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
+                    : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
+              }
+            </button>
           </div>
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} />}
+            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} onContextChange={markContextDirty} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
-            {activeTab === 'failai' && <TabFailai record={record} />}
+            {activeTab === 'failai' && <TabFailai record={record} onContextChange={markContextDirty} />}
             {activeTab === 'derva' && <TabDerva record={record} />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
         </div>
       </div>
+
+      {/* Close confirmation dialog */}
+      {showCloseConfirm && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setShowCloseConfirm(false)}
+        >
+          <div
+            className="bg-base-100 rounded-xl border border-base-content/10 shadow-2xl p-6 max-w-sm mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+              <p className="text-sm font-semibold text-base-content">Neatnaujintas kontekstas</p>
+            </div>
+            <p className="text-xs text-base-content/50 mb-5" style={{ lineHeight: '1.6' }}>
+              Pridėjote naujų duomenų, bet nepaleidote konteksto atnaujinimo. Projekto aprašymas ir metaduomenys nebus atnaujinti pagal naujus duomenis.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={onClose}
+                className="text-xs px-4 py-2 rounded-3xl text-base-content/50 hover:bg-base-content/5 transition-colors"
+              >
+                Uždaryti
+              </button>
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className="text-xs px-4 py-2 rounded-3xl font-medium text-white transition-all hover:opacity-90 disabled:opacity-60"
+                style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)' }}
+              >
+                {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Atnaujinama...</> : 'Atnaujinti'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1160,7 +1213,6 @@ export default function PaklausimoKortelePage() {
             {readOnlyTabs.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
-              const isContext = CONTEXT_TABS.has(tab.id);
               return (
                 <button
                   key={tab.id}
@@ -1169,7 +1221,6 @@ export default function PaklausimoKortelePage() {
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
-                  {isContext && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
                 </button>
               );
             })}
