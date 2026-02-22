@@ -311,10 +311,24 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       setVectorizingId(file.id);
       const ok = await triggerVectorization(file.directus_file_id, file.file_name, file.id);
       if (ok) {
+        // n8n may still be writing embeddings after the webhook responds.
+        // Poll until the embedding appears or we time out.
+        let found = false;
+        for (let attempt = 0; attempt < 10; attempt++) {
+          await new Promise(r => setTimeout(r, 2000));
+          const refreshed = await fetchDervaFiles();
+          const updated = refreshed.find(f => f.id === file.id);
+          if (updated?.embedding) {
+            found = true;
+            setFiles(refreshed);
+            break;
+          }
+        }
+        if (!found) {
+          // Fallback: just reload whatever is there
+          await loadFiles();
+        }
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
-        // Webhook responded after workflow completed — records now exist
-        // in the derva table. Re-fetch to pick up the new vectorized IDs.
-        await loadFiles();
       } else {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
@@ -498,7 +512,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                 {sortedFiles.length === 0 ? (
                   <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file, idx) => {
-                  const isVectorized = !!file.content;
+                  const isVectorized = !!file.embedding;
                   return (
                     <tr
                       key={file.id}
