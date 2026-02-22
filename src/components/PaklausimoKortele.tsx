@@ -276,29 +276,33 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, onContextChange }: { record: NestandartiniaiRecord; readOnly?: boolean; onContextChange?: () => void }) {
-  const [messages, setMessages] = useState<AtsakymasMessage[]>(() => parseAtsakymas(record.atsakymas));
+function TabSusirasinejimas({ record, readOnly, pendingMessages, onAddMessage }: {
+  record: NestandartiniaiRecord;
+  readOnly?: boolean;
+  pendingMessages?: AtsakymasMessage[];
+  onAddMessage?: (msg: AtsakymasMessage) => void;
+}) {
+  const existingMessages = parseAtsakymas(record.atsakymas);
+  const allMessages = [...existingMessages, ...(pendingMessages || [])];
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
-  const [saving, setSaving] = useState(false);
+  const pendingCount = pendingMessages?.length || 0;
 
-  const handleSave = async (text: string, side: 'left' | 'right') => {
+  const handleSave = (text: string, side: 'left' | 'right') => {
     const msg: AtsakymasMessage = { text, role: side === 'left' ? 'recipient' : 'team', date: new Date().toISOString().slice(0, 10) };
-    const updated = [...messages, msg];
-    setMessages(updated);
+    onAddMessage?.(msg);
     setAddingSide(null);
-    try { setSaving(true); await updateNestandartiniaiAtsakymas(record.id, updated); onContextChange?.(); } catch (e) { console.error(e); } finally { setSaving(false); }
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
-          {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
+          {allMessages.length > 0 ? `${allMessages.length} žinutės` : 'Nėra žinučių'}
+          {pendingCount > 0 && <span className="text-amber-500 ml-1.5">({pendingCount} naujos)</span>}
         </p>
-        {saving && <span className="text-xs text-base-content/40">Saugoma...</span>}
       </div>
 
-      {messages.map((msg, i) => (
+      {allMessages.map((msg, i) => (
         <ChatBubble key={i} message={msg} side={msg.role === 'team' ? 'right' : 'left'} />
       ))}
 
@@ -433,6 +437,7 @@ const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 
 interface AttachedFile {
+  junction_id?: number;
   directus_file_id: string;
   file_name: string;
   filename_disk: string;
@@ -441,109 +446,58 @@ interface AttachedFile {
   uploaded_at: string;
 }
 
-function parseFiles(raw: AttachedFile[] | string | null): AttachedFile[] {
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    } catch {}
-    // Legacy: single UUID string
-    if (raw.length >= 32 && !raw.includes(' ')) {
-      return [{ directus_file_id: raw, file_name: 'Failas', filename_disk: '', file_size: 0, mime_type: '', uploaded_at: '' }];
-    }
-  }
-  return [];
+/** A file selected locally but not yet uploaded to Directus */
+interface PendingFile {
+  localId: string;
+  file: File;
 }
 
-function TabFailai({ record, readOnly, onContextChange }: { record: NestandartiniaiRecord; readOnly?: boolean; onContextChange?: () => void }) {
-  const [files, setFiles] = useState<AttachedFile[]>(() => parseFiles(record.files));
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+/** Parse M2M junction data from Directus into AttachedFile[] */
+function parseFiles(raw: any): AttachedFile[] {
+  if (!raw || !Array.isArray(raw)) return [];
+  return raw.map((item: any) => {
+    // M2M junction: { id, directus_files_id: { id, filename_download, ... } }
+    if (item.directus_files_id && typeof item.directus_files_id === 'object') {
+      const f = item.directus_files_id;
+      return {
+        junction_id: item.id,
+        directus_file_id: f.id,
+        file_name: f.filename_download || 'Failas',
+        filename_disk: f.filename_disk || '',
+        file_size: f.filesize || 0,
+        mime_type: f.type || '',
+        uploaded_at: f.uploaded_on || '',
+      } as AttachedFile;
+    }
+    // Direct AttachedFile (fallback)
+    if (item.directus_file_id) return item as AttachedFile;
+    return null;
+  }).filter(Boolean) as AttachedFile[];
+}
+
+function formatFileSize(bytes: number) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePendingFile }: {
+  record: NestandartiniaiRecord;
+  readOnly?: boolean;
+  pendingFiles?: PendingFile[];
+  onAddFiles?: (files: File[]) => void;
+  onRemovePendingFile?: (localId: string) => void;
+}) {
+  const existingFiles = parseFiles(record.files);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const totalCount = existingFiles.length + (pendingFiles?.length || 0);
 
-  const formatSize = (bytes: number) => {
-    if (!bytes) return '—';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-  };
-
-  const saveFiles = async (updated: AttachedFile[]) => {
-    setFiles(updated);
-    await updateNestandartiniaiField(record.id, 'files', JSON.stringify(updated));
-  };
-
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
-    if (!selected?.length || uploading) return;
-    // Clear input immediately to prevent duplicate onChange events
+    if (!selected?.length) return;
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setError(null);
-    setUploading(true);
-    const toUpload = Array.from(selected);
-    setUploadProgress({ current: 0, total: toUpload.length });
-
-    const newFiles: AttachedFile[] = [...files];
-    let failed = 0;
-
-    for (let i = 0; i < toUpload.length; i++) {
-      const file = toUpload[i];
-      setUploadProgress({ current: i + 1, total: toUpload.length });
-      try {
-        const form = new FormData();
-        form.append('file', file);
-        const resp = await fetch(`${DIRECTUS_URL}/files`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-          body: form,
-        });
-        if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
-        const json = await resp.json();
-        const d = json.data;
-        newFiles.push({
-          directus_file_id: d.id,
-          file_name: d.filename_download || file.name,
-          filename_disk: d.filename_disk || '',
-          file_size: d.filesize || file.size,
-          mime_type: d.type || file.type,
-          uploaded_at: new Date().toISOString(),
-        });
-      } catch (err: any) {
-        console.error(`Upload error for "${file.name}":`, err);
-        failed++;
-      }
-    }
-
-    try {
-      await saveFiles(newFiles);
-      if (newFiles.length > files.length) onContextChange?.();
-    } catch {
-      setError('Nepavyko išsaugoti failų sąrašo');
-    }
-
-    if (failed > 0) setError(`${failed} ${failed === 1 ? 'failas neįkeltas' : 'failai neįkelti'}`);
-    setUploading(false);
-    setUploadProgress(null);
-  };
-
-  const handleDelete = async (fileId: string) => {
-    setDeletingId(fileId);
-    try {
-      await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-      });
-      await saveFiles(files.filter(f => f.directus_file_id !== fileId));
-      onContextChange?.();
-    } catch (err: any) {
-      setError(err.message || 'Nepavyko ištrinti');
-    } finally {
-      setDeletingId(null);
-    }
+    onAddFiles?.(Array.from(selected));
   };
 
   return (
@@ -551,26 +505,21 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
-          {files.length > 0 ? `${files.length} ${files.length === 1 ? 'failas' : 'failai'}` : 'Nėra failų'}
+          {totalCount > 0 ? `${totalCount} ${totalCount === 1 ? 'failas' : 'failai'}` : 'Nėra failų'}
+          {(pendingFiles?.length || 0) > 0 && <span className="text-amber-500 ml-1.5">({pendingFiles!.length} nauji)</span>}
         </p>
         {!readOnly && (
           <button
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
             style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
           >
-            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {uploading && uploadProgress ? `${uploadProgress.current}/${uploadProgress.total}` : 'Įkelti'}
+            <Upload className="w-3.5 h-3.5" /> Įkelti
           </button>
         )}
       </div>
 
-      {error && (
-        <div className="text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">{error}</div>
-      )}
-
-      {files.length > 0 ? (
+      {totalCount > 0 ? (
         <div className="rounded-xl overflow-hidden border border-base-content/10">
           <table className="w-full text-sm">
             <thead>
@@ -578,13 +527,13 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
                 <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-8">#</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40">Pavadinimas</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-20">Dydis</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-24">Data</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-base-content/40 w-24">Veiksmai</th>
               </tr>
             </thead>
             <tbody>
-              {files.map((file, idx) => (
-                <tr key={file.directus_file_id} className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02] transition-colors">
+              {/* Existing files (already in Directus) */}
+              {existingFiles.map((file, idx) => (
+                <tr key={`existing-${file.directus_file_id}`} className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02] transition-colors">
                   <td className="px-3 py-2 text-xs text-base-content/40">{idx + 1}</td>
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
@@ -592,10 +541,7 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
                       <span className="text-sm text-base-content truncate max-w-[200px]" title={file.file_name}>{file.file_name}</span>
                     </div>
                   </td>
-                  <td className="px-3 py-2 text-xs text-base-content/40">{formatSize(file.file_size)}</td>
-                  <td className="px-3 py-2 text-xs text-base-content/40 whitespace-nowrap">
-                    {file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString('lt-LT') : '—'}
-                  </td>
+                  <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(file.file_size)}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-0.5">
                       <a
@@ -614,20 +560,32 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
                       >
                         <Download className="w-3.5 h-3.5 text-base-content/40" />
                       </a>
-                      {!readOnly && (
-                        <button
-                          onClick={() => handleDelete(file.directus_file_id)}
-                          disabled={deletingId === file.directus_file_id}
-                          className="p-1 rounded-lg transition-colors hover:bg-error/10"
-                          title="Ištrinti"
-                        >
-                          {deletingId === file.directus_file_id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-error" />
-                            : <Trash2 className="w-3.5 h-3.5 text-error" />
-                          }
-                        </button>
-                      )}
                     </div>
+                  </td>
+                </tr>
+              ))}
+              {/* Pending files (local, not yet uploaded) */}
+              {pendingFiles?.map((pf, idx) => (
+                <tr key={`pending-${pf.localId}`} className="border-b border-base-content/5 last:border-b-0 bg-amber-50/30">
+                  <td className="px-3 py-2 text-xs text-base-content/40">{existingFiles.length + idx + 1}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                      <span className="text-sm text-base-content truncate max-w-[200px]" title={pf.file.name}>{pf.file.name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 font-medium shrink-0">Laukia</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(pf.file.size)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {!readOnly && (
+                      <button
+                        onClick={() => onRemovePendingFile?.(pf.localId)}
+                        className="p-1 rounded-lg transition-colors hover:bg-error/10"
+                        title="Pašalinti"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-error" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -644,7 +602,7 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
       )}
 
       {!readOnly && (
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} />
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
       )}
     </div>
   );
@@ -969,17 +927,78 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   const [copied, setCopied] = useState(false);
   const hasContextChanges = dirtyTabs.size > 0;
 
+  // Pending data: stored locally until Atnaujinti is pressed
+  const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
-  const markSusirasinejimaiDirty = useCallback(() => setDirtyTabs(prev => new Set(prev).add('susirasinejimas')), []);
-  const markFailaiDirty = useCallback(() => setDirtyTabs(prev => new Set(prev).add('failai')), []);
+  const addPendingMessage = useCallback((msg: AtsakymasMessage) => {
+    setPendingMessages(prev => [...prev, msg]);
+    setDirtyTabs(prev => new Set(prev).add('susirasinejimas'));
+  }, []);
+
+  const addPendingFiles = useCallback((files: File[]) => {
+    const newPending = files.map(f => ({ localId: crypto.randomUUID(), file: f }));
+    setPendingFiles(prev => [...prev, ...newPending]);
+    setDirtyTabs(prev => new Set(prev).add('failai'));
+  }, []);
+
+  const removePendingFile = useCallback((localId: string) => {
+    setPendingFiles(prev => {
+      const next = prev.filter(pf => pf.localId !== localId);
+      // If no pending files left, clear the dirty flag for failai
+      if (next.length === 0) {
+        setDirtyTabs(prev2 => {
+          const s = new Set(prev2);
+          s.delete('failai');
+          return s;
+        });
+      }
+      return next;
+    });
+  }, []);
 
   const handleUpdate = async () => {
     setUpdating(true);
     setUpdateStatus('idle');
     try {
+      // 1. Save pending messages to DB
+      if (pendingMessages.length > 0) {
+        const existingMessages = parseAtsakymas(record.atsakymas);
+        const allMessages = [...existingMessages, ...pendingMessages];
+        await updateNestandartiniaiAtsakymas(record.id, allMessages);
+      }
+
+      // 2. Upload pending files to Directus, then link via M2M
+      if (pendingFiles.length > 0) {
+        const existingFiles = parseFiles(record.files);
+        const newRelations: { directus_files_id: string }[] = [];
+
+        for (const pf of pendingFiles) {
+          const form = new FormData();
+          form.append('file', pf.file);
+          const resp = await fetch(`${DIRECTUS_URL}/files`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            body: form,
+          });
+          if (!resp.ok) throw new Error(`Failo įkėlimas nepavyko: ${resp.status}`);
+          const json = await resp.json();
+          newRelations.push({ directus_files_id: json.data.id });
+        }
+
+        // Send existing junction IDs + new file links
+        const allRelations = [
+          ...existingFiles.filter(f => f.junction_id).map(f => ({ id: f.junction_id! })),
+          ...newRelations,
+        ];
+        await updateNestandartiniaiField(record.id, 'files', allRelations);
+      }
+
+      // 3. Trigger webhook
       const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
       if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
       const resp = await fetch(webhookUrl, {
@@ -988,7 +1007,11 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         body: JSON.stringify({ record_id: record.id }),
       });
       if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
+
+      // 4. Clear pending state
       setUpdateStatus('success');
+      setPendingMessages([]);
+      setPendingFiles([]);
       setDirtyTabs(new Set());
       setShowCloseConfirm(false);
       setTimeout(() => setUpdateStatus('idle'), 3000);
@@ -1105,9 +1128,9 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} onContextChange={markSusirasinejimaiDirty} />}
+            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} pendingMessages={pendingMessages} onAddMessage={addPendingMessage} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
-            {activeTab === 'failai' && <TabFailai record={record} onContextChange={markFailaiDirty} />}
+            {activeTab === 'failai' && <TabFailai record={record} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} />}
             {activeTab === 'derva' && <TabDerva record={record} />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
