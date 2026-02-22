@@ -19,6 +19,8 @@ import {
   insertDervaFile,
   deleteDervaFile,
   triggerVectorization,
+  claimFileForVectorization,
+  updateVectorizationStatus,
   uploadFileToDirectus,
   getFileViewUrl,
   getFileDownloadUrl,
@@ -198,13 +200,14 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       const loaded = await fetchDervaFiles();
       setFiles(loaded);
 
-      // Clean up vectorizing IDs for files that now have embeddings
+      // Clean up localStorage vectorizing IDs for files that are done or gone
       setVectorizingIds(prev => {
         if (prev.size === 0) return prev;
         const next = new Set(prev);
         for (const id of prev) {
           const file = loaded.find(f => f.id === id);
-          if (!file || file.embedding) next.delete(id);
+          // Remove if: file deleted, embedding exists, or DB no longer says processing
+          if (!file || file.embedding || file.vectorization_status !== 'processing') next.delete(id);
         }
         return next.size === prev.size ? prev : next;
       });
@@ -335,15 +338,25 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       return;
     }
     try {
+      // Atomic claim — prevents duplicate vectorization across users
+      const claimed = await claimFileForVectorization(file.id);
+      if (!claimed) {
+        addNotification('info', 'Vektorizuojama', `"${file.file_name}" jau vektorizuojamas kito naudotojo.`);
+        return;
+      }
+
       setVectorizingIds(prev => new Set(prev).add(file.id));
       const ok = await triggerVectorization(file.directus_file_id, file.file_name, file.id);
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
+        await updateVectorizationStatus(file.id, null);
         await loadFiles();
       } else {
+        await updateVectorizationStatus(file.id, 'failed');
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
     } catch (err: any) {
+      try { await updateVectorizationStatus(file.id, 'failed'); } catch {}
       addNotification('error', 'Klaida', err.message || 'Nepavyko paleisti vektorizavimo');
     } finally {
       setVectorizingIds(prev => {
@@ -528,6 +541,8 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                   <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file, idx) => {
                   const isVectorized = !!file.embedding;
+                  const isProcessing = vectorizingIds.has(file.id) || file.vectorization_status === 'processing';
+                  const isFailed = file.vectorization_status === 'failed';
                   return (
                     <tr
                       key={file.id}
@@ -584,25 +599,29 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       <td className="px-3 py-2.5 text-center">
                         {isVectorized ? (
                           <Check className="w-4 h-4 inline-block" style={{ color: '#15803d' }} />
-                        ) : (
-                          <button
-                            onClick={() => handleVectorize(file)}
-                            disabled={vectorizingIds.has(file.id)}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:brightness-95"
+                        ) : isProcessing ? (
+                          <span
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
                             style={{
                               background: '#fff',
                               border: '1px solid rgba(234,88,12,0.4)',
-                              color: vectorizingIds.has(file.id) ? '#8a857f' : '#3d3935',
+                              color: '#8a857f',
                             }}
                           >
-                            {vectorizingIds.has(file.id) ? (
-                              <><Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...</>
-                            ) : (
-                              <>
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#ea580c' }} />
-                                Pradėti
-                              </>
-                            )}
+                            <Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleVectorize(file)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:brightness-95"
+                            style={{
+                              background: '#fff',
+                              border: `1px solid ${isFailed ? 'rgba(185,28,28,0.4)' : 'rgba(234,88,12,0.4)'}`,
+                              color: '#3d3935',
+                            }}
+                          >
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: isFailed ? '#b91c1c' : '#ea580c' }} />
+                            {isFailed ? 'Pakartoti' : 'Pradėti'}
                           </button>
                         )}
                       </td>

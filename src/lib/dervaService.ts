@@ -18,13 +18,14 @@ export interface DervaFile {
   uploaded_at: string;
   content: string | null;
   embedding: string | null;
+  vectorization_status: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Fields
 // ---------------------------------------------------------------------------
 
-const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at,content,embedding';
+const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at,content,embedding,vectorization_status';
 
 // ---------------------------------------------------------------------------
 // Upload file to Directus file storage → returns UUID
@@ -117,6 +118,44 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
 
   if (error) {
     console.error('Error deleting derva_file:', error);
+    throw error;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Vectorization status — atomic claim to prevent duplicate work
+// ---------------------------------------------------------------------------
+
+/**
+ * Atomically claim a file for vectorization. Only succeeds if the file is NOT
+ * already in 'processing' state. Returns true if the claim was acquired.
+ */
+export const claimFileForVectorization = async (id: number): Promise<boolean> => {
+  const { data, error } = await db
+    .from('derva_files')
+    .update({ vectorization_status: 'processing' })
+    .eq('id', id)
+    .or('vectorization_status.is.null,vectorization_status.eq.failed')
+    .select('id');
+
+  if (error) {
+    console.error('Error claiming file for vectorization:', error);
+    throw error;
+  }
+  return (data?.length ?? 0) > 0;
+};
+
+export const updateVectorizationStatus = async (
+  id: number,
+  status: string | null,
+): Promise<void> => {
+  const { error } = await db
+    .from('derva_files')
+    .update({ vectorization_status: status })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating vectorization status:', error);
     throw error;
   }
 };
