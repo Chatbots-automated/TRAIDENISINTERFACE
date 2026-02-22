@@ -452,13 +452,23 @@ interface PendingFile {
 }
 
 /**
- * The `files` field stores comma-separated Directus file UUIDs.
- * e.g. "uuid1,uuid2,uuid3" or a single "uuid1".
- * Parse into an array of UUID strings.
+ * Get all file UUIDs for a record.
+ * Primary source: metadata._file_ids (JSON array of UUIDs).
+ * Fallback: the single UUID in the `files` column (legacy records).
  */
-function parseFileIds(raw: string | null): string[] {
-  if (!raw || typeof raw !== 'string') return [];
-  return raw.split(',').map(s => s.trim()).filter(s => s.length >= 32);
+function getFileIds(record: NestandartiniaiRecord): string[] {
+  const meta = parseMetadata(record.metadata);
+  if (meta._file_ids) {
+    try {
+      const ids = JSON.parse(meta._file_ids);
+      if (Array.isArray(ids) && ids.length > 0) return ids;
+    } catch {}
+  }
+  // Fallback: single UUID in `files` column
+  if (record.files && typeof record.files === 'string' && record.files.trim().length >= 32) {
+    return [record.files.trim()];
+  }
+  return [];
 }
 
 function formatFileSize(bytes: number) {
@@ -480,9 +490,11 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 
   // Fetch metadata for ALL existing file UUIDs from Directus
   const [existingFiles, setExistingFiles] = useState<AttachedFile[]>([]);
+  const fileIds = getFileIds(record);
+  const fileIdsKey = fileIds.join(',');
   useEffect(() => {
-    const ids = parseFileIds(record.files);
-    if (ids.length === 0) { setExistingFiles([]); return; }
+    if (fileIds.length === 0) { setExistingFiles([]); return; }
+    const ids = fileIds;
     Promise.all(
       ids.map(fileId =>
         fetch(`${DIRECTUS_URL}/files/${fileId}`, {
@@ -503,7 +515,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
           .catch(() => null)
       )
     ).then(results => setExistingFiles(results.filter(Boolean) as AttachedFile[]));
-  }, [record.files]);
+  }, [fileIdsKey]);
 
   const totalCount = existingFiles.length + pendingCount;
 
@@ -1015,10 +1027,16 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           uploadedFileIds.push(json.data.id);
         }
 
-        // Append new UUIDs to any existing ones (comma-separated)
-        const existingIds = parseFileIds(record.files);
-        const allIds = [...existingIds, ...uploadedFileIds];
-        await updateNestandartiniaiField(record.id, 'files', allIds.join(','));
+        // `files` column is UUID type — store latest file UUID there
+        const lastId = uploadedFileIds[uploadedFileIds.length - 1];
+        await updateNestandartiniaiField(record.id, 'files', lastId);
+
+        // Store ALL file IDs (existing + new) in metadata._file_ids
+        const existingIds = getFileIds(record);
+        const allIds = [...new Set([...existingIds, ...uploadedFileIds])];
+        const meta = parseMetadata(record.metadata);
+        meta._file_ids = JSON.stringify(allIds);
+        await updateNestandartiniaiField(record.id, 'metadata', meta);
       }
 
       // 3. Trigger webhook (include uploaded file UUIDs so the handler can process them)
