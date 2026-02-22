@@ -497,7 +497,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               <tbody>
                 {sortedFiles.length === 0 ? (
                   <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
-                ) : sortedFiles.map((file) => {
+                ) : sortedFiles.map((file, idx) => {
                   const isVectorized = !!file.content;
                   return (
                     <tr
@@ -505,7 +505,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       style={{ borderBottom: '1px solid #f8f6f3' }}
                     >
                       <td className="px-3 py-2.5 w-14">
-                        <span style={{ color: '#8a857f', fontSize: '12px' }}>{file.id}</span>
+                        <span style={{ color: '#8a857f', fontSize: '12px' }}>{idx + 1}</span>
                       </td>
 
                       <td className="px-3 py-2.5">
