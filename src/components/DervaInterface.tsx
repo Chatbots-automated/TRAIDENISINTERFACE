@@ -311,24 +311,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       setVectorizingId(file.id);
       const ok = await triggerVectorization(file.directus_file_id, file.file_name, file.id);
       if (ok) {
-        // n8n may still be writing embeddings after the webhook responds.
-        // Poll until the embedding appears or we time out.
-        let found = false;
-        for (let attempt = 0; attempt < 10; attempt++) {
-          await new Promise(r => setTimeout(r, 2000));
-          const refreshed = await fetchDervaFiles();
-          const updated = refreshed.find(f => f.id === file.id);
-          if (updated?.embedding) {
-            found = true;
-            setFiles(refreshed);
-            break;
-          }
-        }
-        if (!found) {
-          // Fallback: just reload whatever is there
-          await loadFiles();
-        }
-        addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
+        addNotification('success', 'Vektorizuota', `"${file.file_name}" vektorizavimas paleistas. Atnaujinkite lentelę, kai procesas baigsis.`);
       } else {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
