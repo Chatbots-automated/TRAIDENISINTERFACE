@@ -1217,11 +1217,86 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 // ---------------------------------------------------------------------------
 
 function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
-  const projects = parseJSON<SimilarProject[]>(record.similar_projects) || [];
+  const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
+  const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const handleFindSimilar = async () => {
+    setLoading(true);
+    setStatus('idle');
+    setErrorMsg(null);
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_similar_projects');
+      if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: record.id }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(body || `Klaida: ${resp.status}`);
+      }
+      // Re-fetch record to get updated similar_projects
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated?.similar_projects) {
+        setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
+      }
+      setStatus('success');
+      setTimeout(() => setStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error('Similar projects webhook error:', err);
+      setErrorMsg(err?.message || 'Nepavyko atnaujinti');
+      setStatus('error');
+      // Try fetching anyway — the webhook may have completed server-side
+      try {
+        const updated = await fetchNestandartiniaiById(record.id);
+        if (updated?.similar_projects) {
+          setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
+        }
+      } catch { /* ignore */ }
+      setTimeout(() => setStatus('idle'), 5000);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div>
-      {projects.length > 0 ? (
+      {/* Trigger button */}
+      <div className="mb-4">
+        <button
+          onClick={handleFindSimilar}
+          disabled={loading}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50"
+          style={{
+            background: status === 'success' ? 'rgba(52,199,89,0.08)' : status === 'error' ? 'rgba(255,59,48,0.06)' : 'rgba(0,0,0,0.04)',
+            border: `0.5px solid ${status === 'success' ? 'rgba(52,199,89,0.2)' : status === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(0,0,0,0.08)'}`,
+            color: status === 'success' ? '#34C759' : status === 'error' ? '#FF3B30' : '#5a5550',
+          }}
+        >
+          {loading
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
+            : status === 'success'
+              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
+              : status === 'error'
+                ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
+                : <><RefreshCw className="w-3.5 h-3.5" /> Rasti panašius</>
+          }
+        </button>
+        {errorMsg && status === 'error' && (
+          <p className="text-xs mt-1.5" style={{ color: '#FF3B30' }}>{errorMsg}</p>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin mb-3" style={{ color: '#007AFF' }} />
+          <p className="text-sm font-medium text-base-content/60">Ieškoma panašių projektų...</p>
+        </div>
+      ) : projects.length > 0 ? (
         <div className="space-y-1.5">
           {projects.map((p, i) => (
             <a

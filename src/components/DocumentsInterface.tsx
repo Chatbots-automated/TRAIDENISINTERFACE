@@ -516,13 +516,16 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         const checked = !!row[col.key];
                         return (
                           <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
-                            <input
-                              type="checkbox"
-                              className="toggle toggle-sm toggle-success"
-                              checked={checked}
-                              onClick={e => e.stopPropagation()}
-                              onChange={() => handleToggleStatus(row.id, checked)}
-                            />
+                            <button
+                              onClick={e => { e.stopPropagation(); handleToggleStatus(row.id, checked); }}
+                              className={`macos-toggle ${checked ? 'active' : ''}`}
+                              style={{ width: 36, height: 20, borderRadius: 10 }}
+                            >
+                              <span
+                                className="macos-toggle-thumb"
+                                style={{ width: 16, height: 16, top: 2, left: 2, borderRadius: 8 }}
+                              />
+                            </button>
                           </td>
                         );
                       }
