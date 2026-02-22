@@ -311,7 +311,8 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       setVectorizingId(file.id);
       const ok = await triggerVectorization(file.directus_file_id, file.file_name, file.id);
       if (ok) {
-        addNotification('success', 'Vektorizuota', `"${file.file_name}" vektorizavimas paleistas. Atnaujinkite lentelę, kai procesas baigsis.`);
+        addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
+        await loadFiles();
       } else {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
