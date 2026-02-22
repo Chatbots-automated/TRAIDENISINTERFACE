@@ -497,8 +497,9 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
     if (!selected?.length) return;
+    const fileArray = Array.from(selected); // snapshot before clearing input
     if (fileInputRef.current) fileInputRef.current.value = '';
-    onAddFiles?.(Array.from(selected));
+    onAddFiles?.(fileArray);
   };
 
   return (
@@ -953,6 +954,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   }, []);
 
   const addPendingFiles = useCallback((files: File[]) => {
+    if (files.length === 0) return;
     const newPending = files.map(f => ({ localId: crypto.randomUUID(), file: f }));
     setPendingFiles(prev => [...prev, ...newPending]);
     setDirtyTabs(prev => new Set(prev).add('failai'));
