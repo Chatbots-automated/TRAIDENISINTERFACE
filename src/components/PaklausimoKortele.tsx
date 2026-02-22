@@ -514,10 +514,13 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
     });
   }, [fileIdsKey]);
 
-  const handleDeleteFile = async (file: AttachedFile) => {
-    if (!confirm(`Ar tikrai norite ištrinti "${file.file_name}"?`)) return;
+  const [confirmDeleteFile, setConfirmDeleteFile] = useState<AttachedFile | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const executeDelete = async (file: AttachedFile) => {
     try {
       setDeletingId(file.directus_file_id);
+      setConfirmDeleteFile(null);
 
       // 1. Delete binary from Directus storage
       const resp = await fetch(`${DIRECTUS_URL}/files/${file.directus_file_id}`, {
@@ -540,7 +543,8 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
       onDeleteFile?.(newFilesValue);
     } catch (err: any) {
       console.error('File delete error:', err);
-      alert(err.message || 'Nepavyko ištrinti');
+      setDeleteError(err.message || 'Nepavyko ištrinti');
+      setTimeout(() => setDeleteError(null), 4000);
     } finally {
       setDeletingId(null);
     }
@@ -626,7 +630,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                       </a>
                       {!readOnly && (
                         <button
-                          onClick={() => handleDeleteFile(file)}
+                          onClick={() => setConfirmDeleteFile(file)}
                           disabled={deletingId === file.directus_file_id}
                           className="p-1 rounded-lg transition-colors hover:bg-red-50"
                           title="Ištrinti"
@@ -691,6 +695,58 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 
       {!readOnly && (
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+      )}
+
+      {/* Delete confirmation modal */}
+      {confirmDeleteFile && (
+        <div
+          className="fixed inset-0 z-[10001] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          onClick={() => setConfirmDeleteFile(null)}
+        >
+          <div
+            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="h-1" style={{ background: 'linear-gradient(90deg, #ef4444 0%, #b91c1c 100%)' }} />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(239,68,68,0.1)' }}>
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </div>
+                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Ištrinti failą?</p>
+              </div>
+              <p className="text-sm text-base-content/50 mb-1 ml-12">
+                {confirmDeleteFile.file_name}
+              </p>
+              <p className="text-xs text-base-content/35 mb-6 ml-12">
+                Failas bus ištrintas visam laikui. Šio veiksmo negalima atšaukti.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setConfirmDeleteFile(null)}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 hover:bg-base-content/5 transition-colors"
+                >
+                  Atšaukti
+                </button>
+                <button
+                  onClick={() => executeDelete(confirmDeleteFile)}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)' }}
+                >
+                  Ištrinti
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete error toast */}
+      {deleteError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10002] px-4 py-2.5 rounded-xl bg-red-500 text-white text-xs font-medium shadow-lg">
+          {deleteError}
+        </div>
       )}
 
       {/* File preview modal (like Derva failai) */}
@@ -1331,35 +1387,40 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
       {showCloseConfirm && (
         <div
           className="fixed inset-0 z-[10000] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(4px)' }}
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
           onClick={() => setShowCloseConfirm(false)}
         >
           <div
-            className="bg-base-100 rounded-xl border border-base-content/10 shadow-2xl p-6 max-w-sm mx-4"
+            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <p className="text-sm font-semibold text-base-content">Neatnaujintas kontekstas</p>
-            </div>
-            <p className="text-xs text-base-content/50 mb-5" style={{ lineHeight: '1.6' }}>
-              Pridėjote naujų duomenų, bet nepaleidote konteksto atnaujinimo. Projekto aprašymas ir metaduomenys nebus atnaujinti pagal naujus duomenis.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={onClose}
-                className="text-xs px-4 py-2 rounded-3xl text-base-content/50 hover:bg-base-content/5 transition-colors"
-              >
-                Uždaryti
-              </button>
-              <button
-                onClick={handleUpdate}
-                disabled={updating}
-                className="text-xs px-4 py-2 rounded-3xl font-medium text-white transition-all hover:opacity-90 disabled:opacity-60"
-                style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)' }}
-              >
-                {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Atnaujinama...</> : 'Atnaujinti'}
-              </button>
+            <div className="h-1" style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)' }} />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(245,158,11,0.1)' }}>
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                </div>
+                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Neatnaujintas kontekstas</p>
+              </div>
+              <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
+                Pridėjote naujų duomenų, bet nepaleidote konteksto atnaujinimo. Projekto aprašymas ir metaduomenys nebus atnaujinti.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={onClose}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 hover:bg-base-content/5 transition-colors"
+                >
+                  Uždaryti
+                </button>
+                <button
+                  onClick={handleUpdate}
+                  disabled={updating}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)' }}
+                >
+                  {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Atnaujinama...</> : 'Atnaujinti'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
