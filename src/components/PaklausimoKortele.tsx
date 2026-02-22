@@ -452,23 +452,12 @@ interface PendingFile {
 }
 
 /**
- * Get all file UUIDs for a record.
- * Primary source: metadata._file_ids (JSON array of UUIDs).
- * Fallback: the single UUID in the `files` column (legacy records).
+ * The `files` column (now text type) stores comma-separated Directus file UUIDs.
+ * e.g. "uuid1,uuid2,uuid3" or a single "uuid1".
  */
 function getFileIds(record: NestandartiniaiRecord): string[] {
-  const meta = parseMetadata(record.metadata);
-  if (meta._file_ids) {
-    try {
-      const ids = JSON.parse(meta._file_ids);
-      if (Array.isArray(ids) && ids.length > 0) return ids;
-    } catch {}
-  }
-  // Fallback: single UUID in `files` column
-  if (record.files && typeof record.files === 'string' && record.files.trim().length >= 32) {
-    return [record.files.trim()];
-  }
-  return [];
+  if (!record.files || typeof record.files !== 'string') return [];
+  return record.files.split(',').map(s => s.trim()).filter(s => s.length >= 32);
 }
 
 function formatFileSize(bytes: number) {
@@ -1027,16 +1016,10 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           uploadedFileIds.push(json.data.id);
         }
 
-        // `files` column is UUID type — store latest file UUID there
-        const lastId = uploadedFileIds[uploadedFileIds.length - 1];
-        await updateNestandartiniaiField(record.id, 'files', lastId);
-
-        // Store ALL file IDs (existing + new) in metadata._file_ids
+        // Append new UUIDs to existing ones, store comma-separated in `files`
         const existingIds = getFileIds(record);
         const allIds = [...new Set([...existingIds, ...uploadedFileIds])];
-        const meta = parseMetadata(record.metadata);
-        meta._file_ids = JSON.stringify(allIds);
-        await updateNestandartiniaiField(record.id, 'metadata', meta);
+        await updateNestandartiniaiField(record.id, 'files', allIds.join(','));
       }
 
       // 3. Trigger webhook (include uploaded file UUIDs so the handler can process them)
