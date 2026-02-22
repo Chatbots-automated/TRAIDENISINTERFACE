@@ -335,44 +335,35 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, onMessagesChange }: {
+function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange }: {
   record: NestandartiniaiRecord;
   readOnly?: boolean;
+  pendingMessages?: AtsakymasMessage[];
   onMessagesChange?: (messages: AtsakymasMessage[]) => void;
 }) {
-  const [messages, setMessages] = useState<AtsakymasMessage[]>(() => parseAtsakymas(record.atsakymas));
+  const originalMessages = parseAtsakymas(record.atsakymas);
+  const messages = pendingMessages ?? originalMessages;
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  const persist = async (updated: AtsakymasMessage[]) => {
-    setMessages(updated);
+  const update = (updated: AtsakymasMessage[]) => {
     onMessagesChange?.(updated);
-    try {
-      setSaving(true);
-      await updateNestandartiniaiAtsakymas(record.id, updated);
-    } catch (err) {
-      console.error('Message save error:', err);
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleAdd = (text: string, side: 'left' | 'right') => {
     const msg: AtsakymasMessage = { text, role: side === 'left' ? 'recipient' : 'team', date: new Date().toISOString().slice(0, 10) };
-    persist([...messages, msg]);
+    update([...messages, msg]);
     setAddingSide(null);
   };
 
   const handleEdit = (idx: number, newText: string) => {
-    const updated = messages.map((m, i) => i === idx ? { ...m, text: newText } : m);
-    persist(updated);
+    update(messages.map((m, i) => i === idx ? { ...m, text: newText } : m));
     setEditingIdx(null);
   };
 
   const handleDelete = (idx: number) => {
-    persist(messages.filter((_, i) => i !== idx));
+    update(messages.filter((_, i) => i !== idx));
     setConfirmDeleteIdx(null);
   };
 
@@ -381,7 +372,6 @@ function TabSusirasinejimas({ record, readOnly, onMessagesChange }: {
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
           {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
-          {saving && <span className="text-base-content/30 ml-1.5"><Loader2 className="w-3 h-3 animate-spin inline" /></span>}
         </p>
       </div>
 
@@ -1292,6 +1282,16 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
 
   // Pending data: stored locally until Atnaujinti is pressed
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
+  const [showPartialWarning, setShowPartialWarning] = useState<'no-files' | 'no-messages' | null>(null);
+
+  const messagesChanged = pendingMessages !== null;
+  const filesChanged = pendingFiles.length > 0;
+
+  const handleMessagesChange = useCallback((msgs: AtsakymasMessage[]) => {
+    setPendingMessages(msgs);
+    setDirtyTabs(prev => new Set(prev).add('susirasinejimas'));
+  }, []);
 
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
@@ -1334,11 +1334,17 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
     });
   }, []);
 
-  const handleUpdate = async () => {
+  const executeUpdate = async () => {
     setUpdating(true);
     setUpdateStatus('idle');
+    setShowPartialWarning(null);
     try {
-      // 1. Upload pending files to Directus and store last UUID in `files` field
+      // 1. Save pending messages to DB
+      if (pendingMessages !== null) {
+        await updateNestandartiniaiAtsakymas(record.id, pendingMessages);
+      }
+
+      // 2. Upload pending files to Directus and store last UUID in `files` field
       const uploadedFileIds: string[] = [];
       if (pendingFiles.length > 0) {
         for (const pf of pendingFiles) {
@@ -1379,6 +1385,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
       // 4. Clear pending state
       setUpdateStatus('success');
       setPendingFiles([]);
+      setPendingMessages(null);
       setDirtyTabs(new Set());
       setShowCloseConfirm(false);
       setTimeout(() => setUpdateStatus('idle'), 3000);
@@ -1389,6 +1396,16 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
     } finally {
       setUpdating(false);
     }
+  };
+
+  const handleUpdate = () => {
+    // If both changed or neither changed, proceed directly
+    if (messagesChanged === filesChanged) {
+      executeUpdate();
+      return;
+    }
+    // Only one type changed — warn the user
+    setShowPartialWarning(filesChanged ? 'no-messages' : 'no-files');
   };
 
   const handleClose = () => {
@@ -1495,7 +1512,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} />}
+            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
             {activeTab === 'failai' && (
               <>
@@ -1512,6 +1529,54 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           </div>
         </div>
       </div>
+
+      {/* Partial-changes warning modal */}
+      {showPartialWarning && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          onClick={() => setShowPartialWarning(null)}
+        >
+          <div
+            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="h-1" style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)' }} />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(245,158,11,0.1)' }}>
+                  <AlertCircle className="w-4 h-4 text-amber-500" />
+                </div>
+                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>
+                  {showPartialWarning === 'no-files' ? 'Nėra naujų failų' : 'Nėra žinučių pakeitimų'}
+                </p>
+              </div>
+              <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
+                {showPartialWarning === 'no-files'
+                  ? 'Pakeitėte susirašinėjimus, bet nepridėjote naujų failų. Ar tikrai norite tęsti be failų?'
+                  : 'Pridėjote naujų failų, bet nepakeitėte susirašinėjimų. Ar tikrai norite tęsti be žinučių pakeitimų?'
+                }
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setShowPartialWarning(null)}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                >
+                  Grįžti
+                </button>
+                <button
+                  onClick={executeUpdate}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
+                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                >
+                  Tęsti
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Close confirmation dialog */}
       {showCloseConfirm && (
