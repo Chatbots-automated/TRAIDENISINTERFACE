@@ -467,16 +467,18 @@ function formatFileSize(bytes: number) {
   return `${(bytes / 1048576).toFixed(1)} MB`;
 }
 
-function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePendingFile }: {
+function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePendingFile, onDeleteFile }: {
   record: NestandartiniaiRecord;
   readOnly?: boolean;
   pendingFiles?: PendingFile[];
   onAddFiles?: (files: File[]) => void;
   onRemovePendingFile?: (localId: string) => void;
+  onDeleteFile?: (newFilesValue: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingCount = pendingFiles?.length || 0;
   const [previewFile, setPreviewFile] = useState<AttachedFile | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Fetch metadata for ALL existing file UUIDs from Directus
   const [existingFiles, setExistingFiles] = useState<AttachedFile[]>([]);
@@ -511,6 +513,38 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
       setLoadingFiles(false);
     });
   }, [fileIdsKey]);
+
+  const handleDeleteFile = async (file: AttachedFile) => {
+    if (!confirm(`Ar tikrai norite ištrinti "${file.file_name}"?`)) return;
+    try {
+      setDeletingId(file.directus_file_id);
+
+      // 1. Delete binary from Directus storage
+      const resp = await fetch(`${DIRECTUS_URL}/files/${file.directus_file_id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      });
+      if (!resp.ok && resp.status !== 404) {
+        throw new Error(`Nepavyko ištrinti failo iš saugyklos (${resp.status})`);
+      }
+
+      // 2. Remove this UUID from the comma-separated `files` column
+      const currentIds = getFileIds(record);
+      const remaining = currentIds.filter(id => id !== file.directus_file_id);
+      const newFilesValue = remaining.join(',');
+      await updateNestandartiniaiField(record.id, 'files', newFilesValue || null);
+
+      // 3. Update local UI state
+      setExistingFiles(prev => prev.filter(f => f.directus_file_id !== file.directus_file_id));
+      if (previewFile?.directus_file_id === file.directus_file_id) setPreviewFile(null);
+      onDeleteFile?.(newFilesValue);
+    } catch (err: any) {
+      console.error('File delete error:', err);
+      alert(err.message || 'Nepavyko ištrinti');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const totalCount = existingFiles.length + pendingCount;
 
@@ -590,6 +624,19 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                       >
                         <Download className="w-3.5 h-3.5 text-base-content/40" />
                       </a>
+                      {!readOnly && (
+                        <button
+                          onClick={() => handleDeleteFile(file)}
+                          disabled={deletingId === file.directus_file_id}
+                          className="p-1 rounded-lg transition-colors hover:bg-red-50"
+                          title="Ištrinti"
+                        >
+                          {deletingId === file.directus_file_id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
+                            : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />
+                          }
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1271,7 +1318,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                     {fileSizeError}
                   </div>
                 )}
-                <TabFailai record={effectiveRecord} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} />
+                <TabFailai record={effectiveRecord} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
             {activeTab === 'derva' && <TabDerva record={record} />}
