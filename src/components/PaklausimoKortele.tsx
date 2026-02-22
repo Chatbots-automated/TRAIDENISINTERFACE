@@ -474,7 +474,7 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
 
   const saveFiles = async (updated: AttachedFile[]) => {
     setFiles(updated);
-    await updateNestandartiniaiField(record.id, 'files', updated);
+    await updateNestandartiniaiField(record.id, 'files', JSON.stringify(updated));
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
