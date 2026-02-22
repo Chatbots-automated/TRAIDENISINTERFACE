@@ -437,7 +437,6 @@ const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 
 interface AttachedFile {
-  junction_id?: number;
   directus_file_id: string;
   file_name: string;
   filename_disk: string;
@@ -452,27 +451,17 @@ interface PendingFile {
   file: File;
 }
 
-/** Parse M2M junction data from Directus into AttachedFile[] */
-function parseFiles(raw: any): AttachedFile[] {
-  if (!raw || !Array.isArray(raw)) return [];
-  return raw.map((item: any) => {
-    // M2M junction: { id, directus_files_id: { id, filename_download, ... } }
-    if (item.directus_files_id && typeof item.directus_files_id === 'object') {
-      const f = item.directus_files_id;
-      return {
-        junction_id: item.id,
-        directus_file_id: f.id,
-        file_name: f.filename_download || 'Failas',
-        filename_disk: f.filename_disk || '',
-        file_size: f.filesize || 0,
-        mime_type: f.type || '',
-        uploaded_at: f.uploaded_on || '',
-      } as AttachedFile;
-    }
-    // Direct AttachedFile (fallback)
-    if (item.directus_file_id) return item as AttachedFile;
-    return null;
-  }).filter(Boolean) as AttachedFile[];
+/**
+ * The `files` field on n8n_vector_store stores a single Directus file UUID.
+ * We fetch the file metadata from Directus when displaying.
+ * Returns an empty array if no file is linked.
+ */
+function parseFileId(raw: string | null): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  // Accept UUID-like strings (with or without hyphens)
+  if (trimmed.length >= 32 && !trimmed.includes(' ')) return trimmed;
+  return null;
 }
 
 function formatFileSize(bytes: number) {
@@ -489,10 +478,34 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
   onAddFiles?: (files: File[]) => void;
   onRemovePendingFile?: (localId: string) => void;
 }) {
-  const existingFiles = parseFiles(record.files);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingCount = pendingFiles?.length || 0;
-  const totalCount = existingFiles.length + pendingCount;
+
+  // Fetch existing file info from Directus if record.files has a UUID
+  const [existingFile, setExistingFile] = useState<AttachedFile | null>(null);
+  useEffect(() => {
+    const fileId = parseFileId(record.files);
+    if (!fileId) { setExistingFile(null); return; }
+    fetch(`${DIRECTUS_URL}/files/${fileId}`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(json => {
+        const f = json.data;
+        setExistingFile({
+          directus_file_id: f.id,
+          file_name: f.filename_download || 'Failas',
+          filename_disk: f.filename_disk || '',
+          file_size: f.filesize || 0,
+          mime_type: f.type || '',
+          uploaded_at: f.uploaded_on || '',
+        });
+      })
+      .catch(() => setExistingFile(null));
+  }, [record.files]);
+
+  const hasExisting = !!existingFile;
+  const totalCount = (hasExisting ? 1 : 0) + pendingCount;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
@@ -521,8 +534,8 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
         )}
       </div>
 
-      {/* Existing files table */}
-      {existingFiles.length > 0 && (
+      {/* Existing file */}
+      {hasExisting && (
         <div className="rounded-xl overflow-hidden border border-base-content/10">
           <table className="w-full text-sm">
             <thead>
@@ -534,38 +547,36 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
               </tr>
             </thead>
             <tbody>
-              {existingFiles.map((file, idx) => (
-                <tr key={`existing-${file.directus_file_id}`} className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02] transition-colors">
-                  <td className="px-3 py-2 text-xs text-base-content/40">{idx + 1}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-3.5 h-3.5 shrink-0 text-primary" />
-                      <span className="text-sm text-base-content truncate max-w-[200px]" title={file.file_name}>{file.file_name}</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(file.file_size)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      <a
-                        href={`${DIRECTUS_URL}/assets/${file.directus_file_id}?access_token=${DIRECTUS_TOKEN}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
-                        title="Peržiūrėti"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-base-content/40" />
-                      </a>
-                      <a
-                        href={`${DIRECTUS_URL}/assets/${file.directus_file_id}?access_token=${DIRECTUS_TOKEN}&download`}
-                        className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
-                        title="Atsisiųsti"
-                      >
-                        <Download className="w-3.5 h-3.5 text-base-content/40" />
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              <tr className="hover:bg-base-content/[0.02] transition-colors">
+                <td className="px-3 py-2 text-xs text-base-content/40">1</td>
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 shrink-0 text-primary" />
+                    <span className="text-sm text-base-content truncate max-w-[200px]" title={existingFile!.file_name}>{existingFile!.file_name}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(existingFile!.file_size)}</td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex items-center justify-end gap-0.5">
+                    <a
+                      href={`${DIRECTUS_URL}/assets/${existingFile!.directus_file_id}?access_token=${DIRECTUS_TOKEN}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
+                      title="Peržiūrėti"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-base-content/40" />
+                    </a>
+                    <a
+                      href={`${DIRECTUS_URL}/assets/${existingFile!.directus_file_id}?access_token=${DIRECTUS_TOKEN}&download`}
+                      className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
+                      title="Atsisiųsti"
+                    >
+                      <Download className="w-3.5 h-3.5 text-base-content/40" />
+                    </a>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -573,12 +584,12 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 
       {/* Pending files - separate section for visibility */}
       {pendingCount > 0 && (
-        <div className={`rounded-xl border-2 border-dashed overflow-hidden ${existingFiles.length > 0 ? 'mt-3' : ''}`} style={{ borderColor: '#d97706' }}>
+        <div className={`rounded-xl border-2 border-dashed overflow-hidden ${hasExisting ? 'mt-3' : ''}`} style={{ borderColor: '#d97706' }}>
           <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5" style={{ background: 'rgba(217,119,6,0.12)', color: '#d97706' }}>
             <Upload className="w-3 h-3" />
             Paruošti įkėlimui ({pendingCount})
           </div>
-          {pendingFiles!.map((pf, idx) => (
+          {pendingFiles!.map((pf) => (
             <div
               key={`pending-${pf.localId}`}
               className="flex items-center gap-3 px-3 py-2 border-t"
@@ -986,11 +997,9 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         await updateNestandartiniaiAtsakymas(record.id, allMessages);
       }
 
-      // 2. Upload pending files to Directus, then link via M2M
+      // 2. Upload pending files to Directus and store last UUID in `files` field
+      const uploadedFileIds: string[] = [];
       if (pendingFiles.length > 0) {
-        const existingFiles = parseFiles(record.files);
-        const newRelations: { directus_files_id: string }[] = [];
-
         for (const pf of pendingFiles) {
           const form = new FormData();
           form.append('file', pf.file);
@@ -1001,24 +1010,24 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           });
           if (!resp.ok) throw new Error(`Failo įkėlimas nepavyko: ${resp.status}`);
           const json = await resp.json();
-          newRelations.push({ directus_files_id: json.data.id });
+          uploadedFileIds.push(json.data.id);
         }
 
-        // Send existing junction IDs + new file links
-        const allRelations = [
-          ...existingFiles.filter(f => f.junction_id).map(f => ({ id: f.junction_id! })),
-          ...newRelations,
-        ];
-        await updateNestandartiniaiField(record.id, 'files', allRelations);
+        // The `files` field stores a single UUID — save the last uploaded file
+        const lastFileId = uploadedFileIds[uploadedFileIds.length - 1];
+        await updateNestandartiniaiField(record.id, 'files', lastFileId);
       }
 
-      // 3. Trigger webhook
+      // 3. Trigger webhook (include uploaded file UUIDs so the handler can process them)
       const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
       if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record_id: record.id }),
+        body: JSON.stringify({
+          record_id: record.id,
+          ...(uploadedFileIds.length > 0 ? { uploaded_file_ids: uploadedFileIds } : {}),
+        }),
       });
       if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
 
