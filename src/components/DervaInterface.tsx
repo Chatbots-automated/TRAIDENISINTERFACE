@@ -356,7 +356,10 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
     } catch (err: any) {
-      try { await updateVectorizationStatus(file.id, 'failed'); } catch {}
+      // Don't set 'failed' here — the error is likely a fetch abort from page
+      // navigation (F5) while n8n is still processing server-side. The webhook
+      // was already sent; only the response was lost. Genuine webhook failures
+      // (non-OK response) are handled by the `if (!ok)` branch above.
       addNotification('error', 'Klaida', err.message || 'Nepavyko paleisti vektorizavimo');
     } finally {
       setVectorizingIds(prev => {
