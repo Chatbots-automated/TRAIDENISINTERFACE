@@ -1624,26 +1624,36 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                 <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(245,158,11,0.1)' }}>
                   <AlertCircle className="w-4 h-4 text-amber-500" />
                 </div>
-                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Neatnaujintas kontekstas</p>
+                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Neišsaugoti pakeitimai</p>
               </div>
               <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
-                Pridėjote naujų duomenų, bet nepaleidote konteksto atnaujinimo. Projekto aprašymas ir metaduomenys nebus atnaujinti.
+                Turite neišsaugotų pakeitimų. Galite išsaugoti duomenis arba išsaugoti ir apdoroti kontekstą.
               </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={onClose}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
-                >
-                  Uždaryti
-                </button>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <button
+                    onClick={onClose}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                  >
+                    Uždaryti
+                  </button>
+                  <button
+                    onClick={() => { executeSaveAndProcess(false); }}
+                    disabled={updating}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/70 transition-all hover:bg-base-content/5 disabled:opacity-60"
+                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                  >
+                    {updatingMode === 'save' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</> : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>}
+                  </button>
+                </div>
                 <button
                   onClick={handleUpdate}
                   disabled={updating}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
+                  className="w-full flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
                   style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
-                  {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</> : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>}
+                  {updatingMode === 'process' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</> : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>}
                 </button>
               </div>
             </div>
