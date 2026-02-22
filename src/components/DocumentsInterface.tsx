@@ -585,7 +585,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       </div>
 
       {selectedCard && (
-        <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} />
+        <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} />
       )}
     </div>
   );

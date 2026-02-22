@@ -11,6 +11,7 @@ import {
   updateNestandartiniaiTasks,
   updateNestandartiniaiAiConversation,
   updateNestandartiniaiField,
+  deleteNestandartiniaiRecord,
 } from '../lib/dokumentaiService';
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, SimilarProject,
@@ -1264,7 +1265,7 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRecord; onClose: () => void }) {
+export function PaklausimoModal({ record, onClose, onDeleted }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState<'save' | 'process' | null>(null);
@@ -1288,6 +1289,27 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
 
   const messagesChanged = pendingMessages !== null;
   const filesChanged = pendingFiles.length > 0;
+
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteRecord = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteNestandartiniaiRecord(record);
+      setShowDeleteConfirm(false);
+      onDeleted?.();
+      onClose();
+    } catch (err: any) {
+      console.error('Delete record error:', err);
+      setDeleteError(err?.message || 'Nepavyko ištrinti įrašo');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const handleMessagesChange = useCallback((msgs: AtsakymasMessage[]) => {
     setPendingMessages(msgs);
@@ -1466,6 +1488,9 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
               <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atidaryti naujame lange">
                 <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
+              <button onClick={() => setShowDeleteConfirm(true)} className="p-1.5 rounded-lg transition-colors hover:bg-error/10" title="Ištrinti įrašą">
+                <Trash2 className="w-4 h-4 text-base-content/40 hover:text-error" />
+              </button>
               <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
                 <X className="w-4 h-4 text-base-content/40" />
               </button>
@@ -1654,6 +1679,54 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                   style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
                   {updatingMode === 'process' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</> : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          onClick={() => !deleting && setShowDeleteConfirm(false)}
+        >
+          <div
+            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="h-1" style={{ background: 'linear-gradient(90deg, #ef4444 0%, #dc2626 100%)' }} />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(239,68,68,0.1)' }}>
+                  <Trash2 className="w-4 h-4 text-error" />
+                </div>
+                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Ištrinti įrašą</p>
+              </div>
+              <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
+                Įrašas <strong className="text-base-content/70">{record.project_name || `#${record.id}`}</strong> ir visi susiję failai bus ištrinti negrįžtamai.
+              </p>
+              {deleteError && (
+                <p className="text-xs text-error mb-4 ml-12">{deleteError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5 disabled:opacity-60"
+                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                >
+                  Atšaukti
+                </button>
+                <button
+                  onClick={handleDeleteRecord}
+                  disabled={deleting}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                >
+                  {deleting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Trinama...</> : <><Trash2 className="w-3.5 h-3.5" /> Ištrinti</>}
                 </button>
               </div>
             </div>
