@@ -75,6 +75,67 @@ const TABS: { id: ModalTab; label: string; icon: React.ElementType }[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Markdown renderer for recommendation / AI text
+// ---------------------------------------------------------------------------
+
+function formatInline(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  let currentIndex = 0;
+  const regex = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > currentIndex) {
+      parts.push(text.substring(currentIndex, match.index));
+    }
+    if (match[1]) {
+      parts.push(<code key={match.index} className="px-1.5 py-0.5 rounded text-xs font-mono" style={{ background: '#f0ede8', color: '#5a5550' }}>{match[1].slice(1, -1)}</code>);
+    } else if (match[2]) {
+      parts.push(<strong key={match.index} className="font-semibold">{match[2].slice(2, -2)}</strong>);
+    } else if (match[3]) {
+      parts.push(<em key={match.index} className="italic">{match[3].slice(1, -1)}</em>);
+    }
+    currentIndex = match.index + match[0].length;
+  }
+  if (currentIndex < text.length) {
+    parts.push(text.substring(currentIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
+
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split('\n');
+
+  return (
+    <div className="text-sm leading-[1.7]" style={{ color: '#3d3935' }}>
+      {lines.map((line, idx) => {
+        if (line.startsWith('### ')) {
+          return <h3 key={idx} className="text-base font-semibold mt-3 mb-1.5" style={{ color: '#3d3935' }}>{formatInline(line.substring(4))}</h3>;
+        }
+        if (line.startsWith('## ')) {
+          return <h2 key={idx} className="text-lg font-bold mt-3 mb-1.5" style={{ color: '#3d3935' }}>{formatInline(line.substring(3))}</h2>;
+        }
+        if (line.startsWith('# ')) {
+          return <h1 key={idx} className="text-xl font-bold mt-3 mb-1.5" style={{ color: '#3d3935' }}>{formatInline(line.substring(2))}</h1>;
+        }
+        if (line.startsWith('---') || line.startsWith('***')) {
+          return <hr key={idx} className="my-3" style={{ borderColor: '#f0ede8' }} />;
+        }
+        if (line.match(/^[-*]\s/)) {
+          return <li key={idx} className="ml-4 list-disc" style={{ color: '#3d3935' }}>{formatInline(line.substring(2))}</li>;
+        }
+        if (line.match(/^\d+\.\s/)) {
+          return <li key={idx} className="ml-4 list-decimal" style={{ color: '#3d3935' }}>{formatInline(line.substring(line.indexOf('.') + 2))}</li>;
+        }
+        if (line.trim() === '') {
+          return <div key={idx} className="h-2" />;
+        }
+        return <p key={idx}>{formatInline(line)}</p>;
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Small UI components
 // ---------------------------------------------------------------------------
 
@@ -715,9 +776,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
               <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
               <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Rekomendacija</p>
             </div>
-            <div className="text-sm leading-[1.7] whitespace-pre-wrap" style={{ color: '#3d3935' }}>
-              {dervaResult}
-            </div>
+            <MarkdownText text={dervaResult} />
           </div>
         ) : !selecting && !dervaResult && (
           <div className="flex flex-col items-center justify-center py-8 text-center rounded-macos" style={{ background: '#faf9f7', border: '1px solid #f0ede8' }}>
@@ -746,8 +805,11 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
                       : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
                     }
                   >
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
-                      {msg.text}
+                    <div className="overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
+                      {msg.role === 'assistant'
+                        ? <MarkdownText text={msg.text} />
+                        : <div className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                      }
                     </div>
                   </div>
                 </div>
