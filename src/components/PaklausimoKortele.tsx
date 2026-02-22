@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, Plus,
-  LayoutList, MessageSquare, CheckSquare, Sparkles, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2,
+  LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -63,14 +63,14 @@ const ALL_MAIN_KEYS = new Set([
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type ModalTab = 'bendra' | 'susirasinejimas' | 'uzduotys' | 'failai' | 'ai' | 'panasus';
+type ModalTab = 'bendra' | 'susirasinejimas' | 'uzduotys' | 'failai' | 'derva' | 'panasus';
 
 const TABS: { id: ModalTab; label: string; icon: React.ElementType }[] = [
   { id: 'bendra', label: 'Bendra', icon: LayoutList },
   { id: 'susirasinejimas', label: 'Susirašinėjimas', icon: MessageSquare },
   { id: 'uzduotys', label: 'Užduotys', icon: CheckSquare },
   { id: 'failai', label: 'Failai', icon: Paperclip },
-  { id: 'ai', label: 'AI', icon: Sparkles },
+  { id: 'derva', label: 'Derva', icon: Beaker },
   { id: 'panasus', label: 'Panašūs', icon: GitCompareArrows },
 ];
 
@@ -538,29 +538,82 @@ function TabFailai({ record, readOnly }: { record: NestandartiniaiRecord; readOn
 }
 
 // ---------------------------------------------------------------------------
-// Tab: AI
+// Tab: Derva
 // ---------------------------------------------------------------------------
 
-function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
+function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
+  const [dervaResult, setDervaResult] = useState<string | null>(record.derva || null);
+  const [selecting, setSelecting] = useState(false);
+  const [dervaError, setDervaError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  // AI conversation (secondary feature)
   const [conversation, setConversation] = useState<AiConversationMessage[]>(() => parseJSON<AiConversationMessage[]>(record.ai_conversation) || []);
   const [input, setInput] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [chatSaving, setChatSaving] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+
+  const triggerDervaSelect = async () => {
+    setDervaError(null);
+    setSuccess(false);
+    setSelecting(true);
+
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_derva_select');
+      if (!webhookUrl) {
+        setDervaError('Webhook "n8n_derva_select" nesukonfigūruotas. Nustatykite jį Webhooks nustatymuose.');
+        return;
+      }
+
+      const meta = typeof record.metadata === 'string' ? record.metadata : JSON.stringify(record.metadata);
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: record.id,
+          project_name: record.project_name,
+          description: record.description,
+          metadata: meta,
+          klientas: record.klientas,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        throw new Error(`Serverio klaida (${resp.status})${errText ? `: ${errText}` : ''}`);
+      }
+
+      const data = await resp.json();
+      const recommendation = typeof data === 'string'
+        ? data
+        : (data.derva || data.recommendation || data.response || data.text || data.output || JSON.stringify(data));
+
+      // Update local state and persist to DB
+      setDervaResult(recommendation);
+      await updateNestandartiniaiField(record.id, 'derva', recommendation);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 4000);
+    } catch (e: any) {
+      console.error('Derva select error:', e);
+      setDervaError(e.message || 'Nepavyko gauti dervos rekomendacijos');
+    } finally {
+      setSelecting(false);
+    }
+  };
 
   const sendMessage = async () => {
     const text = input.trim();
     if (!text) return;
-    setAiError(null);
+    setChatError(null);
     const userMsg: AiConversationMessage = { role: 'user', text, timestamp: new Date().toISOString() };
     const withUserMsg = [...conversation, userMsg];
     setConversation(withUserMsg);
     setInput('');
 
     try {
-      setSaving(true);
+      setChatSaving(true);
       await updateNestandartiniaiAiConversation(record.id, withUserMsg);
 
-      // Call n8n webhook for AI response
       const webhookUrl = await getWebhookUrl('n8n_ai_conversation');
       if (webhookUrl) {
         const meta = typeof record.metadata === 'string' ? record.metadata : JSON.stringify(record.metadata);
@@ -573,7 +626,7 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
             description: record.description,
             metadata: meta,
             klientas: record.klientas,
-            derva: record.derva,
+            derva: dervaResult,
             chat_history: withUserMsg,
             user_request: text,
           }),
@@ -587,91 +640,166 @@ function TabAI({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?:
           setConversation(withAiMsg);
           await updateNestandartiniaiAiConversation(record.id, withAiMsg);
         } else {
-          setAiError(`Webhook klaida: ${resp.status}`);
+          setChatError(`Webhook klaida: ${resp.status}`);
         }
       } else {
-        setAiError('Webhook "n8n_ai_conversation" nesukonfigūruotas. Nustatykite jį Webhooks nustatymuose.');
+        setChatError('Webhook "n8n_ai_conversation" nesukonfigūruotas.');
       }
     } catch (e: any) {
       console.error(e);
-      setAiError(e.message || 'Nepavyko gauti AI atsakymo');
+      setChatError(e.message || 'Nepavyko gauti AI atsakymo');
     } finally {
-      setSaving(false);
+      setChatSaving(false);
     }
   };
 
   return (
     <div>
-      {/* Derva recommendation */}
-      {record.derva && (
-        <div className="mb-5">
-          <p className="text-xs font-medium mb-2" style={{ color: '#8a857f' }}>Dervos rekomendacija</p>
-          <div className="text-sm leading-[1.7] whitespace-pre-wrap rounded-macos p-4" style={{ color: '#3d3935', background: 'linear-gradient(135deg, rgba(0,122,255,0.04) 0%, rgba(175,82,222,0.04) 100%)', border: '1px solid rgba(0,122,255,0.1)' }}>
-            {record.derva}
+      {/* ── Derva selection section ── */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Beaker className="w-4 h-4" style={{ color: '#007AFF' }} />
+            <p className="text-sm font-medium" style={{ color: '#3d3935' }}>Dervos parinkimas</p>
           </div>
+          {!readOnly && (
+            <button
+              onClick={triggerDervaSelect}
+              disabled={selecting}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-macos text-white transition-all hover:brightness-95 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+            >
+              {selecting
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
+                : dervaResult
+                  ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
+                  : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
+              }
+            </button>
+          )}
         </div>
-      )}
 
-      {/* Conversation */}
-      {conversation.length > 0 && (
-        <div className="mb-4">
-          <p className="text-xs font-medium mb-3" style={{ color: '#8a857f' }}>Pokalbis</p>
-          {conversation.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2.5`}>
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${msg.role === 'user' ? 'text-white' : 'text-macos-gray-900'}`}
-                style={msg.role === 'user'
-                  ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }
-                  : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
-                }
-              >
-                <div className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
-                  {msg.text}
+        <p className="text-xs mb-4" style={{ color: '#8a857f', lineHeight: '1.6' }}>
+          AI analizuoja projekto parametrus ir parenka tinkamiausią dervą iš duomenų bazės.
+        </p>
+
+        {/* Loading state */}
+        {selecting && (
+          <div className="rounded-macos p-5 mb-4 text-center" style={{ background: 'rgba(0,122,255,0.03)', border: '1px solid rgba(0,122,255,0.1)' }}>
+            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2.5" style={{ color: '#007AFF' }} />
+            <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Vyksta dervos parinkimas...</p>
+            <p className="text-xs" style={{ color: '#8a857f' }}>RAG procesas analizuoja projekto duomenis ir ieško tinkamiausios dervos.</p>
+          </div>
+        )}
+
+        {/* Success toast */}
+        {success && !selecting && (
+          <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(52,199,89,0.08)', color: '#34C759', border: '1px solid rgba(52,199,89,0.15)' }}>
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+            Dervos rekomendacija sėkmingai atnaujinta
+          </div>
+        )}
+
+        {/* Error */}
+        {dervaError && (
+          <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{dervaError}</span>
+          </div>
+        )}
+
+        {/* Recommendation display */}
+        {dervaResult && !selecting ? (
+          <div className="rounded-macos p-4" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.04) 0%, rgba(175,82,222,0.04) 100%)', border: '1px solid rgba(0,122,255,0.1)' }}>
+            <div className="flex items-center gap-1.5 mb-2">
+              <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
+              <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Rekomendacija</p>
+            </div>
+            <div className="text-sm leading-[1.7] whitespace-pre-wrap" style={{ color: '#3d3935' }}>
+              {dervaResult}
+            </div>
+          </div>
+        ) : !selecting && !dervaResult && (
+          <div className="flex flex-col items-center justify-center py-8 text-center rounded-macos" style={{ background: '#faf9f7', border: '1px solid #f0ede8' }}>
+            <Beaker className="w-8 h-8 mb-2.5" style={{ color: '#d4cfc8' }} />
+            <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Derva dar neparinkta</p>
+            <p className="text-xs max-w-[260px]" style={{ color: '#8a857f', lineHeight: '1.6' }}>
+              {readOnly
+                ? 'Šiam projektui dervos rekomendacija dar nesugeneruota.'
+                : 'Spauskite „Parinkti dervą" – AI analizuos projekto parametrus ir pasiūlys tinkamiausią dervą.'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── AI conversation section ── */}
+      <div style={{ borderTop: '1px solid #f0ede8' }} className="pt-5">
+        <CollapsibleSection title="AI pokalbis" defaultOpen={conversation.length > 0}>
+          {conversation.length > 0 && (
+            <div className="mb-4">
+              {conversation.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2.5`}>
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${msg.role === 'user' ? 'text-white' : 'text-macos-gray-900'}`}
+                    style={msg.role === 'user'
+                      ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }
+                      : { background: '#f0f0f2', border: '1px solid #e5e5e6' }
+                    }
+                  >
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
+                      {msg.text}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Typing indicator */}
+          {chatSaving && (
+            <div className="flex justify-start mb-2.5">
+              <div className="rounded-2xl px-4 py-2.5" style={{ background: '#f0f0f2', border: '1px solid #e5e5e6' }}>
+                <div className="flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#8a857f' }} />
+                  <span className="text-xs" style={{ color: '#8a857f' }}>AI rašo...</span>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {/* Typing indicator */}
-      {saving && (
-        <div className="flex justify-start mb-2.5">
-          <div className="rounded-2xl px-4 py-2.5" style={{ background: '#f0f0f2', border: '1px solid #e5e5e6' }}>
-            <div className="flex items-center gap-1.5">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#8a857f' }} />
-              <span className="text-xs" style={{ color: '#8a857f' }}>AI rašo...</span>
+          {chatError && (
+            <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
+              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{chatError}</span>
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* Error */}
-      {aiError && (
-        <div className="text-xs px-3 py-2 rounded-macos mb-3" style={{ background: 'rgba(255,59,48,0.06)', color: '#FF3B30', border: '1px solid rgba(255,59,48,0.12)' }}>
-          {aiError}
-        </div>
-      )}
+          {!readOnly && (
+            <div className="flex items-end gap-2 pt-3" style={{ borderTop: conversation.length > 0 ? '1px solid #f0ede8' : 'none' }}>
+              <AutoTextarea
+                value={input}
+                onChange={setInput}
+                placeholder="Klauskite AI apie dervą..."
+                className="flex-1 text-sm px-3 py-2 rounded-macos outline-none transition-all bg-transparent"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={chatSaving || !input.trim()}
+                className="text-xs px-3 py-2 rounded-macos font-medium text-white transition-all hover:brightness-95 disabled:opacity-40"
+                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              >
+                {chatSaving ? '...' : 'Siųsti'}
+              </button>
+            </div>
+          )}
 
-      {/* Input */}
-      {!readOnly && (
-        <div className="flex items-end gap-2 pt-3" style={{ borderTop: conversation.length > 0 || record.derva ? '1px solid #f0ede8' : 'none' }}>
-          <AutoTextarea
-            value={input}
-            onChange={setInput}
-            placeholder="Klauskite AI..."
-            className="flex-1 text-sm px-3 py-2 rounded-macos outline-none transition-all bg-transparent"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={saving || !input.trim()}
-            className="text-xs px-3 py-2 rounded-macos font-medium text-white transition-all hover:brightness-95 disabled:opacity-40"
-            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-          >
-            {saving ? '...' : 'Siųsti'}
-          </button>
-        </div>
-      )}
+          {conversation.length === 0 && !readOnly && (
+            <p className="text-xs mt-2" style={{ color: '#b5b0a8' }}>
+              Galite klausti AI papildomų klausimų apie parinktą dervą ar projekto parametrus.
+            </p>
+          )}
+        </CollapsibleSection>
+      </div>
     </div>
   );
 }
@@ -817,7 +945,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
             {activeTab === 'failai' && <TabFailai record={record} />}
-            {activeTab === 'ai' && <TabAI record={record} />}
+            {activeTab === 'derva' && <TabDerva record={record} />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
         </div>
@@ -900,7 +1028,7 @@ export default function PaklausimoKortelePage() {
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
-            {activeTab === 'ai' && <TabAI record={record} readOnly />}
+            {activeTab === 'derva' && <TabDerva record={record} readOnly />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
         </div>
