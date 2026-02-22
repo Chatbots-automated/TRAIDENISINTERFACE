@@ -432,9 +432,6 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 
-// Tabs that provide project context (visually marked)
-const CONTEXT_TABS = new Set<ModalTab>(['susirasinejimas', 'failai']);
-
 interface AttachedFile {
   directus_file_id: string;
   file_name: string;
@@ -444,15 +441,18 @@ interface AttachedFile {
   uploaded_at: string;
 }
 
-function parseFiles(raw: string | null): AttachedFile[] {
+function parseFiles(raw: AttachedFile[] | string | null): AttachedFile[] {
   if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-  } catch {}
-  // Legacy: single UUID string
-  if (typeof raw === 'string' && raw.length >= 32 && !raw.includes(' ')) {
-    return [{ directus_file_id: raw, file_name: 'Failas', filename_disk: '', file_size: 0, mime_type: '', uploaded_at: '' }];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+    // Legacy: single UUID string
+    if (raw.length >= 32 && !raw.includes(' ')) {
+      return [{ directus_file_id: raw, file_name: 'Failas', filename_disk: '', file_size: 0, mime_type: '', uploaded_at: '' }];
+    }
   }
   return [];
 }
@@ -474,12 +474,14 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
 
   const saveFiles = async (updated: AttachedFile[]) => {
     setFiles(updated);
-    await updateNestandartiniaiField(record.id, 'files', JSON.stringify(updated));
+    await updateNestandartiniaiField(record.id, 'files', updated);
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
-    if (!selected?.length) return;
+    if (!selected?.length || uploading) return;
+    // Clear input immediately to prevent duplicate onChange events
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setError(null);
     setUploading(true);
     const toUpload = Array.from(selected);
@@ -526,7 +528,6 @@ function TabFailai({ record, readOnly, onContextChange }: { record: Nestandartin
     if (failed > 0) setError(`${failed} ${failed === 1 ? 'failas neįkeltas' : 'failai neįkelti'}`);
     setUploading(false);
     setUploadProgress(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDelete = async (fileId: string) => {
@@ -771,11 +772,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
     <div>
       {/* ── Derva selection section ── */}
       <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Beaker className="w-4 h-4 text-primary" />
-            <p className="text-sm font-medium text-base-content">Dervos parinkimas</p>
-          </div>
+        <div className="flex items-center justify-end mb-3">
           {!readOnly && (
             <button
               onClick={triggerDervaSelect}
@@ -822,7 +819,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 
         {/* Recommendation display */}
         {dervaResult && !selecting ? (
-          <div className="rounded-xl p-4 bg-base-content/[0.02] border border-base-content/10">
+          <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
             <div className="flex items-center gap-1.5 mb-2">
               <Beaker className="w-3.5 h-3.5 text-primary" />
               <p className="text-xs font-medium text-primary">Rekomendacija</p>
@@ -965,17 +962,19 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [hasContextChanges, setHasContextChanges] = useState(false);
+  const [dirtyTabs, setDirtyTabs] = useState<Set<ModalTab>>(new Set());
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const meta = parseMetadata(record.metadata);
   const cardUrl = `${window.location.origin}/paklausimas/${record.id}`;
   const [copied, setCopied] = useState(false);
+  const hasContextChanges = dirtyTabs.size > 0;
 
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
-  const markContextDirty = useCallback(() => setHasContextChanges(true), []);
+  const markSusirasinejimaiDirty = useCallback(() => setDirtyTabs(prev => new Set(prev).add('susirasinejimas')), []);
+  const markFailaiDirty = useCallback(() => setDirtyTabs(prev => new Set(prev).add('failai')), []);
 
   const handleUpdate = async () => {
     setUpdating(true);
@@ -990,7 +989,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
       });
       if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
       setUpdateStatus('success');
-      setHasContextChanges(false);
+      setDirtyTabs(new Set());
       setShowCloseConfirm(false);
       setTimeout(() => setUpdateStatus('idle'), 3000);
     } catch (err: any) {
@@ -1065,7 +1064,6 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
-              const isContext = CONTEXT_TABS.has(tab.id);
               return (
                 <button
                   key={tab.id}
@@ -1074,7 +1072,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
-                  {isContext && hasContextChanges && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                  {dirtyTabs.has(tab.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
                 </button>
               );
             })}
@@ -1107,9 +1105,9 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} onContextChange={markContextDirty} />}
+            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} onContextChange={markSusirasinejimaiDirty} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
-            {activeTab === 'failai' && <TabFailai record={record} onContextChange={markContextDirty} />}
+            {activeTab === 'failai' && <TabFailai record={record} onContextChange={markFailaiDirty} />}
             {activeTab === 'derva' && <TabDerva record={record} />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
