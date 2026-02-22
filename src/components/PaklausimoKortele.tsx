@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -1267,7 +1267,8 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRecord; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [updatingMode, setUpdatingMode] = useState<'save' | 'process' | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'saved' | 'error'>('idle');
   const [dirtyTabs, setDirtyTabs] = useState<Set<ModalTab>>(new Set());
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const meta = parseMetadata(record.metadata);
@@ -1334,8 +1335,9 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
     });
   }, []);
 
-  const executeUpdate = async () => {
+  const executeSaveAndProcess = async (triggerWebhook: boolean) => {
     setUpdating(true);
+    setUpdatingMode(triggerWebhook ? 'process' : 'save');
     setUpdateStatus('idle');
     setShowPartialWarning(null);
     try {
@@ -1369,21 +1371,23 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         setLocalFiles(newFilesValue);
       }
 
-      // 3. Trigger webhook (include uploaded file UUIDs so the handler can process them)
-      const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
-      if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          record_id: record.id,
-          ...(uploadedFileIds.length > 0 ? { uploaded_file_ids: uploadedFileIds } : {}),
-        }),
-      });
-      if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
+      // 3. Trigger webhook only if requested
+      if (triggerWebhook) {
+        const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
+        if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
+        const resp = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            record_id: record.id,
+            ...(uploadedFileIds.length > 0 ? { uploaded_file_ids: uploadedFileIds } : {}),
+          }),
+        });
+        if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
+      }
 
       // 4. Clear pending state
-      setUpdateStatus('success');
+      setUpdateStatus(triggerWebhook ? 'success' : 'saved');
       setPendingFiles([]);
       setPendingMessages(null);
       setDirtyTabs(new Set());
@@ -1395,17 +1399,22 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
       setTimeout(() => setUpdateStatus('idle'), 3000);
     } finally {
       setUpdating(false);
+      setUpdatingMode(null);
     }
   };
 
   const handleUpdate = () => {
     // If both changed or neither changed, proceed directly
     if (messagesChanged === filesChanged) {
-      executeUpdate();
+      executeSaveAndProcess(true);
       return;
     }
     // Only one type changed — warn the user
     setShowPartialWarning(filesChanged ? 'no-messages' : 'no-files');
+  };
+
+  const handleSaveOnly = () => {
+    executeSaveAndProcess(false);
   };
 
   const handleClose = () => {
@@ -1483,11 +1492,31 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                 </button>
               );
             })}
-            {/* Context update button */}
+            {/* Save only (no processing) */}
+            <button
+              onClick={handleSaveOnly}
+              disabled={updating || !hasContextChanges}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-xs font-medium transition-all mt-3 ${
+                updateStatus === 'saved'
+                  ? 'text-success bg-success/10 border border-success/20'
+                  : hasContextChanges
+                    ? 'text-base-content/70 hover:bg-base-content/5'
+                    : 'text-base-content/30'
+              } disabled:opacity-50`}
+              style={updateStatus !== 'saved' ? { background: '#f8f8f9', border: '1px solid #e5e5e6' } : undefined}
+            >
+              {updatingMode === 'save'
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</>
+                : updateStatus === 'saved'
+                  ? <><CheckCircle2 className="w-3.5 h-3.5" /> Išsaugota</>
+                  : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>
+              }
+            </button>
+            {/* Save + process (triggers webhook) */}
             <button
               onClick={handleUpdate}
               disabled={updating}
-              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-2 ${
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-1.5 ${
                 updateStatus === 'success'
                   ? 'text-success bg-success/10 border border-success/20'
                   : updateStatus === 'error'
@@ -1498,7 +1527,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
               } disabled:opacity-60`}
               style={!hasContextChanges && updateStatus === 'idle' ? { background: '#f8f8f9' } : undefined}
             >
-              {updating
+              {updatingMode === 'process'
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
                 : updateStatus === 'success'
                   ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
@@ -1566,7 +1595,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                   Grįžti
                 </button>
                 <button
-                  onClick={executeUpdate}
+                  onClick={() => executeSaveAndProcess(true)}
                   className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
                   style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
