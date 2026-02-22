@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -166,9 +166,31 @@ function InfoField({ label, value }: { label: string; value: string | undefined 
 // Chat bubble
 // ---------------------------------------------------------------------------
 
-function ChatBubble({ message, side }: { message: AtsakymasMessage; side: 'left' | 'right' }) {
+function ChatBubble({ message, side, readOnly, onEdit, onDelete }: {
+  message: AtsakymasMessage;
+  side: 'left' | 'right';
+  readOnly?: boolean;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5`}>
+    <div
+      className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5 group`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Action buttons — shown to the left/right of the bubble on hover */}
+      {!readOnly && hovered && side === 'right' && (
+        <div className="flex items-center gap-1 mr-1.5 shrink-0">
+          <button onClick={onEdit} className="p-1 rounded-lg hover:bg-base-content/5 transition-colors" title="Redaguoti">
+            <Pencil className="w-3 h-3 text-base-content/30" />
+          </button>
+          <button onClick={onDelete} className="p-1 rounded-lg hover:bg-red-50 transition-colors" title="Ištrinti">
+            <Trash2 className="w-3 h-3 text-red-400/60" />
+          </button>
+        </div>
+      )}
       <div
         className={`max-w-[80%] rounded-3xl px-4 py-2.5 ${side === 'right' ? 'text-white' : 'text-base-content'}`}
         style={side === 'right'
@@ -186,6 +208,17 @@ function ChatBubble({ message, side }: { message: AtsakymasMessage; side: 'left'
           {message.text}
         </div>
       </div>
+      {/* Action buttons for left-side bubbles */}
+      {!readOnly && hovered && side === 'left' && (
+        <div className="flex items-center gap-1 ml-1.5 shrink-0">
+          <button onClick={onEdit} className="p-1 rounded-lg hover:bg-base-content/5 transition-colors" title="Redaguoti">
+            <Pencil className="w-3 h-3 text-base-content/30" />
+          </button>
+          <button onClick={onDelete} className="p-1 rounded-lg hover:bg-red-50 transition-colors" title="Ištrinti">
+            <Trash2 className="w-3 h-3 text-red-400/60" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -215,6 +248,32 @@ function NewMessageBubble({ side, onSave, onCancel }: { side: 'left' | 'right'; 
         }
       >
         <AutoTextarea value={text} onChange={setText} placeholder={side === 'right' ? 'Komandos žinutė...' : 'Gavėjo žinutė...'} className={`w-full bg-transparent border-none outline-none text-[15px] leading-relaxed placeholder:opacity-50 ${side === 'right' ? 'text-white placeholder:text-white/40' : 'text-base-content placeholder:text-base-content/30'}`} />
+        <div className={`flex gap-2 justify-end mt-1.5 pt-1.5 ${side === 'right' ? 'border-t border-white/20' : 'border-t border-base-content/10'}`}>
+          <button onClick={onCancel} className={`text-xs px-2.5 py-1 rounded-full transition-colors ${side === 'right' ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-base-content/40 hover:text-base-content/60 hover:bg-base-content/5'}`}>Atšaukti</button>
+          <button onClick={() => { const t = text.trim(); if (t) onSave(t); }} className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${side === 'right' ? 'text-white bg-white/20 hover:bg-white/30' : 'text-primary bg-primary/10 hover:bg-primary/20'}`}>Išsaugoti</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditMessageBubble({ message, side, onSave, onCancel }: { message: AtsakymasMessage; side: 'left' | 'right'; onSave: (text: string) => void; onCancel: () => void }) {
+  const [text, setText] = useState(message.text);
+  return (
+    <div className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5`}>
+      <div className={`max-w-[80%] w-72 rounded-3xl px-4 py-2.5 ${side === 'right' ? 'text-white' : 'text-base-content'}`}
+        style={side === 'right'
+          ? { background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
+          : { background: '#f8f8f9', border: '1px solid #e5e5e6' }
+        }
+      >
+        {(message.from || message.date) && (
+          <p className={`text-xs mb-1 ${side === 'right' ? 'text-white/60' : 'text-base-content/40'}`}>
+            {message.from && <span className="font-medium">{message.from}</span>}
+            {message.from && message.date && ' · '}{message.date}
+          </p>
+        )}
+        <AutoTextarea value={text} onChange={setText} placeholder="Žinutė..." className={`w-full bg-transparent border-none outline-none text-[15px] leading-relaxed placeholder:opacity-50 ${side === 'right' ? 'text-white placeholder:text-white/40' : 'text-base-content placeholder:text-base-content/30'}`} />
         <div className={`flex gap-2 justify-end mt-1.5 pt-1.5 ${side === 'right' ? 'border-t border-white/20' : 'border-t border-base-content/10'}`}>
           <button onClick={onCancel} className={`text-xs px-2.5 py-1 rounded-full transition-colors ${side === 'right' ? 'text-white/70 hover:text-white hover:bg-white/10' : 'text-base-content/40 hover:text-base-content/60 hover:bg-base-content/5'}`}>Atšaukti</button>
           <button onClick={() => { const t = text.trim(); if (t) onSave(t); }} className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${side === 'right' ? 'text-white bg-white/20 hover:bg-white/30' : 'text-primary bg-primary/10 hover:bg-primary/20'}`}>Išsaugoti</button>
@@ -276,38 +335,75 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, pendingMessages, onAddMessage }: {
+function TabSusirasinejimas({ record, readOnly, onMessagesChange }: {
   record: NestandartiniaiRecord;
   readOnly?: boolean;
-  pendingMessages?: AtsakymasMessage[];
-  onAddMessage?: (msg: AtsakymasMessage) => void;
+  onMessagesChange?: (messages: AtsakymasMessage[]) => void;
 }) {
-  const existingMessages = parseAtsakymas(record.atsakymas);
-  const allMessages = [...existingMessages, ...(pendingMessages || [])];
+  const [messages, setMessages] = useState<AtsakymasMessage[]>(() => parseAtsakymas(record.atsakymas));
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
-  const pendingCount = pendingMessages?.length || 0;
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = (text: string, side: 'left' | 'right') => {
+  const persist = async (updated: AtsakymasMessage[]) => {
+    setMessages(updated);
+    onMessagesChange?.(updated);
+    try {
+      setSaving(true);
+      await updateNestandartiniaiAtsakymas(record.id, updated);
+    } catch (err) {
+      console.error('Message save error:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAdd = (text: string, side: 'left' | 'right') => {
     const msg: AtsakymasMessage = { text, role: side === 'left' ? 'recipient' : 'team', date: new Date().toISOString().slice(0, 10) };
-    onAddMessage?.(msg);
+    persist([...messages, msg]);
     setAddingSide(null);
+  };
+
+  const handleEdit = (idx: number, newText: string) => {
+    const updated = messages.map((m, i) => i === idx ? { ...m, text: newText } : m);
+    persist(updated);
+    setEditingIdx(null);
+  };
+
+  const handleDelete = (idx: number) => {
+    persist(messages.filter((_, i) => i !== idx));
+    setConfirmDeleteIdx(null);
   };
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
-          {allMessages.length > 0 ? `${allMessages.length} žinutės` : 'Nėra žinučių'}
-          {pendingCount > 0 && <span className="text-amber-500 ml-1.5">({pendingCount} naujos)</span>}
+          {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
+          {saving && <span className="text-base-content/30 ml-1.5"><Loader2 className="w-3 h-3 animate-spin inline" /></span>}
         </p>
       </div>
 
-      {allMessages.map((msg, i) => (
-        <ChatBubble key={i} message={msg} side={msg.role === 'team' ? 'right' : 'left'} />
-      ))}
+      {messages.map((msg, i) => {
+        const side = msg.role === 'team' ? 'right' as const : 'left' as const;
+        if (editingIdx === i) {
+          return <EditMessageBubble key={i} message={msg} side={side} onSave={t => handleEdit(i, t)} onCancel={() => setEditingIdx(null)} />;
+        }
+        return (
+          <ChatBubble
+            key={i}
+            message={msg}
+            side={side}
+            readOnly={readOnly}
+            onEdit={() => setEditingIdx(i)}
+            onDelete={() => setConfirmDeleteIdx(i)}
+          />
+        );
+      })}
 
       {!readOnly && addingSide && (
-        <NewMessageBubble side={addingSide} onSave={t => handleSave(t, addingSide)} onCancel={() => setAddingSide(null)} />
+        <NewMessageBubble side={addingSide} onSave={t => handleAdd(t, addingSide)} onCancel={() => setAddingSide(null)} />
       )}
 
       {!readOnly && !addingSide && (
@@ -318,6 +414,52 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onAddMessage }:
           <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl text-white transition-all hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
             <Plus className="w-3.5 h-3.5" /> Komanda
           </button>
+        </div>
+      )}
+
+      {/* Delete message confirmation modal */}
+      {confirmDeleteIdx !== null && (
+        <div
+          className="fixed inset-0 z-[10001] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          onClick={() => setConfirmDeleteIdx(null)}
+        >
+          <div
+            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="h-1" style={{ background: 'linear-gradient(90deg, #ef4444 0%, #b91c1c 100%)' }} />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(239,68,68,0.1)' }}>
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </div>
+                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Ištrinti žinutę?</p>
+              </div>
+              <p className="text-sm text-base-content/50 mb-1 ml-12 line-clamp-2">
+                {messages[confirmDeleteIdx]?.text}
+              </p>
+              <p className="text-xs text-base-content/35 mb-6 ml-12">
+                Žinutė bus ištrinta visam laikui.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => setConfirmDeleteIdx(null)}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                >
+                  Atšaukti
+                </button>
+                <button
+                  onClick={() => handleDelete(confirmDeleteIdx)}
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                >
+                  Ištrinti
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -725,14 +867,15 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
               <div className="flex gap-2 justify-end">
                 <button
                   onClick={() => setConfirmDeleteFile(null)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 hover:bg-base-content/5 transition-colors"
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={() => executeDelete(confirmDeleteFile)}
                   className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)' }}
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
                   Ištrinti
                 </button>
@@ -1148,17 +1291,12 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   const effectiveRecord = localFiles !== null ? { ...record, files: localFiles } : record;
 
   // Pending data: stored locally until Atnaujinti is pressed
-  const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
 
   const copy = () => {
     navigator.clipboard.writeText(cardUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
-  const addPendingMessage = useCallback((msg: AtsakymasMessage) => {
-    setPendingMessages(prev => [...prev, msg]);
-    setDirtyTabs(prev => new Set(prev).add('susirasinejimas'));
-  }, []);
 
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
@@ -1200,14 +1338,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
     setUpdating(true);
     setUpdateStatus('idle');
     try {
-      // 1. Save pending messages to DB
-      if (pendingMessages.length > 0) {
-        const existingMessages = parseAtsakymas(record.atsakymas);
-        const allMessages = [...existingMessages, ...pendingMessages];
-        await updateNestandartiniaiAtsakymas(record.id, allMessages);
-      }
-
-      // 2. Upload pending files to Directus and store last UUID in `files` field
+      // 1. Upload pending files to Directus and store last UUID in `files` field
       const uploadedFileIds: string[] = [];
       if (pendingFiles.length > 0) {
         for (const pf of pendingFiles) {
@@ -1247,7 +1378,6 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
 
       // 4. Clear pending state
       setUpdateStatus('success');
-      setPendingMessages([]);
       setPendingFiles([]);
       setDirtyTabs(new Set());
       setShowCloseConfirm(false);
@@ -1365,7 +1495,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} pendingMessages={pendingMessages} onAddMessage={addPendingMessage} />}
+            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
             {activeTab === 'failai' && (
               <>
@@ -1408,7 +1538,8 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
               <div className="flex gap-2 justify-end">
                 <button
                   onClick={onClose}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 hover:bg-base-content/5 transition-colors"
+                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                 >
                   Uždaryti
                 </button>
@@ -1416,7 +1547,7 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                   onClick={handleUpdate}
                   disabled={updating}
                   className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)' }}
+                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
                   {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Atnaujinama...</> : 'Atnaujinti'}
                 </button>
