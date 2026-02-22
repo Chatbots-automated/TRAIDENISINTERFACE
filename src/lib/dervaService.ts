@@ -127,22 +127,36 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
 // ---------------------------------------------------------------------------
 
 /**
- * Atomically claim a file for vectorization. Only succeeds if the file is NOT
+ * Claim a file for vectorization. Only succeeds if the file is NOT
  * already in 'processing' state. Returns true if the claim was acquired.
  */
 export const claimFileForVectorization = async (id: number): Promise<boolean> => {
-  const { data, error } = await db
+  // 1. Read current status
+  const { data: file, error: readError } = await db
+    .from('derva_files')
+    .select('id,vectorization_status')
+    .eq('id', id)
+    .single();
+
+  if (readError || !file) {
+    console.error('Error reading file for claim:', readError);
+    throw readError || new Error('Failas nerastas');
+  }
+
+  // 2. Reject if already processing
+  if (file.vectorization_status === 'processing') return false;
+
+  // 3. Set to processing
+  const { error: updateError } = await db
     .from('derva_files')
     .update({ vectorization_status: 'processing' })
-    .eq('id', id)
-    .or('vectorization_status.is.null,vectorization_status.eq.failed')
-    .select('id');
+    .eq('id', id);
 
-  if (error) {
-    console.error('Error claiming file for vectorization:', error);
-    throw error;
+  if (updateError) {
+    console.error('Error claiming file for vectorization:', updateError);
+    throw updateError;
   }
-  return (data?.length ?? 0) > 0;
+  return true;
 };
 
 export const updateVectorizationStatus = async (
