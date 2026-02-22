@@ -225,7 +225,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     setSelectedFiles(prev => {
       const combined = [...prev, ...arr];
       if (combined.length > MAX_FILES) {
-        addNotification('warning', 'Limitas', `Maksimalus failų skaičius – ${MAX_FILES}. Pertekliniai failai pašalinti.`);
+        setTimeout(() => addNotification('info', 'Limitas', `Maksimalus failų skaičius – ${MAX_FILES}. Pertekliniai failai pašalinti.`), 0);
         return combined.slice(0, MAX_FILES);
       }
       return combined;
@@ -287,7 +287,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
           ? `Failas sėkmingai įkeltas`
           : `${succeeded} failai sėkmingai įkelti`);
       } else {
-        addNotification('warning', 'Dalinė sėkmė', `Įkelta: ${succeeded}, nepavyko: ${failed}`);
+        addNotification('info', 'Dalinė sėkmė', `Įkelta: ${succeeded}, nepavyko: ${failed}`);
       }
 
       clearSelectedFiles();
