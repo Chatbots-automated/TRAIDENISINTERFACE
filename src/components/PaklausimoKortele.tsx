@@ -476,13 +476,16 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingCount = pendingFiles?.length || 0;
+  const [previewFile, setPreviewFile] = useState<AttachedFile | null>(null);
 
   // Fetch metadata for ALL existing file UUIDs from Directus
   const [existingFiles, setExistingFiles] = useState<AttachedFile[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
   const fileIds = getFileIds(record);
   const fileIdsKey = fileIds.join(',');
   useEffect(() => {
     if (fileIds.length === 0) { setExistingFiles([]); return; }
+    setLoadingFiles(true);
     const ids = fileIds;
     Promise.all(
       ids.map(fileId =>
@@ -503,7 +506,10 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
           })
           .catch(() => null)
       )
-    ).then(results => setExistingFiles(results.filter(Boolean) as AttachedFile[]));
+    ).then(results => {
+      setExistingFiles(results.filter(Boolean) as AttachedFile[]);
+      setLoadingFiles(false);
+    });
   }, [fileIdsKey]);
 
   const totalCount = existingFiles.length + pendingCount;
@@ -511,17 +517,20 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
     if (!selected?.length) return;
-    const fileArray = Array.from(selected); // snapshot before clearing input
+    const fileArray = Array.from(selected);
     if (fileInputRef.current) fileInputRef.current.value = '';
     onAddFiles?.(fileArray);
   };
+
+  const getViewUrl = (id: string) => `${DIRECTUS_URL}/assets/${id}?access_token=${DIRECTUS_TOKEN}`;
+  const getDownloadUrl = (id: string) => `${DIRECTUS_URL}/assets/${id}?access_token=${DIRECTUS_TOKEN}&download`;
 
   return (
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
-          {totalCount > 0 ? `${totalCount} ${totalCount === 1 ? 'failas' : 'failai'}` : 'Nėra failų'}
+          {loadingFiles ? 'Kraunama...' : totalCount > 0 ? `${totalCount} ${totalCount === 1 ? 'failas' : 'failai'}` : 'Nėra failų'}
           {pendingCount > 0 && <span className="text-amber-500 ml-1.5">({pendingCount} nauji)</span>}
         </p>
         {!readOnly && (
@@ -544,6 +553,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                 <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-8">#</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40">Pavadinimas</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-20">Dydis</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-base-content/40 w-24">Data</th>
                 <th className="px-3 py-2 text-right text-xs font-medium text-base-content/40 w-24">Veiksmai</th>
               </tr>
             </thead>
@@ -552,25 +562,29 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                 <tr key={file.directus_file_id} className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02] transition-colors">
                   <td className="px-3 py-2 text-xs text-base-content/40">{idx + 1}</td>
                   <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
+                    <button
+                      className="flex items-center gap-2 text-left hover:underline"
+                      onClick={() => setPreviewFile(file)}
+                    >
                       <FileText className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span className="text-sm text-base-content truncate max-w-[200px]" title={file.file_name}>{file.file_name}</span>
-                    </div>
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(file.file_size)}</td>
+                  <td className="px-3 py-2 text-xs text-base-content/40">
+                    {file.uploaded_at ? new Date(file.uploaded_at).toLocaleDateString('lt-LT') : '—'}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-0.5">
-                      <a
-                        href={`${DIRECTUS_URL}/assets/${file.directus_file_id}?access_token=${DIRECTUS_TOKEN}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        onClick={() => setPreviewFile(file)}
                         className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
                         title="Peržiūrėti"
                       >
                         <Eye className="w-3.5 h-3.5 text-base-content/40" />
-                      </a>
+                      </button>
                       <a
-                        href={`${DIRECTUS_URL}/assets/${file.directus_file_id}?access_token=${DIRECTUS_TOKEN}&download`}
+                        href={getDownloadUrl(file.directus_file_id)}
                         className="p-1 rounded-lg transition-colors hover:bg-base-content/5"
                         title="Atsisiųsti"
                       >
@@ -619,7 +633,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
       )}
 
       {/* Empty state */}
-      {totalCount === 0 && (
+      {totalCount === 0 && !loadingFiles && (
         <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
           <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
             <Paperclip className="w-5 h-5 text-base-content/30" />
@@ -630,6 +644,75 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 
       {!readOnly && (
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
+      )}
+
+      {/* File preview modal (like Derva failai) */}
+      {previewFile && (
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)' }}
+          onClick={() => setPreviewFile(null)}
+        >
+          <div
+            className="bg-base-100 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            style={{ width: '80vw', maxWidth: 900, height: '80vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Preview header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-base-content/10">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-medium truncate">{previewFile.file_name}</span>
+                <span className="text-xs text-base-content/40 shrink-0">{formatFileSize(previewFile.file_size)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <a
+                  href={getDownloadUrl(previewFile.directus_file_id)}
+                  className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5"
+                  title="Atsisiųsti"
+                >
+                  <Download className="w-4 h-4 text-base-content/60" />
+                </a>
+                <button
+                  onClick={() => setPreviewFile(null)}
+                  className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5"
+                >
+                  <X className="w-4 h-4 text-base-content/60" />
+                </button>
+              </div>
+            </div>
+            {/* Preview body */}
+            <div className="flex-1 overflow-hidden">
+              {previewFile.mime_type === 'application/pdf' ? (
+                <iframe
+                  src={`${getViewUrl(previewFile.directus_file_id)}#toolbar=1`}
+                  className="w-full h-full border-0"
+                  title={previewFile.file_name}
+                />
+              ) : previewFile.mime_type?.startsWith('image/') ? (
+                <div className="flex items-center justify-center h-full p-6 bg-base-content/[0.02]">
+                  <img
+                    src={getViewUrl(previewFile.directus_file_id)}
+                    alt={previewFile.file_name}
+                    className="max-w-full max-h-full object-contain rounded-lg"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                  <FileText className="w-12 h-12 text-base-content/20" />
+                  <p className="text-sm text-base-content/50">Peržiūra negalima šiam failų tipui</p>
+                  <a
+                    href={getDownloadUrl(previewFile.directus_file_id)}
+                    className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
+                    style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                  >
+                    <Download className="w-4 h-4" /> Atsisiųsti
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -943,6 +1026,8 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
 // Modal (editable, used from within the app)
 // ---------------------------------------------------------------------------
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
 export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRecord; onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
@@ -953,6 +1038,11 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
   const cardUrl = `${window.location.origin}/paklausimas/${record.id}`;
   const [copied, setCopied] = useState(false);
   const hasContextChanges = dirtyTabs.size > 0;
+
+  // Local override for the `files` field — updated after successful upload so
+  // TabFailai can display newly-uploaded files without a full record refresh.
+  const [localFiles, setLocalFiles] = useState<string | null>(null);
+  const effectiveRecord = localFiles !== null ? { ...record, files: localFiles } : record;
 
   // Pending data: stored locally until Atnaujinti is pressed
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[]>([]);
@@ -967,8 +1057,22 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
     setDirtyTabs(prev => new Set(prev).add('susirasinejimas'));
   }, []);
 
+  const [fileSizeError, setFileSizeError] = useState<string | null>(null);
+
   const addPendingFiles = useCallback((files: File[]) => {
     if (files.length === 0) return;
+    const tooLarge = files.filter(f => f.size > MAX_FILE_SIZE);
+    if (tooLarge.length > 0) {
+      const names = tooLarge.map(f => f.name).join(', ');
+      setFileSizeError(`Per dideli failai (maks. 5 MB): ${names}`);
+      setTimeout(() => setFileSizeError(null), 5000);
+      // Only add files that are within the limit
+      const valid = files.filter(f => f.size <= MAX_FILE_SIZE);
+      if (valid.length === 0) return;
+      files = valid;
+    } else {
+      setFileSizeError(null);
+    }
     const newPending = files.map(f => ({ localId: crypto.randomUUID(), file: f }));
     setPendingFiles(prev => [...prev, ...newPending]);
     setDirtyTabs(prev => new Set(prev).add('failai'));
@@ -1017,9 +1121,12 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
         }
 
         // Append new UUIDs to existing ones, store comma-separated in `files`
-        const existingIds = getFileIds(record);
+        const existingIds = getFileIds(effectiveRecord);
         const allIds = [...new Set([...existingIds, ...uploadedFileIds])];
-        await updateNestandartiniaiField(record.id, 'files', allIds.join(','));
+        const newFilesValue = allIds.join(',');
+        await updateNestandartiniaiField(record.id, 'files', newFilesValue);
+        // Update local override so TabFailai re-renders with new files
+        setLocalFiles(newFilesValue);
       }
 
       // 3. Trigger webhook (include uploaded file UUIDs so the handler can process them)
@@ -1157,7 +1264,16 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} pendingMessages={pendingMessages} onAddMessage={addPendingMessage} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
-            {activeTab === 'failai' && <TabFailai record={record} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} />}
+            {activeTab === 'failai' && (
+              <>
+                {fileSizeError && (
+                  <div className="mb-3 px-3 py-2 rounded-lg text-xs font-medium bg-error/10 text-error">
+                    {fileSizeError}
+                  </div>
+                )}
+                <TabFailai record={effectiveRecord} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} />
+              </>
+            )}
             {activeTab === 'derva' && <TabDerva record={record} />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
