@@ -515,7 +515,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  {FILES_COLUMNS.map(col => (
+                  {FILES_COLUMNS.slice(0, 2).map(col => (
                     <th
                       key={col.key}
                       onClick={() => handleFilesSort(col.key)}
@@ -530,6 +530,18 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                   <th className="px-3 py-3 text-center whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vektorizacija</span>
                   </th>
+                  {FILES_COLUMNS.slice(2).map(col => (
+                    <th
+                      key={col.key}
+                      onClick={() => handleFilesSort(col.key)}
+                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
+                        <SortArrows column={col.key} config={filesSortConfig} />
+                      </div>
+                    </th>
+                  ))}
                   <th className="px-3 py-3 text-left whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Embedding</span>
                   </th>
@@ -549,7 +561,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </thead>
               <tbody>
                 {sortedFiles.length === 0 ? (
-                  <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
+                  <tr><td colSpan={FILES_COLUMNS.length + 4} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file, idx) => {
                   const isVectorized = !!file.embedding;
                   const isProcessing = vectorizingIds.has(file.id) || file.vectorization_status === 'processing';
@@ -575,16 +587,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                             {file.file_name}
                           </button>
                         </div>
-                      </td>
-
-                      <td className="px-3 py-2.5 w-36">
-                        <span style={{ color: '#5a5550', fontSize: '13px' }}>{file.uploaded_by.split('@')[0]}</span>
-                      </td>
-
-                      <td className="px-3 py-2.5 w-28">
-                        <span className="whitespace-nowrap" style={{ color: '#5a5550', fontSize: '13px' }}>
-                          {new Date(file.uploaded_at).toLocaleDateString('lt-LT')}
-                        </span>
                       </td>
 
                       {/* Vektorizacija */}
@@ -616,6 +618,16 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                             {isFailed ? 'Pakartoti' : 'Pradėti'}
                           </button>
                         )}
+                      </td>
+
+                      <td className="px-3 py-2.5 w-36">
+                        <span style={{ color: '#5a5550', fontSize: '13px' }}>{file.uploaded_by.split('@')[0]}</span>
+                      </td>
+
+                      <td className="px-3 py-2.5 w-28">
+                        <span className="whitespace-nowrap" style={{ color: '#5a5550', fontSize: '13px' }}>
+                          {new Date(file.uploaded_at).toLocaleDateString('lt-LT')}
+                        </span>
                       </td>
 
                       {/* Embedding snippet */}
