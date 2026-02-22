@@ -432,20 +432,20 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
               <p className="text-xs text-base-content/35 mb-6 ml-12">
                 Žinutė bus ištrinta visam laikui.
               </p>
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmDeleteIdx(null)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
                   style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={() => handleDelete(confirmDeleteIdx)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
                   style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
-                  Ištrinti
+                  <Trash2 className="w-3.5 h-3.5" /> Ištrinti
                 </button>
               </div>
             </div>
@@ -854,20 +854,20 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
               <p className="text-xs text-base-content/35 mb-6 ml-12">
                 Failas bus ištrintas visam laikui. Šio veiksmo negalima atšaukti.
               </p>
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmDeleteFile(null)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
                   style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={() => executeDelete(confirmDeleteFile)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
                   style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
-                  Ištrinti
+                  <Trash2 className="w-3.5 h-3.5" /> Ištrinti
                 </button>
               </div>
             </div>
@@ -1586,20 +1586,20 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                   : 'Pridėjote naujų failų, bet nepakeitėte susirašinėjimų. Ar tikrai norite tęsti be žinučių pakeitimų?'
                 }
               </p>
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setShowPartialWarning(null)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
                   style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                 >
                   Grįžti
                 </button>
                 <button
                   onClick={() => executeSaveAndProcess(true)}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
                   style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
-                  Tęsti
+                  <RefreshCw className="w-3.5 h-3.5" /> Tęsti
                 </button>
               </div>
             </div>
@@ -1629,10 +1629,10 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
               <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
                 Pridėjote naujų duomenų, bet nepaleidote konteksto atnaujinimo. Projekto aprašymas ir metaduomenys nebus atnaujinti.
               </p>
-              <div className="flex gap-2 justify-end">
+              <div className="flex gap-2">
                 <button
                   onClick={onClose}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
                   style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
                 >
                   Uždaryti
@@ -1640,10 +1640,10 @@ export function PaklausimoModal({ record, onClose }: { record: NestandartiniaiRe
                 <button
                   onClick={handleUpdate}
                   disabled={updating}
-                  className="text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
                   style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
                 >
-                  {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Atnaujinama...</> : 'Atnaujinti'}
+                  {updating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</> : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>}
                 </button>
               </div>
             </div>
