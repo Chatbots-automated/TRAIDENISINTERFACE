@@ -16,7 +16,6 @@ import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import {
   fetchDervaFiles,
-  fetchVectorizedFileIds,
   insertDervaFile,
   deleteDervaFile,
   triggerVectorization,
@@ -146,7 +145,6 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
 export default function DervaInterface({ user }: DervaInterfaceProps) {
   // Data
   const [files, setFiles] = useState<DervaFile[]>([]);
-  const [vectorizedIds, setVectorizedIds] = useState<Set<string>>(new Set());
 
   // Loading
   const [loadingFiles, setLoadingFiles] = useState(true);
@@ -181,12 +179,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   const loadFiles = useCallback(async () => {
     try {
       setLoadingFiles(true);
-      const [filesData, vecIds] = await Promise.all([
-        fetchDervaFiles(),
-        fetchVectorizedFileIds(),
-      ]);
-      setFiles(filesData);
-      setVectorizedIds(vecIds);
+      setFiles(await fetchDervaFiles());
     } catch (err: any) {
       console.error('Error loading files:', err);
       addNotification('error', 'Klaida', 'Nepavyko įkelti failų sąrašo');
@@ -427,6 +420,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </div>
                     </th>
                   ))}
+                  <th className="px-3 py-3 text-left whitespace-nowrap">
+                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Turinys</span>
+                  </th>
                   <th className="px-3 py-3 text-center whitespace-nowrap">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vektorizacija</span>
                   </th>
@@ -437,9 +433,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </thead>
               <tbody>
                 {sortedFiles.length === 0 ? (
-                  <tr><td colSpan={FILES_COLUMNS.length + 2} className="py-2.5">&nbsp;</td></tr>
+                  <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file) => {
-                  const isVectorized = !!file.directus_file_id && vectorizedIds.has(file.directus_file_id);
+                  const isVectorized = !!file.content;
                   return (
                     <tr
                       key={file.id}
@@ -475,6 +471,21 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         <span className="whitespace-nowrap" style={{ color: '#5a5550', fontSize: '13px' }}>
                           {new Date(file.uploaded_at).toLocaleDateString('lt-LT')}
                         </span>
+                      </td>
+
+                      {/* Turinys snippet */}
+                      <td className="px-3 py-2.5 max-w-[200px]">
+                        {file.content ? (
+                          <div
+                            className="truncate"
+                            style={{ color: '#5a5550', fontSize: '12px' }}
+                            title={file.content}
+                          >
+                            {file.content}
+                          </div>
+                        ) : (
+                          <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
+                        )}
                       </td>
 
                       {/* Vektorizacija */}
