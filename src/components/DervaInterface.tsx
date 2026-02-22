@@ -38,6 +38,7 @@ interface DervaInterfaceProps {
 // ---------------------------------------------------------------------------
 
 const ACCEPTED_TYPES = '.pdf,.md,.txt,.doc,.docx';
+const VECTORIZING_STORAGE_KEY = 'derva_vectorizing_ids';
 
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return '—';
@@ -155,7 +156,12 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   const [dragOver, setDragOver] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [vectorizingIds, setVectorizingIds] = useState<Set<number>>(new Set());
+  const [vectorizingIds, setVectorizingIds] = useState<Set<number>>(() => {
+    try {
+      const stored = localStorage.getItem(VECTORIZING_STORAGE_KEY);
+      return stored ? new Set(JSON.parse(stored) as number[]) : new Set();
+    } catch { return new Set(); }
+  });
   const [previewFile, setPreviewFile] = useState<DervaFile | null>(null);
 
   // Sorting
@@ -174,13 +180,34 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
+  // Sync vectorizingIds to localStorage
+  useEffect(() => {
+    if (vectorizingIds.size > 0) {
+      localStorage.setItem(VECTORIZING_STORAGE_KEY, JSON.stringify([...vectorizingIds]));
+    } else {
+      localStorage.removeItem(VECTORIZING_STORAGE_KEY);
+    }
+  }, [vectorizingIds]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---------- Data loading ----------
   const loadFiles = useCallback(async () => {
     try {
       setLoadingFiles(true);
-      setFiles(await fetchDervaFiles());
+      const loaded = await fetchDervaFiles();
+      setFiles(loaded);
+
+      // Clean up vectorizing IDs for files that now have embeddings
+      setVectorizingIds(prev => {
+        if (prev.size === 0) return prev;
+        const next = new Set(prev);
+        for (const id of prev) {
+          const file = loaded.find(f => f.id === id);
+          if (!file || file.embedding) next.delete(id);
+        }
+        return next.size === prev.size ? prev : next;
+      });
     } catch (err: any) {
       console.error('Error loading files:', err);
       addNotification('error', 'Klaida', 'Nepavyko įkelti failų sąrašo');
