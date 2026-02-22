@@ -644,19 +644,21 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
         throw new Error(`Serverio klaida (${resp.status})${errText ? `: ${errText}` : ''}`);
       }
 
-      const data = await resp.json();
-      const recommendation = typeof data === 'string'
-        ? data
-        : (data.derva || data.recommendation || data.response || data.text || data.output || JSON.stringify(data));
-
-      // Update local state and persist to DB
+      // Webhook returns only a status code. Fetch the actual recommendation
+      // from the n8n_vector_store "derva" column.
+      const updated = await fetchNestandartiniaiById(record.id);
+      const recommendation = updated?.derva || null;
       setDervaResult(recommendation);
-      await updateNestandartiniaiField(record.id, 'derva', recommendation);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
     } catch (e: any) {
       console.error('Derva select error:', e);
       setDervaError(e.message || 'Nepavyko gauti dervos rekomendacijos');
+      // The webhook may have completed server-side — try fetching the latest value
+      try {
+        const updated = await fetchNestandartiniaiById(record.id);
+        if (updated?.derva) setDervaResult(updated.derva);
+      } catch { /* ignore */ }
     } finally {
       setSelecting(false);
     }
@@ -746,10 +748,12 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 
         {/* Loading state */}
         {selecting && (
-          <div className="rounded-macos p-5 mb-4 text-center" style={{ background: 'rgba(0,122,255,0.03)', border: '1px solid rgba(0,122,255,0.1)' }}>
-            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2.5" style={{ color: '#007AFF' }} />
-            <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Vyksta dervos parinkimas...</p>
-            <p className="text-xs" style={{ color: '#8a857f' }}>RAG procesas analizuoja projekto duomenis ir ieško tinkamiausios dervos.</p>
+          <div className="rounded-macos-lg p-6 mb-4 text-center" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.06) 0%, rgba(175,82,222,0.06) 100%)', border: '1px solid rgba(0,122,255,0.15)' }}>
+            <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.12) 0%, rgba(175,82,222,0.12) 100%)' }}>
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#007AFF' }} />
+            </div>
+            <p className="text-sm font-semibold mb-1.5" style={{ color: '#3d3935' }}>Vyksta dervos parinkimas...</p>
+            <p className="text-xs max-w-[280px] mx-auto" style={{ color: '#5a5550', lineHeight: '1.6' }}>RAG procesas analizuoja projekto duomenis ir ieško tinkamiausios dervos.</p>
           </div>
         )}
 
@@ -779,10 +783,12 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
             <MarkdownText text={dervaResult} />
           </div>
         ) : !selecting && !dervaResult && (
-          <div className="flex flex-col items-center justify-center py-8 text-center rounded-macos" style={{ background: '#faf9f7', border: '1px solid #f0ede8' }}>
-            <Beaker className="w-8 h-8 mb-2.5" style={{ color: '#d4cfc8' }} />
-            <p className="text-sm font-medium mb-1" style={{ color: '#3d3935' }}>Derva dar neparinkta</p>
-            <p className="text-xs max-w-[260px]" style={{ color: '#8a857f', lineHeight: '1.6' }}>
+          <div className="flex flex-col items-center justify-center py-10 text-center rounded-macos-lg" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.04) 0%, rgba(175,82,222,0.04) 100%)', border: '1px dashed rgba(0,122,255,0.2)' }}>
+            <div className="w-14 h-14 rounded-full mb-3 flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(0,122,255,0.08) 0%, rgba(175,82,222,0.08) 100%)' }}>
+              <Beaker className="w-7 h-7" style={{ color: '#007AFF', opacity: 0.7 }} />
+            </div>
+            <p className="text-sm font-semibold mb-1.5" style={{ color: '#3d3935' }}>Derva dar neparinkta</p>
+            <p className="text-xs max-w-[280px]" style={{ color: '#5a5550', lineHeight: '1.6' }}>
               {readOnly
                 ? 'Šiam projektui dervos rekomendacija dar nesugeneruota.'
                 : 'Spauskite „Parinkti dervą" – AI analizuos projekto parametrus ir pasiūlys tinkamiausią dervą.'}
