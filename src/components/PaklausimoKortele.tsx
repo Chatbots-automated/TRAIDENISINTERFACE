@@ -1488,9 +1488,6 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
               <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atidaryti naujame lange">
                 <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
-              <button onClick={() => setShowDeleteConfirm(true)} className="p-1.5 rounded-lg transition-colors hover:bg-error/10" title="Ištrinti įrašą">
-                <Trash2 className="w-4 h-4 text-base-content/40 hover:text-error" />
-              </button>
               <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
                 <X className="w-4 h-4 text-base-content/40" />
               </button>
@@ -1501,7 +1498,7 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
+          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40 flex flex-col">
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -1561,6 +1558,16 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
                     : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
               }
             </button>
+            {/* Delete record – pushed to bottom */}
+            <div className="mt-auto pt-3">
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/30 transition-all hover:text-error hover:bg-error/5"
+              >
+                <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Ištrinti</span>
+              </button>
+            </div>
           </div>
 
           {/* Tab content */}
