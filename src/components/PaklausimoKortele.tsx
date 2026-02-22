@@ -1351,6 +1351,7 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
   const cardUrl = `${window.location.origin}/paklausimas/${record.id}`;
   const [copied, setCopied] = useState(false);
   const hasContextChanges = dirtyTabs.size > 0;
+  const isLocked = !!record.status;
 
   // Local override for the `files` field — updated after successful upload so
   // TabFailai can display newly-uploaded files without a full record refresh.
@@ -1590,66 +1591,72 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
               );
             })}
             {/* Save only (no processing) */}
-            <button
-              onClick={handleSaveOnly}
-              disabled={updating || !hasContextChanges}
-              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-xs font-medium transition-all mt-3 ${
-                updateStatus === 'saved'
-                  ? 'text-success bg-success/10 border border-success/20'
-                  : hasContextChanges
-                    ? 'text-base-content/70 hover:bg-base-content/5'
-                    : 'text-base-content/30'
-              } disabled:opacity-50`}
-              style={updateStatus !== 'saved' ? { background: '#f8f8f9', border: '1px solid #e5e5e6' } : undefined}
-            >
-              {updatingMode === 'save'
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</>
-                : updateStatus === 'saved'
-                  ? <><CheckCircle2 className="w-3.5 h-3.5" /> Išsaugota</>
-                  : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>
-              }
-            </button>
-            {/* Save + process (triggers webhook) */}
-            <button
-              onClick={handleUpdate}
-              disabled={updating}
-              className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-1.5 ${
-                updateStatus === 'success'
-                  ? 'text-success bg-success/10 border border-success/20'
-                  : updateStatus === 'error'
-                    ? 'text-error bg-error/5 border border-error/15'
+            {!isLocked && (
+              <button
+                onClick={handleSaveOnly}
+                disabled={updating || !hasContextChanges}
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-xs font-medium transition-all mt-3 ${
+                  updateStatus === 'saved'
+                    ? 'text-success bg-success/10 border border-success/20'
                     : hasContextChanges
-                      ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100'
-                      : 'text-base-content/40 border border-base-content/8 hover:bg-base-content/5'
-              } disabled:opacity-60`}
-              style={!hasContextChanges && updateStatus === 'idle' ? { background: '#f8f8f9' } : undefined}
-            >
-              {updatingMode === 'process'
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
-                : updateStatus === 'success'
-                  ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
-                  : updateStatus === 'error'
-                    ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
-                    : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
-              }
-            </button>
+                      ? 'text-base-content/70 hover:bg-base-content/5'
+                      : 'text-base-content/30'
+                } disabled:opacity-50`}
+                style={updateStatus !== 'saved' ? { background: '#f8f8f9', border: '1px solid #e5e5e6' } : undefined}
+              >
+                {updatingMode === 'save'
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</>
+                  : updateStatus === 'saved'
+                    ? <><CheckCircle2 className="w-3.5 h-3.5" /> Išsaugota</>
+                    : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>
+                }
+              </button>
+            )}
+            {/* Save + process (triggers webhook) */}
+            {!isLocked && (
+              <button
+                onClick={handleUpdate}
+                disabled={updating}
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-1.5 ${
+                  updateStatus === 'success'
+                    ? 'text-success bg-success/10 border border-success/20'
+                    : updateStatus === 'error'
+                      ? 'text-error bg-error/5 border border-error/15'
+                      : hasContextChanges
+                        ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100'
+                        : 'text-base-content/40 border border-base-content/8 hover:bg-base-content/5'
+                } disabled:opacity-60`}
+                style={!hasContextChanges && updateStatus === 'idle' ? { background: '#f8f8f9' } : undefined}
+              >
+                {updatingMode === 'process'
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
+                  : updateStatus === 'success'
+                    ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
+                    : updateStatus === 'error'
+                      ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
+                      : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
+                }
+              </button>
+            )}
             {/* Delete record – pushed to bottom */}
             <div className="mt-auto pt-3">
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/30 transition-all hover:text-error hover:bg-error/5"
-              >
-                <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                <span>Ištrinti</span>
-              </button>
+              {!isLocked && (
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/30 transition-all hover:text-error hover:bg-error/5"
+                >
+                  <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Ištrinti</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
             {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
-            {activeTab === 'uzduotys' && <TabUzduotys record={record} />}
+            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
+            {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
               <>
                 {fileSizeError && (
@@ -1657,7 +1664,7 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
                     {fileSizeError}
                   </div>
                 )}
-                <TabFailai record={effectiveRecord} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
+                <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
             {activeTab === 'derva' && <TabDerva record={record} />}
