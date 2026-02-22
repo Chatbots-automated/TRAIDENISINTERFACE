@@ -491,7 +491,8 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 }) {
   const existingFiles = parseFiles(record.files);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const totalCount = existingFiles.length + (pendingFiles?.length || 0);
+  const pendingCount = pendingFiles?.length || 0;
+  const totalCount = existingFiles.length + pendingCount;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files;
@@ -506,7 +507,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
           {totalCount > 0 ? `${totalCount} ${totalCount === 1 ? 'failas' : 'failai'}` : 'Nėra failų'}
-          {(pendingFiles?.length || 0) > 0 && <span className="text-amber-500 ml-1.5">({pendingFiles!.length} nauji)</span>}
+          {pendingCount > 0 && <span className="text-amber-500 ml-1.5">({pendingCount} nauji)</span>}
         </p>
         {!readOnly && (
           <button
@@ -519,7 +520,8 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
         )}
       </div>
 
-      {totalCount > 0 ? (
+      {/* Existing files table */}
+      {existingFiles.length > 0 && (
         <div className="rounded-xl overflow-hidden border border-base-content/10">
           <table className="w-full text-sm">
             <thead>
@@ -531,7 +533,6 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
               </tr>
             </thead>
             <tbody>
-              {/* Existing files (already in Directus) */}
               {existingFiles.map((file, idx) => (
                 <tr key={`existing-${file.directus_file_id}`} className="border-b border-base-content/5 last:border-b-0 hover:bg-base-content/[0.02] transition-colors">
                   <td className="px-3 py-2 text-xs text-base-content/40">{idx + 1}</td>
@@ -564,35 +565,46 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                   </td>
                 </tr>
               ))}
-              {/* Pending files (local, not yet uploaded) */}
-              {pendingFiles?.map((pf, idx) => (
-                <tr key={`pending-${pf.localId}`} className="border-b border-base-content/5 last:border-b-0 bg-amber-50/30">
-                  <td className="px-3 py-2 text-xs text-base-content/40">{existingFiles.length + idx + 1}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-3.5 h-3.5 shrink-0 text-amber-500" />
-                      <span className="text-sm text-base-content truncate max-w-[200px]" title={pf.file.name}>{pf.file.name}</span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 font-medium shrink-0">Laukia</span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(pf.file.size)}</td>
-                  <td className="px-3 py-2 text-right">
-                    {!readOnly && (
-                      <button
-                        onClick={() => onRemovePendingFile?.(pf.localId)}
-                        className="p-1 rounded-lg transition-colors hover:bg-error/10"
-                        title="Pašalinti"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-error" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
-      ) : (
+      )}
+
+      {/* Pending files - separate section for visibility */}
+      {pendingCount > 0 && (
+        <div className={`rounded-xl border-2 border-dashed overflow-hidden ${existingFiles.length > 0 ? 'mt-3' : ''}`} style={{ borderColor: '#d97706' }}>
+          <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5" style={{ background: 'rgba(217,119,6,0.12)', color: '#d97706' }}>
+            <Upload className="w-3 h-3" />
+            Paruošti įkėlimui ({pendingCount})
+          </div>
+          {pendingFiles!.map((pf, idx) => (
+            <div
+              key={`pending-${pf.localId}`}
+              className="flex items-center gap-3 px-3 py-2 border-t"
+              style={{ borderColor: 'rgba(217,119,6,0.2)' }}
+            >
+              <FileText className="w-4 h-4 shrink-0" style={{ color: '#d97706' }} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-base-content truncate" title={pf.file.name}>{pf.file.name}</p>
+                <p className="text-[11px] text-base-content/40">{formatFileSize(pf.file.size)}</p>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0" style={{ background: 'rgba(217,119,6,0.15)', color: '#d97706' }}>Laukia</span>
+              {!readOnly && (
+                <button
+                  onClick={() => onRemovePendingFile?.(pf.localId)}
+                  className="p-1 rounded-lg transition-colors hover:bg-error/10 shrink-0"
+                  title="Pašalinti"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-error" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {totalCount === 0 && (
         <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
           <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
             <Paperclip className="w-5 h-5 text-base-content/30" />
