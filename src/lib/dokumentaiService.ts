@@ -23,7 +23,7 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -72,6 +72,7 @@ export interface NestandartiniaiRecord {
   files: string | null;
   ai_conversation: AiConversationMessage[] | string | null;
   similar_projects: SimilarProject[] | string | null;
+  status: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,4 +158,47 @@ export const updateNestandartiniaiAiConversation = async (
   messages: AiConversationMessage[]
 ): Promise<void> => {
   await updateNestandartiniaiField(id, 'ai_conversation', messages);
+};
+
+// ---------------------------------------------------------------------------
+// Delete
+// ---------------------------------------------------------------------------
+
+const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
+const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+
+/**
+ * Delete a nestandartiniai record and all its associated Directus files.
+ * 1. Parse file UUIDs from the `files` column
+ * 2. Delete each file from Directus storage
+ * 3. Delete the DB row from n8n_vector_store
+ */
+export const deleteNestandartiniaiRecord = async (
+  record: NestandartiniaiRecord
+): Promise<void> => {
+  // 1. Delete associated files from Directus storage
+  if (record.files && typeof record.files === 'string') {
+    const fileIds = record.files.split(',').map(s => s.trim()).filter(s => s.length >= 32);
+    for (const fileId of fileIds) {
+      try {
+        await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        });
+      } catch (err) {
+        console.warn(`Failed to delete Directus file ${fileId}:`, err);
+      }
+    }
+  }
+
+  // 2. Delete the DB row
+  const { error } = await db
+    .from('n8n_vector_store')
+    .delete()
+    .eq('id', record.id);
+
+  if (error) {
+    console.error('Error deleting n8n_vector_store record:', error);
+    throw error;
+  }
 };

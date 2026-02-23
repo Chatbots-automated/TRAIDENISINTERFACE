@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField } from '../lib/dokumentaiService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -45,10 +45,12 @@ interface ColumnDef {
   metaKey?: string;
   width?: string;
   badge?: boolean;
+  toggle?: boolean;
 }
 
 const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'id', label: 'ID', width: 'w-16' },
+  { key: 'status', label: 'Statusas', width: 'w-20', toggle: true },
   { key: 'project_name', label: 'Projektas' },
   { key: 'klientas', label: 'Klientas', badge: true },
   { key: 'meta_orientacija', label: 'Orientacija', metaKey: 'orientacija' },
@@ -351,6 +353,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setMetadataFilters({ ...EMPTY_FILTERS });
   };
 
+  const handleToggleStatus = async (id: number, currentStatus: boolean) => {
+    const newStatus = !currentStatus;
+    // Optimistic update
+    setNestandartiniaiData(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
+    try {
+      await updateNestandartiniaiField(id, 'status', newStatus);
+    } catch {
+      // Revert on error
+      setNestandartiniaiData(prev => prev.map(r => r.id === id ? { ...r, status: currentStatus } : r));
+    }
+  };
+
   const totalCount = isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
 
   return (
@@ -498,6 +512,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       </button>
                     </td>
                     {NESTANDARTINIAI_COLS.map(col => {
+                      if (col.toggle) {
+                        const checked = !!row[col.key];
+                        return (
+                          <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
+                            <button
+                              onClick={e => { e.stopPropagation(); handleToggleStatus(row.id, checked); }}
+                              className={`macos-toggle ${checked ? 'active' : ''}`}
+                              style={{ width: 36, height: 20, borderRadius: 10 }}
+                            >
+                              <span
+                                className="macos-toggle-thumb"
+                                style={{ width: 16, height: 16, top: 2, left: 2, borderRadius: 8 }}
+                              />
+                            </button>
+                          </td>
+                        );
+                      }
                       const val = getCellValue(row, col);
                       return (
                         <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
@@ -585,7 +616,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       </div>
 
       {selectedCard && (
-        <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} />
+        <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
       )}
     </div>
   );

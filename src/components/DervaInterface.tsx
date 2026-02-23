@@ -349,16 +349,13 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       if (ok) {
         addNotification('success', 'Vektorizuota', `"${file.file_name}" sėkmingai vektorizuotas`);
         await updateVectorizationStatus(file.id, null);
-        await loadFiles();
       } else {
         await updateVectorizationStatus(file.id, 'failed');
         addNotification('error', 'Klaida', 'Webhook grąžino klaidą. Patikrinkite n8n workflow.');
       }
     } catch (err: any) {
-      // Don't set 'failed' here — the error is likely a fetch abort from page
-      // navigation (F5) while n8n is still processing server-side. The webhook
-      // was already sent; only the response was lost. Genuine webhook failures
-      // (non-OK response) are handled by the `if (!ok)` branch above.
+      // The error may be a connection drop while n8n was still processing.
+      // The webhook was already sent; only the response was lost.
       addNotification('error', 'Klaida', err.message || 'Nepavyko paleisti vektorizavimo');
     } finally {
       setVectorizingIds(prev => {
@@ -366,6 +363,8 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         next.delete(file.id);
         return next;
       });
+      // Always reload to pick up any changes made server-side (embedding, status)
+      await loadFiles();
     }
   };
 

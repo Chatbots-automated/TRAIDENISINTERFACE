@@ -13,7 +13,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   FlaskConical,
-  Sparkles
+  Beaker
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -190,7 +190,7 @@ export default function Layout({
                     className={viewMode === 'derva' ? 'active' : ''}
                     title={sidebarCollapsed ? 'Derva' : undefined}
                   >
-                    <Sparkles className="w-4 h-4" />
+                    <Beaker className="w-4 h-4" />
                     {!sidebarCollapsed && <span className="whitespace-nowrap">Derva</span>}
                   </button>
                 </li>
