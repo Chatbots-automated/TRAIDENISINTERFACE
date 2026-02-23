@@ -994,7 +994,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 // Tab: Derva
 // ---------------------------------------------------------------------------
 
-function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
+function TabDerva({ record, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
   const [dervaResult, setDervaResult] = useState<string | null>(record.derva || null);
   const selecting = useProcessing(record.id, 'derva');
   const [dervaError, setDervaError] = useState<string | null>(null);
@@ -1042,8 +1042,10 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
       // Webhook returns only a status code. Fetch the actual recommendation
       // from the n8n_vector_store "derva" column.
       const updated = await fetchNestandartiniaiById(record.id);
-      const recommendation = updated?.derva || null;
-      setDervaResult(recommendation);
+      if (updated) {
+        setDervaResult(updated.derva || null);
+        onRecordUpdated?.(updated);
+      }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
     } catch (e: any) {
@@ -1052,7 +1054,10 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
       // The webhook may have completed server-side — try fetching the latest value
       try {
         const updated = await fetchNestandartiniaiById(record.id);
-        if (updated?.derva) setDervaResult(updated.derva);
+        if (updated) {
+          if (updated.derva) setDervaResult(updated.derva);
+          onRecordUpdated?.(updated);
+        }
       } catch { /* ignore */ }
     } finally {
       setProcessing(record.id, 'derva', false);
@@ -1254,7 +1259,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 // Tab: Panašūs
 // ---------------------------------------------------------------------------
 
-function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
+function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
   const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
   const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
   const loading = useProcessing(record.id, 'similar');
@@ -1285,8 +1290,9 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
       }
       // Re-fetch record to get updated similar_projects
       const updated = await fetchNestandartiniaiById(record.id);
-      if (updated?.similar_projects) {
+      if (updated) {
         setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
+        onRecordUpdated?.(updated);
       }
       setStatus('success');
       setTimeout(() => setStatus('idle'), 3000);
@@ -1297,8 +1303,9 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
       // Try fetching anyway — the webhook may have completed server-side
       try {
         const updated = await fetchNestandartiniaiById(record.id);
-        if (updated?.similar_projects) {
+        if (updated) {
           setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
+          onRecordUpdated?.(updated);
         }
       } catch { /* ignore */ }
       setTimeout(() => setStatus('idle'), 5000);
@@ -1727,8 +1734,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
-            {activeTab === 'derva' && <TabDerva record={record} />}
-            {activeTab === 'panasus' && <TabPanasus record={record} />}
+            {activeTab === 'derva' && <TabDerva record={record} onRecordUpdated={onRefresh} />}
+            {activeTab === 'panasus' && <TabPanasus record={record} onRecordUpdated={onRefresh} />}
           </div>
         </div>
       </div>
