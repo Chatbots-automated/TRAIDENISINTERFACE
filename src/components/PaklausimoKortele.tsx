@@ -61,6 +61,41 @@ const ALL_MAIN_KEYS = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Global processing tracker – survives tab switches & card open/close
+// ---------------------------------------------------------------------------
+
+type ProcessKey = 'derva' | 'similar';
+const _processingMap = new Map<number, Set<ProcessKey>>();
+const _listeners = new Set<() => void>();
+
+function setProcessing(recordId: number, key: ProcessKey, on: boolean) {
+  let s = _processingMap.get(recordId);
+  if (on) {
+    if (!s) { s = new Set(); _processingMap.set(recordId, s); }
+    s.add(key);
+  } else {
+    s?.delete(key);
+    if (s?.size === 0) _processingMap.delete(recordId);
+  }
+  _listeners.forEach(fn => fn());
+}
+
+function isProcessing(recordId: number, key: ProcessKey) {
+  return _processingMap.get(recordId)?.has(key) ?? false;
+}
+
+/** Hook that re-renders when global processing state changes. */
+function useProcessing(recordId: number, key: ProcessKey) {
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const fn = () => bump(v => v + 1);
+    _listeners.add(fn);
+    return () => { _listeners.delete(fn); };
+  }, []);
+  return isProcessing(recordId, key);
+}
+
+// ---------------------------------------------------------------------------
 // Tab definitions
 // ---------------------------------------------------------------------------
 
@@ -961,9 +996,12 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 
 function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnly?: boolean }) {
   const [dervaResult, setDervaResult] = useState<string | null>(record.derva || null);
-  const [selecting, setSelecting] = useState(false);
+  const selecting = useProcessing(record.id, 'derva');
   const [dervaError, setDervaError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Sync dervaResult with latest record data (e.g. after refresh)
+  useEffect(() => { setDervaResult(record.derva || null); }, [record.derva]);
 
   // AI conversation (secondary feature)
   const [conversation, setConversation] = useState<AiConversationMessage[]>(() => parseJSON<AiConversationMessage[]>(record.ai_conversation) || []);
@@ -974,7 +1012,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
   const triggerDervaSelect = async () => {
     setDervaError(null);
     setSuccess(false);
-    setSelecting(true);
+    setProcessing(record.id, 'derva', true);
 
     try {
       const webhookUrl = await getWebhookUrl('n8n_derva_select');
@@ -1017,7 +1055,7 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
         if (updated?.derva) setDervaResult(updated.derva);
       } catch { /* ignore */ }
     } finally {
-      setSelecting(false);
+      setProcessing(record.id, 'derva', false);
     }
   };
 
@@ -1219,12 +1257,18 @@ function TabDerva({ record, readOnly }: { record: NestandartiniaiRecord; readOnl
 function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
   const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
   const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
-  const [loading, setLoading] = useState(false);
+  const loading = useProcessing(record.id, 'similar');
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Sync with record prop when it refreshes
+  useEffect(() => {
+    const parsed = parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
+    if (parsed.length > 0) setLocalProjects(parsed);
+  }, [record.similar_projects]);
+
   const handleFindSimilar = async () => {
-    setLoading(true);
+    setProcessing(record.id, 'similar', true);
     setStatus('idle');
     setErrorMsg(null);
     try {
@@ -1259,7 +1303,7 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
       } catch { /* ignore */ }
       setTimeout(() => setStatus('idle'), 5000);
     } finally {
-      setLoading(false);
+      setProcessing(record.id, 'similar', false);
     }
   };
 
@@ -1340,7 +1384,7 @@ function TabPanasus({ record }: { record: NestandartiniaiRecord }) {
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-export function PaklausimoModal({ record, onClose, onDeleted }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void }) {
+export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState<'save' | 'process' | null>(null);
@@ -1523,6 +1567,19 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
     }
   };
 
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRecord = async () => {
+    setRefreshing(true);
+    try {
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRefresh?.(updated);
+    } catch (e) {
+      console.error('Refresh error:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
@@ -1558,6 +1615,9 @@ export function PaklausimoModal({ record, onClose, onDeleted }: { record: Nestan
                   {record.klientas}
                 </span>
               )}
+              <button onClick={refreshRecord} disabled={refreshing} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atnaujinti duomenis">
+                <RefreshCw className={`w-4 h-4 text-base-content/40 ${refreshing ? 'animate-spin' : ''}`} />
+              </button>
               <button onClick={copy} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Kopijuoti nuorodą">
                 <Link2 className={`w-4 h-4 ${copied ? '' : 'text-base-content/40'}`} style={copied ? { color: '#34C759' } : undefined} />
               </button>
