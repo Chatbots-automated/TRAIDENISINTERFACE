@@ -54,8 +54,8 @@ export async function getGlobalTemplate(): Promise<GlobalTemplate | null> {
       .single();
 
     if (error) {
-      // PGRST116 = not found — expected on first launch
-      if (error.code === 'PGRST116' || error.message?.includes('not found')) {
+      // NOT_FOUND = single() returned no results — expected on first launch
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
         return null;
       }
       console.error('[GlobalTemplate] Error fetching template:', error);

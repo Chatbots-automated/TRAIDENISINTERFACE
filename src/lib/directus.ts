@@ -271,7 +271,7 @@ class DirectusQueryBuilder<T = any> {
         if (!item) {
           return {
             data: null,
-            error: { message: 'Item not found', code: 'PGRST116' }
+            error: { message: 'Item not found', code: 'NOT_FOUND' }
           };
         }
         return { data: item as unknown as T, error: null };
@@ -306,8 +306,7 @@ class DirectusInsertBuilder<T = any> {
     this.baseUrl = baseUrl;
     this.collection = collection;
     this.token = token;
-    // Directus expects a single object or array of objects
-    // PostgREST always wrapped in array, so normalize
+    // Directus expects a single object or array of objects; normalize accordingly
     this.payload = Array.isArray(payload) ? (payload.length === 1 ? payload[0] : payload) : payload;
   }
 
@@ -447,7 +446,7 @@ class DirectusUpdateBuilder<T = any> {
         url = `${this.baseUrl}/items/${this.collection}/${idFilter.value}${queryString}`;
       } else {
         // Bulk update with filters - need to first find items, then update them
-        // Directus doesn't support filter-based bulk PATCH like PostgREST
+        // Directus doesn't support filter-based bulk PATCH directly
         // Strategy: GET matching items, then PATCH each by ID
         return await this.executeFilteredUpdate();
       }

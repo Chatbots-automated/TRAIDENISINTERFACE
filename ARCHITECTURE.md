@@ -58,9 +58,7 @@ request is translated to Directus REST API endpoints:
 |----------------------------|----------------------------------------------|
 | `src/lib/directus.ts`      | Core Directus REST API client (all DB calls)  |
 | `src/lib/database.ts`      | Creates and exports `db` / `dbAdmin` clients  |
-| `src/lib/postgrest.ts`     | **DEPRECATED** — legacy PostgREST client, unused |
-| `.env.example`             | Active environment configuration              |
-| `.env.postgrest.example`   | **DEPRECATED** — legacy PostgREST config      |
+| `.env.example`             | Environment configuration                     |
 
 ### Directus Collections (Tables)
 
@@ -109,6 +107,6 @@ OpenAI, Gemini, or any other provider.
 
 1. **Do NOT install or import `@supabase/supabase-js`** — this is a Directus project
 2. **Do NOT use `supabase.from()`** — use `db.from()` which calls Directus
-3. **Do NOT reference PostgREST endpoints** — `src/lib/postgrest.ts` is deprecated
+3. **Do NOT reference PostgREST endpoints** — the app communicates via Directus REST API
 4. **Do NOT create Supabase RLS policies** — access control is managed in Directus
 5. **Do NOT use `supabase.auth`** — authentication is custom (see `database.ts`)
