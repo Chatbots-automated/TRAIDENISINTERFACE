@@ -1,3 +1,4 @@
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { dbAdmin } from './database';
 import { appLogger } from './appLogger';
 import type { SDKConversation } from './sdkConversationService';

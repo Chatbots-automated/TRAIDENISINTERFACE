@@ -1,13 +1,15 @@
 /**
  * Execute tools via n8n webhooks + UI interactions
  *
- * Webhook URLs are fetched from the database `webhooks` table.
+ * Webhook URLs are fetched from the database `webhooks` table (Directus API).
  * Keys: n8n_get_products, n8n_get_prices, n8n_get_multiplier
  *
  * - get_products: Query products table by product_code
  * - get_prices: Query pricing table by product id
  * - get_multiplier: Get latest price multiplier
  * - display_buttons: Display interactive buttons in UI (special handling)
+ *
+ * NOTE: The database layer uses Directus API, NOT Supabase. See ./directus.ts.
  */
 
 import { getWebhookUrl } from './webhooksService';

@@ -1,3 +1,4 @@
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
 import { appLogger } from './appLogger';
 

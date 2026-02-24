@@ -6,6 +6,7 @@
  * snapshot so changes can be undone (up to MAX_VERSIONS back).
  */
 
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
 import { COMMERCIAL_OFFER_TEMPLATE } from '../templates/commercialOfferTemplate';
 import { appLogger } from './appLogger';
@@ -53,8 +54,8 @@ export async function getGlobalTemplate(): Promise<GlobalTemplate | null> {
       .single();
 
     if (error) {
-      // PGRST116 = not found — expected on first launch
-      if (error.code === 'PGRST116' || error.message?.includes('not found')) {
+      // NOT_FOUND = single() returned no results — expected on first launch
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
         return null;
       }
       console.error('[GlobalTemplate] Error fetching template:', error);

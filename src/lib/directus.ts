@@ -1,8 +1,20 @@
 /**
- * Directus REST API Client
- * Drop-in replacement for the PostgREST client.
- * Provides the same query-builder API (.from().select().eq().order() etc.)
- * but translates all operations to Directus REST API endpoints.
+ * ============================================================================
+ * DIRECTUS REST API CLIENT
+ * ============================================================================
+ *
+ * THIS APPLICATION USES DIRECTUS AS ITS DATABASE API LAYER.
+ * >>> NOT Supabase. NOT PostgREST. NOT Firebase. DIRECTUS ONLY. <<<
+ *
+ * Directus instance: https://sql.traidenis.org
+ * Docs: https://docs.directus.io/reference/introduction.html
+ *
+ * This is a custom query-builder client that wraps the Directus REST API
+ * with a fluent interface: db.from('collection').select().eq().order()
+ *
+ * All database operations in the entire application flow through this client.
+ * The query-builder syntax may look similar to Supabase/PostgREST, but
+ * under the hood every request hits the Directus REST API.
  *
  * Directus API pattern:
  *   GET    /items/<collection>          → list items
@@ -15,13 +27,18 @@
  *
  * Authentication: Authorization: Bearer <static_token>
  *
- * Query params:
+ * Query params (Directus-specific):
  *   fields=field1,field2              → select fields
- *   filter[field][_operator]=value    → filtering
+ *   filter[field][_operator]=value    → filtering (_eq, _neq, _gt, _contains, _in, etc.)
  *   sort=field,-field2                → sorting (- prefix = DESC)
  *   limit=N                           → limit results
  *   offset=N                          → skip results
  *   search=term                       → full-text search
+ *
+ * Environment variables:
+ *   VITE_DIRECTUS_URL   → Directus instance URL
+ *   VITE_DIRECTUS_TOKEN → Static Bearer token for authentication
+ * ============================================================================
  */
 
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
@@ -254,7 +271,7 @@ class DirectusQueryBuilder<T = any> {
         if (!item) {
           return {
             data: null,
-            error: { message: 'Item not found', code: 'PGRST116' }
+            error: { message: 'Item not found', code: 'NOT_FOUND' }
           };
         }
         return { data: item as unknown as T, error: null };
@@ -289,8 +306,7 @@ class DirectusInsertBuilder<T = any> {
     this.baseUrl = baseUrl;
     this.collection = collection;
     this.token = token;
-    // Directus expects a single object or array of objects
-    // PostgREST always wrapped in array, so normalize
+    // Directus expects a single object or array of objects; normalize accordingly
     this.payload = Array.isArray(payload) ? (payload.length === 1 ? payload[0] : payload) : payload;
   }
 
@@ -430,7 +446,7 @@ class DirectusUpdateBuilder<T = any> {
         url = `${this.baseUrl}/items/${this.collection}/${idFilter.value}${queryString}`;
       } else {
         // Bulk update with filters - need to first find items, then update them
-        // Directus doesn't support filter-based bulk PATCH like PostgREST
+        // Directus doesn't support filter-based bulk PATCH directly
         // Strategy: GET matching items, then PATCH each by ID
         return await this.executeFilteredUpdate();
       }
