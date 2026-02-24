@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { ZoomIn, ZoomOut } from 'lucide-react';
 import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import type { VariableCitation } from '../lib/sdkConversationService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
@@ -17,17 +18,27 @@ export interface VariableClickInfo {
   y: number;
 }
 
+export interface CitationClickInfo {
+  key: string;
+  citation: VariableCitation;
+  x: number;
+  y: number;
+}
+
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
   /** Bump to force re-reading the global template from localStorage. */
   templateVersion?: number;
   onVariableClick?: (info: VariableClickInfo | null) => void;
+  onCitationClick?: (info: CitationClickInfo | null) => void;
   onScroll?: () => void;
   /** Whether the document body is contentEditable. Default false. */
   editable?: boolean;
   /** Conversation ID — used for localStorage persistence of manual edits. */
   conversationId?: string;
+  /** Variable citations map from artifact */
+  citations?: Record<string, VariableCitation>;
 }
 
 // The "native" zoom where the document fits the panel well.
@@ -37,7 +48,7 @@ const BASE_ZOOM = 0.95;
 const DOC_EDIT_PREFIX = 'doc_edit_';
 
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onScroll, editable = false, conversationId }, ref) {
+  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onCitationClick, onScroll, editable = false, conversationId, citations }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
@@ -48,16 +59,26 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     zoomRef.current = zoom;
     const onVariableClickRef = useRef(onVariableClick);
     onVariableClickRef.current = onVariableClick;
+    const onCitationClickRef = useRef(onCitationClick);
+    onCitationClickRef.current = onCitationClick;
+    const citationsRef = useRef(citations);
+    citationsRef.current = citations;
     const editableRef = useRef(editable);
     editableRef.current = editable;
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Build the set of cited variable keys for renderTemplate
+    const citedKeys = useMemo(
+      () => citations ? new Set(Object.keys(citations)) : undefined,
+      [citations]
+    );
 
     // Re-read global template whenever templateVersion changes
     const templateHtml = useMemo(() => template || getDefaultTemplate(), [template, templateVersion]);
 
     const renderedHtml = useMemo(
-      () => renderTemplate(templateHtml, variables),
-      [templateHtml, variables]
+      () => renderTemplate(templateHtml, variables, citedKeys),
+      [templateHtml, variables, citedKeys]
     );
 
     const unfilled = useMemo(
@@ -103,6 +124,31 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         box-shadow: 0 0 0 1.5px #3b82f6 !important;
       }
 
+      /* Citation badge */
+      .citation-badge {
+        display: inline-block;
+        font-size: 8px;
+        font-weight: 600;
+        font-family: Arial, sans-serif;
+        color: #c7a88a;
+        background: rgba(199,168,138,0.10);
+        border: 1px solid rgba(199,168,138,0.25);
+        border-radius: 3px;
+        padding: 0 3px;
+        margin-left: 2px;
+        cursor: pointer;
+        vertical-align: super;
+        line-height: 1;
+        letter-spacing: 0.3px;
+        transition: background 0.15s, border-color 0.15s;
+        user-select: none;
+      }
+      .citation-badge:hover {
+        background: rgba(199,168,138,0.22);
+        border-color: rgba(199,168,138,0.5);
+        color: #a0845e;
+      }
+
       /* Page number footer */
       .page-number {
         text-align: right;
@@ -131,6 +177,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         }
         .template-var { cursor: default; }
         .template-var.filled { background: transparent !important; box-shadow: none !important; padding: 0 !important; }
+        .citation-badge { display: none !important; }
         span[style*="background:#fff3cd"] {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
@@ -240,8 +287,27 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       doc.body.addEventListener('click', () => {
         doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
         onVariableClickRef.current?.(null);
+        onCitationClickRef.current?.(null);
       });
 
+      // Helper to calculate position relative to container
+      const calcPosition = (el: HTMLElement) => {
+        const iframeEl = iframeRef.current;
+        const container = containerRef.current;
+        if (!iframeEl || !container) return null;
+
+        const rect = el.getBoundingClientRect();
+        const iframeRect = iframeEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const z = zoomRef.current;
+
+        return {
+          x: iframeRect.left - containerRect.left + rect.left * z + (rect.width * z) / 2,
+          y: iframeRect.top - containerRect.top + rect.top * z + rect.height * z,
+        };
+      };
+
+      // Variable click handlers
       const varSpans = doc.querySelectorAll<HTMLSpanElement>('[data-var]');
       varSpans.forEach((span) => {
         span.addEventListener('click', (e) => {
@@ -255,27 +321,44 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
           span.classList.add('active');
 
-          // Calculate position relative to the DocumentPreview container
-          const iframeEl = iframeRef.current;
-          const container = containerRef.current;
-          if (!iframeEl || !container) return;
-
-          const spanRect = span.getBoundingClientRect();
-          const iframeRect = iframeEl.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
-
-          // Use refs to get current zoom (avoids stale closure)
-          const z = zoomRef.current;
-          const x = iframeRect.left - containerRect.left + spanRect.left * z + (spanRect.width * z) / 2;
-          const y = iframeRect.top - containerRect.top + spanRect.top * z + spanRect.height * z;
+          const pos = calcPosition(span);
+          if (!pos) return;
 
           const isFilled = span.classList.contains('filled');
 
+          onCitationClickRef.current?.(null); // close any open citation
           onVariableClickRef.current?.({
             key: varKey,
             filled: isFilled,
-            x,
-            y,
+            x: pos.x,
+            y: pos.y,
+          });
+        });
+      });
+
+      // Citation badge click handlers
+      const citationBadges = doc.querySelectorAll<HTMLElement>('[data-citation]');
+      citationBadges.forEach((badge) => {
+        badge.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const varKey = badge.getAttribute('data-citation');
+          if (!varKey) return;
+
+          const cits = citationsRef.current;
+          const citation = cits?.[varKey];
+          if (!citation) return;
+
+          const pos = calcPosition(badge);
+          if (!pos) return;
+
+          onVariableClickRef.current?.(null); // close any open variable popup
+          onCitationClickRef.current?.({
+            key: varKey,
+            citation,
+            x: pos.x,
+            y: pos.y,
           });
         });
       });

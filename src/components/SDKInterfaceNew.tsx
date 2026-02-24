@@ -43,7 +43,8 @@ import {
   calculateDiff,
   type SDKConversation,
   type SDKMessage,
-  type CommercialOfferArtifact
+  type CommercialOfferArtifact,
+  type VariableCitation
 } from '../lib/sdkConversationService';
 import { appLogger } from '../lib/appLogger';
 import type { AppUser } from '../types';
@@ -63,7 +64,7 @@ import {
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
-import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
+import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
 
@@ -201,6 +202,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const popupRef = useRef<HTMLDivElement>(null);
   const [popupPlacement, setPopupPlacement] = useState<'below' | 'above'>('below');
 
+  // Citation popover state
+  const [activeCitation, setActiveCitation] = useState<CitationClickInfo | null>(null);
+  const citationPopupRef = useRef<HTMLDivElement>(null);
+  const [citationPlacement, setCitationPlacement] = useState<'below' | 'above'>('below');
+
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
   const [techDescResult, setTechDescResult] = useState<string | null>(null);
@@ -280,6 +286,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setPopupPlacement('below');
     }
   }, [editingVariable]);
+
+  // Smart citation popup positioning
+  useLayoutEffect(() => {
+    if (!activeCitation) {
+      setCitationPlacement('below');
+      return;
+    }
+    const popup = citationPopupRef.current;
+    if (!popup) { setCitationPlacement('below'); return; }
+    const container = popup.offsetParent as HTMLElement;
+    if (!container) { setCitationPlacement('below'); return; }
+
+    const containerHeight = container.clientHeight;
+    const popupHeight = popup.offsetHeight;
+    const belowBottom = activeCitation.y + 8 + popupHeight;
+    const aboveTop = activeCitation.y - 8 - popupHeight;
+
+    if (belowBottom > containerHeight && aboveTop > 0) {
+      setCitationPlacement('above');
+    } else {
+      setCitationPlacement('below');
+    }
+  }, [activeCitation]);
 
   const loadEconomists = async () => {
     try {
@@ -1314,7 +1343,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         // CRITICAL: Check for artifacts in final response
         if (responseContent.includes('<commercial_offer')) {
           console.log('[Artifact] Detected commercial_offer in final response');
-          await handleArtifactGeneration(responseContent, updatedConversation);
+          await handleArtifactGeneration(
+            responseContent,
+            updatedConversation,
+            thinkingContent,
+            responseContent,
+            finalMessages.length - 1
+          );
         }
       }
     } catch (err: any) {
@@ -1702,7 +1737,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     ));
   };
 
-  const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
+  const handleArtifactGeneration = async (
+    content: string,
+    conversation: SDKConversation,
+    thinkingText?: string,
+    chatText?: string,
+    messageIndex?: number
+  ) => {
     try {
       // Match with optional artifact_id attribute
       const match = content.match(/<commercial_offer(?:\s+artifact_id="([^"]*)")?\s*>([\s\S]*?)<\/commercial_offer>/);
@@ -1719,6 +1760,35 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Determine if this is a new artifact or an update
       const isNewArtifact = artifactIdFromAI === 'new' || !currentArtifact;
 
+      // --- Build citations for changed variables ---
+      const newYamlVars = parseYAMLContent(trimmedContent);
+      const oldYamlVars = currentArtifact ? parseYAMLContent(currentArtifact.content) : {};
+      const existingCitations = currentArtifact?.variable_citations || {};
+      const newVersion = isNewArtifact ? 1 : (currentArtifact.version + 1);
+      const nowISO = new Date().toISOString();
+
+      // Determine which variables are new or changed
+      const citations: Record<string, VariableCitation> = { ...existingCitations };
+      for (const key of Object.keys(newYamlVars)) {
+        const isChanged = isNewArtifact || oldYamlVars[key] !== newYamlVars[key];
+        if (isChanged) {
+          citations[key] = {
+            variable_key: key,
+            message_index: messageIndex ?? (conversation.messages.length - 1),
+            thinking_excerpt: (thinkingText || '').slice(0, 2000),
+            chat_excerpt: (chatText || '').replace(/<commercial_offer[\s\S]*?<\/commercial_offer>/g, '').trim().slice(0, 500),
+            timestamp: nowISO,
+            version: newVersion,
+          };
+        }
+      }
+      // Remove citations for variables that no longer exist in YAML
+      for (const key of Object.keys(citations)) {
+        if (!(key in newYamlVars)) delete citations[key];
+      }
+
+      console.log('[Citations] Variables cited:', Object.keys(citations).length, 'of', Object.keys(newYamlVars).length);
+
       if (isNewArtifact) {
         // Create new artifact
         const generatedId = `offer_${crypto.randomUUID().split('-')[0]}`;
@@ -1730,9 +1800,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           title: 'Komercinis pasiūlymas',
           content: trimmedContent,
           version: 1,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          diff_history: []
+          created_at: nowISO,
+          updated_at: nowISO,
+          diff_history: [],
+          variable_citations: citations
         };
       } else {
         // Update existing artifact
@@ -1747,13 +1818,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         newArtifact = {
           ...currentArtifact,
           content: trimmedContent,
-          version: currentArtifact.version + 1,
-          updated_at: new Date().toISOString(),
+          version: newVersion,
+          updated_at: nowISO,
           diff_history: [...currentArtifact.diff_history, {
-            version: currentArtifact.version + 1,
-            timestamp: new Date().toISOString(),
+            version: newVersion,
+            timestamp: nowISO,
             changes: diff
-          }]
+          }],
+          variable_citations: citations
         };
       }
 
@@ -2061,6 +2133,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const currentArtifact = currentConversation.artifact;
           const updatedContent = replaceYAMLValue(currentArtifact.content, key, value);
           const diff = calculateDiff(currentArtifact.content, updatedContent);
+          // Clear citation for manually-edited variable
+          const updatedCitations = { ...(currentArtifact.variable_citations || {}) };
+          delete updatedCitations[key];
           const newArtifact: CommercialOfferArtifact = {
             ...currentArtifact,
             content: updatedContent,
@@ -2070,7 +2145,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               version: currentArtifact.version + 1,
               timestamp: new Date().toISOString(),
               changes: diff
-            }]
+            }],
+            variable_citations: updatedCitations
           };
           await updateConversationArtifact(currentConversation.id, newArtifact);
           setCurrentConversation({ ...currentConversation, artifact: newArtifact });
@@ -2626,7 +2702,7 @@ Vartotojo instrukcija: ${instruction}`;
                     : '[Content format error]');
 
                 return (
-                  <div key={`${message.timestamp}-${index}`}>
+                  <div key={`${message.timestamp}-${index}`} data-message-index={index}>
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
@@ -2879,6 +2955,12 @@ Vartotojo instrukcija: ${instruction}`;
                   variables={mergeAllVariables()}
                   templateVersion={templateVersion}
                   onVariableClick={handleVariableClick}
+                  onCitationClick={(info) => {
+                    if (!info) { setActiveCitation(null); return; }
+                    setEditingVariable(null); // close variable popup
+                    setActiveCitation(info);
+                  }}
+                  citations={currentConversation?.artifact?.variable_citations}
                   editable={docEditMode}
                   conversationId={currentConversation?.id}
                   onScroll={() => {
@@ -2886,6 +2968,7 @@ Vartotojo instrukcija: ${instruction}`;
                       setEditingVariable(null);
                       documentPreviewRef.current?.clearActiveVariable();
                     }
+                    if (activeCitation) setActiveCitation(null);
                   }}
                 />
 
@@ -3345,6 +3428,170 @@ Vartotojo instrukcija: ${instruction}`;
                             borderRight: '7px solid transparent',
                             borderTop: '7px solid #ffffff',
                             marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                          }} />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {/* Citation popover — shows AI reasoning for a variable */}
+                {activeCitation && (() => {
+                  const { key, citation, x, y } = activeCitation;
+                  const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === key);
+                  const label = paramDef?.label || key;
+                  const thinkingText = citation.thinking_excerpt || '';
+                  const chatText = citation.chat_excerpt || '';
+                  const hasThinking = thinkingText.trim().length > 0;
+                  const hasChatText = chatText.trim().length > 0;
+                  const msgIdx = citation.message_index;
+
+                  return (
+                    <>
+                      <div
+                        style={{ position: 'absolute', inset: 0, zIndex: 49 }}
+                        onClick={() => setActiveCitation(null)}
+                      />
+                      <div
+                        ref={citationPopupRef}
+                        style={{
+                          position: 'absolute',
+                          left: Math.min(Math.max(x - 150, 8), 220),
+                          top: citationPlacement === 'below' ? y + 8 : y - 8,
+                          transform: citationPlacement === 'above' ? 'translateY(-100%)' : undefined,
+                          zIndex: 50,
+                          width: '320px',
+                          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                        }}
+                      >
+                        {citationPlacement === 'below' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderBottom: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(x - Math.min(Math.max(x - 150, 8), 220) - 7, 16), 280) + 'px',
+                          }} />
+                        )}
+                        <div style={{
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(0,0,0,0.06)',
+                        }}>
+                          {/* Header */}
+                          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-semibold truncate" style={{ color: '#1a1a1a', letterSpacing: '-0.01em' }}>{label}</div>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(199,168,138,0.12)', color: '#a0845e' }}>
+                                    AI šaltinis
+                                  </span>
+                                  <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                                    v{citation.version}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setActiveCitation(null)}
+                                className="p-1 rounded-md flex-shrink-0 transition-colors mt-0.5"
+                                style={{ color: '#c0bbb5' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Body — reasoning excerpt */}
+                          <div className="px-3.5 py-3">
+                            {hasThinking ? (
+                              <div>
+                                <div className="text-[10px] font-medium mb-1.5" style={{ color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  AI samprotavimas
+                                </div>
+                                <div
+                                  className="text-[12px] leading-relaxed overflow-y-auto"
+                                  style={{
+                                    color: '#4b5563',
+                                    maxHeight: '180px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    background: '#fafaf8',
+                                    borderRadius: '6px',
+                                    padding: '8px 10px',
+                                    border: '1px solid #f0eeeb',
+                                  }}
+                                >
+                                  {thinkingText.length > 800 ? thinkingText.slice(0, 800) + '…' : thinkingText}
+                                </div>
+                              </div>
+                            ) : hasChatText ? (
+                              <div>
+                                <div className="text-[10px] font-medium mb-1.5" style={{ color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  AI atsakymas
+                                </div>
+                                <div
+                                  className="text-[12px] leading-relaxed overflow-y-auto"
+                                  style={{
+                                    color: '#4b5563',
+                                    maxHeight: '180px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    background: '#fafaf8',
+                                    borderRadius: '6px',
+                                    padding: '8px 10px',
+                                    border: '1px solid #f0eeeb',
+                                  }}
+                                >
+                                  {chatText.length > 500 ? chatText.slice(0, 500) + '…' : chatText}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[12px]" style={{ color: '#9ca3af' }}>
+                                Nėra AI samprotavimo šiam kintamajam.
+                              </div>
+                            )}
+
+                            {/* Timestamp */}
+                            <div className="mt-2 text-[10px]" style={{ color: '#b5b0aa' }}>
+                              {new Date(citation.timestamp).toLocaleString('lt-LT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+
+                            {/* Jump to message button */}
+                            {msgIdx >= 0 && currentConversation?.messages?.[msgIdx] && (
+                              <button
+                                onClick={() => {
+                                  setActiveCitation(null);
+                                  // Switch to chat area if needed and scroll to message
+                                  const msgEl = document.querySelector(`[data-message-index="${msgIdx}"]`);
+                                  if (msgEl) {
+                                    msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    // Flash highlight
+                                    msgEl.classList.add('citation-flash');
+                                    setTimeout(() => msgEl.classList.remove('citation-flash'), 2000);
+                                  }
+                                }}
+                                className="mt-2.5 w-full text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors text-center"
+                                style={{ background: '#3d3935', color: 'white' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                              >
+                                Rodyti žinutę
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {citationPlacement === 'above' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderTop: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(x - Math.min(Math.max(x - 150, 8), 220) - 7, 16), 280) + 'px',
                           }} />
                         )}
                       </div>

@@ -573,3 +573,13 @@
       0 2px 8px rgba(0, 0, 0, 0.05);
   }
 }
+
+/* Citation flash animation — highlights a message when "Jump to message" is clicked */
+@keyframes citation-flash-anim {
+  0%   { background-color: rgba(199, 168, 138, 0.18); }
+  100% { background-color: transparent; }
+}
+.citation-flash {
+  animation: citation-flash-anim 2s ease-out;
+  border-radius: 8px;
+}

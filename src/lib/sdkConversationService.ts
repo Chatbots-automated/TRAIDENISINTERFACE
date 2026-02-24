@@ -27,6 +27,15 @@ export interface SDKMessage {
   isSilent?: boolean; // Flag for silent messages (button clicks that shouldn't be displayed)
 }
 
+export interface VariableCitation {
+  variable_key: string;
+  message_index: number;
+  thinking_excerpt: string;
+  chat_excerpt: string;
+  timestamp: string;
+  version: number;
+}
+
 export interface CommercialOfferArtifact {
   id: string;
   type: 'commercial_offer';
@@ -36,6 +45,7 @@ export interface CommercialOfferArtifact {
   created_at: string;
   updated_at: string;
   diff_history: DiffEntry[];
+  variable_citations?: Record<string, VariableCitation>;
 }
 
 export interface DiffEntry {

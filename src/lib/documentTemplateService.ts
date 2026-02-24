@@ -89,7 +89,8 @@ export function extractTemplateVariables(template: string): string[] {
  */
 export function renderTemplate(
   template: string,
-  variables: Record<string, string>
+  variables: Record<string, string>,
+  citedKeys?: Set<string>
 ): string {
   let html = template;
 
@@ -102,7 +103,10 @@ export function renderTemplate(
 
     if (value !== undefined && value !== '') {
       const escaped = escapeHtml(value).replace(/\n/g, '<br>');
-      return `<span data-var="${trimKey}" class="template-var filled">${escaped}</span>`;
+      const badge = citedKeys?.has(trimKey)
+        ? `<sup data-citation="${trimKey}" class="citation-badge">AI</sup>`
+        : '';
+      return `<span data-var="${trimKey}" class="template-var filled">${escaped}</span>${badge}`;
     }
 
     // Unfilled — visible placeholder chip, also clickable
