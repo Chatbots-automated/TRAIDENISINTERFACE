@@ -56,7 +56,8 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'meta_orientacija', label: 'Orientacija', metaKey: 'orientacija' },
   { key: 'meta_talpa_tipas', label: 'Talpos tipas', metaKey: 'talpa_tipas' },
   { key: 'meta_DN', label: 'DN', metaKey: 'DN', width: 'w-20' },
-  { key: 'meta_derva', label: 'Derva', metaKey: 'derva' },
+  { key: 'meta_derva_org', label: 'Derva (org)' },
+  { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
 
@@ -70,7 +71,23 @@ function parseMetadata(raw: string | Record<string, string> | null | undefined):
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+/** Format the original derva value with cheminis sluoksnis mm appended if present */
+function formatDervaOrg(meta: Record<string, string> | null): string {
+  if (!meta) return '—';
+  const derva = meta.derva;
+  if (!derva) return '—';
+  const sluoksnis = meta.derva_cheminis_sluoksnis_mm;
+  if (sluoksnis && sluoksnis.trim() !== '-' && sluoksnis.trim() !== '') {
+    return `${derva} (+ ${sluoksnis.trim()})`;
+  }
+  return derva;
+}
+
 function getCellValue(row: any, col: ColumnDef): string {
+  if (col.key === 'meta_derva_org') {
+    const meta = parseMetadata(row.metadata);
+    return formatDervaOrg(meta);
+  }
   if (col.metaKey) {
     const meta = parseMetadata(row.metadata);
     return meta?.[col.metaKey] || '—';
@@ -280,25 +297,48 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   // Filtering
   const filteredData = useMemo(() => {
     let rows: any[] = isNestandartiniai ? nestandartiniaiData : standartiniaiData;
-    const searchCols = isNestandartiniai ? ['id', 'project_name', 'klientas', 'pateikimo_data', 'derva', 'description'] : genericCols;
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      rows = rows.filter(row => {
-        // Search across direct fields
-        const directMatch = searchCols.some(col => {
-          const val = row[col];
-          if (val === null || val === undefined) return false;
-          return String(val).toLowerCase().includes(q);
-        });
-        if (directMatch) return true;
-        // Also search metadata
-        if (isNestandartiniai) {
+      // Split into keywords for AND logic — every keyword must match somewhere in the record
+      const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+
+      if (isNestandartiniai) {
+        rows = rows.filter((row: NestandartiniaiRecord) => {
+          // Build a searchable text blob from all record fields
+          const parts: string[] = [];
+          // Direct fields
+          if (row.id != null) parts.push(String(row.id));
+          if (row.project_name) parts.push(row.project_name);
+          if (row.klientas) parts.push(row.klientas);
+          if (row.pateikimo_data) parts.push(row.pateikimo_data);
+          if (row.description) parts.push(row.description);
+          if (row.derva) parts.push(row.derva);
+          // All metadata values (includes derva_musu)
           const meta = parseMetadata(row.metadata);
-          if (meta) return Object.values(meta).some(v => String(v).toLowerCase().includes(q));
-        }
-        return false;
-      });
+          if (meta) {
+            for (const v of Object.values(meta)) {
+              if (v) parts.push(String(v));
+            }
+          }
+          // Formatted derva (org) with cheminis sluoksnis
+          const dervaOrgFormatted = formatDervaOrg(meta);
+          if (dervaOrgFormatted !== '—') parts.push(dervaOrgFormatted);
+
+          const blob = parts.join(' ').toLowerCase();
+          return keywords.every(kw => blob.includes(kw));
+        });
+      } else {
+        const searchCols = genericCols;
+        rows = rows.filter(row => {
+          const parts: string[] = [];
+          for (const col of searchCols) {
+            const val = row[col];
+            if (val !== null && val !== undefined) parts.push(String(val));
+          }
+          const blob = parts.join(' ').toLowerCase();
+          return keywords.every(kw => blob.includes(kw));
+        });
+      }
     }
 
     if (isNestandartiniai) {
@@ -327,10 +367,21 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
-      // For metadata columns, get value from metadata
       const colDef = isNestandartiniai ? NESTANDARTINIAI_COLS.find(c => c.key === sortConfig.column) : null;
-      let aVal = colDef?.metaKey ? (parseMetadata(a.metadata)?.[colDef.metaKey] ?? null) : a[sortConfig.column];
-      let bVal = colDef?.metaKey ? (parseMetadata(b.metadata)?.[colDef.metaKey] ?? null) : b[sortConfig.column];
+      let aVal: any;
+      let bVal: any;
+      if (sortConfig.column === 'meta_derva_org') {
+        aVal = formatDervaOrg(parseMetadata(a.metadata));
+        bVal = formatDervaOrg(parseMetadata(b.metadata));
+        if (aVal === '—') aVal = null;
+        if (bVal === '—') bVal = null;
+      } else if (colDef?.metaKey) {
+        aVal = parseMetadata(a.metadata)?.[colDef.metaKey] ?? null;
+        bVal = parseMetadata(b.metadata)?.[colDef.metaKey] ?? null;
+      } else {
+        aVal = a[sortConfig.column];
+        bVal = b[sortConfig.column];
+      }
       if (aVal === null || aVal === undefined) return 1;
       if (bVal === null || bVal === undefined) return -1;
       if (typeof aVal === 'number' && typeof bVal === 'number') return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
