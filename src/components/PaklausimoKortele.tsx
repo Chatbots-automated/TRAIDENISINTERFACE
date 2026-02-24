@@ -52,13 +52,25 @@ const INFO_ROW_1 = [
 ];
 const INFO_ROW_2 = [
   { key: 'chemija', label: 'Chemija' },
-  { key: 'derva', label: 'Derva' },
+  { key: 'derva_org', label: 'Derva (org)', computed: true },
   { key: 'koncentracija', label: 'Koncentracija' },
 ];
 const ALL_MAIN_KEYS = new Set([
-  ...INFO_ROW_1.map(r => r.key), ...INFO_ROW_2.map(r => r.key),
+  ...INFO_ROW_1.map(r => r.key),
+  'chemija', 'derva', 'koncentracija', 'derva_cheminis_sluoksnis_mm',
   'pritaikymas', 'talpa',
 ]);
+
+/** Format original derva with cheminis sluoksnis mm appended when present */
+function formatDervaOrg(meta: Record<string, string>): string {
+  const derva = meta.derva;
+  if (!derva) return '';
+  const sluoksnis = meta.derva_cheminis_sluoksnis_mm;
+  if (sluoksnis && sluoksnis.trim() !== '-' && sluoksnis.trim() !== '') {
+    return `${derva} (+ ${sluoksnis.trim()})`;
+  }
+  return derva;
+}
 
 // ---------------------------------------------------------------------------
 // Global processing tracker – survives tab switches & card open/close
@@ -325,17 +337,24 @@ function EditMessageBubble({ message, side, onSave, onCancel }: { message: Atsak
 
 function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Record<string, string> }) {
   const extraMeta = Object.entries(meta).filter(([k]) => !ALL_MAIN_KEYS.has(k));
-  const hasRow1 = INFO_ROW_1.some(f => meta[f.key]);
-  const hasRow2 = INFO_ROW_2.some(f => meta[f.key]);
+  const hasRow1 = INFO_ROW_1.some(f => f.key === 'derva_org' ? !!meta.derva : !!meta[f.key]);
+  const hasRow2 = INFO_ROW_2.some(f => f.key === 'derva_org' ? !!meta.derva : !!meta[f.key]);
+  const dervaOrgDisplay = formatDervaOrg(meta);
 
   return (
     <div className="space-y-0">
       {/* Info grid */}
-      {(hasRow1 || hasRow2) && (
+      {(hasRow1 || hasRow2 || record.derva_musu) && (
         <div className="pb-4">
           <div className="grid grid-cols-3 gap-x-6 gap-y-3">
             {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
-            {INFO_ROW_2.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
+            {INFO_ROW_2.map(f => {
+              if (f.key === 'derva_org') {
+                return <InfoField key={f.key} label={f.label} value={dervaOrgDisplay || undefined} />;
+              }
+              return <InfoField key={f.key} label={f.label} value={meta[f.key]} />;
+            })}
+            {record.derva_musu && <InfoField label="Derva (mūsų)" value={record.derva_musu} />}
           </div>
         </div>
       )}
@@ -1000,6 +1019,32 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
   const [dervaError, setDervaError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Derva (mūsų) — team-editable field
+  const [dervaMusu, setDervaMusu] = useState<string>(record.derva_musu || '');
+  const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
+  const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
+  const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
+
+  // Sync with record prop
+  useEffect(() => { setDervaMusu(record.derva_musu || ''); }, [record.derva_musu]);
+
+  const saveDervaMusu = async () => {
+    setDervaMusuSaving(true);
+    try {
+      await updateNestandartiniaiField(record.id, 'derva_musu', dervaMusu || null);
+      setDervaMusuSaved(true);
+      setDervaMusuEditing(false);
+      setTimeout(() => setDervaMusuSaved(false), 3000);
+      // Notify parent about change
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+    } catch (e: any) {
+      console.error('Error saving derva_musu:', e);
+    } finally {
+      setDervaMusuSaving(false);
+    }
+  };
+
   // Sync dervaResult with latest record data (e.g. after refresh)
   useEffect(() => { setDervaResult(record.derva || null); }, [record.derva]);
 
@@ -1116,11 +1161,93 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
     }
   };
 
+  const meta = parseMetadata(record.metadata);
+  const dervaOrgDisplay = formatDervaOrg(meta);
+
   return (
     <div>
-      {/* ── Derva selection section ── */}
+      {/* ── Derva (org) — original value from metadata ── */}
+      {dervaOrgDisplay && (
+        <div className="mb-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Beaker className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+            <p className="text-xs font-medium" style={{ color: '#8a857f' }}>Derva (org)</p>
+          </div>
+          <div className="rounded-xl px-4 py-3 border border-base-content/10 bg-base-content/[0.02]">
+            <p className="text-sm font-medium text-base-content">{dervaOrgDisplay}</p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Derva (mūsų) — team-editable value ── */}
       <div className="mb-6">
-        <div className="flex items-center justify-end mb-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-1.5">
+            <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
+            <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Derva (mūsų)</p>
+          </div>
+          {!readOnly && !dervaMusuEditing && (
+            <button
+              onClick={() => setDervaMusuEditing(true)}
+              className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
+            >
+              <Pencil className="w-3 h-3 inline mr-1" />
+              Redaguoti
+            </button>
+          )}
+        </div>
+        {dervaMusuEditing ? (
+          <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
+            <input
+              type="text"
+              value={dervaMusu}
+              onChange={e => setDervaMusu(e.target.value)}
+              placeholder="Įveskite dervos reikšmę..."
+              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2"
+              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(record.derva_musu || ''); } }}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => { setDervaMusuEditing(false); setDervaMusu(record.derva_musu || ''); }}
+                className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
+              >
+                Atšaukti
+              </button>
+              <button
+                onClick={saveDervaMusu}
+                disabled={dervaMusuSaving}
+                className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
+                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              >
+                {dervaMusuSaving ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Saugoma...</> : 'Išsaugoti'}
+              </button>
+            </div>
+          </div>
+        ) : dervaMusu ? (
+          <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
+            <p className="text-sm font-medium text-base-content">{dervaMusu}</p>
+          </div>
+        ) : (
+          <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
+            <p className="text-xs text-base-content/40">Nenustatyta</p>
+          </div>
+        )}
+        {dervaMusuSaved && (
+          <div className="flex items-center gap-1.5 text-xs mt-2 text-success">
+            <CheckCircle2 className="w-3 h-3" />
+            Išsaugota
+          </div>
+        )}
+      </div>
+
+      <div className="border-t border-base-content/10 pt-5 mb-6">
+        {/* ── AI Derva selection section ── */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-1.5">
+            <Beaker className="w-3.5 h-3.5 text-primary" />
+            <p className="text-xs font-medium text-primary">AI rekomendacija</p>
+          </div>
           {!readOnly && (
             <button
               onClick={triggerDervaSelect}
@@ -1137,7 +1264,6 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
             </button>
           )}
         </div>
-
 
         {/* Loading state */}
         {selecting && (
@@ -1168,10 +1294,6 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
         {/* Recommendation display */}
         {dervaResult && !selecting ? (
           <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
-            <div className="flex items-center gap-1.5 mb-2">
-              <Beaker className="w-3.5 h-3.5 text-primary" />
-              <p className="text-xs font-medium text-primary">Rekomendacija</p>
-            </div>
             <MarkdownText text={dervaResult} />
           </div>
         ) : !selecting && !dervaResult && (
