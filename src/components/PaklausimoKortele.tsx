@@ -58,7 +58,7 @@ const INFO_ROW_2 = [
 const ALL_MAIN_KEYS = new Set([
   ...INFO_ROW_1.map(r => r.key),
   'chemija', 'derva', 'koncentracija', 'derva_cheminis_sluoksnis_mm',
-  'pritaikymas', 'talpa',
+  'pritaikymas', 'talpa', 'derva_musu',
 ]);
 
 /** Format original derva with cheminis sluoksnis mm appended when present */
@@ -344,7 +344,7 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
   return (
     <div className="space-y-0">
       {/* Info grid */}
-      {(hasRow1 || hasRow2 || record.derva_musu) && (
+      {(hasRow1 || hasRow2 || meta.derva_musu) && (
         <div className="pb-4">
           <div className="grid grid-cols-3 gap-x-6 gap-y-3">
             {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
@@ -354,7 +354,7 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
               }
               return <InfoField key={f.key} label={f.label} value={meta[f.key]} />;
             })}
-            {record.derva_musu && <InfoField label="Derva (mūsų)" value={record.derva_musu} />}
+            {meta.derva_musu && <InfoField label="Derva (mūsų)" value={meta.derva_musu} />}
           </div>
         </div>
       )}
@@ -1019,19 +1019,31 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
   const [dervaError, setDervaError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Derva (mūsų) — team-editable field
-  const [dervaMusu, setDervaMusu] = useState<string>(record.derva_musu || '');
+  // Derva (mūsų) — team-editable field stored in metadata JSONB
+  const currentMeta = parseMetadata(record.metadata);
+  const [dervaMusu, setDervaMusu] = useState<string>(currentMeta.derva_musu || '');
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
   const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
 
   // Sync with record prop
-  useEffect(() => { setDervaMusu(record.derva_musu || ''); }, [record.derva_musu]);
+  useEffect(() => {
+    const meta = parseMetadata(record.metadata);
+    setDervaMusu(meta.derva_musu || '');
+  }, [record.metadata]);
 
   const saveDervaMusu = async () => {
     setDervaMusuSaving(true);
     try {
-      await updateNestandartiniaiField(record.id, 'derva_musu', dervaMusu || null);
+      // Merge derva_musu into the metadata JSONB (which Directus knows about)
+      const meta = parseMetadata(record.metadata);
+      const updatedMeta = { ...meta };
+      if (dervaMusu.trim()) {
+        updatedMeta.derva_musu = dervaMusu.trim();
+      } else {
+        delete updatedMeta.derva_musu;
+      }
+      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
       setDervaMusuSaved(true);
       setDervaMusuEditing(false);
       setTimeout(() => setDervaMusuSaved(false), 3000);
@@ -1204,12 +1216,12 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
               onChange={e => setDervaMusu(e.target.value)}
               placeholder="Įveskite dervos reikšmę..."
               className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2"
-              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(record.derva_musu || ''); } }}
+              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentMeta.derva_musu || ''); } }}
               autoFocus
             />
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setDervaMusuEditing(false); setDervaMusu(record.derva_musu || ''); }}
+                onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentMeta.derva_musu || ''); }}
                 className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
               >
                 Atšaukti

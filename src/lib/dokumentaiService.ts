@@ -23,7 +23,7 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,derva_musu,tasks,files,ai_conversation,similar_projects,status';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -68,7 +68,6 @@ export interface NestandartiniaiRecord {
   klientas: string | null;
   atsakymas: string | AtsakymasMessage[] | null;
   derva: string | null;
-  derva_musu: string | null;
   tasks: TaskItem[] | string | null;
   files: string | null;
   ai_conversation: AiConversationMessage[] | string | null;

@@ -57,7 +57,7 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'meta_talpa_tipas', label: 'Talpos tipas', metaKey: 'talpa_tipas' },
   { key: 'meta_DN', label: 'DN', metaKey: 'DN', width: 'w-20' },
   { key: 'meta_derva_org', label: 'Derva (org)' },
-  { key: 'derva_musu', label: 'Derva (mūsų)' },
+  { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
 
@@ -87,11 +87,6 @@ function getCellValue(row: any, col: ColumnDef): string {
   if (col.key === 'meta_derva_org') {
     const meta = parseMetadata(row.metadata);
     return formatDervaOrg(meta);
-  }
-  if (col.key === 'derva_musu') {
-    const val = row.derva_musu;
-    if (val === null || val === undefined || val === '') return '—';
-    return String(val);
   }
   if (col.metaKey) {
     const meta = parseMetadata(row.metadata);
@@ -318,8 +313,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           if (row.pateikimo_data) parts.push(row.pateikimo_data);
           if (row.description) parts.push(row.description);
           if (row.derva) parts.push(row.derva);
-          if (row.derva_musu) parts.push(row.derva_musu);
-          // All metadata values
+          // All metadata values (includes derva_musu)
           const meta = parseMetadata(row.metadata);
           if (meta) {
             for (const v of Object.values(meta)) {
