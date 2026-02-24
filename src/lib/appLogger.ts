@@ -1,3 +1,4 @@
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { dbAdmin } from './database';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';

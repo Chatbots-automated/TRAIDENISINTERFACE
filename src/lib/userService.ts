@@ -1,3 +1,4 @@
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
 
 export interface AppUserData {

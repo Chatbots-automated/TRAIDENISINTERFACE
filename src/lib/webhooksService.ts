@@ -1,3 +1,4 @@
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db, dbAdmin } from './database';
 
 export interface Webhook {

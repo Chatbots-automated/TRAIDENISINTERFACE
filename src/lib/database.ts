@@ -1,6 +1,19 @@
 /**
- * Directus-based database client
- * All data queries go through the Directus REST API at sql.traidenis.org
+ * ============================================================================
+ * DATABASE CLIENT — POWERED BY DIRECTUS API
+ * ============================================================================
+ *
+ * ALL database access in this application goes through the DIRECTUS REST API.
+ * The API provider is Directus (https://directus.io), NOT Supabase, NOT Firebase.
+ *
+ * The `db` and `dbAdmin` exports are Directus client instances created by
+ * ./directus.ts. Every service file in this project imports from here.
+ *
+ * Directus instance URL: https://sql.traidenis.org
+ * Auth method: Static Bearer token (VITE_DIRECTUS_TOKEN)
+ *
+ * See ./directus.ts for the full client implementation and API details.
+ * ============================================================================
  */
 
 import { createClient } from './directus';

@@ -1,6 +1,20 @@
 /**
- * PostgREST Client Wrapper
- * Provides a query-builder API interface for PostgREST
+ * ============================================================================
+ * DEPRECATED — DO NOT USE
+ * ============================================================================
+ *
+ * This file is a LEGACY PostgREST client. It is NO LONGER USED by the
+ * application. The entire codebase has been migrated to DIRECTUS API.
+ *
+ * The active database client is in ./directus.ts
+ * All service files import from ./database.ts which uses ./directus.ts
+ *
+ * THIS FILE IS NOT IMPORTED ANYWHERE. It is kept only for historical
+ * reference and can be safely deleted.
+ *
+ * >>> THE API PROVIDER FOR THIS APP IS DIRECTUS, NOT PostgREST/Supabase <<<
+ * ============================================================================
+ * @deprecated Use ./directus.ts instead. This module is unused.
  */
 
 const POSTGREST_URL = import.meta.env.VITE_POSTGREST_URL || 'http://localhost:3000';

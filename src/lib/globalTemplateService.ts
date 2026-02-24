@@ -6,6 +6,7 @@
  * snapshot so changes can be undone (up to MAX_VERSIONS back).
  */
 
+// Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
 import { COMMERCIAL_OFFER_TEMPLATE } from '../templates/commercialOfferTemplate';
 import { appLogger } from './appLogger';

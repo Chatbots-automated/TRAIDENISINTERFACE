@@ -1,8 +1,20 @@
 /**
- * Directus REST API Client
- * Drop-in replacement for the PostgREST client.
- * Provides the same query-builder API (.from().select().eq().order() etc.)
- * but translates all operations to Directus REST API endpoints.
+ * ============================================================================
+ * DIRECTUS REST API CLIENT
+ * ============================================================================
+ *
+ * THIS APPLICATION USES DIRECTUS AS ITS DATABASE API LAYER.
+ * >>> NOT Supabase. NOT PostgREST. NOT Firebase. DIRECTUS ONLY. <<<
+ *
+ * Directus instance: https://sql.traidenis.org
+ * Docs: https://docs.directus.io/reference/introduction.html
+ *
+ * This is a custom query-builder client that wraps the Directus REST API
+ * with a fluent interface: db.from('collection').select().eq().order()
+ *
+ * All database operations in the entire application flow through this client.
+ * The query-builder syntax may look similar to Supabase/PostgREST, but
+ * under the hood every request hits the Directus REST API.
  *
  * Directus API pattern:
  *   GET    /items/<collection>          → list items
@@ -15,13 +27,18 @@
  *
  * Authentication: Authorization: Bearer <static_token>
  *
- * Query params:
+ * Query params (Directus-specific):
  *   fields=field1,field2              → select fields
- *   filter[field][_operator]=value    → filtering
+ *   filter[field][_operator]=value    → filtering (_eq, _neq, _gt, _contains, _in, etc.)
  *   sort=field,-field2                → sorting (- prefix = DESC)
  *   limit=N                           → limit results
  *   offset=N                          → skip results
  *   search=term                       → full-text search
+ *
+ * Environment variables:
+ *   VITE_DIRECTUS_URL   → Directus instance URL
+ *   VITE_DIRECTUS_TOKEN → Static Bearer token for authentication
+ * ============================================================================
  */
 
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
