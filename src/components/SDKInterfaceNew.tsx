@@ -23,7 +23,12 @@ import {
   Download,
   Lock,
   Unlock,
-  Sparkles
+  Sparkles,
+  ImagePlus,
+  Maximize2,
+  RotateCcw,
+  Crop,
+  MoveHorizontal
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -190,6 +195,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
+  const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
+  // Template editor: edit mode + image editing
+  const [tplEditMode, setTplEditMode] = useState(true); // starts editable
+  const [tplSelectedImage, setTplSelectedImage] = useState<{
+    imgEl: HTMLImageElement;
+    naturalWidth: number;
+    naturalHeight: number;
+    originalWidth: string;
+    originalHeight: string;
+  } | null>(null);
+  const [tplImgWidth, setTplImgWidth] = useState(100);
+  const [tplCropMode, setTplCropMode] = useState(false);
+  const [tplCropValues, setTplCropValues] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -2058,8 +2076,138 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
     setShowTemplateVersions(false);
+    setTplEditMode(true);
+    setTplSelectedImage(null);
+    setTplCropMode(false);
     // Fetch version history in the background
     getGlobalTemplateVersions(30).then(setTemplateVersionHistory).catch(() => {});
+  };
+
+  // ── Template editor: image editing helpers ──
+
+  const MAX_TPL_IMG_WIDTH = 523; // A4 content area at 36pt padding
+
+  const tplSelectImage = (img: HTMLImageElement) => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (!doc) return;
+    doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+    img.classList.add('img-selected');
+
+    const currentPx = img.getBoundingClientRect().width;
+    const pct = img.naturalWidth > 0 ? Math.round((currentPx / img.naturalWidth) * 100) : 100;
+
+    const clipPath = img.style.clipPath || img.style.getPropertyValue('clip-path') || '';
+    const insetMatch = clipPath.match(/inset\((\d+)%\s+(\d+)%\s+(\d+)%\s+(\d+)%\)/);
+    if (insetMatch) {
+      setTplCropValues({ top: +insetMatch[1], right: +insetMatch[2], bottom: +insetMatch[3], left: +insetMatch[4] });
+    } else {
+      setTplCropValues({ top: 0, right: 0, bottom: 0, left: 0 });
+    }
+
+    setTplSelectedImage({
+      imgEl: img,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+      originalWidth: img.style.width || `${img.naturalWidth}px`,
+      originalHeight: img.style.height || `${img.naturalHeight}px`,
+    });
+    setTplImgWidth(pct);
+    setTplCropMode(false);
+  };
+
+  const tplDeselectImage = () => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (doc) doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+    setTplSelectedImage(null);
+    setTplCropMode(false);
+  };
+
+  const tplResizeIframe = () => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (doc?.body && templateEditorIframeRef.current) {
+      templateEditorIframeRef.current.style.height = doc.body.scrollHeight + 'px';
+    }
+  };
+
+  const handleTplReplaceImage = () => templateEditorFileInputRef.current?.click();
+
+  const handleTplFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !tplSelectedImage) return;
+    if (!file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl || !tplSelectedImage) return;
+      const img = tplSelectedImage.imgEl;
+      img.src = dataUrl;
+      img.onload = () => {
+        const newW = Math.min(img.naturalWidth, MAX_TPL_IMG_WIDTH);
+        const ratio = newW / img.naturalWidth;
+        img.style.width = `${newW}px`;
+        img.style.height = `${Math.round(img.naturalHeight * ratio)}px`;
+        img.style.clipPath = '';
+        if (img.style.position === 'absolute') { img.style.position = ''; img.style.left = ''; img.style.top = ''; }
+        tplResizeIframe();
+        tplSelectImage(img);
+      };
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleTplResizeImage = (widthPct: number) => {
+    if (!tplSelectedImage) return;
+    const img = tplSelectedImage.imgEl;
+    const newW = Math.min(Math.round((img.naturalWidth * widthPct) / 100), MAX_TPL_IMG_WIDTH);
+    const ratio = newW / img.naturalWidth;
+    img.style.width = `${newW}px`;
+    img.style.height = `${Math.round(img.naturalHeight * ratio)}px`;
+    setTplImgWidth(widthPct);
+    setTimeout(tplResizeIframe, 50);
+  };
+
+  const handleTplFitToColumn = () => {
+    if (!tplSelectedImage) return;
+    const img = tplSelectedImage.imgEl;
+    img.style.width = '100%';
+    img.style.height = 'auto';
+    setTplImgWidth(Math.round((MAX_TPL_IMG_WIDTH / img.naturalWidth) * 100));
+    setTimeout(tplResizeIframe, 50);
+  };
+
+  const handleTplResetImage = () => {
+    if (!tplSelectedImage) return;
+    const img = tplSelectedImage.imgEl;
+    img.style.width = tplSelectedImage.originalWidth;
+    img.style.height = tplSelectedImage.originalHeight;
+    img.style.clipPath = '';
+    setTplImgWidth(100);
+    setTplCropValues({ top: 0, right: 0, bottom: 0, left: 0 });
+    setTimeout(tplResizeIframe, 50);
+  };
+
+  const handleTplCropChange = (side: 'top' | 'right' | 'bottom' | 'left', value: number) => {
+    if (!tplSelectedImage) return;
+    const newCrop = { ...tplCropValues, [side]: value };
+    setTplCropValues(newCrop);
+    tplSelectedImage.imgEl.style.clipPath = `inset(${newCrop.top}% ${newCrop.right}% ${newCrop.bottom}% ${newCrop.left}%)`;
+  };
+
+  const handleTplToggleEditMode = () => {
+    const next = !tplEditMode;
+    setTplEditMode(next);
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (doc?.body) {
+      doc.body.contentEditable = next ? 'true' : 'false';
+      if (next) {
+        doc.body.classList.add('img-edit-mode');
+      } else {
+        doc.body.classList.remove('img-edit-mode');
+        tplDeselectImage();
+      }
+    }
   };
 
   /**
@@ -2070,6 +2218,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleSaveGlobalTemplate = () => {
     const doc = templateEditorIframeRef.current?.contentDocument;
     if (!doc) return;
+
+    // Clean up image editing classes before extracting HTML
+    doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+    doc.body.classList.remove('img-edit-mode');
 
     let html = doc.documentElement.outerHTML;
 
@@ -2087,6 +2239,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     saveGlobalTemplate(html, user.id, userName);
     setTemplateVersion(v => v + 1);
     setShowTemplateEditor(false);
+    setTplSelectedImage(null);
+    setTplCropMode(false);
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
@@ -3915,6 +4069,22 @@ Vartotojo instrukcija: ${instruction}`;
           .template-var { cursor: default; border-radius: 3px; }
           .template-var.unfilled { cursor: text; }
           .template-var.filled { background: rgba(59,130,246,0.04); box-shadow: 0 0 0 1px rgba(59,130,246,0.12); padding: 0 2px; border-radius: 3px; }
+          /* Image constraints */
+          img { max-width: 100%; height: auto; }
+          /* Edit mode image styles */
+          body.img-edit-mode img {
+            cursor: pointer;
+            transition: outline 0.15s, box-shadow 0.15s;
+          }
+          body.img-edit-mode img:hover {
+            outline: 2px solid rgba(59,130,246,0.4);
+            outline-offset: 2px;
+          }
+          body.img-edit-mode img.img-selected {
+            outline: 2px solid #3b82f6;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 4px rgba(59,130,246,0.12);
+          }
           </style>`
         );
         const meta = getGlobalTemplateMeta();
@@ -3941,6 +4111,15 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Edit mode toggle */}
+                  <button
+                    onClick={handleTplToggleEditMode}
+                    className={`btn btn-soft btn-sm gap-1.5 ${tplEditMode ? 'btn-active' : ''}`}
+                    title={tplEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
+                  >
+                    {tplEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                    {tplEditMode ? 'Redaguojama' : 'Užrakinta'}
+                  </button>
                   {/* Version history / undo button */}
                   <button
                     onClick={() => { setShowTemplateVersions(!showTemplateVersions); setExpandedVersionId(null); setExpandedDiff(null); }}
@@ -3966,7 +4145,9 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Info bar: last edited by + hint */}
               <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
                 <span className="text-[10px] text-base-content/40">
-                  Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
+                  {tplEditMode
+                    ? 'Redaguokite tekstą ir paveikslėlius tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).'
+                    : 'Redagavimas užrakintas. Paspauskite „Redaguojama" mygtuką, kad atrakintumėte.'}
                 </span>
                 {lastEditedFirstName && (
                   <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
@@ -3977,6 +4158,129 @@ Vartotojo instrukcija: ${instruction}`;
                   </span>
                 )}
               </div>
+              {/* Hidden file input for image replacement */}
+              <input
+                ref={templateEditorFileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleTplFileSelected}
+              />
+
+              {/* Image editing toolbar (docked at top, shown when image selected) */}
+              {tplSelectedImage && tplEditMode && (
+                <div
+                  className="flex-shrink-0"
+                  style={{
+                    background: '#fafaf9',
+                    borderBottom: '1px solid rgba(0,0,0,0.08)',
+                    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                  }}
+                >
+                  <div className="px-4 py-2 flex items-center gap-3">
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[11px] font-semibold" style={{ color: '#1a1a1a' }}>Paveikslėlis</span>
+                      <span className="text-[10px]" style={{ color: '#9ca3af' }}>{tplSelectedImage.naturalWidth}×{tplSelectedImage.naturalHeight}</span>
+                    </div>
+                    <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={handleTplReplaceImage}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                        style={{ background: '#3d3935', color: 'white' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#2d2925'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#3d3935'}
+                        title="Pakeisti paveikslėlį"
+                      >
+                        <ImagePlus className="w-3 h-3" />
+                        Pakeisti
+                      </button>
+                      <button
+                        onClick={handleTplFitToColumn}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                        style={{ background: '#f3f2f0', color: '#3d3935' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                        title="Pritaikyti prie stulpelio"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                        Užpildyti
+                      </button>
+                      <button
+                        onClick={handleTplResetImage}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                        style={{ background: '#f3f2f0', color: '#3d3935' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                        title="Atkurti originalų dydį"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <MoveHorizontal className="w-3 h-3 flex-shrink-0" style={{ color: '#6b7280' }} />
+                      <input
+                        type="range"
+                        min={10}
+                        max={200}
+                        value={tplImgWidth}
+                        onChange={e => handleTplResizeImage(+e.target.value)}
+                        className="flex-1 h-1 rounded-full appearance-none cursor-pointer min-w-[60px]"
+                        style={{
+                          background: `linear-gradient(to right, #3d3935 0%, #3d3935 ${((tplImgWidth - 10) / 190) * 100}%, #e5e2dd ${((tplImgWidth - 10) / 190) * 100}%, #e5e2dd 100%)`,
+                          accentColor: '#3d3935',
+                        }}
+                      />
+                      <span className="text-[10px] tabular-nums font-medium flex-shrink-0" style={{ color: '#3d3935' }}>{tplImgWidth}%</span>
+                    </div>
+                    <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+                    <button
+                      onClick={() => setTplCropMode(prev => !prev)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex-shrink-0"
+                      style={{ background: tplCropMode ? '#eff6ff' : '#f3f2f0', color: tplCropMode ? '#3b82f6' : '#6b7280' }}
+                    >
+                      <Crop className="w-3 h-3" />
+                      Apkarpyti
+                    </button>
+                    <button
+                      onClick={tplDeselectImage}
+                      className="p-1 rounded transition-colors flex-shrink-0"
+                      style={{ color: '#9ca3af' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#3d3935'}
+                      onMouseLeave={e => e.currentTarget.style.color = '#9ca3af'}
+                      title="Uždaryti"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {tplCropMode && (
+                    <div className="px-4 pb-2 flex items-center gap-3" style={{ borderTop: '1px solid #f0eeeb' }}>
+                      {(['top', 'right', 'bottom', 'left'] as const).map(side => (
+                        <div key={side} className="flex items-center gap-1.5 flex-1">
+                          <span className="text-[10px] flex-shrink-0" style={{ color: '#9ca3af' }}>
+                            {side === 'top' ? 'Viršus' : side === 'right' ? 'Dešinė' : side === 'bottom' ? 'Apačia' : 'Kairė'}
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={45}
+                            value={tplCropValues[side]}
+                            onChange={e => handleTplCropChange(side, +e.target.value)}
+                            className="flex-1 h-1 rounded-full appearance-none cursor-pointer min-w-[30px]"
+                            style={{
+                              background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(tplCropValues[side] / 45) * 100}%, #e5e2dd ${(tplCropValues[side] / 45) * 100}%, #e5e2dd 100%)`,
+                              accentColor: '#3b82f6',
+                            }}
+                          />
+                          <span className="text-[10px] w-5 tabular-nums flex-shrink-0" style={{ color: '#9ca3af' }}>{tplCropValues[side]}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* Visual editor iframe */}
@@ -3993,12 +4297,34 @@ Vartotojo instrukcija: ${instruction}`;
                       onLoad={() => {
                         const doc = templateEditorIframeRef.current?.contentDocument;
                         if (doc) {
-                          doc.body.contentEditable = 'true';
+                          doc.body.contentEditable = tplEditMode ? 'true' : 'false';
+                          doc.body.style.outline = 'none';
+                          if (tplEditMode) doc.body.classList.add('img-edit-mode');
+
                           // Auto-size iframe to content
                           const h = doc.body.scrollHeight;
                           if (templateEditorIframeRef.current) {
                             templateEditorIframeRef.current.style.height = h + 'px';
                           }
+
+                          // Image click handlers
+                          doc.querySelectorAll<HTMLImageElement>('img').forEach(img => {
+                            img.addEventListener('click', (e) => {
+                              if (!tplEditMode) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              tplSelectImage(img);
+                            });
+                          });
+
+                          // Click on body deselects image
+                          doc.body.addEventListener('click', (e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.tagName === 'IMG') return;
+                            doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+                            setTplSelectedImage(null);
+                            setTplCropMode(false);
+                          });
                         }
                       }}
                     />
