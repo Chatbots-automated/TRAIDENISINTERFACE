@@ -560,6 +560,23 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       }
     }, [srcdoc, conversationId]);
 
+    // Apply saved HTML from DB when it arrives after the iframe has already loaded
+    // (fixes race condition: DB fetch completes after handleIframeLoad has fired)
+    useEffect(() => {
+      if (!savedHtml) return;
+      const doc = iframeRef.current?.contentDocument;
+      if (!doc?.body) return;
+      // Don't overwrite if localStorage already restored edits
+      if (conversationId) {
+        try {
+          const local = localStorage.getItem(DOC_EDIT_PREFIX + conversationId);
+          if (local) return; // localStorage takes priority
+        } catch { /* ignore */ }
+      }
+      doc.body.innerHTML = savedHtml;
+      setTimeout(measureIframe, 50);
+    }, [savedHtml, conversationId, measureIframe]);
+
     // Toggle contentEditable and img-edit-mode when editable prop changes
     useEffect(() => {
       const doc = iframeRef.current?.contentDocument;
