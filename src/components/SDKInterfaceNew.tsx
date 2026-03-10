@@ -2095,9 +2095,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       setIsSavingToStandartiniai(true);
 
-      // Get rendered HTML from the preview iframe
-      const editedHtml = documentPreviewRef.current?.getEditedHtml();
-      if (!editedHtml) {
+      // Build rendered HTML from template + current variables (works regardless of active tab)
+      const vars = mergeAllVariables();
+      const tpl = getDefaultTemplate();
+      const citedKeys = currentConversation.artifact.variable_citations
+        ? new Set(Object.keys(currentConversation.artifact.variable_citations))
+        : undefined;
+      const renderedHtml = renderTemplate(tpl, vars, citedKeys);
+
+      if (!renderedHtml) {
         addNotification('error', 'Klaida', 'Nepavyko gauti dokumento turinio.');
         return;
       }
@@ -2105,15 +2111,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Get the YAML content (between <commercial_offer> tags = artifact content)
       const yamlContent = currentConversation.artifact.content || '';
 
-      // Get projekto_kodas from merged variables
-      const vars = mergeAllVariables();
+      // Get projekto_kodas and HNV from merged variables
       const projektoKodas = vars['code_yy/mm/dd'] || '';
-
-      // Get HNV value from the YAML variables
       const hnv = vars['economy_HNV'] || '';
 
       await saveStandartinisProjektas({
-        html_content: editedHtml,
+        html_content: renderedHtml,
         yaml_content: yamlContent,
         projekto_kodas: projektoKodas,
         hnv: hnv,
