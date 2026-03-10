@@ -164,26 +164,48 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         height: auto;
       }
 
-      /* Interactive variable styles — always visible */
-      .template-var {
+      /* ── Locked mode (default): variables look like normal text ── */
+      .template-var { transition: background 0.15s, box-shadow 0.15s; }
+      .template-var.filled { /* invisible — just text */ }
+      .template-var.unfilled {
+        /* Hide yellow placeholder — show as subtle grey text */
+        background: none !important;
+        border: none !important;
+        color: #b0aaa4 !important;
+        padding: 0 !important;
+        font-size: inherit !important;
+        font-style: italic;
+      }
+
+      /* ── Edit mode: interactive variable styles ── */
+      body.edit-mode .template-var {
         cursor: pointer;
         border-radius: 3px;
-        transition: background 0.15s, box-shadow 0.15s;
       }
-      .template-var.filled {
+      body.edit-mode .template-var.filled {
         background: rgba(59,130,246,0.04);
         box-shadow: 0 0 0 1px rgba(59,130,246,0.12);
         padding: 0 2px;
         border-radius: 3px;
       }
-      .template-var.filled:hover {
+      body.edit-mode .template-var.filled:hover {
         background: rgba(59,130,246,0.08);
         box-shadow: 0 0 0 1.5px rgba(59,130,246,0.3);
       }
-      .template-var.unfilled:hover {
+      body.edit-mode .template-var.unfilled {
+        background: #fff3cd !important;
+        color: #856404 !important;
+        border: 1px dashed #ffc107 !important;
+        padding: 1px 6px !important;
+        font-size: 0.85em !important;
+        font-style: normal;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      body.edit-mode .template-var.unfilled:hover {
         box-shadow: 0 0 0 2px #f59e0b;
       }
-      .template-var.active {
+      body.edit-mode .template-var.active {
         background: rgba(59,130,246,0.12) !important;
         box-shadow: 0 0 0 1.5px #3b82f6 !important;
       }
@@ -254,8 +276,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           padding: 36pt 36pt 36pt 36pt !important;
           box-shadow: none !important;
         }
-        .template-var { cursor: default; }
+        .template-var { cursor: default !important; }
         .template-var.filled { background: transparent !important; box-shadow: none !important; padding: 0 !important; }
+        .template-var.unfilled { background: none !important; border: none !important; color: inherit !important; padding: 0 !important; font-size: inherit !important; font-style: normal !important; }
         .citation-badge { display: none !important; }
         span[style*="background:#fff3cd"] {
           -webkit-print-color-adjust: exact !important;
@@ -311,19 +334,14 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         const clone = doc.documentElement.cloneNode(true) as HTMLElement;
         // Remove citation badges (preview-only UI)
         clone.querySelectorAll('.citation-badge').forEach(el => el.remove());
-        // Remove template-var interactive wrappers — keep inner content
-        clone.querySelectorAll('.template-var').forEach(span => {
-          const parent = span.parentNode;
-          if (parent) {
-            while (span.firstChild) parent.insertBefore(span.firstChild, span);
-            parent.removeChild(span);
-          }
-        });
+        // Keep .template-var spans — they're needed for restore interactivity.
+        // Just remove the 'active' state class if present.
+        clone.querySelectorAll('.template-var.active').forEach(el => el.classList.remove('active'));
         // Remove img-edit-mode and img-selected classes
         clone.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
         const body = clone.querySelector('body');
         if (body) {
-          body.classList.remove('img-edit-mode');
+          body.classList.remove('edit-mode', 'img-edit-mode');
           body.contentEditable = 'false';
         }
         // Strip preview-only CSS block (between "/* Preview host overrides */" and the closing </style>)
@@ -427,11 +445,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       doc.body.contentEditable = editableRef.current ? 'true' : 'false';
       doc.body.style.outline = 'none';
 
-      // Toggle img-edit-mode class
+      // Toggle edit-mode / img-edit-mode classes
       if (editableRef.current) {
-        doc.body.classList.add('img-edit-mode');
+        doc.body.classList.add('edit-mode', 'img-edit-mode');
       } else {
-        doc.body.classList.remove('img-edit-mode');
+        doc.body.classList.remove('edit-mode', 'img-edit-mode');
       }
 
       // Restore saved manual edits — priority: localStorage > DB savedHtml > fresh render
@@ -622,9 +640,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       if (doc?.body) {
         doc.body.contentEditable = editable ? 'true' : 'false';
         if (editable) {
-          doc.body.classList.add('img-edit-mode');
+          doc.body.classList.add('edit-mode', 'img-edit-mode');
         } else {
-          doc.body.classList.remove('img-edit-mode');
+          doc.body.classList.remove('edit-mode', 'img-edit-mode');
           // Deselect image when leaving edit mode
           deselectImage();
         }
