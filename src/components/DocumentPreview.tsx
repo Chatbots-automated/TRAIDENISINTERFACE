@@ -200,6 +200,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         font-size: 0.85em !important;
         font-style: normal;
         border-radius: 3px;
+        white-space: nowrap;
         cursor: pointer;
       }
       body.edit-mode .template-var.unfilled:hover {
@@ -530,6 +531,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         span.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
+
+          // In locked mode, ignore variable clicks (no editing)
+          if (!editableRef.current) return;
 
           const varKey = span.getAttribute('data-var');
           if (!varKey) return;
