@@ -724,7 +724,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </button>
             </div>
             <div className="flex-1 overflow-auto bg-gray-50 p-4">
-              <div className="mx-auto bg-white shadow-sm rounded-lg" style={{ maxWidth: '210mm', minHeight: '297mm' }}>
+              <div className="mx-auto bg-white shadow-sm rounded-lg" style={{ maxWidth: '210mm' }}>
                 <iframe
                   srcDoc={(() => {
                     // Full HTML document (new format) — use as-is
@@ -738,9 +738,21 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     return `<html><head><meta charset="UTF-8">${styles}</head><body class="c47 doc-content" style="max-width:523.2pt;margin:0 auto;padding:36pt;background:#fff;">${htmlPreview}</body></html>`;
                   })()}
                   className="w-full border-0"
-                  style={{ minHeight: '297mm', height: '100%' }}
+                  style={{ minHeight: '297mm' }}
                   title="Dokumento peržiūra"
                   sandbox="allow-same-origin"
+                  onLoad={(e) => {
+                    // Auto-size iframe to content so only the outer container scrolls
+                    const iframe = e.currentTarget;
+                    const body = iframe.contentDocument?.body;
+                    if (body) {
+                      // Disable iframe internal scrolling
+                      iframe.contentDocument!.documentElement.style.overflow = 'hidden';
+                      const h = body.scrollHeight;
+                      iframe.style.height = h + 'px';
+                      iframe.style.minHeight = h + 'px';
+                    }
+                  }}
                 />
               </div>
             </div>
