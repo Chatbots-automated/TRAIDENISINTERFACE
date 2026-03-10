@@ -6,8 +6,10 @@ import type { VariableCitation } from '../lib/sdkConversationService';
 export interface DocumentPreviewHandle {
   print: () => void;
   clearActiveVariable: () => void;
-  /** Get the full innerHTML of the iframe body (includes user text edits). */
+  /** Get the full outerHTML of the iframe document (includes user text edits + styles). */
   getEditedHtml: () => string | null;
+  /** Get just the body innerHTML (for DB persistence — can be restored on load). */
+  getEditedBodyHtml: () => string | null;
 }
 
 export interface VariableClickInfo {
@@ -59,6 +61,8 @@ interface DocumentPreviewProps {
   conversationId?: string;
   /** Variable citations map from artifact */
   citations?: Record<string, VariableCitation>;
+  /** Previously saved full HTML from DB — used to restore manual edits on page refresh. */
+  savedHtml?: string | null;
 }
 
 // The "native" zoom where the document fits the panel well.
@@ -71,7 +75,7 @@ const DOC_EDIT_PREFIX = 'doc_edit_';
 const MAX_IMG_WIDTH = 523;
 
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
-  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onCitationClick, onScroll, editable = false, conversationId, citations }, ref) {
+  function DocumentPreview({ variables, template, templateVersion, onVariableClick, onCitationClick, onScroll, editable = false, conversationId, citations, savedHtml }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +99,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     citationsRef.current = citations;
     const editableRef = useRef(editable);
     editableRef.current = editable;
+    const savedHtmlRef = useRef(savedHtml);
+    savedHtmlRef.current = savedHtml;
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Build the set of cited variable keys for renderTemplate
@@ -295,6 +301,10 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         const doc = iframeRef.current?.contentDocument;
         return doc?.documentElement?.outerHTML || null;
       },
+      getEditedBodyHtml: () => {
+        const doc = iframeRef.current?.contentDocument;
+        return doc?.body?.innerHTML || null;
+      },
     }));
 
     const measureIframe = useCallback(() => {
@@ -389,7 +399,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         doc.body.classList.remove('img-edit-mode');
       }
 
-      // Restore saved manual edits if they exist for this conversation
+      // Restore saved manual edits — priority: localStorage > DB savedHtml > fresh render
+      let restored = false;
       if (conversationId) {
         try {
           const saved = localStorage.getItem(DOC_EDIT_PREFIX + conversationId);
@@ -399,11 +410,17 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             if (fingerprint === srcdoc.length.toString() || fingerprint === 'img-edit') {
               doc.body.innerHTML = html;
               setTimeout(measureIframe, 50);
+              restored = true;
             } else {
               localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
             }
           }
         } catch { /* ignore corrupt data */ }
+      }
+      // Fall back to saved HTML from DB (persisted manual edits from last save)
+      if (!restored && savedHtmlRef.current) {
+        doc.body.innerHTML = savedHtmlRef.current;
+        setTimeout(measureIframe, 50);
       }
 
       // Auto-save on input (debounced 500ms)
