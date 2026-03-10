@@ -1066,8 +1066,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         }
       }
 
-      // Reset artifact streaming state
-      setIsStreamingArtifact(false);
+      // NOTE: Don't reset isStreamingArtifact here — it's reset AFTER artifact
+      // detection in the final response branch, or before recursion in the tool
+      // use branch.  Resetting eagerly here causes the artifact panel to
+      // disappear during the gap between stream end and artifact save.
       setArtifactStreamContent('');
 
       // Get the complete final message to ensure we have all tool_use blocks correctly
@@ -1135,6 +1137,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
+        // Safe to reset streaming state — the recursive call will set it again if needed
+        setIsStreamingArtifact(false);
         console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
 
         // Execute all tools with error handling
@@ -1351,9 +1355,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             finalMessages.length - 1
           );
         }
+
+        // NOW safe to reset streaming artifact state (after artifact is saved)
+        setIsStreamingArtifact(false);
       }
     } catch (err: any) {
       console.error('[processAIResponse] Error:', err);
+      setIsStreamingArtifact(false); // Reset on error too
       throw err;
     }
   };
@@ -1759,35 +1767,39 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       // Determine if this is a new artifact or an update
       const isNewArtifact = artifactIdFromAI === 'new' || !currentArtifact;
-
-      // --- Build citations for changed variables ---
-      const newYamlVars = parseYAMLContent(trimmedContent);
-      const oldYamlVars = currentArtifact ? parseYAMLContent(currentArtifact.content) : {};
-      const existingCitations = currentArtifact?.variable_citations || {};
       const newVersion = isNewArtifact ? 1 : (currentArtifact.version + 1);
       const nowISO = new Date().toISOString();
 
-      // Determine which variables are new or changed
-      const citations: Record<string, VariableCitation> = { ...existingCitations };
-      for (const key of Object.keys(newYamlVars)) {
-        const isChanged = isNewArtifact || oldYamlVars[key] !== newYamlVars[key];
-        if (isChanged) {
-          citations[key] = {
-            variable_key: key,
-            message_index: messageIndex ?? (conversation.messages.length - 1),
-            thinking_excerpt: (thinkingText || '').slice(0, 2000),
-            chat_excerpt: (chatText || '').replace(/<commercial_offer[\s\S]*?<\/commercial_offer>/g, '').trim().slice(0, 500),
-            timestamp: nowISO,
-            version: newVersion,
-          };
-        }
-      }
-      // Remove citations for variables that no longer exist in YAML
-      for (const key of Object.keys(citations)) {
-        if (!(key in newYamlVars)) delete citations[key];
-      }
+      // --- Build citations for changed variables (non-blocking) ---
+      let citations: Record<string, VariableCitation> = {};
+      try {
+        const newYamlVars = parseYAMLContent(trimmedContent);
+        const oldYamlVars = currentArtifact ? parseYAMLContent(currentArtifact.content) : {};
+        const existingCitations = currentArtifact?.variable_citations || {};
 
-      console.log('[Citations] Variables cited:', Object.keys(citations).length, 'of', Object.keys(newYamlVars).length);
+        citations = { ...existingCitations };
+        for (const key of Object.keys(newYamlVars)) {
+          const isChanged = isNewArtifact || oldYamlVars[key] !== newYamlVars[key];
+          if (isChanged) {
+            citations[key] = {
+              variable_key: key,
+              message_index: messageIndex ?? (conversation.messages.length - 1),
+              thinking_excerpt: (thinkingText || '').slice(0, 2000),
+              chat_excerpt: (chatText || '').replace(/<commercial_offer[\s\S]*?<\/commercial_offer>/g, '').trim().slice(0, 500),
+              timestamp: nowISO,
+              version: newVersion,
+            };
+          }
+        }
+        // Remove citations for variables that no longer exist in YAML
+        for (const key of Object.keys(citations)) {
+          if (!(key in newYamlVars)) delete citations[key];
+        }
+        console.log('[Citations] Variables cited:', Object.keys(citations).length, 'of', Object.keys(newYamlVars).length);
+      } catch (citationErr) {
+        console.warn('[Citations] Failed to build citations (non-fatal):', citationErr);
+        citations = currentArtifact?.variable_citations || {};
+      }
 
       if (isNewArtifact) {
         // Create new artifact
@@ -1850,6 +1862,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
     } catch (err) {
       console.error('Error handling artifact:', err);
+      setShowArtifact(false); // Reset so floating buttons become visible again
       addNotification('error', 'Klaida', 'Nepavyko išsaugoti komercinio pasiūlymo.');
     }
   };
