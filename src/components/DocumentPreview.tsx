@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { ZoomIn, ZoomOut, ImagePlus, Maximize2, RotateCcw, Crop, MoveHorizontal } from 'lucide-react';
+import { ZoomIn, ZoomOut, ImagePlus, Maximize2, RotateCcw, Crop, MoveHorizontal, X } from 'lucide-react';
 import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import type { VariableCitation } from '../lib/sdkConversationService';
 
@@ -726,7 +726,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           style={{ background: '#ffffff' }}
           onScroll={() => {
             onScroll?.();
-            if (selectedImage) deselectImage();
           }}
         >
           {/* Scaled wrapper — explicit size so scroll area matches visual content */}
@@ -757,157 +756,147 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           </div>
         </div>
 
-        {/* ── Image Editing Toolbar (floating, positioned near selected image) ── */}
+        {/* ── Image Editing Toolbar (docked bar above disclaimer) ── */}
         {selectedImage && editable && (
-          <>
-            {/* Click-outside overlay */}
-            <div
-              style={{ position: 'absolute', inset: 0, zIndex: 49 }}
-              onClick={deselectImage}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                left: Math.min(Math.max(selectedImage.x - 140, 4), 200),
-                top: selectedImage.y + 8,
-                zIndex: 50,
-                width: '280px',
-                filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.12)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
-                fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-              }}
-            >
-              {/* Pointer */}
-              <div style={{
-                width: 0, height: 0,
-                borderLeft: '7px solid transparent',
-                borderRight: '7px solid transparent',
-                borderBottom: '7px solid #ffffff',
-                marginLeft: Math.min(Math.max(selectedImage.x - Math.min(Math.max(selectedImage.x - 140, 4), 200) - 7, 16), 248) + 'px',
-              }} />
-
-              <div style={{
-                background: '#ffffff',
-                borderRadius: '10px',
-                overflow: 'hidden',
-                border: '1px solid rgba(0,0,0,0.06)',
-              }}>
-                {/* Header */}
-                <div className="px-3 py-2" style={{ borderBottom: '1px solid #f0eeeb' }}>
-                  <div className="text-[12px] font-semibold" style={{ color: '#1a1a1a' }}>
-                    Paveikslėlio įrankiai
-                  </div>
-                  <div className="text-[10px] mt-0.5" style={{ color: '#9ca3af' }}>
-                    {selectedImage.naturalWidth}×{selectedImage.naturalHeight}px
-                  </div>
-                </div>
-
-                {/* Action buttons row */}
-                <div className="px-3 py-2 flex items-center gap-1.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
-                  <button
-                    onClick={handleReplaceImage}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors"
-                    style={{ background: '#3d3935', color: 'white' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#2d2925'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#3d3935'}
-                    title="Pakeisti paveikslėlį"
-                  >
-                    <ImagePlus className="w-3 h-3" />
-                    Pakeisti
-                  </button>
-                  <button
-                    onClick={handleFitToColumn}
-                    className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors"
-                    style={{ background: '#f3f2f0', color: '#3d3935' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
-                    title="Pritaikyti prie stulpelio"
-                  >
-                    <Maximize2 className="w-3 h-3" />
-                    Užpildyti
-                  </button>
-                  <button
-                    onClick={handleResetImage}
-                    className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors"
-                    style={{ background: '#f3f2f0', color: '#3d3935' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
-                    title="Atkurti originalų dydį"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                  </button>
-                </div>
-
-                {/* Resize slider */}
-                <div className="px-3 py-2.5" style={{ borderBottom: cropMode ? '1px solid #f0eeeb' : undefined }}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-medium" style={{ color: '#6b7280' }}>
-                      <MoveHorizontal className="w-3 h-3 inline mr-1" style={{ verticalAlign: '-2px' }} />
-                      Dydis
-                    </span>
-                    <span className="text-[10px] tabular-nums font-medium" style={{ color: '#3d3935' }}>
-                      {imgWidth}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={200}
-                    value={imgWidth}
-                    onChange={e => handleResizeImage(+e.target.value)}
-                    className="w-full h-1 rounded-full appearance-none cursor-pointer"
-                    style={{
-                      background: `linear-gradient(to right, #3d3935 0%, #3d3935 ${((imgWidth - 10) / 190) * 100}%, #e5e2dd ${((imgWidth - 10) / 190) * 100}%, #e5e2dd 100%)`,
-                      accentColor: '#3d3935',
-                    }}
-                  />
-                </div>
-
-                {/* Crop toggle + sliders */}
-                <div className="px-3 py-2">
-                  <button
-                    onClick={() => setCropMode(prev => !prev)}
-                    className="flex items-center gap-1.5 text-[11px] font-medium transition-colors w-full justify-between"
-                    style={{ color: cropMode ? '#3b82f6' : '#6b7280' }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Crop className="w-3 h-3" />
-                      Apkarpyti
-                    </span>
-                    <span className="text-[10px]" style={{ color: '#9ca3af' }}>
-                      {cropMode ? '▲' : '▼'}
-                    </span>
-                  </button>
-
-                  {cropMode && (
-                    <div className="mt-2 flex flex-col gap-2">
-                      {(['top', 'right', 'bottom', 'left'] as const).map(side => (
-                        <div key={side} className="flex items-center gap-2">
-                          <span className="text-[10px] w-12 text-right" style={{ color: '#9ca3af' }}>
-                            {side === 'top' ? 'Viršus' : side === 'right' ? 'Dešinė' : side === 'bottom' ? 'Apačia' : 'Kairė'}
-                          </span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={45}
-                            value={cropValues[side]}
-                            onChange={e => handleCropChange(side, +e.target.value)}
-                            className="flex-1 h-1 rounded-full appearance-none cursor-pointer"
-                            style={{
-                              background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(cropValues[side] / 45) * 100}%, #e5e2dd ${(cropValues[side] / 45) * 100}%, #e5e2dd 100%)`,
-                              accentColor: '#3b82f6',
-                            }}
-                          />
-                          <span className="text-[10px] w-6 tabular-nums" style={{ color: '#9ca3af' }}>
-                            {cropValues[side]}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+          <div
+            className="flex-shrink-0"
+            style={{
+              background: '#ffffff',
+              borderTop: '1px solid #e5e2dd',
+              fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+            }}
+          >
+            {/* Main row: actions + resize slider */}
+            <div className="px-3 py-2 flex items-center gap-3">
+              {/* Label + dimensions */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-[11px] font-semibold" style={{ color: '#1a1a1a' }}>
+                  Paveikslėlis
+                </span>
+                <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                  {selectedImage.naturalWidth}×{selectedImage.naturalHeight}
+                </span>
               </div>
+
+              {/* Separator */}
+              <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+
+              {/* Action buttons */}
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button
+                  onClick={handleReplaceImage}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                  style={{ background: '#3d3935', color: 'white' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#2d2925'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#3d3935'}
+                  title="Pakeisti paveikslėlį"
+                >
+                  <ImagePlus className="w-3 h-3" />
+                  Pakeisti
+                </button>
+                <button
+                  onClick={handleFitToColumn}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                  style={{ background: '#f3f2f0', color: '#3d3935' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                  title="Pritaikyti prie stulpelio"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  Užpildyti
+                </button>
+                <button
+                  onClick={handleResetImage}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                  style={{ background: '#f3f2f0', color: '#3d3935' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                  title="Atkurti originalų dydį"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                </button>
+              </div>
+
+              {/* Separator */}
+              <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+
+              {/* Resize slider inline */}
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <MoveHorizontal className="w-3 h-3 flex-shrink-0" style={{ color: '#6b7280' }} />
+                <input
+                  type="range"
+                  min={10}
+                  max={200}
+                  value={imgWidth}
+                  onChange={e => handleResizeImage(+e.target.value)}
+                  className="flex-1 h-1 rounded-full appearance-none cursor-pointer min-w-[60px]"
+                  style={{
+                    background: `linear-gradient(to right, #3d3935 0%, #3d3935 ${((imgWidth - 10) / 190) * 100}%, #e5e2dd ${((imgWidth - 10) / 190) * 100}%, #e5e2dd 100%)`,
+                    accentColor: '#3d3935',
+                  }}
+                />
+                <span className="text-[10px] tabular-nums font-medium flex-shrink-0" style={{ color: '#3d3935' }}>
+                  {imgWidth}%
+                </span>
+              </div>
+
+              {/* Separator */}
+              <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+
+              {/* Crop toggle */}
+              <button
+                onClick={() => setCropMode(prev => !prev)}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex-shrink-0"
+                style={{
+                  background: cropMode ? '#eff6ff' : '#f3f2f0',
+                  color: cropMode ? '#3b82f6' : '#6b7280',
+                }}
+              >
+                <Crop className="w-3 h-3" />
+                Apkarpyti
+              </button>
+
+              {/* Close button */}
+              <button
+                onClick={deselectImage}
+                className="p-1 rounded transition-colors flex-shrink-0"
+                style={{ color: '#9ca3af' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#3d3935'}
+                onMouseLeave={e => e.currentTarget.style.color = '#9ca3af'}
+                title="Uždaryti"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-          </>
+
+            {/* Crop sliders row (expanded when crop mode is on) */}
+            {cropMode && (
+              <div className="px-3 pb-2 flex items-center gap-3" style={{ borderTop: '1px solid #f0eeeb' }}>
+                {(['top', 'right', 'bottom', 'left'] as const).map(side => (
+                  <div key={side} className="flex items-center gap-1.5 flex-1">
+                    <span className="text-[10px] flex-shrink-0" style={{ color: '#9ca3af' }}>
+                      {side === 'top' ? 'Viršus' : side === 'right' ? 'Dešinė' : side === 'bottom' ? 'Apačia' : 'Kairė'}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={45}
+                      value={cropValues[side]}
+                      onChange={e => handleCropChange(side, +e.target.value)}
+                      className="flex-1 h-1 rounded-full appearance-none cursor-pointer min-w-[30px]"
+                      style={{
+                        background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(cropValues[side] / 45) * 100}%, #e5e2dd ${(cropValues[side] / 45) * 100}%, #e5e2dd 100%)`,
+                        accentColor: '#3b82f6',
+                      }}
+                    />
+                    <span className="text-[10px] w-5 tabular-nums flex-shrink-0" style={{ color: '#9ca3af' }}>
+                      {cropValues[side]}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Disclaimer */}
