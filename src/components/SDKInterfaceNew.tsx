@@ -1718,8 +1718,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    */
   const renderInteractiveYAML = (yamlContent: string) => {
     const lines = yamlContent.split('\n');
-    // Pattern: variable_key: "value" or variable_key: | (supports mixed case like economy_HNV)
-    const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/;
+    // Pattern: variable_key: "value" or variable_key: | or variable_key: (empty → multiline block follows)
+    const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/;
 
     // Collect multiline values
     const items: { key: string; value: string; lineIndex: number }[] = [];
@@ -1739,7 +1739,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const match = line.match(variablePattern);
       if (match && !line.startsWith('#') && !line.startsWith(' ')) {
         const [, varKey, value] = match;
-        if (value.trim() === '|') {
+        if (value.trim() === '|' || value.trim() === '>' || value.trim() === '') {
+          // Block scalar (|, >) or bare key with indented lines following
           currentMultiline = { key: varKey, lines: [], lineIndex: index };
         } else {
           // Strip surrounding quotes from value
@@ -1993,8 +1994,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const key = trimmed.substring(0, colonIndex).trim();
         const rawValue = trimmed.substring(colonIndex + 1).trim();
 
-        if (rawValue === '|' || rawValue === '>') {
-          // Start of a multi-line block scalar
+        if (rawValue === '|' || rawValue === '>' || rawValue === '') {
+          // Start of a multi-line block scalar (|, >) or bare key with indented lines
           currentKey = key;
           multilineValue = [];
         } else {
