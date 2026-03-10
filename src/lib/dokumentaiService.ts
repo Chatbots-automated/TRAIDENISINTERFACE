@@ -101,8 +101,8 @@ export const getStandartinisByConversationId = async (
       .single();
 
     if (error) {
-      // .single() throws when 0 rows found — treat as "not found"
-      if (error.message?.includes('Row not found') || error.code === 'PGRST116') {
+      // Directus .single() returns code 'NOT_FOUND' / message 'Item not found' when 0 rows
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
         return null;
       }
       console.error('Error fetching standartiniai_projektai by conversation_id:', error);
@@ -111,8 +111,7 @@ export const getStandartinisByConversationId = async (
 
     return data;
   } catch (error: any) {
-    // Directus may return different error shapes for "no rows"
-    if (error?.message?.includes('Row not found') || error?.code === 'PGRST116') {
+    if (error?.code === 'NOT_FOUND' || error?.message?.includes('not found')) {
       return null;
     }
     console.error('Error in getStandartinisByConversationId:', error);
