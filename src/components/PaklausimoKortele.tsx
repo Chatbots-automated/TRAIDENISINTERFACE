@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  X, ExternalLink, Link2, ChevronDown, Plus,
+  X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
   Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save,
 } from 'lucide-react';
@@ -26,6 +26,31 @@ function parseMetadata(raw: string | Record<string, string> | null | undefined):
   if (!raw) return {};
   if (typeof raw === 'object') return raw as Record<string, string>;
   try { return JSON.parse(raw) || {}; } catch { return {}; }
+}
+
+/**
+ * Extract an array of product specs from metadata.
+ * Supports two formats:
+ *   1. Old flat format: Record<string, string> → returns [meta] (single product)
+ *   2. New multi-product format: { products: Record<string, string>[] } → returns products array
+ * Also handles the case where metadata is a JSON array directly.
+ */
+function parseProducts(raw: string | Record<string, any> | null | undefined): Record<string, string>[] {
+  if (!raw) return [{}];
+  let obj: any = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return [{}]; }
+  }
+  // If it's an array of product objects directly
+  if (Array.isArray(obj)) {
+    return obj.length > 0 ? obj : [{}];
+  }
+  // If it has a "products" key with an array
+  if (obj && typeof obj === 'object' && Array.isArray(obj.products) && obj.products.length > 0) {
+    return obj.products;
+  }
+  // Flat single-product format
+  return [obj as Record<string, string>];
 }
 
 function parseJSON<T>(raw: T | string | null): T | null {
@@ -335,14 +360,68 @@ function EditMessageBubble({ message, side, onSave, onCancel }: { message: Atsak
 // Tab: Bendra
 // ---------------------------------------------------------------------------
 
-function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Record<string, string> }) {
-  const extraMeta = Object.entries(meta).filter(([k]) => !ALL_MAIN_KEYS.has(k));
+function TabBendra({ record, products }: { record: NestandartiniaiRecord; products: Record<string, string>[] }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const hasMultiple = products.length > 1;
+
+  // Clamp index if products array changes
+  const idx = Math.min(currentIdx, products.length - 1);
+  const meta = products[idx] || {};
+
+  const extraMeta = Object.entries(meta).filter(([k]) => !ALL_MAIN_KEYS.has(k) && k !== 'products' && k !== 'procurement_package' && k !== 'position');
   const hasRow1 = INFO_ROW_1.some(f => f.key === 'derva_org' ? !!meta.derva : !!meta[f.key]);
   const hasRow2 = INFO_ROW_2.some(f => f.key === 'derva_org' ? !!meta.derva : !!meta[f.key]);
   const dervaOrgDisplay = formatDervaOrg(meta);
 
+  const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
+  const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
+
   return (
     <div className="space-y-0">
+      {/* Product navigator — only shown when multiple products exist */}
+      {hasMultiple && (
+        <div className="flex items-center justify-between mb-4 px-1">
+          <button
+            onClick={goPrev}
+            className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
+            title="Ankstesnis gaminys"
+          >
+            <ChevronLeft className="w-5 h-5 text-base-content/50" />
+          </button>
+          <div className="flex flex-col items-center gap-0.5">
+            {meta.procurement_package && (
+              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                {meta.procurement_package}
+              </span>
+            )}
+            <span className="text-xs text-base-content/40">
+              {idx + 1} / {products.length}
+            </span>
+          </div>
+          <button
+            onClick={goNext}
+            className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
+            title="Kitas gaminys"
+          >
+            <ChevronRight className="w-5 h-5 text-base-content/50" />
+          </button>
+        </div>
+      )}
+
+      {/* Dot indicators for multiple products */}
+      {hasMultiple && products.length <= 10 && (
+        <div className="flex items-center justify-center gap-1.5 pb-3">
+          {products.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentIdx(i)}
+              className={`w-2 h-2 rounded-full transition-all ${i === idx ? 'bg-primary scale-110' : 'bg-base-content/15 hover:bg-base-content/25'}`}
+              title={products[i].procurement_package || `Gaminys ${i + 1}`}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Info grid */}
       {(hasRow1 || hasRow2 || meta.derva_musu) && (
         <div className="pb-4">
@@ -376,6 +455,7 @@ function TabBendra({ record, meta }: { record: NestandartiniaiRecord; meta: Reco
           <CollapsibleSection title="Papildomi duomenys">
             <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
               {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
+              {meta.position && <InfoField label="Pozicija" value={meta.position} />}
               {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
               {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={String(v)} />)}
             </div>
@@ -1533,6 +1613,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   const [dirtyTabs, setDirtyTabs] = useState<Set<ModalTab>>(new Set());
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const meta = parseMetadata(record.metadata);
+  const products = parseProducts(record.metadata);
   const cardUrl = `${window.location.origin}/paklausimas/${record.id}`;
   const [copied, setCopied] = useState(false);
   const hasContextChanges = dirtyTabs.size > 0;
@@ -1742,11 +1823,15 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
                 {record.project_name || 'Paklausimas'}
               </h2>
-              {meta.pritaikymas ? (
-                <p className="text-sm mt-0.5 truncate text-base-content/50">{meta.pritaikymas}</p>
+              {(meta.pritaikymas || products[0]?.pritaikymas) ? (
+                <p className="text-sm mt-0.5 truncate text-base-content/50">
+                  {meta.pritaikymas || products[0]?.pritaikymas}
+                  {products.length > 1 && <span className="text-base-content/30"> · {products.length} gaminiai</span>}
+                </p>
               ) : (
                 <p className="text-sm mt-0.5 text-base-content/40">
                   Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
+                  {products.length > 1 && <span> · {products.length} gaminiai</span>}
                 </p>
               )}
             </div>
@@ -1855,7 +1940,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -2051,6 +2136,7 @@ export default function PaklausimoKortelePage() {
   if (error || !record) return <div className="h-screen flex items-center justify-center bg-base-100"><div className="text-center"><p className="text-lg font-medium mb-1 text-base-content">{error || 'Nerastas'}</p><p className="text-sm text-base-content/40">Patikrinkite nuorodą.</p></div></div>;
 
   const meta = parseMetadata(record.metadata);
+  const products = parseProducts(record.metadata);
 
   const readOnlyTabs = TABS;
 
@@ -2065,10 +2151,16 @@ export default function PaklausimoKortelePage() {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || 'Paklausimas'}</h2>
-              {meta.pritaikymas ? (
-                <p className="text-sm mt-0.5 truncate text-base-content/50">{meta.pritaikymas}</p>
+              {(meta.pritaikymas || products[0]?.pritaikymas) ? (
+                <p className="text-sm mt-0.5 truncate text-base-content/50">
+                  {meta.pritaikymas || products[0]?.pritaikymas}
+                  {products.length > 1 && <span className="text-base-content/30"> · {products.length} gaminiai</span>}
+                </p>
               ) : (
-                <p className="text-sm mt-0.5 text-base-content/40">Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}</p>
+                <p className="text-sm mt-0.5 text-base-content/40">
+                  Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
+                  {products.length > 1 && <span> · {products.length} gaminiai</span>}
+                </p>
               )}
             </div>
             {record.klientas && (
@@ -2096,7 +2188,7 @@ export default function PaklausimoKortelePage() {
             })}
           </div>
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} meta={meta} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}

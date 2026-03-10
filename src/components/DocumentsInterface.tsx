@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField } from '../lib/dokumentaiService';
+import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -265,6 +266,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
+  const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
@@ -328,10 +330,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           return keywords.every(kw => blob.includes(kw));
         });
       } else {
-        const searchCols = genericCols;
+        // Standartiniai: multi-criteria AND search across key fields
         rows = rows.filter(row => {
           const parts: string[] = [];
-          for (const col of searchCols) {
+          if (row.id != null) parts.push(String(row.id));
+          if (row.projekto_kodas) parts.push(row.projekto_kodas);
+          if (row.hnv) parts.push(row.hnv);
+          if (row.yaml_content) parts.push(String(row.yaml_content));
+          // Also search all other fields for completeness
+          for (const col of genericCols) {
             const val = row[col];
             if (val !== null && val !== undefined) parts.push(String(val));
           }
@@ -617,7 +624,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
           </div>
         ) : (
-          /* ---- Standartiniai table (generic columns) ---- */
+          /* ---- Standartiniai table (all columns) ---- */
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
@@ -644,12 +651,40 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </thead>
               <tbody>
                 {sortedData.map((row, i) => (
-                  <tr key={row.id ?? i} style={{ borderBottom: '1px solid #f8f6f3' }}>
+                  <tr
+                    key={row.id ?? i}
+                    style={{ borderBottom: '1px solid #f8f6f3' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                  >
                     {genericCols.map(col => {
                       const val = row[col];
-                      const display = val === null || val === undefined ? '—' : String(val).length > 120 ? String(val).slice(0, 120) + '…' : String(val);
+                      // html_content — show preview button instead of raw HTML
+                      if (col === 'html_content') {
+                        const hasHtml = val && String(val).trim().length > 0;
+                        return (
+                          <td key={col} className="px-3 py-2.5">
+                            {hasHtml ? (
+                              <button
+                                onClick={() => setHtmlPreview(val)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
+                                style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Peržiūrėti
+                              </button>
+                            ) : (
+                              <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>
+                            )}
+                          </td>
+                        );
+                      }
+                      // Long text columns — truncate
+                      const isLongText = col === 'yaml_content';
+                      const maxLen = isLongText ? 60 : 120;
+                      const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
-                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                        <td key={col} className={`px-3 py-2.5 ${isLongText ? 'max-w-[200px]' : 'max-w-xs'} truncate`} style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
                           {display}
                         </td>
                       );
@@ -668,6 +703,61 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
+      )}
+
+      {/* HTML Preview Modal (view-only) */}
+      {htmlPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setHtmlPreview(null)}>
+          <div
+            className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-white shadow-xl"
+            style={{ height: '85vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <span className="text-sm font-semibold" style={{ color: '#3d3935' }}>Dokumento peržiūra</span>
+              <button
+                onClick={() => setHtmlPreview(null)}
+                className="p-1.5 rounded-md transition-colors hover:bg-gray-100"
+                style={{ color: '#8a857f' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-50 p-4">
+              <div className="mx-auto bg-white shadow-sm rounded-lg" style={{ maxWidth: '210mm' }}>
+                <iframe
+                  srcDoc={(() => {
+                    // Full HTML document (new format) — use as-is
+                    if (htmlPreview.trim().match(/^<(!doctype|html)/i)) {
+                      return htmlPreview;
+                    }
+                    // Legacy body-only content — wrap with template styles
+                    const tpl = getDefaultTemplate();
+                    const styleMatch = tpl.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+                    const styles = styleMatch ? styleMatch[0] : '';
+                    return `<html><head><meta charset="UTF-8">${styles}</head><body class="c47 doc-content" style="max-width:523.2pt;margin:0 auto;padding:36pt;background:#fff;">${htmlPreview}</body></html>`;
+                  })()}
+                  className="w-full border-0"
+                  style={{ minHeight: '297mm' }}
+                  title="Dokumento peržiūra"
+                  sandbox="allow-same-origin"
+                  onLoad={(e) => {
+                    // Auto-size iframe to content so only the outer container scrolls
+                    const iframe = e.currentTarget;
+                    const body = iframe.contentDocument?.body;
+                    if (body) {
+                      // Disable iframe internal scrolling
+                      iframe.contentDocument!.documentElement.style.overflow = 'hidden';
+                      const h = body.scrollHeight;
+                      iframe.style.height = h + 'px';
+                      iframe.style.minHeight = h + 'px';
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

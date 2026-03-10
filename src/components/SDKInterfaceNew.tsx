@@ -23,7 +23,13 @@ import {
   Download,
   Lock,
   Unlock,
-  Sparkles
+  Sparkles,
+  ImagePlus,
+  Maximize2,
+  RotateCcw,
+  Crop,
+  MoveHorizontal,
+  Save
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -43,9 +49,11 @@ import {
   calculateDiff,
   type SDKConversation,
   type SDKMessage,
-  type CommercialOfferArtifact
+  type CommercialOfferArtifact,
+  type VariableCitation
 } from '../lib/sdkConversationService';
 import { appLogger } from '../lib/appLogger';
+import { createStandartinisProjektas, updateStandartinisProjektas, getStandartinisByConversationId } from '../lib/dokumentaiService';
 import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
@@ -63,8 +71,8 @@ import {
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
-import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
@@ -189,6 +197,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
+  const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
+  // Template editor: edit mode + image editing
+  const [tplEditMode, setTplEditMode] = useState(false); // starts locked
+  const [tplSelectedImage, setTplSelectedImage] = useState<{
+    imgEl: HTMLImageElement;
+    naturalWidth: number;
+    naturalHeight: number;
+    originalWidth: string;
+    originalHeight: string;
+  } | null>(null);
+  const [tplImgWidth, setTplImgWidth] = useState(100);
+  const [tplCropMode, setTplCropMode] = useState(false);
+  const [tplCropValues, setTplCropValues] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -200,6 +221,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   } | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const [popupPlacement, setPopupPlacement] = useState<'below' | 'above'>('below');
+
+  // Citation popover state
+  const [activeCitation, setActiveCitation] = useState<CitationClickInfo | null>(null);
+  const citationPopupRef = useRef<HTMLDivElement>(null);
+  const [citationPlacement, setCitationPlacement] = useState<'below' | 'above'>('below');
 
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
@@ -280,6 +306,29 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setPopupPlacement('below');
     }
   }, [editingVariable]);
+
+  // Smart citation popup positioning
+  useLayoutEffect(() => {
+    if (!activeCitation) {
+      setCitationPlacement('below');
+      return;
+    }
+    const popup = citationPopupRef.current;
+    if (!popup) { setCitationPlacement('below'); return; }
+    const container = popup.offsetParent as HTMLElement;
+    if (!container) { setCitationPlacement('below'); return; }
+
+    const containerHeight = container.clientHeight;
+    const popupHeight = popup.offsetHeight;
+    const belowBottom = activeCitation.y + 8 + popupHeight;
+    const aboveTop = activeCitation.y - 8 - popupHeight;
+
+    if (belowBottom > containerHeight && aboveTop > 0) {
+      setCitationPlacement('above');
+    } else {
+      setCitationPlacement('below');
+    }
+  }, [activeCitation]);
 
   const loadEconomists = async () => {
     try {
@@ -521,6 +570,23 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setCurrentConversation(data);
       setError(null);
+
+      // Load linked standartiniai_projektai record (if any) for saved HTML restoration
+      setStandartiniaiRecordId(null);
+      setSavedHtmlFromDb(null);
+      if (data?.artifact) {
+        try {
+          const spRecord = await getStandartinisByConversationId(conversationId);
+          if (spRecord) {
+            setStandartiniaiRecordId(spRecord.id);
+            if (spRecord.html_content) {
+              setSavedHtmlFromDb(spRecord.html_content);
+            }
+          }
+        } catch (spErr) {
+          console.warn('[Standartiniai] Failed to load linked record:', spErr);
+        }
+      }
     } catch (err) {
       console.error('Error selecting conversation:', err);
     }
@@ -543,6 +609,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setConversations(prev => prev.filter(conv => conv.id !== conversationId));
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
+        setStandartiniaiRecordId(null);
+        setSavedHtmlFromDb(null);
       }
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
@@ -694,7 +762,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation(data);
       setIsReadOnly(true);
       setShowArtifact(!!data.artifact);
+      setStandartiniaiRecordId(null);
+      setSavedHtmlFromDb(null);
       setError(null);
+
+      // Load linked standartiniai record for shared conversations too
+      if (data?.artifact) {
+        try {
+          const spRecord = await getStandartinisByConversationId(sharedConv.conversation_id);
+          if (spRecord) {
+            setStandartiniaiRecordId(spRecord.id);
+            if (spRecord.html_content) setSavedHtmlFromDb(spRecord.html_content);
+          }
+        } catch { /* non-fatal */ }
+      }
 
       // Reload shared conversations to update unread count
       loadSharedConversations();
@@ -1037,8 +1118,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         }
       }
 
-      // Reset artifact streaming state
-      setIsStreamingArtifact(false);
+      // NOTE: Don't reset isStreamingArtifact here — it's reset AFTER artifact
+      // detection in the final response branch, or before recursion in the tool
+      // use branch.  Resetting eagerly here causes the artifact panel to
+      // disappear during the gap between stream end and artifact save.
       setArtifactStreamContent('');
 
       // Get the complete final message to ensure we have all tool_use blocks correctly
@@ -1106,6 +1189,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
+        // Safe to reset streaming state — the recursive call will set it again if needed
+        setIsStreamingArtifact(false);
         console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
 
         // Execute all tools with error handling
@@ -1314,11 +1399,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         // CRITICAL: Check for artifacts in final response
         if (responseContent.includes('<commercial_offer')) {
           console.log('[Artifact] Detected commercial_offer in final response');
-          await handleArtifactGeneration(responseContent, updatedConversation);
+          await handleArtifactGeneration(
+            responseContent,
+            updatedConversation,
+            thinkingContent,
+            responseContent,
+            finalMessages.length - 1
+          );
         }
+
+        // NOW safe to reset streaming artifact state (after artifact is saved)
+        setIsStreamingArtifact(false);
       }
     } catch (err: any) {
       console.error('[processAIResponse] Error:', err);
+      setIsStreamingArtifact(false); // Reset on error too
       throw err;
     }
   };
@@ -1623,8 +1718,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    */
   const renderInteractiveYAML = (yamlContent: string) => {
     const lines = yamlContent.split('\n');
-    // Pattern: variable_key: "value" or variable_key: | (supports mixed case like economy_HNV)
-    const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.+)$/;
+    // Pattern: variable_key: "value" or variable_key: | or variable_key: (empty → multiline block follows)
+    const variablePattern = /^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/;
 
     // Collect multiline values
     const items: { key: string; value: string; lineIndex: number }[] = [];
@@ -1644,7 +1739,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const match = line.match(variablePattern);
       if (match && !line.startsWith('#') && !line.startsWith(' ')) {
         const [, varKey, value] = match;
-        if (value.trim() === '|') {
+        if (value.trim() === '|' || value.trim() === '>' || value.trim() === '') {
+          // Block scalar (|, >) or bare key with indented lines following
           currentMultiline = { key: varKey, lines: [], lineIndex: index };
         } else {
           // Strip surrounding quotes from value
@@ -1702,7 +1798,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     ));
   };
 
-  const handleArtifactGeneration = async (content: string, conversation: SDKConversation) => {
+  const handleArtifactGeneration = async (
+    content: string,
+    conversation: SDKConversation,
+    thinkingText?: string,
+    chatText?: string,
+    messageIndex?: number
+  ) => {
     try {
       // Match with optional artifact_id attribute
       const match = content.match(/<commercial_offer(?:\s+artifact_id="([^"]*)")?\s*>([\s\S]*?)<\/commercial_offer>/);
@@ -1718,6 +1820,39 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       // Determine if this is a new artifact or an update
       const isNewArtifact = artifactIdFromAI === 'new' || !currentArtifact;
+      const newVersion = isNewArtifact ? 1 : (currentArtifact.version + 1);
+      const nowISO = new Date().toISOString();
+
+      // --- Build citations for changed variables (non-blocking) ---
+      let citations: Record<string, VariableCitation> = {};
+      try {
+        const newYamlVars = parseYAMLContent(trimmedContent);
+        const oldYamlVars = currentArtifact ? parseYAMLContent(currentArtifact.content) : {};
+        const existingCitations = currentArtifact?.variable_citations || {};
+
+        citations = { ...existingCitations };
+        for (const key of Object.keys(newYamlVars)) {
+          const isChanged = isNewArtifact || oldYamlVars[key] !== newYamlVars[key];
+          if (isChanged) {
+            citations[key] = {
+              variable_key: key,
+              message_index: messageIndex ?? (conversation.messages.length - 1),
+              thinking_excerpt: (thinkingText || '').slice(0, 2000),
+              chat_excerpt: (chatText || '').replace(/<commercial_offer[\s\S]*?<\/commercial_offer>/g, '').trim().slice(0, 500),
+              timestamp: nowISO,
+              version: newVersion,
+            };
+          }
+        }
+        // Remove citations for variables that no longer exist in YAML
+        for (const key of Object.keys(citations)) {
+          if (!(key in newYamlVars)) delete citations[key];
+        }
+        console.log('[Citations] Variables cited:', Object.keys(citations).length, 'of', Object.keys(newYamlVars).length);
+      } catch (citationErr) {
+        console.warn('[Citations] Failed to build citations (non-fatal):', citationErr);
+        citations = currentArtifact?.variable_citations || {};
+      }
 
       if (isNewArtifact) {
         // Create new artifact
@@ -1730,9 +1865,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           title: 'Komercinis pasiūlymas',
           content: trimmedContent,
           version: 1,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          diff_history: []
+          created_at: nowISO,
+          updated_at: nowISO,
+          diff_history: [],
+          variable_citations: citations
         };
       } else {
         // Update existing artifact
@@ -1747,13 +1883,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         newArtifact = {
           ...currentArtifact,
           content: trimmedContent,
-          version: currentArtifact.version + 1,
-          updated_at: new Date().toISOString(),
+          version: newVersion,
+          updated_at: nowISO,
           diff_history: [...currentArtifact.diff_history, {
-            version: currentArtifact.version + 1,
-            timestamp: new Date().toISOString(),
+            version: newVersion,
+            timestamp: nowISO,
             changes: diff
-          }]
+          }],
+          variable_citations: citations
         };
       }
 
@@ -1774,10 +1911,52 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
+      // Clear saved HTML so the fresh AI-generated content renders (not stale saved edits)
+      setSavedHtmlFromDb(null);
+      localStorage.removeItem('doc_edit_' + conversation.id);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
+
+      // Auto-create or update standartiniai_projektai record
+      try {
+        const yamlVars = parseYAMLContent(trimmedContent);
+        const tpl = getDefaultTemplate();
+        const citedKeySet = citations ? new Set(Object.keys(citations)) : undefined;
+        const fullHtml = renderTemplate(tpl, { ...yamlVars, ...offerParameters }, citedKeySet);
+        // Extract body innerHTML for restoration-friendly storage
+        const bodyMatch = fullHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+        const bodyHtml = bodyMatch ? bodyMatch[1] : fullHtml;
+
+        const vars = mergeAllVariables();
+        const projektoKodas = vars['code_yy/mm/dd'] || '';
+        const hnv = vars['economy_HNV'] || '';
+
+        if (isNewArtifact) {
+          const created = await createStandartinisProjektas({
+            conversation_id: conversation.id,
+            html_content: bodyHtml,
+            yaml_content: trimmedContent,
+            projekto_kodas: projektoKodas,
+            hnv: hnv,
+          });
+          setStandartiniaiRecordId(created.id);
+          console.log('[Standartiniai] Auto-created record:', created.id);
+        } else if (standartiniaiRecordId) {
+          // AI updated existing artifact — update the DB record
+          await updateStandartinisProjektas(standartiniaiRecordId, {
+            html_content: bodyHtml,
+            yaml_content: trimmedContent,
+            projekto_kodas: projektoKodas,
+            hnv: hnv,
+          });
+          console.log('[Standartiniai] Updated record after AI edit:', standartiniaiRecordId);
+        }
+      } catch (spErr) {
+        console.warn('[Standartiniai] Failed to sync record (non-fatal):', spErr);
+      }
     } catch (err) {
       console.error('Error handling artifact:', err);
+      setShowArtifact(false); // Reset so floating buttons become visible again
       addNotification('error', 'Klaida', 'Nepavyko išsaugoti komercinio pasiūlymo.');
     }
   };
@@ -1815,8 +1994,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const key = trimmed.substring(0, colonIndex).trim();
         const rawValue = trimmed.substring(colonIndex + 1).trim();
 
-        if (rawValue === '|' || rawValue === '>') {
-          // Start of a multi-line block scalar
+        if (rawValue === '|' || rawValue === '>' || rawValue === '') {
+          // Start of a multi-line block scalar (|, >) or bare key with indented lines
           currentKey = key;
           multilineValue = [];
         } else {
@@ -1973,8 +2152,212 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
     setShowTemplateVersions(false);
+    setTplEditMode(false);
+    setTplSelectedImage(null);
+    setTplCropMode(false);
     // Fetch version history in the background
     getGlobalTemplateVersions(30).then(setTemplateVersionHistory).catch(() => {});
+  };
+
+  // ── Save document to standartiniai_projektai ──
+
+  // Tracks the linked standartiniai_projektai record id for the current conversation.
+  // null = not yet created; number = existing record to update.
+  const [standartiniaiRecordId, setStandartiniaiRecordId] = useState<number | null>(null);
+  // Saved HTML from the DB — used to restore manual edits on page refresh
+  const [savedHtmlFromDb, setSavedHtmlFromDb] = useState<string | null>(null);
+  const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
+
+  const handleSaveToStandartiniai = async () => {
+    if (!currentConversation?.artifact) return;
+
+    try {
+      setIsSavingToStandartiniai(true);
+
+      // Save full HTML document (preserves styles, tables, formatting).
+      // Falls back to renderTemplate() when the preview tab isn't active.
+      let htmlContent = documentPreviewRef.current?.getEditedHtml() || null;
+
+      if (!htmlContent) {
+        // No live iframe — render full HTML from template
+        const vars = mergeAllVariables();
+        const tpl = getDefaultTemplate();
+        const citedKeys = currentConversation.artifact.variable_citations
+          ? new Set(Object.keys(currentConversation.artifact.variable_citations))
+          : undefined;
+        htmlContent = renderTemplate(tpl, vars, citedKeys);
+      }
+
+      if (!htmlContent) {
+        addNotification('error', 'Klaida', 'Nepavyko gauti dokumento turinio.');
+        return;
+      }
+
+      // Get the YAML content (between <commercial_offer> tags = artifact content)
+      const yamlContent = currentConversation.artifact.content || '';
+
+      // Get projekto_kodas and HNV from merged variables
+      const vars = mergeAllVariables();
+      const projektoKodas = vars['code_yy/mm/dd'] || '';
+      const hnv = vars['economy_HNV'] || '';
+
+      if (standartiniaiRecordId) {
+        // UPDATE existing record
+        await updateStandartinisProjektas(standartiniaiRecordId, {
+          html_content: htmlContent,
+          yaml_content: yamlContent,
+          projekto_kodas: projektoKodas,
+          hnv: hnv,
+        });
+      } else {
+        // CREATE new record linked to this conversation
+        const created = await createStandartinisProjektas({
+          conversation_id: currentConversation.id,
+          html_content: htmlContent,
+          yaml_content: yamlContent,
+          projekto_kodas: projektoKodas,
+          hnv: hnv,
+        });
+        setStandartiniaiRecordId(created.id);
+      }
+
+      // Keep saved HTML in memory so DocumentPreview can use it
+      setSavedHtmlFromDb(htmlContent);
+
+      addNotification('success', 'Išsaugota', 'Dokumentas išsaugotas.');
+    } catch (err) {
+      console.error('Error saving to standartiniai_projektai:', err);
+      addNotification('error', 'Klaida', 'Nepavyko išsaugoti dokumento.');
+    } finally {
+      setIsSavingToStandartiniai(false);
+    }
+  };
+
+  // ── Template editor: image editing helpers ──
+
+  const MAX_TPL_IMG_WIDTH = 698; // A4 content area: 523.2pt × 96/72 = 698px
+
+  const tplSelectImage = (img: HTMLImageElement) => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (!doc) return;
+    doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+    img.classList.add('img-selected');
+
+    const currentPx = img.getBoundingClientRect().width;
+    const pct = img.naturalWidth > 0 ? Math.round((currentPx / img.naturalWidth) * 100) : 100;
+
+    const clipPath = img.style.clipPath || img.style.getPropertyValue('clip-path') || '';
+    const insetMatch = clipPath.match(/inset\((\d+)%\s+(\d+)%\s+(\d+)%\s+(\d+)%\)/);
+    if (insetMatch) {
+      setTplCropValues({ top: +insetMatch[1], right: +insetMatch[2], bottom: +insetMatch[3], left: +insetMatch[4] });
+    } else {
+      setTplCropValues({ top: 0, right: 0, bottom: 0, left: 0 });
+    }
+
+    setTplSelectedImage({
+      imgEl: img,
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+      originalWidth: img.style.width || `${img.naturalWidth}px`,
+      originalHeight: img.style.height || `${img.naturalHeight}px`,
+    });
+    setTplImgWidth(pct);
+    setTplCropMode(false);
+  };
+
+  const tplDeselectImage = () => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (doc) doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+    setTplSelectedImage(null);
+    setTplCropMode(false);
+  };
+
+  const tplResizeIframe = () => {
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (doc?.body && templateEditorIframeRef.current) {
+      templateEditorIframeRef.current.style.height = doc.body.scrollHeight + 'px';
+    }
+  };
+
+  const handleTplReplaceImage = () => templateEditorFileInputRef.current?.click();
+
+  const handleTplFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !tplSelectedImage) return;
+    if (!file.type.startsWith('image/')) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl || !tplSelectedImage) return;
+      const img = tplSelectedImage.imgEl;
+      img.src = dataUrl;
+      img.onload = () => {
+        const newW = Math.min(img.naturalWidth, MAX_TPL_IMG_WIDTH);
+        const ratio = newW / img.naturalWidth;
+        img.style.width = `${newW}px`;
+        img.style.height = `${Math.round(img.naturalHeight * ratio)}px`;
+        img.style.clipPath = '';
+        if (img.style.position === 'absolute') { img.style.position = ''; img.style.left = ''; img.style.top = ''; }
+        tplResizeIframe();
+        tplSelectImage(img);
+      };
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleTplResizeImage = (widthPct: number) => {
+    if (!tplSelectedImage) return;
+    const img = tplSelectedImage.imgEl;
+    const newW = Math.min(Math.round((img.naturalWidth * widthPct) / 100), MAX_TPL_IMG_WIDTH);
+    const ratio = newW / img.naturalWidth;
+    img.style.width = `${newW}px`;
+    img.style.height = `${Math.round(img.naturalHeight * ratio)}px`;
+    setTplImgWidth(widthPct);
+    setTimeout(tplResizeIframe, 50);
+  };
+
+  const handleTplFitToColumn = () => {
+    if (!tplSelectedImage) return;
+    const img = tplSelectedImage.imgEl;
+    img.style.width = '100%';
+    img.style.height = 'auto';
+    setTplImgWidth(Math.round((MAX_TPL_IMG_WIDTH / img.naturalWidth) * 100));
+    setTimeout(tplResizeIframe, 50);
+  };
+
+  const handleTplResetImage = () => {
+    if (!tplSelectedImage) return;
+    const img = tplSelectedImage.imgEl;
+    img.style.width = tplSelectedImage.originalWidth;
+    img.style.height = tplSelectedImage.originalHeight;
+    img.style.clipPath = '';
+    setTplImgWidth(100);
+    setTplCropValues({ top: 0, right: 0, bottom: 0, left: 0 });
+    setTimeout(tplResizeIframe, 50);
+  };
+
+  const handleTplCropChange = (side: 'top' | 'right' | 'bottom' | 'left', value: number) => {
+    if (!tplSelectedImage) return;
+    const newCrop = { ...tplCropValues, [side]: value };
+    setTplCropValues(newCrop);
+    tplSelectedImage.imgEl.style.clipPath = `inset(${newCrop.top}% ${newCrop.right}% ${newCrop.bottom}% ${newCrop.left}%)`;
+  };
+
+  const handleTplToggleEditMode = () => {
+    const next = !tplEditMode;
+    setTplEditMode(next);
+    const doc = templateEditorIframeRef.current?.contentDocument;
+    if (doc?.body) {
+      doc.body.contentEditable = next ? 'true' : 'false';
+      if (next) {
+        doc.body.classList.add('img-edit-mode');
+      } else {
+        doc.body.classList.remove('img-edit-mode');
+        tplDeselectImage();
+      }
+    }
   };
 
   /**
@@ -1985,6 +2368,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleSaveGlobalTemplate = () => {
     const doc = templateEditorIframeRef.current?.contentDocument;
     if (!doc) return;
+
+    // Clean up image editing classes before extracting HTML
+    doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+    doc.body.classList.remove('img-edit-mode');
 
     let html = doc.documentElement.outerHTML;
 
@@ -2002,6 +2389,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     saveGlobalTemplate(html, user.id, userName);
     setTemplateVersion(v => v + 1);
     setShowTemplateEditor(false);
+    setTplSelectedImage(null);
+    setTplCropMode(false);
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
@@ -2061,6 +2450,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const currentArtifact = currentConversation.artifact;
           const updatedContent = replaceYAMLValue(currentArtifact.content, key, value);
           const diff = calculateDiff(currentArtifact.content, updatedContent);
+          // Clear citation for manually-edited variable
+          const updatedCitations = { ...(currentArtifact.variable_citations || {}) };
+          delete updatedCitations[key];
           const newArtifact: CommercialOfferArtifact = {
             ...currentArtifact,
             content: updatedContent,
@@ -2070,7 +2462,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               version: currentArtifact.version + 1,
               timestamp: new Date().toISOString(),
               changes: diff
-            }]
+            }],
+            variable_citations: updatedCitations
           };
           await updateConversationArtifact(currentConversation.id, newArtifact);
           setCurrentConversation({ ...currentConversation, artifact: newArtifact });
@@ -2626,7 +3019,7 @@ Vartotojo instrukcija: ${instruction}`;
                     : '[Content format error]');
 
                 return (
-                  <div key={`${message.timestamp}-${index}`}>
+                  <div key={`${message.timestamp}-${index}`} data-message-index={index}>
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
@@ -2858,6 +3251,15 @@ Vartotojo instrukcija: ${instruction}`;
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
+                    <button
+                      onClick={handleSaveToStandartiniai}
+                      disabled={isSavingToStandartiniai}
+                      className="btn btn-sm btn-primary gap-1.5 ml-1"
+                      title="Išsaugoti į standartinių projektų lentelę"
+                    >
+                      {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      Išsaugoti
+                    </button>
                   </>
                 )}
                 <button
@@ -2879,13 +3281,21 @@ Vartotojo instrukcija: ${instruction}`;
                   variables={mergeAllVariables()}
                   templateVersion={templateVersion}
                   onVariableClick={handleVariableClick}
+                  onCitationClick={(info) => {
+                    if (!info) { setActiveCitation(null); return; }
+                    setEditingVariable(null); // close variable popup
+                    setActiveCitation(info);
+                  }}
+                  citations={currentConversation?.artifact?.variable_citations}
                   editable={docEditMode}
                   conversationId={currentConversation?.id}
+                  savedHtml={savedHtmlFromDb}
                   onScroll={() => {
                     if (editingVariable) {
                       setEditingVariable(null);
                       documentPreviewRef.current?.clearActiveVariable();
                     }
+                    if (activeCitation) setActiveCitation(null);
                   }}
                 />
 
@@ -3351,6 +3761,170 @@ Vartotojo instrukcija: ${instruction}`;
                     </>
                   );
                 })()}
+
+                {/* Citation popover — shows AI reasoning for a variable */}
+                {activeCitation && (() => {
+                  const { key, citation, x, y } = activeCitation;
+                  const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === key);
+                  const label = paramDef?.label || key;
+                  const thinkingText = citation.thinking_excerpt || '';
+                  const chatText = citation.chat_excerpt || '';
+                  const hasThinking = thinkingText.trim().length > 0;
+                  const hasChatText = chatText.trim().length > 0;
+                  const msgIdx = citation.message_index;
+
+                  return (
+                    <>
+                      <div
+                        style={{ position: 'absolute', inset: 0, zIndex: 49 }}
+                        onClick={() => setActiveCitation(null)}
+                      />
+                      <div
+                        ref={citationPopupRef}
+                        style={{
+                          position: 'absolute',
+                          left: Math.min(Math.max(x - 150, 8), 220),
+                          top: citationPlacement === 'below' ? y + 8 : y - 8,
+                          transform: citationPlacement === 'above' ? 'translateY(-100%)' : undefined,
+                          zIndex: 50,
+                          width: '320px',
+                          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                        }}
+                      >
+                        {citationPlacement === 'below' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderBottom: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(x - Math.min(Math.max(x - 150, 8), 220) - 7, 16), 280) + 'px',
+                          }} />
+                        )}
+                        <div style={{
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(0,0,0,0.06)',
+                        }}>
+                          {/* Header */}
+                          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-semibold truncate" style={{ color: '#1a1a1a', letterSpacing: '-0.01em' }}>{label}</div>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(199,168,138,0.12)', color: '#a0845e' }}>
+                                    AI šaltinis
+                                  </span>
+                                  <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                                    v{citation.version}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setActiveCitation(null)}
+                                className="p-1 rounded-md flex-shrink-0 transition-colors mt-0.5"
+                                style={{ color: '#c0bbb5' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Body — reasoning excerpt */}
+                          <div className="px-3.5 py-3">
+                            {hasThinking ? (
+                              <div>
+                                <div className="text-[10px] font-medium mb-1.5" style={{ color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  AI samprotavimas
+                                </div>
+                                <div
+                                  className="text-[12px] leading-relaxed overflow-y-auto"
+                                  style={{
+                                    color: '#4b5563',
+                                    maxHeight: '180px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    background: '#fafaf8',
+                                    borderRadius: '6px',
+                                    padding: '8px 10px',
+                                    border: '1px solid #f0eeeb',
+                                  }}
+                                >
+                                  {thinkingText.length > 800 ? thinkingText.slice(0, 800) + '…' : thinkingText}
+                                </div>
+                              </div>
+                            ) : hasChatText ? (
+                              <div>
+                                <div className="text-[10px] font-medium mb-1.5" style={{ color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  AI atsakymas
+                                </div>
+                                <div
+                                  className="text-[12px] leading-relaxed overflow-y-auto"
+                                  style={{
+                                    color: '#4b5563',
+                                    maxHeight: '180px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    background: '#fafaf8',
+                                    borderRadius: '6px',
+                                    padding: '8px 10px',
+                                    border: '1px solid #f0eeeb',
+                                  }}
+                                >
+                                  {chatText.length > 500 ? chatText.slice(0, 500) + '…' : chatText}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[12px]" style={{ color: '#9ca3af' }}>
+                                Nėra AI samprotavimo šiam kintamajam.
+                              </div>
+                            )}
+
+                            {/* Timestamp */}
+                            <div className="mt-2 text-[10px]" style={{ color: '#b5b0aa' }}>
+                              {new Date(citation.timestamp).toLocaleString('lt-LT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+
+                            {/* Jump to message button */}
+                            {msgIdx >= 0 && currentConversation?.messages?.[msgIdx] && (
+                              <button
+                                onClick={() => {
+                                  setActiveCitation(null);
+                                  // Switch to chat area if needed and scroll to message
+                                  const msgEl = document.querySelector(`[data-message-index="${msgIdx}"]`);
+                                  if (msgEl) {
+                                    msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    // Flash highlight
+                                    msgEl.classList.add('citation-flash');
+                                    setTimeout(() => msgEl.classList.remove('citation-flash'), 2000);
+                                  }
+                                }}
+                                className="mt-2.5 w-full text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors text-center"
+                                style={{ background: '#3d3935', color: 'white' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                              >
+                                Rodyti žinutę
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {citationPlacement === 'above' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderTop: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(x - Math.min(Math.max(x - 150, 8), 220) - 7, 16), 280) + 'px',
+                          }} />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             ) : (
             <div
@@ -3643,18 +4217,33 @@ Vartotojo instrukcija: ${instruction}`;
         const editorSrcdoc = sanitized.replace(
           '</style>',
           `
-          /* Preview host overrides */
+          /* Preview host overrides — real A4 dimensions */
           html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
           body.c47.doc-content {
-            max-width: 595px;
+            /* Let template's .c47 handle content sizing (523.2pt + 36pt×2 = 210mm A4) */
             margin: 0 auto;
             background: #ffffff;
-            padding: 36pt;
           }
           body:focus { outline: none; }
           .template-var { cursor: default; border-radius: 3px; }
           .template-var.unfilled { cursor: text; }
           .template-var.filled { background: rgba(59,130,246,0.04); box-shadow: 0 0 0 1px rgba(59,130,246,0.12); padding: 0 2px; border-radius: 3px; }
+          /* Image constraints */
+          img { max-width: 100%; height: auto; }
+          /* Edit mode image styles */
+          body.img-edit-mode img {
+            cursor: pointer;
+            transition: outline 0.15s, box-shadow 0.15s;
+          }
+          body.img-edit-mode img:hover {
+            outline: 2px solid rgba(59,130,246,0.4);
+            outline-offset: 2px;
+          }
+          body.img-edit-mode img.img-selected {
+            outline: 2px solid #3b82f6;
+            outline-offset: 2px;
+            box-shadow: 0 0 0 4px rgba(59,130,246,0.12);
+          }
           </style>`
         );
         const meta = getGlobalTemplateMeta();
@@ -3681,6 +4270,15 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Edit mode toggle */}
+                  <button
+                    onClick={handleTplToggleEditMode}
+                    className={`btn btn-soft btn-sm gap-1.5 ${tplEditMode ? 'btn-active' : ''}`}
+                    title={tplEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
+                  >
+                    {tplEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                    {tplEditMode ? 'Redaguojama' : 'Užrakinta'}
+                  </button>
                   {/* Version history / undo button */}
                   <button
                     onClick={() => { setShowTemplateVersions(!showTemplateVersions); setExpandedVersionId(null); setExpandedDiff(null); }}
@@ -3706,7 +4304,9 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Info bar: last edited by + hint */}
               <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
                 <span className="text-[10px] text-base-content/40">
-                  Redaguokite tekstą tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).
+                  {tplEditMode
+                    ? 'Redaguokite tekstą ir paveikslėlius tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).'
+                    : 'Redagavimas užrakintas. Paspauskite „Redaguojama" mygtuką, kad atrakintumėte.'}
                 </span>
                 {lastEditedFirstName && (
                   <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
@@ -3717,11 +4317,134 @@ Vartotojo instrukcija: ${instruction}`;
                   </span>
                 )}
               </div>
+              {/* Hidden file input for image replacement */}
+              <input
+                ref={templateEditorFileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                onChange={handleTplFileSelected}
+              />
+
+              {/* Image editing toolbar (docked at top, shown when image selected) */}
+              {tplSelectedImage && tplEditMode && (
+                <div
+                  className="flex-shrink-0"
+                  style={{
+                    background: '#fafaf9',
+                    borderBottom: '1px solid rgba(0,0,0,0.08)',
+                    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                  }}
+                >
+                  <div className="px-4 py-2 flex items-center gap-3">
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[11px] font-semibold" style={{ color: '#1a1a1a' }}>Paveikslėlis</span>
+                      <span className="text-[10px]" style={{ color: '#9ca3af' }}>{tplSelectedImage.naturalWidth}×{tplSelectedImage.naturalHeight}</span>
+                    </div>
+                    <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={handleTplReplaceImage}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                        style={{ background: '#3d3935', color: 'white' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#2d2925'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#3d3935'}
+                        title="Pakeisti paveikslėlį"
+                      >
+                        <ImagePlus className="w-3 h-3" />
+                        Pakeisti
+                      </button>
+                      <button
+                        onClick={handleTplFitToColumn}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                        style={{ background: '#f3f2f0', color: '#3d3935' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                        title="Pritaikyti prie stulpelio"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                        Užpildyti
+                      </button>
+                      <button
+                        onClick={handleTplResetImage}
+                        className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+                        style={{ background: '#f3f2f0', color: '#3d3935' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                        title="Atkurti originalų dydį"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <MoveHorizontal className="w-3 h-3 flex-shrink-0" style={{ color: '#6b7280' }} />
+                      <input
+                        type="range"
+                        min={10}
+                        max={200}
+                        value={tplImgWidth}
+                        onChange={e => handleTplResizeImage(+e.target.value)}
+                        className="flex-1 h-1 rounded-full appearance-none cursor-pointer min-w-[60px]"
+                        style={{
+                          background: `linear-gradient(to right, #3d3935 0%, #3d3935 ${((tplImgWidth - 10) / 190) * 100}%, #e5e2dd ${((tplImgWidth - 10) / 190) * 100}%, #e5e2dd 100%)`,
+                          accentColor: '#3d3935',
+                        }}
+                      />
+                      <span className="text-[10px] tabular-nums font-medium flex-shrink-0" style={{ color: '#3d3935' }}>{tplImgWidth}%</span>
+                    </div>
+                    <div style={{ width: '1px', height: '16px', background: '#e5e2dd', flexShrink: 0 }} />
+                    <button
+                      onClick={() => setTplCropMode(prev => !prev)}
+                      className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors flex-shrink-0"
+                      style={{ background: tplCropMode ? '#eff6ff' : '#f3f2f0', color: tplCropMode ? '#3b82f6' : '#6b7280' }}
+                    >
+                      <Crop className="w-3 h-3" />
+                      Apkarpyti
+                    </button>
+                    <button
+                      onClick={tplDeselectImage}
+                      className="p-1 rounded transition-colors flex-shrink-0"
+                      style={{ color: '#9ca3af' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#3d3935'}
+                      onMouseLeave={e => e.currentTarget.style.color = '#9ca3af'}
+                      title="Uždaryti"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {tplCropMode && (
+                    <div className="px-4 pb-2 flex items-center gap-3" style={{ borderTop: '1px solid #f0eeeb' }}>
+                      {(['top', 'right', 'bottom', 'left'] as const).map(side => (
+                        <div key={side} className="flex items-center gap-1.5 flex-1">
+                          <span className="text-[10px] flex-shrink-0" style={{ color: '#9ca3af' }}>
+                            {side === 'top' ? 'Viršus' : side === 'right' ? 'Dešinė' : side === 'bottom' ? 'Apačia' : 'Kairė'}
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={45}
+                            value={tplCropValues[side]}
+                            onChange={e => handleTplCropChange(side, +e.target.value)}
+                            className="flex-1 h-1 rounded-full appearance-none cursor-pointer min-w-[30px]"
+                            style={{
+                              background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(tplCropValues[side] / 45) * 100}%, #e5e2dd ${(tplCropValues[side] / 45) * 100}%, #e5e2dd 100%)`,
+                              accentColor: '#3b82f6',
+                            }}
+                          />
+                          <span className="text-[10px] w-5 tabular-nums flex-shrink-0" style={{ color: '#9ca3af' }}>{tplCropValues[side]}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* Visual editor iframe */}
                 <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
-                  <div style={{ width: '595px', margin: '24px auto' }}>
+                  <div style={{ width: '794px', margin: '24px auto' }}>
                     <iframe
                       ref={templateEditorIframeRef}
                       srcDoc={editorSrcdoc}
@@ -3729,16 +4452,38 @@ Vartotojo instrukcija: ${instruction}`;
                       /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
                          content is sanitized by sanitizeHtmlForIframe() instead */
                       scrolling="no"
-                      style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
+                      style={{ width: '794px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
                       onLoad={() => {
                         const doc = templateEditorIframeRef.current?.contentDocument;
                         if (doc) {
-                          doc.body.contentEditable = 'true';
+                          doc.body.contentEditable = tplEditMode ? 'true' : 'false';
+                          doc.body.style.outline = 'none';
+                          if (tplEditMode) doc.body.classList.add('img-edit-mode');
+
                           // Auto-size iframe to content
                           const h = doc.body.scrollHeight;
                           if (templateEditorIframeRef.current) {
                             templateEditorIframeRef.current.style.height = h + 'px';
                           }
+
+                          // Image click handlers
+                          doc.querySelectorAll<HTMLImageElement>('img').forEach(img => {
+                            img.addEventListener('click', (e) => {
+                              if (!tplEditMode) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              tplSelectImage(img);
+                            });
+                          });
+
+                          // Click on body deselects image
+                          doc.body.addEventListener('click', (e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.tagName === 'IMG') return;
+                            doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+                            setTplSelectedImage(null);
+                            setTplCropMode(false);
+                          });
                         }
                       }}
                     />

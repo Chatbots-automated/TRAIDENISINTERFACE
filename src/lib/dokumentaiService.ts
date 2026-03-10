@@ -23,6 +23,102 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
   }
 };
 
+/**
+ * Create a new standartiniai_projektai record (first-time save for a conversation).
+ * Returns the created record including its `id`.
+ */
+export const createStandartinisProjektas = async (record: {
+  conversation_id: string;
+  html_content: string;
+  yaml_content: string;
+  projekto_kodas: string;
+  hnv: string;
+}): Promise<any> => {
+  try {
+    const { data, error } = await db
+      .from('standartiniai_projektai')
+      .insert([record])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error creating standartiniai_projektai:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error('Error in createStandartinisProjektas:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update an existing standartiniai_projektai record by its id.
+ */
+export const updateStandartinisProjektas = async (
+  recordId: number,
+  fields: {
+    html_content?: string;
+    yaml_content?: string;
+    projekto_kodas?: string;
+    hnv?: string;
+  }
+): Promise<any> => {
+  try {
+    const { data, error } = await db
+      .from('standartiniai_projektai')
+      .update(fields)
+      .eq('id', recordId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating standartiniai_projektai:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error('Error in updateStandartinisProjektas:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch the standartiniai_projektai record linked to a conversation.
+ * Returns null if no record exists yet.
+ */
+export const getStandartinisByConversationId = async (
+  conversationId: string
+): Promise<any | null> => {
+  try {
+    const { data, error } = await db
+      .from('standartiniai_projektai')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .limit(1)
+      .single();
+
+    if (error) {
+      // Directus .single() returns code 'NOT_FOUND' / message 'Item not found' when 0 rows
+      if (error.code === 'NOT_FOUND' || error.message?.includes('not found')) {
+        return null;
+      }
+      console.error('Error fetching standartiniai_projektai by conversation_id:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    if (error?.code === 'NOT_FOUND' || error?.message?.includes('not found')) {
+      return null;
+    }
+    console.error('Error in getStandartinisByConversationId:', error);
+    throw error;
+  }
+};
+
 /** Columns we display for nestandartiniai */
 const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status';
 

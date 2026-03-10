@@ -1,192 +1,109 @@
-# Derva RAG Feature - Implementation Plan
+# SDK Citations Implementation Plan
 
-## Architecture Overview
+## Overview
+Add reasoning-based citations to the SDK page so that every LLM-generated variable in the HTML document preview links back to the AI's thinking/reasoning that produced it.
 
-Two PostgreSQL tables + one new page + one new webhook + pgvector tool config for n8n.
-
----
-
-## 1. Database: Migration `005_derva_rag.sql`
-
-### Table `derva_files` — tracks uploaded files (for UI listing)
-
-```sql
-CREATE TABLE IF NOT EXISTS public.derva_files (
-  id SERIAL PRIMARY KEY,
-  file_name TEXT NOT NULL,
-  file_size INTEGER,
-  source_type TEXT DEFAULT 'unknown',
-  uploaded_by TEXT NOT NULL,
-  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
-  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'vectorized', 'error')),
-  chunk_count INTEGER DEFAULT 0,
-  error_message TEXT
-);
-```
-
-### Table `derva` — stores vectorized chunks (n8n PGVector Store compatible)
-
-```sql
-CREATE TABLE IF NOT EXISTS public.derva (
-  id SERIAL PRIMARY KEY,
-  content TEXT NOT NULL,
-  metadata JSONB DEFAULT '{}',
-  embedding vector(3072),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS derva_embedding_idx
-  ON public.derva USING ivfflat (embedding vector_cosine_ops);
-CREATE INDEX IF NOT EXISTS derva_file_name_idx
-  ON public.derva ((metadata->>'file_name'));
-```
-
-**Why two tables?**
-- `derva_files`: clean UI listing of uploads + status tracking (1 row per file)
-- `derva`: chunks for RAG (many rows per file, n8n PGVector Store node expects this shape)
-
----
-
-## 2. Backend Service: `src/lib/dervaService.ts`
-
-Functions:
-- `fetchDervaFiles()` — list all files from `derva_files`, ordered by `uploaded_at DESC`
-- `insertDervaFile(fileName, fileSize, uploadedBy)` — insert pending file record, return ID
-- `deleteDervaFile(id)` — delete file record + its chunks from `derva` where metadata->>'file_id' matches
-- `getDervaFileStatus(id)` — check single file status
-
----
-
-## 3. Frontend: `src/components/DervaInterface.tsx`
-
-New page under Valdymas (admin-only). Structure:
-
-### Header
-- Title: "Derva RAG"
-- Subtitle: "Vektorizuotų dokumentų valdymas dervos rekomendacijoms"
-
-### Upload Section
-- Drag & drop file input (accepts `.pdf`, `.md`, `.txt`, `.doc`, `.docx`)
-- "Vektorizuoti" button — triggers webhook with binary file via FormData
-- Loader shown while waiting for 200 response
-- On success: refresh file list, show notification
-
-### File List (table)
-| # | Failo pavadinimas | Dydis | Įkėlė | Data | Būsena | Veiksmai |
-|---|---|---|---|---|---|---|
-| 1 | resin_guide.pdf | 12.4 MB | admin@... | 2026-02-20 | Vektorizuota (45 chunks) | Delete |
-
-- Status badges: `pending` (yellow), `processing` (blue spinner), `vectorized` (green), `error` (red)
-- Shows chunk_count when vectorized
-- Delete button removes file record + all associated chunks
-- Auto-polls status every 5s while any file is in `pending`/`processing` state
-
----
-
-## 4. Routing & Sidebar Changes
-
-### `src/App.tsx`
-- Add `'derva'` to `ViewMode` type
-- Add route: `<Route path="/derva" element={<DervaInterface user={user} />} />`
-- Add to `routeToViewMode`: `'/derva': 'derva'`
-
-### `src/components/Layout.tsx`
-- Add `'derva'` to the viewMode type union
-- Add new sidebar button under Valdymas section (after Naudotojai):
-  - Uses `FlaskConical` icon (already imported in Layout.tsx line 15 but currently unused)
-  - Label: "Derva RAG"
-
----
-
-## 5. Webhook Integration
-
-### New webhook key: `n8n_derva_vectorize`
-
-- Register in `webhooks` DB table (via WebhooksModal UI after deployment)
-- Add to `WEBHOOK_GROUPS` in `WebhooksModal.tsx` as a new "Derva" category
-
-### Upload flow:
-1. User picks file + clicks "Vektorizuoti"
-2. Frontend inserts record into `derva_files` (status: 'pending')
-3. Frontend sends `POST` to webhook with `FormData`:
-   - `file`: binary file
-   - `file_id`: the derva_files record ID
-   - `file_name`: original file name
-   - `uploaded_by`: user email
-4. n8n workflow: parse → chunk → embed → insert into `derva` table → update `derva_files` status
-5. Frontend polls/refreshes to show updated status
-
----
-
-## 6. Webhook URL Issue (localhost vs n8n.traidenis.org)
-
-Your webhook URLs live in the **`webhooks` database table**, not `.env`. The URL you pasted (`http://localhost:5678/webhook-test/...`) has two problems:
-1. **`localhost`** — only works when browser runs on same machine as n8n
-2. **`webhook-test`** — n8n test mode URL, only active while workflow is open in n8n editor
-
-**Fix:** In the Webhooks modal, update URLs to `https://n8n.traidenis.org/webhook/...` (production path, no `-test`). Activate the workflow in n8n first so the production webhook becomes live.
-
-No code change needed — pure configuration fix in your webhooks table.
-
----
-
-## 7. PGVector Store Tool Description for n8n Anthropic Node
+## Architecture
 
 ```
-Dervos žinių bazė – vektorizuotų dokumentų paieška.
-
-Šioje duomenų bazėje saugomi trys tipų dokumentai:
-1. DERVOS PARINKIMO VADOVAS – išsamus ~60 puslapių dokumentas apie dervų
-   (epoksidinių, poliesterinių, vinilesterinių ir kt.) parinkimą pagal aplinkos
-   sąlygas, cheminį atsparumą, temperatūrą ir mechaninius reikalavimus.
-2. GAMINTOJŲ KOMPONENTŲ LAPAI – ~30 vieno puslapio techninių duomenų lapų iš
-   gamintojų (pvz. Ashland, AOC, Scott Bader ir kt.) apie konkrečias chemines
-   medžiagas, jų savybes ir pritaikymą.
-3. KOMPONENTŲ PARINKIMO LENTELĖ – bendroji lentelė su cheminių komponentų
-   palyginimais ir rekomendacijomis pagal terpę.
-
-NAUDOJIMO INSTRUKCIJOS:
-- Ieškok pagal konkrečius terminus: cheminės medžiagos pavadinimą, terpės tipą
-  (rūgštys, šarmai, tirpikliai), temperatūros diapazoną, arba gamintojo pavadinimą.
-- VISADA atlik kelias paieškas skirtingais terminais, jei pirma paieška neduoda
-  pakankamai rezultatų.
-- Grąžink VISUS susijusius radinius – nefiltruok ir neapsiribok vienu rezultatu.
-- Nurodyk iš kurio dokumento (file_name metadata lauke) informacija gauta.
-- Jei randi prieštaringą informaciją tarp šaltinių, pateik abu variantus ir
-  paaiškink skirtumą.
+Claude generates <commercial_offer> YAML + thinking/reasoning
+         ↓
+handleArtifactGeneration() detects which variables changed (old vs new YAML)
+         ↓
+Creates citation entry per changed variable: {message_index, thinking_excerpt, timestamp, version}
+         ↓
+Stored in artifact.variable_citations (persisted in Directus DB)
+         ↓
+renderTemplate() adds citation badges next to cited filled variables
+         ↓
+DocumentPreview handles citation badge clicks → emits onCitationClick
+         ↓
+SDKInterfaceNew shows CitationPopover with reasoning + "Jump to message" button
 ```
 
-### n8n PGVector Store node config:
-- **Table**: `derva`
-- **Embedding column**: `embedding`
-- **Content column**: `content`
-- **Metadata column**: `metadata`
-- **Top K**: `6` (ensures big guide + manufacturer sheets + table all get a chance)
-- **Embedding model**: must match vectorization workflow (e.g. `text-embedding-3-large` = 3072 dims)
+## Implementation Steps
 
-### On citing sources:
-Each chunk's `metadata` includes `file_name`. The tool description tells the AI to mention which document info came from. Practical source attribution without complex citation infra.
+### Step 1: Data Model (`src/lib/sdkConversationService.ts`)
+- Add `VariableCitation` interface:
+  ```typescript
+  export interface VariableCitation {
+    variable_key: string;
+    message_index: number;        // index in conversation.messages
+    thinking_excerpt: string;     // AI's reasoning/thinking content
+    chat_excerpt: string;         // visible chat text from that message (secondary)
+    timestamp: string;
+    version_introduced: number;
+    version_last_modified: number;
+  }
+  ```
+- Add `variable_citations?: Record<string, VariableCitation>` to `CommercialOfferArtifact`
 
-### On not limiting to 1 record:
-Top K = 6 ensures multiple chunks retrieved. Tool description says "grąžink VISUS susijusius radinius". The AI synthesizes across all returned chunks.
+### Step 2: Citation Capture (`src/components/SDKInterfaceNew.tsx`)
+- Modify `handleArtifactGeneration()` signature to accept `thinkingContent: string`, `chatText: string`, and `messageIndex: number`
+- After determining which variables changed (compare old vs new YAML via `parseYAMLContent`):
+  - For NEW artifact: all variables get citations
+  - For UPDATED artifact: only changed/added variables get new citations, unchanged ones keep existing
+- Build `variable_citations` map with the thinking content and chat text from the current message
+- Store citations in the artifact object alongside existing fields
+- Update the call site at line ~1317 to pass `thinkingContent`, `chatText`, and message index
 
----
+### Step 3: Template Rendering (`src/lib/documentTemplateService.ts`)
+- Modify `renderTemplate()` to accept optional `citations?: Record<string, VariableCitation>` parameter
+- For filled variables that have a citation, append a small citation badge:
+  ```html
+  <span data-var="key" class="template-var filled">value</span><sup data-citation="key" class="citation-badge">AI</sup>
+  ```
+- Badge styled as a small, subtle superscript indicator (accent color, cursor pointer)
+- No badge for non-cited variables (offer params, team, auto-computed)
 
-## 8. Files to Create/Modify
+### Step 4: Document Preview (`src/components/DocumentPreview.tsx`)
+- Add `citations?: Record<string, VariableCitation>` prop
+- Add `onCitationClick?: (citation: VariableCitation, position: {x: number, y: number}) => void` prop
+- Pass citations through to `renderTemplate()` call
+- In `handleIframeLoad`, attach click handlers to `[data-citation]` elements
+- On citation badge click: emit `onCitationClick` with the full citation data + position info
+- Add CSS for citation badges inside the iframe srcdoc styles
 
-| Action | File |
-|--------|------|
-| CREATE | `migrations/005_derva_rag.sql` |
-| CREATE | `src/lib/dervaService.ts` |
-| CREATE | `src/components/DervaInterface.tsx` |
-| MODIFY | `src/App.tsx` — add route + ViewMode |
-| MODIFY | `src/components/Layout.tsx` — add sidebar button |
-| MODIFY | `src/components/WebhooksModal.tsx` — add derva webhook group |
+### Step 5: Citation Popover UI (`src/components/SDKInterfaceNew.tsx`)
+- Add state: `activeCitation: {citation: VariableCitation, x: number, y: number} | null`
+- Render a floating popover (similar to existing variable edit popup) showing:
+  - Variable name and current value
+  - "AI Reasoning" section with the thinking excerpt (scrollable, max ~200px height)
+  - "Chat context" collapsible section with visible chat text excerpt
+  - Version badge: "v{version_introduced}" or "Updated in v{version_last_modified}"
+  - Timestamp
+  - "Jump to message" button
+- Popover positioned relative to the clicked badge in the preview
 
-## 9. Implementation Order
+### Step 6: Jump to Message
+- "Jump to message" scrolls the chat panel to the referenced message
+- Use message index to find the DOM element and scroll into view
+- Briefly highlight the target message with a flash animation (CSS transition)
 
-1. Migration SQL
-2. `dervaService.ts`
-3. `DervaInterface.tsx`
-4. `App.tsx` + `Layout.tsx` (routing + sidebar)
-5. `WebhooksModal.tsx` (webhook group)
+### Step 7: CSS & Styling
+- Citation badge styles in DocumentPreview iframe CSS:
+  - Small "AI" superscript, accent color (#c7a88a), subtle
+  - Hover: slightly more visible
+  - Print: hidden (don't print citation badges)
+- Citation popover styles matching existing design system
+
+## Files Modified
+1. `src/lib/sdkConversationService.ts` — VariableCitation interface, updated CommercialOfferArtifact
+2. `src/lib/documentTemplateService.ts` — renderTemplate accepts citations, adds badges
+3. `src/components/DocumentPreview.tsx` — citations prop, click handlers for badges
+4. `src/components/SDKInterfaceNew.tsx` — citation capture in handleArtifactGeneration, popover UI, jump-to-message
+
+## No New Files
+All changes go into existing files. No new component files needed — the popover is inline in SDKInterfaceNew.tsx (consistent with existing variable edit popup pattern).
+
+## Edge Cases
+- First artifact creation: all variables get citations from that single message
+- Artifact update: only changed/added variables get new citations, unchanged ones keep existing
+- Manual variable edit (via popup): citation cleared for that variable (it's now user-edited)
+- Version revert: citations from the reverted-to version are restored
+- No thinking content: fallback to chat text excerpt only
+- Empty thinking: show "Nėra AI samprotavimo" in popover
+
+## Database Impact
+- No schema changes needed — `variable_citations` is stored inside the existing `artifact` JSON column in `sdk_conversations` table
+- Backward compatible — old artifacts without `variable_citations` simply show no citation badges
