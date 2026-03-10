@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { ZoomIn, ZoomOut } from 'lucide-react';
+import { ZoomIn, ZoomOut, ImagePlus, Maximize2, RotateCcw, Crop, MoveHorizontal } from 'lucide-react';
 import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import type { VariableCitation } from '../lib/sdkConversationService';
 
@@ -25,6 +25,26 @@ export interface CitationClickInfo {
   y: number;
 }
 
+interface SelectedImageInfo {
+  /** The actual <img> element inside the iframe */
+  imgEl: HTMLImageElement;
+  /** Position relative to the DocumentPreview container */
+  x: number;
+  y: number;
+  /** Current rendered dimensions */
+  width: number;
+  height: number;
+  /** Natural (intrinsic) dimensions of the image */
+  naturalWidth: number;
+  naturalHeight: number;
+  /** Current src */
+  src: string;
+  /** Original width style (for reset) */
+  originalWidth: string;
+  /** Original height style (for reset) */
+  originalHeight: string;
+}
+
 interface DocumentPreviewProps {
   variables: Record<string, string>;
   template?: string;
@@ -47,12 +67,22 @@ const BASE_ZOOM = 0.95;
 
 const DOC_EDIT_PREFIX = 'doc_edit_';
 
+// Maximum width for images to prevent template breakage (A4 content area ~523px at 36pt padding)
+const MAX_IMG_WIDTH = 523;
+
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
   function DocumentPreview({ variables, template, templateVersion, onVariableClick, onCitationClick, onScroll, editable = false, conversationId, citations }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const [zoom, setZoom] = useState(BASE_ZOOM);
     const [iframeHeight, setIframeHeight] = useState(1200);
+
+    // Image editing state
+    const [selectedImage, setSelectedImage] = useState<SelectedImageInfo | null>(null);
+    const [imgWidth, setImgWidth] = useState(100); // percentage of original
+    const [cropMode, setCropMode] = useState(false);
+    const [cropValues, setCropValues] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
 
     // Refs to avoid stale closures in iframe event handlers
     const zoomRef = useRef(zoom);
@@ -86,6 +116,21 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       [templateHtml, variables]
     );
 
+    // Trigger auto-save after any image edit
+    const triggerAutoSave = useCallback(() => {
+      if (!editableRef.current || !conversationId) return;
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => {
+        const body = iframeRef.current?.contentDocument?.body;
+        if (body) {
+          localStorage.setItem(DOC_EDIT_PREFIX + conversationId, JSON.stringify({
+            html: body.innerHTML,
+            fingerprint: 'img-edit', // different fingerprint so it persists across template changes
+          }));
+        }
+      }, 500);
+    }, [conversationId]);
+
     const srcdoc = useMemo(() => {
       const sanitized = sanitizeHtmlForIframe(renderedHtml);
       return sanitized.replace(
@@ -98,6 +143,12 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         margin: 0 auto;
         background: #ffffff;
         padding: 36pt 36pt 36pt 36pt;
+      }
+
+      /* Image constraints to prevent layout breakage */
+      img {
+        max-width: 100%;
+        height: auto;
       }
 
       /* Interactive variable styles — always visible */
@@ -147,6 +198,21 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         background: rgba(199,168,138,0.22);
         border-color: rgba(199,168,138,0.5);
         color: #a0845e;
+      }
+
+      /* Edit mode image styles */
+      body.img-edit-mode img {
+        cursor: pointer;
+        transition: outline 0.15s, box-shadow 0.15s;
+      }
+      body.img-edit-mode img:hover {
+        outline: 2px solid rgba(59,130,246,0.4);
+        outline-offset: 2px;
+      }
+      body.img-edit-mode img.img-selected {
+        outline: 2px solid #3b82f6;
+        outline-offset: 2px;
+        box-shadow: 0 0 0 4px rgba(59,130,246,0.12);
       }
 
       /* Page number footer */
@@ -239,7 +305,72 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       }
     }, []);
 
-    // After iframe loads: measure height + attach click handlers to [data-var] spans
+    // Select an image in the iframe and show the toolbar
+    const selectImage = useCallback((img: HTMLImageElement) => {
+      const iframeEl = iframeRef.current;
+      const container = containerRef.current;
+      if (!iframeEl || !container) return;
+
+      const doc = iframeEl.contentDocument;
+      if (!doc) return;
+
+      // Clear previous selection
+      doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+      img.classList.add('img-selected');
+
+      const rect = img.getBoundingClientRect();
+      const iframeRect = iframeEl.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const z = zoomRef.current;
+
+      const x = iframeRect.left - containerRect.left + (rect.left + rect.width / 2) * z;
+      const y = iframeRect.top - containerRect.top + rect.top * z;
+
+      // Parse current width from style
+      const currentStyleWidth = img.style.width;
+      const originalW = currentStyleWidth || `${img.naturalWidth}px`;
+      const originalH = img.style.height || `${img.naturalHeight}px`;
+
+      // Calculate current width as percentage of original
+      const currentPx = img.getBoundingClientRect().width;
+      const pct = img.naturalWidth > 0 ? Math.round((currentPx / img.naturalWidth) * 100) : 100;
+
+      // Parse existing clip-path for crop values
+      const clipPath = img.style.clipPath || img.style.getPropertyValue('clip-path') || '';
+      const insetMatch = clipPath.match(/inset\((\d+)%\s+(\d+)%\s+(\d+)%\s+(\d+)%\)/);
+      if (insetMatch) {
+        setCropValues({ top: +insetMatch[1], right: +insetMatch[2], bottom: +insetMatch[3], left: +insetMatch[4] });
+      } else {
+        setCropValues({ top: 0, right: 0, bottom: 0, left: 0 });
+      }
+
+      setSelectedImage({
+        imgEl: img,
+        x,
+        y,
+        width: currentPx,
+        height: rect.height,
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+        src: img.src,
+        originalWidth: originalW,
+        originalHeight: originalH,
+      });
+      setImgWidth(pct);
+      setCropMode(false);
+    }, []);
+
+    // Close image toolbar
+    const deselectImage = useCallback(() => {
+      const doc = iframeRef.current?.contentDocument;
+      if (doc) {
+        doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+      }
+      setSelectedImage(null);
+      setCropMode(false);
+    }, []);
+
+    // After iframe loads: measure height + attach click handlers
     const handleIframeLoad = useCallback(() => {
       measureIframe();
 
@@ -251,6 +382,13 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       doc.body.contentEditable = editableRef.current ? 'true' : 'false';
       doc.body.style.outline = 'none';
 
+      // Toggle img-edit-mode class
+      if (editableRef.current) {
+        doc.body.classList.add('img-edit-mode');
+      } else {
+        doc.body.classList.remove('img-edit-mode');
+      }
+
       // Restore saved manual edits if they exist for this conversation
       if (conversationId) {
         try {
@@ -258,7 +396,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           if (saved) {
             const { html, fingerprint } = JSON.parse(saved);
             // Only restore if the underlying template hasn't changed
-            if (fingerprint === srcdoc.length.toString()) {
+            if (fingerprint === srcdoc.length.toString() || fingerprint === 'img-edit') {
               doc.body.innerHTML = html;
               setTimeout(measureIframe, 50);
             } else {
@@ -284,10 +422,17 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       });
 
       // Click on body (non-variable area) clears active state and closes popup
-      doc.body.addEventListener('click', () => {
+      doc.body.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        // Don't close image toolbar if clicking an image in edit mode
+        if (editableRef.current && target.tagName === 'IMG') return;
+
         doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
+        doc.querySelectorAll('.img-selected').forEach((el) => el.classList.remove('img-selected'));
         onVariableClickRef.current?.(null);
         onCitationClickRef.current?.(null);
+        setSelectedImage(null);
+        setCropMode(false);
       });
 
       // Helper to calculate position relative to container
@@ -317,7 +462,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           const varKey = span.getAttribute('data-var');
           if (!varKey) return;
 
-          // Remove active class from all, add to clicked
           doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
           span.classList.add('active');
 
@@ -326,7 +470,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
 
           const isFilled = span.classList.contains('filled');
 
-          onCitationClickRef.current?.(null); // close any open citation
+          setSelectedImage(null); // close image toolbar
+          onCitationClickRef.current?.(null);
           onVariableClickRef.current?.({
             key: varKey,
             filled: isFilled,
@@ -353,7 +498,8 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           const pos = calcPosition(badge);
           if (!pos) return;
 
-          onVariableClickRef.current?.(null); // close any open variable popup
+          setSelectedImage(null);
+          onVariableClickRef.current?.(null);
           onCitationClickRef.current?.({
             key: varKey,
             citation,
@@ -362,7 +508,23 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           });
         });
       });
-    }, [measureIframe]);
+
+      // Image click handlers (only in edit mode)
+      const images = doc.querySelectorAll<HTMLImageElement>('img');
+      images.forEach((img) => {
+        img.addEventListener('click', (e) => {
+          if (!editableRef.current) return;
+          e.preventDefault();
+          e.stopPropagation();
+          // Close other popups
+          onVariableClickRef.current?.(null);
+          onCitationClickRef.current?.(null);
+          doc.querySelectorAll('.template-var.active').forEach((el) => el.classList.remove('active'));
+          // Select this image
+          selectImage(img);
+        });
+      });
+    }, [measureIframe, selectImage]);
 
     // Re-measure when variables change (srcdoc updates trigger onLoad)
     useEffect(() => {
@@ -375,21 +537,134 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
     useEffect(() => {
       if (prevSrcdocRef.current !== srcdoc) {
         prevSrcdocRef.current = srcdoc;
-        // srcdoc changed → iframe will reload, active states reset automatically
-        // Clear saved edit since underlying data changed
         if (conversationId) {
           localStorage.removeItem(DOC_EDIT_PREFIX + conversationId);
         }
       }
     }, [srcdoc, conversationId]);
 
-    // Toggle contentEditable when editable prop changes (without iframe reload)
+    // Toggle contentEditable and img-edit-mode when editable prop changes
     useEffect(() => {
       const doc = iframeRef.current?.contentDocument;
       if (doc?.body) {
         doc.body.contentEditable = editable ? 'true' : 'false';
+        if (editable) {
+          doc.body.classList.add('img-edit-mode');
+        } else {
+          doc.body.classList.remove('img-edit-mode');
+          // Deselect image when leaving edit mode
+          deselectImage();
+        }
       }
-    }, [editable]);
+    }, [editable, deselectImage]);
+
+    // ── Image editing actions ──
+
+    const handleReplaceImage = useCallback(() => {
+      fileInputRef.current?.click();
+    }, []);
+
+    const handleFileSelected = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !selectedImage) return;
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        if (!dataUrl || !selectedImage) return;
+
+        const img = selectedImage.imgEl;
+        img.src = dataUrl;
+
+        // Wait for image to load to get natural dimensions
+        img.onload = () => {
+          // Constrain to max width while preserving aspect ratio
+          const newW = Math.min(img.naturalWidth, MAX_IMG_WIDTH);
+          const ratio = newW / img.naturalWidth;
+          const newH = img.naturalHeight * ratio;
+
+          img.style.width = `${newW}px`;
+          img.style.height = `${newH}px`;
+
+          // Clear any crop
+          img.style.clipPath = '';
+          img.style.objectFit = '';
+          img.style.objectPosition = '';
+
+          // Remove absolute positioning if it had any (prevents layout issues)
+          if (img.style.position === 'absolute') {
+            img.style.position = '';
+            img.style.left = '';
+            img.style.top = '';
+          }
+
+          triggerAutoSave();
+          measureIframe();
+
+          // Re-select to update toolbar state
+          selectImage(img);
+        };
+      };
+      reader.readAsDataURL(file);
+
+      // Reset input so same file can be selected again
+      e.target.value = '';
+    }, [selectedImage, triggerAutoSave, measureIframe, selectImage]);
+
+    const handleResizeImage = useCallback((widthPct: number) => {
+      if (!selectedImage) return;
+      const img = selectedImage.imgEl;
+      const newW = Math.min(Math.round((img.naturalWidth * widthPct) / 100), MAX_IMG_WIDTH);
+      const ratio = newW / img.naturalWidth;
+      const newH = Math.round(img.naturalHeight * ratio);
+
+      img.style.width = `${newW}px`;
+      img.style.height = `${newH}px`;
+      setImgWidth(widthPct);
+
+      triggerAutoSave();
+      setTimeout(measureIframe, 50);
+    }, [selectedImage, triggerAutoSave, measureIframe]);
+
+    const handleFitToColumn = useCallback(() => {
+      if (!selectedImage) return;
+      const img = selectedImage.imgEl;
+      img.style.width = '100%';
+      img.style.height = 'auto';
+      setImgWidth(Math.round((MAX_IMG_WIDTH / img.naturalWidth) * 100));
+
+      triggerAutoSave();
+      setTimeout(measureIframe, 50);
+    }, [selectedImage, triggerAutoSave, measureIframe]);
+
+    const handleResetImage = useCallback(() => {
+      if (!selectedImage) return;
+      const img = selectedImage.imgEl;
+      img.style.width = selectedImage.originalWidth;
+      img.style.height = selectedImage.originalHeight;
+      img.style.clipPath = '';
+      img.style.objectFit = '';
+      img.style.objectPosition = '';
+      setImgWidth(100);
+      setCropValues({ top: 0, right: 0, bottom: 0, left: 0 });
+
+      triggerAutoSave();
+      setTimeout(measureIframe, 50);
+    }, [selectedImage, triggerAutoSave, measureIframe]);
+
+    const handleCropChange = useCallback((side: 'top' | 'right' | 'bottom' | 'left', value: number) => {
+      if (!selectedImage) return;
+      const newCrop = { ...cropValues, [side]: value };
+      setCropValues(newCrop);
+
+      const img = selectedImage.imgEl;
+      img.style.clipPath = `inset(${newCrop.top}% ${newCrop.right}% ${newCrop.bottom}% ${newCrop.left}%)`;
+
+      triggerAutoSave();
+    }, [selectedImage, cropValues, triggerAutoSave]);
 
     const handleZoomIn = () => setZoom((z) => Math.min(z + 0.05, 1.3));
     const handleZoomOut = () => setZoom((z) => Math.max(z - 0.05, 0.3));
@@ -401,6 +676,15 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
 
     return (
       <div ref={containerRef} className="flex flex-col h-full min-h-0 relative">
+        {/* Hidden file input for image replacement */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleFileSelected}
+        />
+
         {/* Toolbar */}
         <div
           className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
@@ -440,7 +724,10 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         <div
           className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
           style={{ background: '#ffffff' }}
-          onScroll={onScroll}
+          onScroll={() => {
+            onScroll?.();
+            if (selectedImage) deselectImage();
+          }}
         >
           {/* Scaled wrapper — explicit size so scroll area matches visual content */}
           <div
@@ -455,8 +742,6 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               ref={iframeRef}
               srcDoc={srcdoc}
               title="Dokumento peržiūra"
-              /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
-                 content is sanitized by sanitizeHtmlForIframe() instead */
               scrolling="no"
               style={{
                 width: '595px',
@@ -471,6 +756,159 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             />
           </div>
         </div>
+
+        {/* ── Image Editing Toolbar (floating, positioned near selected image) ── */}
+        {selectedImage && editable && (
+          <>
+            {/* Click-outside overlay */}
+            <div
+              style={{ position: 'absolute', inset: 0, zIndex: 49 }}
+              onClick={deselectImage}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                left: Math.min(Math.max(selectedImage.x - 140, 4), 200),
+                top: selectedImage.y + 8,
+                zIndex: 50,
+                width: '280px',
+                filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.12)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+              }}
+            >
+              {/* Pointer */}
+              <div style={{
+                width: 0, height: 0,
+                borderLeft: '7px solid transparent',
+                borderRight: '7px solid transparent',
+                borderBottom: '7px solid #ffffff',
+                marginLeft: Math.min(Math.max(selectedImage.x - Math.min(Math.max(selectedImage.x - 140, 4), 200) - 7, 16), 248) + 'px',
+              }} />
+
+              <div style={{
+                background: '#ffffff',
+                borderRadius: '10px',
+                overflow: 'hidden',
+                border: '1px solid rgba(0,0,0,0.06)',
+              }}>
+                {/* Header */}
+                <div className="px-3 py-2" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                  <div className="text-[12px] font-semibold" style={{ color: '#1a1a1a' }}>
+                    Paveikslėlio įrankiai
+                  </div>
+                  <div className="text-[10px] mt-0.5" style={{ color: '#9ca3af' }}>
+                    {selectedImage.naturalWidth}×{selectedImage.naturalHeight}px
+                  </div>
+                </div>
+
+                {/* Action buttons row */}
+                <div className="px-3 py-2 flex items-center gap-1.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                  <button
+                    onClick={handleReplaceImage}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors"
+                    style={{ background: '#3d3935', color: 'white' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#2d2925'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#3d3935'}
+                    title="Pakeisti paveikslėlį"
+                  >
+                    <ImagePlus className="w-3 h-3" />
+                    Pakeisti
+                  </button>
+                  <button
+                    onClick={handleFitToColumn}
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors"
+                    style={{ background: '#f3f2f0', color: '#3d3935' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                    title="Pritaikyti prie stulpelio"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                    Užpildyti
+                  </button>
+                  <button
+                    onClick={handleResetImage}
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors"
+                    style={{ background: '#f3f2f0', color: '#3d3935' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#e8e6e3'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#f3f2f0'}
+                    title="Atkurti originalų dydį"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Resize slider */}
+                <div className="px-3 py-2.5" style={{ borderBottom: cropMode ? '1px solid #f0eeeb' : undefined }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-medium" style={{ color: '#6b7280' }}>
+                      <MoveHorizontal className="w-3 h-3 inline mr-1" style={{ verticalAlign: '-2px' }} />
+                      Dydis
+                    </span>
+                    <span className="text-[10px] tabular-nums font-medium" style={{ color: '#3d3935' }}>
+                      {imgWidth}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={200}
+                    value={imgWidth}
+                    onChange={e => handleResizeImage(+e.target.value)}
+                    className="w-full h-1 rounded-full appearance-none cursor-pointer"
+                    style={{
+                      background: `linear-gradient(to right, #3d3935 0%, #3d3935 ${((imgWidth - 10) / 190) * 100}%, #e5e2dd ${((imgWidth - 10) / 190) * 100}%, #e5e2dd 100%)`,
+                      accentColor: '#3d3935',
+                    }}
+                  />
+                </div>
+
+                {/* Crop toggle + sliders */}
+                <div className="px-3 py-2">
+                  <button
+                    onClick={() => setCropMode(prev => !prev)}
+                    className="flex items-center gap-1.5 text-[11px] font-medium transition-colors w-full justify-between"
+                    style={{ color: cropMode ? '#3b82f6' : '#6b7280' }}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Crop className="w-3 h-3" />
+                      Apkarpyti
+                    </span>
+                    <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                      {cropMode ? '▲' : '▼'}
+                    </span>
+                  </button>
+
+                  {cropMode && (
+                    <div className="mt-2 flex flex-col gap-2">
+                      {(['top', 'right', 'bottom', 'left'] as const).map(side => (
+                        <div key={side} className="flex items-center gap-2">
+                          <span className="text-[10px] w-12 text-right" style={{ color: '#9ca3af' }}>
+                            {side === 'top' ? 'Viršus' : side === 'right' ? 'Dešinė' : side === 'bottom' ? 'Apačia' : 'Kairė'}
+                          </span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={45}
+                            value={cropValues[side]}
+                            onChange={e => handleCropChange(side, +e.target.value)}
+                            className="flex-1 h-1 rounded-full appearance-none cursor-pointer"
+                            style={{
+                              background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(cropValues[side] / 45) * 100}%, #e5e2dd ${(cropValues[side] / 45) * 100}%, #e5e2dd 100%)`,
+                              accentColor: '#3b82f6',
+                            }}
+                          />
+                          <span className="text-[10px] w-6 tabular-nums" style={{ color: '#9ca3af' }}>
+                            {cropValues[side]}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Disclaimer */}
         <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
