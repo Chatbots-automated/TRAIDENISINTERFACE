@@ -2095,15 +2095,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       setIsSavingToStandartiniai(true);
 
-      // Build rendered HTML from template + current variables (works regardless of active tab)
-      const vars = mergeAllVariables();
-      const tpl = getDefaultTemplate();
-      const citedKeys = currentConversation.artifact.variable_citations
-        ? new Set(Object.keys(currentConversation.artifact.variable_citations))
-        : undefined;
-      const renderedHtml = renderTemplate(tpl, vars, citedKeys);
+      // Prefer the live iframe DOM (preserves manual text/image edits),
+      // fall back to renderTemplate() when the preview tab isn't active.
+      let htmlContent = documentPreviewRef.current?.getEditedHtml() || null;
 
-      if (!renderedHtml) {
+      if (!htmlContent) {
+        const vars = mergeAllVariables();
+        const tpl = getDefaultTemplate();
+        const citedKeys = currentConversation.artifact.variable_citations
+          ? new Set(Object.keys(currentConversation.artifact.variable_citations))
+          : undefined;
+        htmlContent = renderTemplate(tpl, vars, citedKeys);
+      }
+
+      if (!htmlContent) {
         addNotification('error', 'Klaida', 'Nepavyko gauti dokumento turinio.');
         return;
       }
@@ -2112,11 +2117,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const yamlContent = currentConversation.artifact.content || '';
 
       // Get projekto_kodas and HNV from merged variables
+      const vars = mergeAllVariables();
       const projektoKodas = vars['code_yy/mm/dd'] || '';
       const hnv = vars['economy_HNV'] || '';
 
       await saveStandartinisProjektas({
-        html_content: renderedHtml,
+        html_content: htmlContent,
         yaml_content: yamlContent,
         projekto_kodas: projektoKodas,
         hnv: hnv,
