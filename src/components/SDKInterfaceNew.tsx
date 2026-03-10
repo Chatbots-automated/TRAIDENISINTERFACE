@@ -2234,7 +2234,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // ── Template editor: image editing helpers ──
 
-  const MAX_TPL_IMG_WIDTH = 523; // A4 content area at 36pt padding
+  const MAX_TPL_IMG_WIDTH = 698; // A4 content area: 523.2pt × 96/72 = 698px
 
   const tplSelectImage = (img: HTMLImageElement) => {
     const doc = templateEditorIframeRef.current?.contentDocument;
@@ -4216,13 +4216,12 @@ Vartotojo instrukcija: ${instruction}`;
         const editorSrcdoc = sanitized.replace(
           '</style>',
           `
-          /* Preview host overrides */
+          /* Preview host overrides — real A4 dimensions */
           html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
           body.c47.doc-content {
-            max-width: 595px;
+            /* Let template's .c47 handle content sizing (523.2pt + 36pt×2 = 210mm A4) */
             margin: 0 auto;
             background: #ffffff;
-            padding: 36pt;
           }
           body:focus { outline: none; }
           .template-var { cursor: default; border-radius: 3px; }
@@ -4444,7 +4443,7 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* Visual editor iframe */}
                 <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
-                  <div style={{ width: '595px', margin: '24px auto' }}>
+                  <div style={{ width: '794px', margin: '24px auto' }}>
                     <iframe
                       ref={templateEditorIframeRef}
                       srcDoc={editorSrcdoc}
@@ -4452,7 +4451,7 @@ Vartotojo instrukcija: ${instruction}`;
                       /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
                          content is sanitized by sanitizeHtmlForIframe() instead */
                       scrolling="no"
-                      style={{ width: '595px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
+                      style={{ width: '794px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
                       onLoad={() => {
                         const doc = templateEditorIframeRef.current?.contentDocument;
                         if (doc) {

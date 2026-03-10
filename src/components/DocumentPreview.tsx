@@ -65,14 +65,21 @@ interface DocumentPreviewProps {
   savedHtml?: string | null;
 }
 
+// ── A4 dimension constants (at 96 CSS-px per inch) ──
+// Template uses pt (1pt = 1/72 in). On screen CSS renders 1pt = 96/72 = 1.333px.
+// A4 total width = 210mm = 595.28pt = 793.7px. Content area = 523.2pt = 697.6px.
+const A4_WIDTH_PX = 794;          // 210mm in CSS px (595.28pt × 96/72)
+const A4_CONTENT_WIDTH_PX = 698;  // 523.2pt in CSS px (content area inside 36pt padding)
+
 // The "native" zoom where the document fits the panel well.
 // Displayed as 100% in the UI; other zoom levels are relative to this.
-const BASE_ZOOM = 0.95;
+// Adjusted for the wider A4 base: 595/794 × previous 0.95 ≈ 0.71
+const BASE_ZOOM = 0.71;
 
 const DOC_EDIT_PREFIX = 'doc_edit_';
 
-// Maximum width for images to prevent template breakage (A4 content area ~523px at 36pt padding)
-const MAX_IMG_WIDTH = 523;
+// Maximum width for images to prevent template breakage (A4 content area at 36pt padding)
+const MAX_IMG_WIDTH = A4_CONTENT_WIDTH_PX;
 
 const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
   function DocumentPreview({ variables, template, templateVersion, onVariableClick, onCitationClick, onScroll, editable = false, conversationId, citations, savedHtml }, ref) {
@@ -142,13 +149,13 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       return sanitized.replace(
         '</style>',
         `
-      /* Preview host overrides */
+      /* Preview host overrides — use real A4 dimensions (210mm = 595.28pt) */
       html, body { margin: 0; padding: 0; background: #ffffff; overflow: hidden; }
       body.c47.doc-content {
-        max-width: 595px;
+        /* Let the template's own .c47 max-width (523.2pt) handle content sizing.
+           Total = 523.2pt content + 36pt×2 padding = 595.2pt = 210mm (A4). */
         margin: 0 auto;
         background: #ffffff;
-        padding: 36pt 36pt 36pt 36pt;
       }
 
       /* Image constraints to prevent layout breakage */
@@ -737,7 +744,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
 
     const displayZoom = Math.round((zoom / BASE_ZOOM) * 100);
 
-    const scaledWidth = 595 * zoom;
+    const scaledWidth = A4_WIDTH_PX * zoom;
     const scaledHeight = iframeHeight * zoom;
 
     return (
@@ -952,7 +959,7 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
               title="Dokumento peržiūra"
               scrolling="no"
               style={{
-                width: '595px',
+                width: `${A4_WIDTH_PX}px`,
                 height: `${iframeHeight}px`,
                 border: 'none',
                 display: 'block',
