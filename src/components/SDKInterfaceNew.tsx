@@ -197,7 +197,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
   const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
   // Template editor: edit mode + image editing
-  const [tplEditMode, setTplEditMode] = useState(true); // starts editable
+  const [tplEditMode, setTplEditMode] = useState(false); // starts locked
   const [tplSelectedImage, setTplSelectedImage] = useState<{
     imgEl: HTMLImageElement;
     naturalWidth: number;
@@ -2076,7 +2076,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
     setShowTemplateVersions(false);
-    setTplEditMode(true);
+    setTplEditMode(false);
     setTplSelectedImage(null);
     setTplCropMode(false);
     // Fetch version history in the background
