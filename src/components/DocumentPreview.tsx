@@ -720,49 +720,13 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         </div>
         <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
 
-        {/* Preview area — single scroll layer, white background */}
-        <div
-          className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
-          style={{ background: '#ffffff' }}
-          onScroll={() => {
-            onScroll?.();
-          }}
-        >
-          {/* Scaled wrapper — explicit size so scroll area matches visual content */}
-          <div
-            style={{
-              width: `${scaledWidth}px`,
-              height: `${scaledHeight}px`,
-              margin: '0 auto',
-              overflow: 'hidden',
-            }}
-          >
-            <iframe
-              ref={iframeRef}
-              srcDoc={srcdoc}
-              title="Dokumento peržiūra"
-              scrolling="no"
-              style={{
-                width: '595px',
-                height: `${iframeHeight}px`,
-                border: 'none',
-                display: 'block',
-                overflow: 'hidden',
-                transform: `scale(${zoom})`,
-                transformOrigin: 'top left',
-              }}
-              onLoad={handleIframeLoad}
-            />
-          </div>
-        </div>
-
-        {/* ── Image Editing Toolbar (docked bar above disclaimer) ── */}
+        {/* ── Image Editing Toolbar (docked at top of preview panel) ── */}
         {selectedImage && editable && (
           <div
             className="flex-shrink-0"
             style={{
-              background: '#ffffff',
-              borderTop: '1px solid #e5e2dd',
+              background: '#fafaf9',
+              borderBottom: '1px solid #e5e2dd',
               fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
             }}
           >
@@ -898,6 +862,42 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             )}
           </div>
         )}
+
+        {/* Preview area — single scroll layer, white background */}
+        <div
+          className="flex-1 overflow-y-auto overflow-x-hidden min-h-0"
+          style={{ background: '#ffffff' }}
+          onScroll={() => {
+            onScroll?.();
+          }}
+        >
+          {/* Scaled wrapper — explicit size so scroll area matches visual content */}
+          <div
+            style={{
+              width: `${scaledWidth}px`,
+              height: `${scaledHeight}px`,
+              margin: '0 auto',
+              overflow: 'hidden',
+            }}
+          >
+            <iframe
+              ref={iframeRef}
+              srcDoc={srcdoc}
+              title="Dokumento peržiūra"
+              scrolling="no"
+              style={{
+                width: '595px',
+                height: `${iframeHeight}px`,
+                border: 'none',
+                display: 'block',
+                overflow: 'hidden',
+                transform: `scale(${zoom})`,
+                transformOrigin: 'top left',
+              }}
+              onLoad={handleIframeLoad}
+            />
+          </div>
+        </div>
 
         {/* Disclaimer */}
         <div className="flex-shrink-0" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #e5e2dd 20%, #e5e2dd 80%, transparent)' }} />
