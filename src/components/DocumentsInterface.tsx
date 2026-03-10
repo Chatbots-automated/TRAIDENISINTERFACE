@@ -61,14 +61,6 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
 
-const STANDARTINIAI_COLS: ColumnDef[] = [
-  { key: 'id', label: 'ID', width: 'w-16' },
-  { key: 'projekto_kodas', label: 'Projekto kodas' },
-  { key: 'hnv', label: 'HNV' },
-  { key: 'yaml_content', label: 'YAML turinys' },
-  { key: 'html_content', label: 'Dokumentas', width: 'w-28' },
-];
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -631,7 +623,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
           </div>
         ) : (
-          /* ---- Standartiniai table (defined columns) ---- */
+          /* ---- Standartiniai table (all columns) ---- */
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
@@ -639,17 +631,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  {STANDARTINIAI_COLS.map(col => (
+                  {genericCols.map(col => (
                     <th
-                      key={col.key}
-                      onClick={() => handleSort(col.key)}
-                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
                     >
                       <div className="flex items-center gap-1">
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{formatColumnName(col)}</span>
                         <span className="inline-flex flex-col leading-none">
-                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
-                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col.key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
                         </span>
                       </div>
                     </th>
@@ -664,15 +656,16 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
-                    {STANDARTINIAI_COLS.map(col => {
-                      // Special rendering for html_content — show preview button
-                      if (col.key === 'html_content') {
-                        const hasHtml = row.html_content && String(row.html_content).trim().length > 0;
+                    {genericCols.map(col => {
+                      const val = row[col];
+                      // html_content — show preview button instead of raw HTML
+                      if (col === 'html_content') {
+                        const hasHtml = val && String(val).trim().length > 0;
                         return (
-                          <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
+                          <td key={col} className="px-3 py-2.5">
                             {hasHtml ? (
                               <button
-                                onClick={() => setHtmlPreview(row.html_content)}
+                                onClick={() => setHtmlPreview(val)}
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
                                 style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
                               >
@@ -685,20 +678,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           </td>
                         );
                       }
-                      // Special rendering for yaml_content — truncate heavily
-                      if (col.key === 'yaml_content') {
-                        const val = row[col.key];
-                        const display = val === null || val === undefined ? '—' : String(val).length > 60 ? String(val).slice(0, 60) + '…' : String(val);
-                        return (
-                          <td key={col.key} className="px-3 py-2.5 max-w-[200px] truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
-                            {display}
-                          </td>
-                        );
-                      }
-                      const val = row[col.key];
-                      const display = val === null || val === undefined ? '—' : String(val).length > 120 ? String(val).slice(0, 120) + '…' : String(val);
+                      // Long text columns — truncate
+                      const isLongText = col === 'yaml_content';
+                      const maxLen = isLongText ? 60 : 120;
+                      const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
-                        <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`} style={{ color: col.key === 'id' ? '#8a857f' : '#3d3935', fontSize: col.key === 'id' ? '12px' : '13px' }} title={String(val ?? '')}>
+                        <td key={col} className={`px-3 py-2.5 ${isLongText ? 'max-w-[200px]' : 'max-w-xs'} truncate`} style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
                           {display}
                         </td>
                       );
