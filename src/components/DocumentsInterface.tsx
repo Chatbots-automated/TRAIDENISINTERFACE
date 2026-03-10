@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField } from '../lib/dokumentaiService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
@@ -59,6 +59,14 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'meta_derva_org', label: 'Derva (org)' },
   { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
+];
+
+const STANDARTINIAI_COLS: ColumnDef[] = [
+  { key: 'id', label: 'ID', width: 'w-16' },
+  { key: 'projekto_kodas', label: 'Projekto kodas' },
+  { key: 'hnv', label: 'HNV' },
+  { key: 'yaml_content', label: 'YAML turinys' },
+  { key: 'html_content', label: 'Dokumentas', width: 'w-28' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -265,6 +273,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
+  const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
@@ -328,10 +337,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           return keywords.every(kw => blob.includes(kw));
         });
       } else {
-        const searchCols = genericCols;
+        // Standartiniai: multi-criteria AND search across key fields
         rows = rows.filter(row => {
           const parts: string[] = [];
-          for (const col of searchCols) {
+          if (row.id != null) parts.push(String(row.id));
+          if (row.projekto_kodas) parts.push(row.projekto_kodas);
+          if (row.hnv) parts.push(row.hnv);
+          if (row.yaml_content) parts.push(String(row.yaml_content));
+          // Also search all other fields for completeness
+          for (const col of genericCols) {
             const val = row[col];
             if (val !== null && val !== undefined) parts.push(String(val));
           }
@@ -617,7 +631,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
           </div>
         ) : (
-          /* ---- Standartiniai table (generic columns) ---- */
+          /* ---- Standartiniai table (defined columns) ---- */
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
@@ -625,17 +639,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  {genericCols.map(col => (
+                  {STANDARTINIAI_COLS.map(col => (
                     <th
-                      key={col}
-                      onClick={() => handleSort(col)}
-                      className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
+                      key={col.key}
+                      onClick={() => handleSort(col.key)}
+                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{formatColumnName(col)}</span>
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
-                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
-                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col.key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
                         </span>
                       </div>
                     </th>
@@ -644,12 +658,47 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </thead>
               <tbody>
                 {sortedData.map((row, i) => (
-                  <tr key={row.id ?? i} style={{ borderBottom: '1px solid #f8f6f3' }}>
-                    {genericCols.map(col => {
-                      const val = row[col];
+                  <tr
+                    key={row.id ?? i}
+                    style={{ borderBottom: '1px solid #f8f6f3' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                  >
+                    {STANDARTINIAI_COLS.map(col => {
+                      // Special rendering for html_content — show preview button
+                      if (col.key === 'html_content') {
+                        const hasHtml = row.html_content && String(row.html_content).trim().length > 0;
+                        return (
+                          <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
+                            {hasHtml ? (
+                              <button
+                                onClick={() => setHtmlPreview(row.html_content)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
+                                style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Peržiūrėti
+                              </button>
+                            ) : (
+                              <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>
+                            )}
+                          </td>
+                        );
+                      }
+                      // Special rendering for yaml_content — truncate heavily
+                      if (col.key === 'yaml_content') {
+                        const val = row[col.key];
+                        const display = val === null || val === undefined ? '—' : String(val).length > 60 ? String(val).slice(0, 60) + '…' : String(val);
+                        return (
+                          <td key={col.key} className="px-3 py-2.5 max-w-[200px] truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                            {display}
+                          </td>
+                        );
+                      }
+                      const val = row[col.key];
                       const display = val === null || val === undefined ? '—' : String(val).length > 120 ? String(val).slice(0, 120) + '…' : String(val);
                       return (
-                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                        <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`} style={{ color: col.key === 'id' ? '#8a857f' : '#3d3935', fontSize: col.key === 'id' ? '12px' : '13px' }} title={String(val ?? '')}>
                           {display}
                         </td>
                       );
@@ -668,6 +717,39 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
+      )}
+
+      {/* HTML Preview Modal (view-only) */}
+      {htmlPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setHtmlPreview(null)}>
+          <div
+            className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-white shadow-xl"
+            style={{ height: '85vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <span className="text-sm font-semibold" style={{ color: '#3d3935' }}>Dokumento peržiūra</span>
+              <button
+                onClick={() => setHtmlPreview(null)}
+                className="p-1.5 rounded-md transition-colors hover:bg-gray-100"
+                style={{ color: '#8a857f' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-50 p-4">
+              <div className="mx-auto bg-white shadow-sm rounded-lg" style={{ maxWidth: '210mm', minHeight: '297mm' }}>
+                <iframe
+                  srcDoc={htmlPreview}
+                  className="w-full border-0"
+                  style={{ minHeight: '297mm', height: '100%' }}
+                  title="Dokumento peržiūra"
+                  sandbox="allow-same-origin"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

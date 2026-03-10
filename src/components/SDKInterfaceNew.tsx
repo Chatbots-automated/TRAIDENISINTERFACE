@@ -28,7 +28,8 @@ import {
   Maximize2,
   RotateCcw,
   Crop,
-  MoveHorizontal
+  MoveHorizontal,
+  Save
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -52,6 +53,7 @@ import {
   type VariableCitation
 } from '../lib/sdkConversationService';
 import { appLogger } from '../lib/appLogger';
+import { saveStandartinisProjektas } from '../lib/dokumentaiService';
 import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
@@ -70,7 +72,7 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
@@ -2083,6 +2085,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     getGlobalTemplateVersions(30).then(setTemplateVersionHistory).catch(() => {});
   };
 
+  // ── Save document to standartiniai_projektai ──
+
+  const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
+
+  const handleSaveToStandartiniai = async () => {
+    if (!currentConversation?.artifact) return;
+
+    try {
+      setIsSavingToStandartiniai(true);
+
+      // Get rendered HTML from the preview iframe
+      const editedHtml = documentPreviewRef.current?.getEditedHtml();
+      if (!editedHtml) {
+        addNotification('error', 'Klaida', 'Nepavyko gauti dokumento turinio.');
+        return;
+      }
+
+      // Get the YAML content (between <commercial_offer> tags = artifact content)
+      const yamlContent = currentConversation.artifact.content || '';
+
+      // Get projekto_kodas from merged variables
+      const vars = mergeAllVariables();
+      const projektoKodas = vars['code_yy/mm/dd'] || '';
+
+      // Get HNV value from the YAML variables
+      const hnv = vars['economy_HNV'] || '';
+
+      await saveStandartinisProjektas({
+        html_content: editedHtml,
+        yaml_content: yamlContent,
+        projekto_kodas: projektoKodas,
+        hnv: hnv,
+      });
+
+      addNotification('success', 'Išsaugota', 'Dokumentas išsaugotas į standartinių projektų lentelę.');
+    } catch (err) {
+      console.error('Error saving to standartiniai_projektai:', err);
+      addNotification('error', 'Klaida', 'Nepavyko išsaugoti dokumento.');
+    } finally {
+      setIsSavingToStandartiniai(false);
+    }
+  };
+
   // ── Template editor: image editing helpers ──
 
   const MAX_TPL_IMG_WIDTH = 523; // A4 content area at 36pt padding
@@ -3100,6 +3145,15 @@ Vartotojo instrukcija: ${instruction}`;
                       title="Kopijuoti YAML"
                     >
                       <Copy className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={handleSaveToStandartiniai}
+                      disabled={isSavingToStandartiniai}
+                      className="btn btn-sm btn-primary gap-1.5 ml-1"
+                      title="Išsaugoti į standartinių projektų lentelę"
+                    >
+                      {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      Išsaugoti
                     </button>
                   </>
                 )}

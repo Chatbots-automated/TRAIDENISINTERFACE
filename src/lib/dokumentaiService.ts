@@ -23,6 +23,34 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
   }
 };
 
+/**
+ * Save a standard project record to standartiniai_projektai table
+ */
+export const saveStandartinisProjektas = async (record: {
+  html_content: string;
+  yaml_content: string;
+  projekto_kodas: string;
+  hnv: string;
+}): Promise<any> => {
+  try {
+    const { data, error } = await db
+      .from('standartiniai_projektai')
+      .insert([record])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving standartiniai_projektai:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (error: any) {
+    console.error('Error in saveStandartinisProjektas:', error);
+    throw error;
+  }
+};
+
 /** Columns we display for nestandartiniai */
 const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status';
 
