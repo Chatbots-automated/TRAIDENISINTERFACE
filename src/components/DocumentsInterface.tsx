@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField } from '../lib/dokumentaiService';
+import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -725,7 +726,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <div className="flex-1 overflow-auto bg-gray-50 p-4">
               <div className="mx-auto bg-white shadow-sm rounded-lg" style={{ maxWidth: '210mm', minHeight: '297mm' }}>
                 <iframe
-                  srcDoc={htmlPreview}
+                  srcDoc={(() => {
+                    // Full HTML document (new format) — use as-is
+                    if (htmlPreview.trim().match(/^<(!doctype|html)/i)) {
+                      return htmlPreview;
+                    }
+                    // Legacy body-only content — wrap with template styles
+                    const tpl = getDefaultTemplate();
+                    const styleMatch = tpl.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+                    const styles = styleMatch ? styleMatch[0] : '';
+                    return `<html><head><meta charset="UTF-8">${styles}</head><body class="c47 doc-content" style="max-width:523.2pt;margin:0 auto;padding:36pt;background:#fff;">${htmlPreview}</body></html>`;
+                  })()}
                   className="w-full border-0"
                   style={{ minHeight: '297mm', height: '100%' }}
                   title="Dokumento peržiūra"

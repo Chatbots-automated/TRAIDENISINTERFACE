@@ -2173,21 +2173,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       setIsSavingToStandartiniai(true);
 
-      // Save body innerHTML (preserves manual text/image edits, can be restored on load).
+      // Save full HTML document (preserves styles, tables, formatting).
       // Falls back to renderTemplate() when the preview tab isn't active.
-      let htmlContent = documentPreviewRef.current?.getEditedBodyHtml() || null;
+      let htmlContent = documentPreviewRef.current?.getEditedHtml() || null;
 
       if (!htmlContent) {
-        // No live iframe — render from template and extract body content
+        // No live iframe — render full HTML from template
         const vars = mergeAllVariables();
         const tpl = getDefaultTemplate();
         const citedKeys = currentConversation.artifact.variable_citations
           ? new Set(Object.keys(currentConversation.artifact.variable_citations))
           : undefined;
-        const fullHtml = renderTemplate(tpl, vars, citedKeys);
-        // Extract body innerHTML from the rendered HTML
-        const bodyMatch = fullHtml?.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        htmlContent = bodyMatch ? bodyMatch[1] : fullHtml;
+        htmlContent = renderTemplate(tpl, vars, citedKeys);
       }
 
       if (!htmlContent) {

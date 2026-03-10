@@ -299,7 +299,35 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       },
       getEditedHtml: () => {
         const doc = iframeRef.current?.contentDocument;
-        return doc?.documentElement?.outerHTML || null;
+        if (!doc?.documentElement) return null;
+        // Clone to strip preview-only artifacts without affecting the live iframe
+        const clone = doc.documentElement.cloneNode(true) as HTMLElement;
+        // Remove citation badges (preview-only UI)
+        clone.querySelectorAll('.citation-badge').forEach(el => el.remove());
+        // Remove template-var interactive wrappers — keep inner content
+        clone.querySelectorAll('.template-var').forEach(span => {
+          const parent = span.parentNode;
+          if (parent) {
+            while (span.firstChild) parent.insertBefore(span.firstChild, span);
+            parent.removeChild(span);
+          }
+        });
+        // Remove img-edit-mode and img-selected classes
+        clone.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+        const body = clone.querySelector('body');
+        if (body) {
+          body.classList.remove('img-edit-mode');
+          body.contentEditable = 'false';
+        }
+        // Strip preview-only CSS block (between "/* Preview host overrides */" and the closing </style>)
+        const styleEl = clone.querySelector('style');
+        if (styleEl) {
+          styleEl.textContent = (styleEl.textContent || '').replace(
+            /\/\* Preview host overrides \*\/[\s\S]*$/,
+            ''
+          );
+        }
+        return clone.outerHTML;
       },
       getEditedBodyHtml: () => {
         const doc = iframeRef.current?.contentDocument;
@@ -419,7 +447,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       }
       // Fall back to saved HTML from DB (persisted manual edits from last save)
       if (!restored && savedHtmlRef.current) {
-        doc.body.innerHTML = savedHtmlRef.current;
+        // DB may contain full HTML document — extract body content only
+        const bodyMatch = savedHtmlRef.current.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+        doc.body.innerHTML = bodyMatch ? bodyMatch[1] : savedHtmlRef.current;
         setTimeout(measureIframe, 50);
       }
 
@@ -573,7 +603,9 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
           if (local) return; // localStorage takes priority
         } catch { /* ignore */ }
       }
-      doc.body.innerHTML = savedHtml;
+      // DB may contain full HTML document — extract body content only
+      const bodyMatch = savedHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      doc.body.innerHTML = bodyMatch ? bodyMatch[1] : savedHtml;
       setTimeout(measureIframe, 50);
     }, [savedHtml, conversationId, measureIframe]);
 
