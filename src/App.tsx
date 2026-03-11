@@ -7,12 +7,13 @@ import AdminUsersInterface from './components/AdminUsersInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
 import DervaInterface from './components/DervaInterface';
+import AnalizeInterface from './components/AnalizeInterface';
 import SDKInterface from './components/SDKInterfaceNew';
 import PaklausimoKortelePage from './components/PaklausimoKortele';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
-type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk';
+type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize';
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
@@ -26,6 +27,7 @@ const routeToViewMode: Record<string, ViewMode> = {
   '/users': 'users',
   '/instrukcijos': 'instrukcijos',
   '/nestandartiniai': 'nestandartiniai',
+  '/analize': 'analize',
   '/derva': 'derva',
   '/sdk': 'sdk',
 };
@@ -42,6 +44,8 @@ function AppContent() {
   // Derive viewMode from current route (/sdk/anything → 'sdk')
   const viewMode: ViewMode = location.pathname.startsWith('/sdk')
     ? 'sdk'
+    : location.pathname.startsWith('/analize')
+    ? 'analize'
     : routeToViewMode[location.pathname] || 'sdk';
 
   // Naujokas (newbie) mode - shows helpful tooltips and guides
@@ -202,6 +206,10 @@ function AppContent() {
         <Route
           path="/nestandartiniai"
           element={<NestandardiniaiInterface user={user} projectId={projectId} />}
+        />
+        <Route
+          path="/analize"
+          element={<AnalizeInterface user={user} projectId={projectId} />}
         />
         <Route
           path="/derva"

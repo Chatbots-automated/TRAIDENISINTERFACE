@@ -13,7 +13,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   FlaskConical,
-  Beaker
+  Beaker,
+  FileSearch
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -24,8 +25,8 @@ interface LayoutProps {
   children: React.ReactNode;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk';
-  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk') => void;
+  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
   forceCollapsed?: boolean;
   sdkUnreadCount?: number;
@@ -171,6 +172,16 @@ export default function Layout({
                 >
                   <Database className="w-4 h-4" />
                   {!sidebarCollapsed && <span className="whitespace-nowrap">Dokumentai</span>}
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onViewModeChange?.('analize')}
+                  className={viewMode === 'analize' ? 'active' : ''}
+                  title={sidebarCollapsed ? 'Analizė' : undefined}
+                >
+                  <FileSearch className="w-4 h-4" />
+                  {!sidebarCollapsed && <span className="whitespace-nowrap">Analizė</span>}
                 </button>
               </li>
               <li>
