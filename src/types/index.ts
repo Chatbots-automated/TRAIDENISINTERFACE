@@ -56,6 +56,39 @@ export interface ChatMessage {
   created_at: string;
 }
 
+// ============================================================================
+// Parsed Documents (LlamaParse / Analizė)
+// ============================================================================
+
+export type ParseTier = 'cost_effective' | 'agentic' | 'agentic_plus' | 'fast';
+export type ParseStatus = 'PENDING' | 'SUCCESS' | 'ERROR';
+
+export interface ParsedDocument {
+  id: string;
+  user_id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  tier: ParseTier;
+  job_id: string;
+  status: ParseStatus;
+  parsed_markdown: string;
+  parsed_text: string;
+  parsed_json: any;
+  page_count: number;
+  images_metadata: any;
+  user_prompt?: string;
+  created_at: string;
+}
+
+export interface DocumentChatMessage {
+  id: string;
+  document_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
 export interface ChatItem {
   id: string;
   type: ChatItemType;
