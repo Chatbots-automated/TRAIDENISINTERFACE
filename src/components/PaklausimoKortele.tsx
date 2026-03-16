@@ -22,35 +22,55 @@ import { getWebhookUrl } from '../lib/webhooksService';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseMetadata(raw: string | Record<string, string> | null | undefined): Record<string, string> {
+function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> {
   if (!raw) return {};
+  // If it's an array (multi-product), return the first item as flat metadata
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    return (first && typeof first === 'object') ? first : {};
+  }
   if (typeof raw === 'object') return raw as Record<string, string>;
-  try { return JSON.parse(raw) || {}; } catch { return {}; }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const first = parsed[0];
+      return (first && typeof first === 'object') ? first : {};
+    }
+    return parsed || {};
+  } catch { return {}; }
 }
 
 /**
  * Extract an array of product specs from metadata.
- * Supports two formats:
+ * Supports multiple formats:
  *   1. Old flat format: Record<string, string> → returns [meta] (single product)
- *   2. New multi-product format: { products: Record<string, string>[] } → returns products array
- * Also handles the case where metadata is a JSON array directly.
+ *   2. New multi-product format: { products: [...] } → returns products array
+ *   3. JSON array directly: [{...}, {...}] → returns array as-is
+ *   4. Lithuanian keyed arrays: { talpos: [...] } or { gaminiai: [...] }
+ * Also handles stringified JSON and nested objects within each product.
  */
-function parseProducts(raw: string | Record<string, any> | null | undefined): Record<string, string>[] {
+function parseProducts(raw: string | Record<string, any> | any[] | null | undefined): Record<string, any>[] {
   if (!raw) return [{}];
   let obj: any = raw;
   if (typeof raw === 'string') {
-    try { obj = JSON.parse(raw); } catch { return [{}]; }
+    const trimmed = raw.trim();
+    try { obj = JSON.parse(trimmed); } catch { return [{}]; }
   }
   // If it's an array of product objects directly
   if (Array.isArray(obj)) {
-    return obj.length > 0 ? obj : [{}];
+    const filtered = obj.filter((item: any) => item && typeof item === 'object' && !Array.isArray(item));
+    return filtered.length > 0 ? filtered : [{}];
   }
-  // If it has a "products" key with an array
-  if (obj && typeof obj === 'object' && Array.isArray(obj.products) && obj.products.length > 0) {
-    return obj.products;
+  if (obj && typeof obj === 'object') {
+    // Check common wrapper keys: products, talpos, gaminiai
+    for (const wrapperKey of ['products', 'talpos', 'gaminiai', 'items']) {
+      if (Array.isArray(obj[wrapperKey]) && obj[wrapperKey].length > 0) {
+        return obj[wrapperKey];
+      }
+    }
   }
   // Flat single-product format
-  return [obj as Record<string, string>];
+  return [obj as Record<string, any>];
 }
 
 function parseJSON<T>(raw: T | string | null): T | null {
@@ -225,12 +245,61 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
   );
 }
 
+/** Keys to skip in the flexible metadata display (internal/navigation keys) */
+const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'procurement_package', 'position']);
+
+/** Keys that are shown as the product title — not in the grid */
+const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
+
+/** Format a metadata key into a human-readable label */
+function formatMetaLabel(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Check if a value is "nenurodyta" or empty — hide such fields to keep the display clean */
+function isEmptyValue(v: any): boolean {
+  if (v === null || v === undefined || v === '') return true;
+  if (typeof v === 'string' && v.trim().toLowerCase() === 'nenurodyta') return true;
+  return false;
+}
+
+/** Check if an object has only "nenurodyta" or empty values */
+function isAllEmpty(obj: Record<string, any>): boolean {
+  return Object.values(obj).every(v => {
+    if (typeof v === 'object' && v !== null) return isAllEmpty(v);
+    return isEmptyValue(v);
+  });
+}
+
 function InfoField({ label, value }: { label: string; value: string | undefined | null }) {
   if (!value) return <div />;
   return (
     <div>
       <dt className="text-xs text-base-content/40">{label}</dt>
       <dd className="text-sm font-medium mt-0.5 text-base-content">{value}</dd>
+    </div>
+  );
+}
+
+/** Render a nested object as a mini key-value list */
+function NestedObjectField({ label, obj }: { label: string; obj: Record<string, any> }) {
+  const entries = Object.entries(obj).filter(([, v]) => !isEmptyValue(v));
+  if (entries.length === 0) return null;
+  return (
+    <div className="col-span-3">
+      <dt className="text-xs text-base-content/40 mb-1">{label}</dt>
+      <dd className="text-sm mt-0.5 rounded-lg p-3 bg-base-content/[0.02] border border-base-content/5">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+          {entries.map(([k, v]) => (
+            <div key={k} className="flex gap-2">
+              <span className="text-xs text-base-content/40 shrink-0">{formatMetaLabel(k)}:</span>
+              <span className="text-xs text-base-content font-medium">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+            </div>
+          ))}
+        </div>
+      </dd>
     </div>
   );
 }
@@ -360,7 +429,17 @@ function EditMessageBubble({ message, side, onSave, onCancel }: { message: Atsak
 // Tab: Bendra
 // ---------------------------------------------------------------------------
 
-function TabBendra({ record, products }: { record: NestandartiniaiRecord; products: Record<string, string>[] }) {
+/** Get a display title for a product from its metadata */
+function getProductTitle(meta: Record<string, any>): string {
+  return meta.pavadinimas || meta.procurement_package || '';
+}
+
+/** Detect whether a product uses the old flat key format (orientacija, DN, etc.) */
+function isOldFormat(meta: Record<string, any>): boolean {
+  return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
+}
+
+function TabBendra({ record, products }: { record: NestandartiniaiRecord; products: Record<string, any>[] }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const hasMultiple = products.length > 1;
 
@@ -368,10 +447,30 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
   const idx = Math.min(currentIdx, products.length - 1);
   const meta = products[idx] || {};
 
+  // Detect format: old flat keys vs new LLM-generated keys
+  const oldFormat = isOldFormat(meta);
+
+  // Old format fields
   const extraMeta = Object.entries(meta).filter(([k]) => !ALL_MAIN_KEYS.has(k) && k !== 'products' && k !== 'procurement_package' && k !== 'position');
   const hasRow1 = INFO_ROW_1.some(f => f.key === 'derva_org' ? !!meta.derva : !!meta[f.key]);
   const hasRow2 = INFO_ROW_2.some(f => f.key === 'derva_org' ? !!meta.derva : !!meta[f.key]);
   const dervaOrgDisplay = formatDervaOrg(meta);
+
+  // New format: separate scalar fields from nested objects
+  const scalarFields: [string, string][] = [];
+  const objectFields: [string, Record<string, any>][] = [];
+  const pastabos: string | null = typeof meta['Pastabos'] === 'string' ? meta['Pastabos'] : (typeof meta['pastabos'] === 'string' ? meta['pastabos'] : null);
+  if (!oldFormat) {
+    for (const [k, v] of Object.entries(meta)) {
+      if (SKIP_DISPLAY_KEYS.has(k) || TITLE_KEYS.has(k)) continue;
+      if (k === 'Pastabos' || k === 'pastabos') continue;
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        if (!isAllEmpty(v)) objectFields.push([k, v]);
+      } else if (!isEmptyValue(v)) {
+        scalarFields.push([k, String(v)]);
+      }
+    }
+  }
 
   const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
   const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
@@ -389,9 +488,9 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
             <ChevronLeft className="w-5 h-5 text-base-content/50" />
           </button>
           <div className="flex flex-col items-center gap-0.5">
-            {meta.procurement_package && (
-              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary">
-                {meta.procurement_package}
+            {getProductTitle(meta) && (
+              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary max-w-[250px] truncate">
+                {getProductTitle(meta)}
               </span>
             )}
             <span className="text-xs text-base-content/40">
@@ -408,22 +507,39 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
         </div>
       )}
 
-      {/* Dot indicators for multiple products */}
-      {hasMultiple && products.length <= 10 && (
-        <div className="flex items-center justify-center gap-1.5 pb-3">
-          {products.map((_, i) => (
+      {/* Dot indicators for multiple products (up to 20, then just use arrows) */}
+      {hasMultiple && products.length <= 20 && (
+        <div className="flex items-center justify-center gap-1 pb-3 flex-wrap">
+          {products.map((p, i) => (
             <button
               key={i}
               onClick={() => setCurrentIdx(i)}
               className={`w-2 h-2 rounded-full transition-all ${i === idx ? 'bg-primary scale-110' : 'bg-base-content/15 hover:bg-base-content/25'}`}
-              title={products[i].procurement_package || `Gaminys ${i + 1}`}
+              title={getProductTitle(p) || `Gaminys ${i + 1}`}
             />
           ))}
         </div>
       )}
 
-      {/* Info grid */}
-      {(hasRow1 || hasRow2 || meta.derva_musu) && (
+      {/* For >20 products, show a compact dropdown-style selector */}
+      {hasMultiple && products.length > 20 && (
+        <div className="flex items-center justify-center pb-3">
+          <select
+            value={idx}
+            onChange={e => setCurrentIdx(Number(e.target.value))}
+            className="text-xs border border-base-content/10 rounded-lg px-2 py-1 bg-transparent text-base-content/60 focus:outline-none focus:border-primary/30"
+          >
+            {products.map((p, i) => (
+              <option key={i} value={i}>
+                {i + 1}. {getProductTitle(p) || `Gaminys ${i + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* OLD FORMAT: Info grid with known keys */}
+      {oldFormat && (hasRow1 || hasRow2 || meta.derva_musu) && (
         <div className="pb-4">
           <div className="grid grid-cols-3 gap-x-6 gap-y-3">
             {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
@@ -438,6 +554,39 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
         </div>
       )}
 
+      {/* NEW FORMAT: Flexible rendering of all scalar fields */}
+      {!oldFormat && scalarFields.length > 0 && (
+        <div className="pb-4">
+          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+            {scalarFields.map(([k, v]) => (
+              <InfoField key={k} label={formatMetaLabel(k)} value={v} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* NEW FORMAT: Nested object sections (e.g. projekto_kontekstas, Cheminė_aplinka) */}
+      {!oldFormat && objectFields.length > 0 && (
+        <div className="border-t border-base-content/10 pt-2">
+          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+            {objectFields.map(([k, v]) => (
+              <NestedObjectField key={k} label={formatMetaLabel(k)} obj={v} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* NEW FORMAT: Pastabos (notes) — shown as a collapsible text block */}
+      {!oldFormat && pastabos && (
+        <div className="border-t border-base-content/10">
+          <CollapsibleSection title="Pastabos">
+            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
+              {pastabos}
+            </div>
+          </CollapsibleSection>
+        </div>
+      )}
+
       {/* Description */}
       {record.description && (
         <div className="border-t border-base-content/10">
@@ -449,15 +598,15 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
         </div>
       )}
 
-      {/* Extra metadata */}
-      {(extraMeta.length > 0 || record.derva || meta.talpa) && (
+      {/* OLD FORMAT: Extra metadata */}
+      {oldFormat && (extraMeta.length > 0 || record.derva || meta.talpa) && (
         <div className="border-t border-base-content/10">
           <CollapsibleSection title="Papildomi duomenys">
             <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
               {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
               {meta.position && <InfoField label="Pozicija" value={meta.position} />}
               {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
-              {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={String(v)} />)}
+              {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
             </div>
           </CollapsibleSection>
         </div>

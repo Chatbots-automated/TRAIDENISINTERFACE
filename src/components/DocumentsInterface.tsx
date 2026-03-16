@@ -66,10 +66,22 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseMetadata(raw: string | Record<string, string> | null | undefined): Record<string, string> | null {
+function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> | null {
   if (!raw) return null;
+  // If it's an array (multi-product metadata), return the first item
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    return (first && typeof first === 'object') ? first : null;
+  }
   if (typeof raw === 'object') return raw as Record<string, string>;
-  try { return JSON.parse(raw); } catch { return null; }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const first = parsed[0];
+      return (first && typeof first === 'object') ? first : null;
+    }
+    return parsed;
+  } catch { return null; }
 }
 
 /** Format the original derva value with cheminis sluoksnis mm appended if present */
