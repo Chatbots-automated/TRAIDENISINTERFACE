@@ -184,6 +184,7 @@ export async function pollUntilDone(
     const result = await getParseResult(jobId, [
       'result_content_markdown',
       'result_content_text',
+      'result_content_json',
     ]);
 
     const status = result.status || result.metadata?.status || '';

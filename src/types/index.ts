@@ -89,6 +89,40 @@ export interface DocumentChatMessage {
   created_at: string;
 }
 
+// ============================================================================
+// Tank Extraction (Document Analysis → JSON output)
+// ============================================================================
+
+export interface TankExtraction {
+  pavadinimas?: string;
+  eilės_nr?: string;
+  pozicija?: string;
+  projekto_kontekstas_Klientas?: string;
+  projekto_kontekstas_Užsakovas?: string;
+  projekto_kontekstas_Kontaktinis_asmuo?: string;
+  projekto_kontekstas_Užklausos_data?: string;
+  projekto_kontekstas_Projekto_pavadinimas?: string;
+  Talpa_m3?: string;
+  Skersmuo_mm?: string;
+  Aukštis_mm?: string;
+  Orientacija?: string;
+  Dugno_tipas?: string;
+  Medžiaga?: string;
+  Vieta?: string;
+  Cheminė_aplinka_Terpė?: string;
+  Cheminė_aplinka_Koncentracija?: string;
+  Cheminė_aplinka_Tankis_kg_m3?: string;
+  'Cheminė_aplinka_Temperatūra_°C'?: string;
+  Cheminė_aplinka_Slėgis_bar_g?: string;
+  Apšiltinimas?: string;
+  Elektrinis_šildymas?: string;
+  Maišyklė?: string;
+  Maišyklė_aprašymas?: string;
+  Jungtys?: string;
+  Pastabos?: string;
+  [key: string]: string | undefined;
+}
+
 export interface ChatItem {
   id: string;
   type: ChatItemType;

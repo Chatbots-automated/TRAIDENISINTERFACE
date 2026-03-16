@@ -3,7 +3,7 @@ import {
   Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
   Send, MessageSquare, AlertCircle, CheckCircle, Loader2, Image,
   Code, Type, FileJson, ChevronDown, Sparkles, Settings2, RefreshCw,
-  PanelRightClose, PanelRightOpen, Download
+  PanelRightClose, PanelRightOpen, Download, FlaskConical
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import type { AppUser, ParsedDocument, DocumentChatMessage, ParseTier } from '../types';
@@ -30,6 +30,39 @@ const TIERS: { value: ParseTier; label: string; desc: string }[] = [
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.pptx,.xlsx,.html,.htm,.jpg,.jpeg,.png,.xml,.epub,.rtf,.csv,.txt';
+
+// ============================================================================
+// Tank Extraction Prompt (for quick-action button)
+// ============================================================================
+
+const TANK_EXTRACTION_PROMPT = `Išanalizuok VISĄ pateiktą dokumento turinį — el. laišką, priedus, lenteles, PDF turinį. Kiekvienai talpai/reaktoriui, kuris randamas dokumentuose, sukurk atskirą techninį aprašymą. PRIVALOMA ištraukti VISAS talpas — nepraleisti nė vienos.
+
+Grąžink VISADA validų JSON masyvą. Jokio teksto prieš ar po JSON.
+Jei tik 1 talpa — grąžink masyvą su vienu objektu.
+
+Kiekvienos talpos objekto struktūra (pildyk TIK tuos laukus, kuriems randi informaciją — jei parametras nerastas, PRALEISK lauką):
+
+Galimi laukai:
+- pavadinimas, eilės_nr, pozicija
+- projekto_kontekstas_Klientas, projekto_kontekstas_Užsakovas, projekto_kontekstas_Kontaktinis_asmuo, projekto_kontekstas_Užklausos_data, projekto_kontekstas_Projekto_pavadinimas
+- Talpa_m3, Skersmuo_mm, Aukštis_mm, Orientacija, Dugno_tipas
+- Medžiaga (FRP / PP / PE / HDPE / kita)
+- Vieta (INDOOR / OUTDOOR)
+- Cheminė_aplinka_Terpė, Cheminė_aplinka_Koncentracija, Cheminė_aplinka_Tankis_kg_m3, Cheminė_aplinka_Temperatūra_°C, Cheminė_aplinka_Slėgis_bar_g
+- Apšiltinimas, Elektrinis_šildymas
+- Maišyklė (Taip/Ne), Maišyklė_aprašymas
+- Jungtys, Pastabos
+
+Taisyklės:
+- Peržiūrėk VISĄ dokumento turinį — nesustok ties pirmu rastu šaltiniu
+- KIEKVIENA rasta talpa PRIVALO būti ištraukta atskirai
+- Jei ta pati talpa minima keliose vietose — sujunk informaciją į vieną bloką
+- Jei informacija dviprasmiška arba prieštaringa — pažymėk pastabose
+- Cheminės formulės tikslios: H₂SO₄, CuSO₄, NiSO₄, CoSO₄, LiOH, Li₂SO₄, HF, NH₃, NaOH, HCl
+- Matavimo vienetai: m³, mm, °C, bar(g), kg/m³, wt.%, g/L
+- Nesutrumpinti ir neapibendinti kelių talpų į vieną
+- Laukai turi būti FLAT — jokių nested objektų
+- Grąžink tik validų JSON masyvą. Jokio teksto prieš ar po JSON.`;
 
 type ViewTab = 'markdown' | 'text' | 'json' | 'images';
 
@@ -101,6 +134,78 @@ function renderMarkdown(md: string): string {
   html = html.replace(/&lt;!-- table separator --&gt;/g, '');
 
   return `<div class="prose max-w-none"><p class="text-sm my-2" style="color:#3d3935">${html}</p></div>`;
+}
+
+// ============================================================================
+// JSON Detection & Rendering for Chat Responses
+// ============================================================================
+
+function tryParseJsonArray(text: string): any[] | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('[')) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
+      return parsed;
+    }
+  } catch {
+    // Try extracting JSON from markdown code block
+    const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      try {
+        const inner = JSON.parse(codeBlockMatch[1].trim());
+        if (Array.isArray(inner) && inner.length > 0) return inner;
+      } catch { /* not valid JSON */ }
+    }
+  }
+  return null;
+}
+
+function renderTankCard(tank: Record<string, any>, index: number): string {
+  const name = tank.pavadinimas || `Talpa ${index + 1}`;
+  const pos = tank.pozicija ? ` (${tank.pozicija})` : '';
+
+  const fieldLabels: Record<string, string> = {
+    Talpa_m3: 'Talpa', Skersmuo_mm: 'Skersmuo', Aukštis_mm: 'Aukštis',
+    Orientacija: 'Orientacija', Dugno_tipas: 'Dugno tipas', Medžiaga: 'Medžiaga',
+    Vieta: 'Vieta', Cheminė_aplinka_Terpė: 'Terpė', Cheminė_aplinka_Koncentracija: 'Koncentracija',
+    Cheminė_aplinka_Tankis_kg_m3: 'Tankis', 'Cheminė_aplinka_Temperatūra_°C': 'Temperatūra',
+    Cheminė_aplinka_Slėgis_bar_g: 'Slėgis', Apšiltinimas: 'Apšiltinimas',
+    Elektrinis_šildymas: 'El. šildymas', Maišyklė: 'Maišyklė',
+    Maišyklė_aprašymas: 'Maišymo aprašymas', Jungtys: 'Jungtys', Pastabos: 'Pastabos',
+    projekto_kontekstas_Klientas: 'Klientas', projekto_kontekstas_Užsakovas: 'Užsakovas',
+  };
+
+  const units: Record<string, string> = {
+    Talpa_m3: ' m³', Skersmuo_mm: ' mm', Aukštis_mm: ' mm',
+    Cheminė_aplinka_Tankis_kg_m3: ' kg/m³', 'Cheminė_aplinka_Temperatūra_°C': ' °C',
+    Cheminė_aplinka_Slėgis_bar_g: ' bar(g)',
+  };
+
+  const skipKeys = new Set(['pavadinimas', 'pozicija', 'eilės_nr']);
+  const rows = Object.entries(tank)
+    .filter(([k, v]) => !skipKeys.has(k) && v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => {
+      const label = fieldLabels[k] || k.replace(/_/g, ' ');
+      const unit = units[k] || '';
+      return `<tr><td style="padding:3px 8px;font-weight:500;color:#5a5550;white-space:nowrap;font-size:11px">${label}</td><td style="padding:3px 8px;color:#3d3935;font-size:11px">${String(v)}${unit}</td></tr>`;
+    })
+    .join('');
+
+  return `<div style="margin-bottom:10px;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;overflow:hidden">
+    <div style="background:rgba(0,122,255,0.06);padding:6px 10px;font-size:11px;font-weight:600;color:#007AFF">${index + 1}. ${name}${pos}</div>
+    <table style="width:100%">${rows}</table>
+  </div>`;
+}
+
+function renderChatContent(content: string): { html: string; isJson: boolean } {
+  const tanks = tryParseJsonArray(content);
+  if (tanks) {
+    const cards = tanks.map((t, i) => renderTankCard(t, i)).join('');
+    const summary = `<div style="font-size:10px;color:#8a857f;margin-top:4px">Rasta talpų: ${tanks.length}</div>`;
+    return { html: cards + summary, isJson: true };
+  }
+  return { html: '', isJson: false };
 }
 
 // ============================================================================
@@ -335,8 +440,8 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   // CHAT WITH DOCUMENT
   // ===========================================================================
 
-  const handleSendChat = useCallback(async () => {
-    const msg = chatInput.trim();
+  const handleSendChat = useCallback(async (overrideMessage?: string) => {
+    const msg = (overrideMessage || chatInput).trim();
     if (!msg || !selectedDocFull || chatLoading) return;
 
     setChatInput('');
@@ -386,7 +491,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
       let fullResponse = '';
 
       const stream = client.messages.stream({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: systemPrompt,
         messages: history,
@@ -914,31 +1019,57 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                       <div className="flex-1 flex items-center justify-center">
                         <div className="text-center px-4">
                           <MessageSquare className="w-8 h-8 mx-auto mb-2" style={{ color: '#d1cdc7' }} />
-                          <p className="text-xs" style={{ color: '#8a857f' }}>
+                          <p className="text-xs mb-3" style={{ color: '#8a857f' }}>
                             Užduokite klausimą apie dokumentą
                           </p>
+                          <button
+                            onClick={() => handleSendChat(TANK_EXTRACTION_PROMPT)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-all hover:scale-[1.02]"
+                            style={{
+                              background: 'linear-gradient(180deg, rgba(0,122,255,0.08) 0%, rgba(0,122,255,0.14) 100%)',
+                              color: '#007AFF',
+                              border: '0.5px solid rgba(0,122,255,0.25)',
+                            }}
+                            disabled={chatLoading}
+                          >
+                            <FlaskConical className="w-3 h-3" />
+                            Ištraukti talpų specifikacijas
+                          </button>
                         </div>
                       </div>
                     )}
 
-                    {chatMessages.map(msg => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
+                    {chatMessages.map(msg => {
+                      const rendered = msg.role === 'assistant' ? renderChatContent(msg.content) : null;
+                      const isExtractionPrompt = msg.role === 'user' && msg.content.includes('Kiekvienai talpai/reaktoriui') && msg.content.length > 200;
+                      return (
                         <div
-                          className="max-w-[90%] px-3 py-2 rounded-xl text-xs leading-relaxed"
-                          style={{
-                            background: msg.role === 'user' ? '#007AFF' : 'rgba(0,0,0,0.04)',
-                            color: msg.role === 'user' ? '#fff' : '#3d3935',
-                            borderBottomRightRadius: msg.role === 'user' ? '4px' : undefined,
-                            borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : undefined,
-                          }}
+                          key={msg.id}
+                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                         >
-                          <div className="whitespace-pre-wrap">{msg.content}</div>
+                          <div
+                            className="max-w-[90%] px-3 py-2 rounded-xl text-xs leading-relaxed"
+                            style={{
+                              background: msg.role === 'user' ? '#007AFF' : 'rgba(0,0,0,0.04)',
+                              color: msg.role === 'user' ? '#fff' : '#3d3935',
+                              borderBottomRightRadius: msg.role === 'user' ? '4px' : undefined,
+                              borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : undefined,
+                            }}
+                          >
+                            {rendered?.isJson ? (
+                              <div dangerouslySetInnerHTML={{ __html: rendered.html }} />
+                            ) : isExtractionPrompt ? (
+                              <div className="flex items-center gap-1.5">
+                                <FlaskConical className="w-3 h-3 shrink-0" />
+                                <span>Talpų specifikacijų ištraukimas...</span>
+                              </div>
+                            ) : (
+                              <div className="whitespace-pre-wrap">{msg.content}</div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {/* Streaming response */}
                     {chatStreaming && (
