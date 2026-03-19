@@ -97,12 +97,49 @@ function parseMetadata(raw: string | Record<string, string> | any[] | null | und
   } catch { return null; }
 }
 
+/**
+ * Map from old-format table column keys to possible new-format key aliases.
+ * The LLM extraction prompt produces keys like "Orientacija", "Medžiaga",
+ * "Skersmuo_mm", etc., while the table columns expect "orientacija", "DN", etc.
+ */
+const META_KEY_ALIASES: Record<string, string[]> = {
+  orientacija: ['Orientacija', 'orientacija'],
+  talpa_tipas: ['Talpa_tipas', 'talpa_tipas', 'Medžiaga', 'Vieta'],
+  DN: ['DN', 'Skersmuo_mm', 'skersmuo_mm', 'Skersmuo Mm'],
+  derva: ['derva', 'Medžiaga'],
+  derva_musu: ['derva_musu', 'Derva_musu'],
+};
+
+/** Look up a metadata value by key, trying aliases and case-insensitive fallback */
+function getMetaValue(meta: Record<string, any> | null, key: string): string | undefined {
+  if (!meta) return undefined;
+
+  // 1. Direct match
+  if (meta[key] !== undefined && meta[key] !== null && meta[key] !== '') return String(meta[key]);
+
+  // 2. Check known aliases
+  const aliases = META_KEY_ALIASES[key];
+  if (aliases) {
+    for (const alias of aliases) {
+      if (meta[alias] !== undefined && meta[alias] !== null && meta[alias] !== '') return String(meta[alias]);
+    }
+  }
+
+  // 3. Case-insensitive fallback
+  const keyLower = key.toLowerCase();
+  for (const [k, v] of Object.entries(meta)) {
+    if (k.toLowerCase() === keyLower && v !== undefined && v !== null && v !== '') return String(v);
+  }
+
+  return undefined;
+}
+
 /** Format the original derva value with cheminis sluoksnis mm appended if present */
 function formatDervaOrg(meta: Record<string, string> | null): string {
   if (!meta) return '—';
-  const derva = meta.derva;
+  const derva = getMetaValue(meta, 'derva') || getMetaValue(meta, 'Medžiaga');
   if (!derva) return '—';
-  const sluoksnis = meta.derva_cheminis_sluoksnis_mm;
+  const sluoksnis = getMetaValue(meta, 'derva_cheminis_sluoksnis_mm');
   if (sluoksnis && sluoksnis.trim() !== '-' && sluoksnis.trim() !== '') {
     return `${derva} (+ ${sluoksnis.trim()})`;
   }
@@ -116,7 +153,7 @@ function getCellValue(row: any, col: ColumnDef): string {
   }
   if (col.metaKey) {
     const meta = parseMetadata(row.metadata);
-    return meta?.[col.metaKey] || '—';
+    return getMetaValue(meta, col.metaKey) || '—';
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
@@ -140,7 +177,8 @@ function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string):
   const set = new Set<string>();
   for (const r of records) {
     const meta = parseMetadata(r.metadata);
-    if (meta && meta[key]) set.add(meta[key]);
+    const val = getMetaValue(meta, key);
+    if (val) set.add(val);
   }
   return Array.from(set).sort();
 }
@@ -379,10 +417,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         rows = rows.filter((row: NestandartiniaiRecord) => {
           const meta = parseMetadata(row.metadata);
           if (!meta) return false;
-          if (orientacija && meta.orientacija !== orientacija) return false;
-          if (derva && meta.derva !== derva) return false;
-          if (talpa_tipas && meta.talpa_tipas !== talpa_tipas) return false;
-          if (DN && meta.DN !== DN) return false;
+          if (orientacija && getMetaValue(meta, 'orientacija') !== orientacija) return false;
+          if (derva && getMetaValue(meta, 'derva') !== derva) return false;
+          if (talpa_tipas && getMetaValue(meta, 'talpa_tipas') !== talpa_tipas) return false;
+          if (DN && getMetaValue(meta, 'DN') !== DN) return false;
           if (metadataSearch) {
             const mq = metadataSearch.toLowerCase();
             if (!Object.entries(meta).some(([k, v]) => k.toLowerCase().includes(mq) || String(v).toLowerCase().includes(mq))) return false;
@@ -408,8 +446,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         if (aVal === '—') aVal = null;
         if (bVal === '—') bVal = null;
       } else if (colDef?.metaKey) {
-        aVal = parseMetadata(a.metadata)?.[colDef.metaKey] ?? null;
-        bVal = parseMetadata(b.metadata)?.[colDef.metaKey] ?? null;
+        aVal = getMetaValue(parseMetadata(a.metadata), colDef.metaKey) ?? null;
+        bVal = getMetaValue(parseMetadata(b.metadata), colDef.metaKey) ?? null;
       } else {
         aVal = a[sortConfig.column];
         bVal = b[sortConfig.column];
