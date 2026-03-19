@@ -1239,44 +1239,125 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Derva
+// Tab: Derva (per-tank)
 // ---------------------------------------------------------------------------
 
-function TabDerva({ record, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
-  const [dervaResult, setDervaResult] = useState<string | null>(record.derva || null);
+/** Parse per-tank derva results from the record.
+ *  - New format: JSON object like {"0": "...", "1": "..."}
+ *  - Legacy format: plain string → treated as result for tank 0
+ */
+function parseDervaPerTank(raw: string | null): Record<string, string> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch { /* fall through — treat as legacy plain string */ }
+    }
+    // Legacy: single plain-text result → assign to tank 0
+    if (trimmed) return { '0': trimmed };
+  }
+  return {};
+}
+
+/** Parse per-tank derva_musu from metadata._derva_musu_per_tank */
+function parseDervaMusuPerTank(metadata: any): Record<string, string> {
+  const meta = typeof metadata === 'string' ? (() => { try { return JSON.parse(metadata); } catch { return {}; } })() : (metadata || {});
+  const perTank = meta?._derva_musu_per_tank;
+  if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) return perTank;
+  // Legacy: flat derva_musu → assign to tank 0
+  const legacy = meta?.derva_musu;
+  if (legacy && typeof legacy === 'string') return { '0': legacy };
+  return {};
+}
+
+/** Get a short summary of tank specs for display in the derva tab */
+function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] {
+  const summaryKeys = ['Orientacija', 'orientacija', 'Vieta', 'Talpa M3', 'talpa_tipas', 'AukšTis Mm', 'Skersmuo Mm', 'DN', 'Medžiaga', 'chemija'];
+  const result: [string, string][] = [];
+  for (const key of summaryKeys) {
+    if (tankMeta[key] && !isEmptyValue(tankMeta[key]) && typeof tankMeta[key] !== 'object') {
+      result.push([formatMetaLabel(key), String(tankMeta[key])]);
+    }
+  }
+  // Also pick up any remaining scalar fields not in summaryKeys (max 4 more)
+  if (result.length < 3) {
+    for (const [k, v] of Object.entries(tankMeta)) {
+      if (result.length >= 6) break;
+      if (summaryKeys.includes(k) || SKIP_DISPLAY_KEYS.has(k) || TITLE_KEYS.has(k)) continue;
+      if (k.startsWith('_')) continue;
+      if (!isEmptyValue(v) && typeof v !== 'object') {
+        result.push([formatMetaLabel(k), String(v)]);
+      }
+    }
+  }
+  return result;
+}
+
+function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const hasMultiple = products.length > 1;
+  const idx = Math.min(currentIdx, products.length - 1);
+  const tankMeta = products[idx] || {};
+  const tankKey = String(idx);
+
+  // Per-tank derva results
+  const [dervaPerTank, setDervaPerTank] = useState<Record<string, string>>(() => parseDervaPerTank(record.derva));
+  const dervaResult = dervaPerTank[tankKey] || null;
+
   const selecting = useProcessing(record.id, 'derva');
+  const [selectingTankIdx, setSelectingTankIdx] = useState<number | null>(null);
   const [dervaError, setDervaError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Derva (mūsų) — team-editable field stored in metadata JSONB
-  const currentMeta = parseMetadata(record.metadata);
-  const [dervaMusu, setDervaMusu] = useState<string>(currentMeta.derva_musu || '');
+  // Per-tank derva_musu
+  const [dervaMusuPerTank, setDervaMusuPerTank] = useState<Record<string, string>>(() => parseDervaMusuPerTank(record.metadata));
+  const currentDervaMusu = dervaMusuPerTank[tankKey] || '';
+  const [dervaMusu, setDervaMusu] = useState<string>(currentDervaMusu);
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
   const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
 
-  // Sync with record prop
+  // Sync dervaMusu input when switching tanks
   useEffect(() => {
-    const meta = parseMetadata(record.metadata);
-    setDervaMusu(meta.derva_musu || '');
+    setDervaMusu(dervaMusuPerTank[String(Math.min(currentIdx, products.length - 1))] || '');
+    setDervaMusuEditing(false);
+    setDervaError(null);
+    setSuccess(false);
+  }, [currentIdx, products.length, dervaMusuPerTank]);
+
+  // Sync with record prop changes
+  useEffect(() => {
+    setDervaPerTank(parseDervaPerTank(record.derva));
+  }, [record.derva]);
+  useEffect(() => {
+    setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
   }, [record.metadata]);
 
   const saveDervaMusu = async () => {
     setDervaMusuSaving(true);
     try {
-      // Merge derva_musu into the metadata JSONB (which Directus knows about)
-      const meta = parseMetadata(record.metadata);
-      const updatedMeta = { ...meta };
+      const rawMeta = typeof record.metadata === 'string' ? (() => { try { return JSON.parse(record.metadata as string); } catch { return {}; } })() : (record.metadata || {});
+      const updatedMusuPerTank = { ...dervaMusuPerTank };
       if (dervaMusu.trim()) {
-        updatedMeta.derva_musu = dervaMusu.trim();
+        updatedMusuPerTank[tankKey] = dervaMusu.trim();
+      } else {
+        delete updatedMusuPerTank[tankKey];
+      }
+      const updatedMeta = { ...rawMeta, _derva_musu_per_tank: updatedMusuPerTank };
+      // Keep legacy derva_musu in sync with tank 0 for table column display
+      if (updatedMusuPerTank['0']) {
+        updatedMeta.derva_musu = updatedMusuPerTank['0'];
       } else {
         delete updatedMeta.derva_musu;
       }
       await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+      setDervaMusuPerTank(updatedMusuPerTank);
       setDervaMusuSaved(true);
       setDervaMusuEditing(false);
       setTimeout(() => setDervaMusuSaved(false), 3000);
-      // Notify parent about change
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) onRecordUpdated?.(updated);
     } catch (e: any) {
@@ -1286,10 +1367,7 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
     }
   };
 
-  // Sync dervaResult with latest record data (e.g. after refresh)
-  useEffect(() => { setDervaResult(record.derva || null); }, [record.derva]);
-
-  // AI conversation (secondary feature)
+  // AI conversation (record-level, shared across tanks)
   const [conversation, setConversation] = useState<AiConversationMessage[]>(() => parseJSON<AiConversationMessage[]>(record.ai_conversation) || []);
   const [input, setInput] = useState('');
   const [chatSaving, setChatSaving] = useState(false);
@@ -1298,6 +1376,7 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
   const triggerDervaSelect = async () => {
     setDervaError(null);
     setSuccess(false);
+    setSelectingTankIdx(idx);
     setProcessing(record.id, 'derva', true);
 
     try {
@@ -1307,15 +1386,18 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
         return;
       }
 
-      const meta = typeof record.metadata === 'string' ? record.metadata : JSON.stringify(record.metadata);
+      // Send only this tank's metadata + product_index
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           record_id: record.id,
+          product_index: idx,
+          product_count: products.length,
+          product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
+          product_metadata: JSON.stringify(tankMeta),
           project_name: record.project_name,
           description: record.description,
-          metadata: meta,
           klientas: record.klientas,
         }),
       });
@@ -1325,28 +1407,43 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
         throw new Error(`Serverio klaida (${resp.status})${errText ? `: ${errText}` : ''}`);
       }
 
-      // Webhook returns only a status code. Fetch the actual recommendation
-      // from the n8n_vector_store "derva" column.
+      // Fetch updated record — webhook may have written to derva column
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) {
-        setDervaResult(updated.derva || null);
-        onRecordUpdated?.(updated);
+        const freshDerva = updated.derva || '';
+        // Check if webhook wrote a per-tank JSON or a plain string
+        const parsed = parseDervaPerTank(freshDerva);
+        if (Object.keys(parsed).length > 0 && parsed[tankKey]) {
+          // Webhook already wrote per-tank format — use as-is
+          setDervaPerTank(parsed);
+        } else {
+          // Webhook wrote a plain string — merge it into our per-tank structure
+          const plainResult = freshDerva || '';
+          if (plainResult) {
+            const merged = { ...dervaPerTank, [tankKey]: plainResult };
+            setDervaPerTank(merged);
+            // Save merged per-tank structure back to the derva column
+            await updateNestandartiniaiField(record.id, 'derva', JSON.stringify(merged));
+          }
+        }
+        onRecordUpdated?.(await fetchNestandartiniaiById(record.id) || updated);
       }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
     } catch (e: any) {
       console.error('Derva select error:', e);
       setDervaError(e.message || 'Nepavyko gauti dervos rekomendacijos');
-      // The webhook may have completed server-side — try fetching the latest value
       try {
         const updated = await fetchNestandartiniaiById(record.id);
         if (updated) {
-          if (updated.derva) setDervaResult(updated.derva);
+          const parsed = parseDervaPerTank(updated.derva);
+          if (Object.keys(parsed).length > 0) setDervaPerTank(parsed);
           onRecordUpdated?.(updated);
         }
       } catch { /* ignore */ }
     } finally {
       setProcessing(record.id, 'derva', false);
+      setSelectingTankIdx(null);
     }
   };
 
@@ -1365,15 +1462,15 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
 
       const webhookUrl = await getWebhookUrl('n8n_ai_conversation');
       if (webhookUrl) {
-        const meta = typeof record.metadata === 'string' ? record.metadata : JSON.stringify(record.metadata);
         const resp = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             record_id: record.id,
+            product_index: idx,
+            product_metadata: JSON.stringify(tankMeta),
             project_name: record.project_name,
             description: record.description,
-            metadata: meta,
             klientas: record.klientas,
             derva: dervaResult,
             chat_history: withUserMsg,
@@ -1402,25 +1499,87 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
     }
   };
 
-  const meta = parseMetadata(record.metadata);
-  const dervaOrgDisplay = formatDervaOrg(meta);
+  const tankTitle = getProductTitle(tankMeta) || `Talpa ${idx + 1}`;
+  const tankSpecs = getTankSpecsSummary(tankMeta);
+  const isCurrentTankSelecting = selecting && selectingTankIdx === idx;
+
+  // Count how many tanks have derva results
+  const tanksWithDerva = products.filter((_, i) => !!dervaPerTank[String(i)]).length;
+
+  const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
+  const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
 
   return (
     <div>
-      {/* ── Derva (org) — original value from metadata ── */}
-      {dervaOrgDisplay && (
-        <div className="mb-4">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Beaker className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-            <p className="text-xs font-medium" style={{ color: '#8a857f' }}>Derva (org)</p>
+      {/* ── Tank navigator ── */}
+      {hasMultiple && (
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <button
+              onClick={goPrev}
+              className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
+            >
+              <ChevronLeft className="w-5 h-5 text-base-content/50" />
+            </button>
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary max-w-[250px] truncate">
+                {tankTitle}
+              </span>
+              <span className="text-xs text-base-content/40">
+                {idx + 1} / {products.length}
+                {tanksWithDerva > 0 && (
+                  <span className="ml-1.5 text-success">({tanksWithDerva} su derva)</span>
+                )}
+              </span>
+            </div>
+            <button
+              onClick={goNext}
+              className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
+            >
+              <ChevronRight className="w-5 h-5 text-base-content/50" />
+            </button>
           </div>
-          <div className="rounded-xl px-4 py-3 border border-base-content/10 bg-base-content/[0.02]">
-            <p className="text-sm font-medium text-base-content">{dervaOrgDisplay}</p>
+          {/* Dot indicators */}
+          {products.length <= 20 && (
+            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+              {products.map((_, i) => {
+                const hasDerva = !!dervaPerTank[String(i)];
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentIdx(i)}
+                    className={`w-2.5 h-2.5 rounded-full transition-all ${
+                      i === idx
+                        ? 'bg-primary scale-110'
+                        : hasDerva
+                          ? 'bg-success/60 hover:bg-success/80'
+                          : 'bg-base-content/15 hover:bg-base-content/25'
+                    }`}
+                    title={`${getProductTitle(products[i]) || `Talpa ${i + 1}`}${hasDerva ? ' ✓' : ''}`}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tank specs summary ── */}
+      {tankSpecs.length > 0 && (
+        <div className="mb-5 rounded-xl border border-base-content/8 bg-base-content/[0.02] p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-2">Talpos parametrai</p>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            {tankSpecs.map(([label, val]) => (
+              <div key={label} className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-[11px] text-base-content/50 shrink-0">{label}:</span>
+                <span className="text-[11px] font-medium text-base-content truncate">{val}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* ── Derva (mūsų) — team-editable value ── */}
+      {/* ── Derva (mūsų) — team-editable per tank ── */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
@@ -1443,14 +1602,14 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
               type="text"
               value={dervaMusu}
               onChange={e => setDervaMusu(e.target.value)}
-              placeholder="Įveskite dervos reikšmę..."
+              placeholder="Įveskite dervos reikšmę šiai talpai..."
               className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2"
-              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentMeta.derva_musu || ''); } }}
+              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
               autoFocus
             />
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentMeta.derva_musu || ''); }}
+                onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
                 className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
               >
                 Atšaukti
@@ -1483,7 +1642,7 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
       </div>
 
       <div className="border-t border-base-content/10 pt-5 mb-6">
-        {/* ── AI Derva selection section ── */}
+        {/* ── AI Derva selection section (per tank) ── */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5">
             <Beaker className="w-3.5 h-3.5 text-primary" />
@@ -1496,23 +1655,26 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
               className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
               style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
             >
-              {selecting
+              {isCurrentTankSelecting
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
-                : dervaResult
-                  ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
-                  : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
+                : selecting
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
+                  : dervaResult
+                    ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
+                    : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
               }
             </button>
           )}
         </div>
 
         {/* Loading state */}
-        {selecting && (
+        {isCurrentTankSelecting && (
           <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
             <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
               <Loader2 className="w-5 h-5 animate-spin text-primary" />
             </div>
             <p className="text-sm font-semibold text-base-content">Vyksta dervos parinkimas...</p>
+            <p className="text-xs text-base-content/50 mt-1">{tankTitle}</p>
           </div>
         )}
 
@@ -1533,21 +1695,22 @@ function TabDerva({ record, readOnly, onRecordUpdated }: { record: Nestandartini
         )}
 
         {/* Recommendation display */}
-        {dervaResult && !selecting ? (
+        {dervaResult && !isCurrentTankSelecting ? (
           <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
             <MarkdownText text={dervaResult} />
           </div>
-        ) : !selecting && !dervaResult && (
+        ) : !isCurrentTankSelecting && !dervaResult && (
           <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
             <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
               <Beaker className="w-5 h-5 text-primary" />
             </div>
             <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
+            <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
           </div>
         )}
       </div>
 
-      {/* ── AI conversation section ── */}
+      {/* ── AI conversation section (record-level) ── */}
       <div className="pt-5 border-t border-base-content/10">
         <CollapsibleSection title="AI pokalbis" defaultOpen={conversation.length > 0}>
           {conversation.length > 0 && (
@@ -2102,7 +2265,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
-            {activeTab === 'derva' && <TabDerva record={record} onRecordUpdated={onRefresh} />}
+            {activeTab === 'derva' && <TabDerva record={record} products={products} onRecordUpdated={onRefresh} />}
             {activeTab === 'panasus' && <TabPanasus record={record} onRecordUpdated={onRefresh} />}
           </div>
         </div>
@@ -2341,7 +2504,7 @@ export default function PaklausimoKortelePage() {
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
-            {activeTab === 'derva' && <TabDerva record={record} readOnly />}
+            {activeTab === 'derva' && <TabDerva record={record} products={products} readOnly />}
             {activeTab === 'panasus' && <TabPanasus record={record} />}
           </div>
         </div>
