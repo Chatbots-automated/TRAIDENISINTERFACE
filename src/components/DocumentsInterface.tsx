@@ -66,21 +66,34 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Wrapper keys that may contain the actual products array */
+const PRODUCT_WRAPPER_KEYS = ['products', 'talpos', 'gaminiai', 'items'];
+
+function unwrapFirstProduct(obj: Record<string, any>): Record<string, string> {
+  // Check if the object is a wrapper like { products: [{...}] }
+  for (const key of PRODUCT_WRAPPER_KEYS) {
+    if (Array.isArray(obj[key]) && obj[key].length > 0 && typeof obj[key][0] === 'object') {
+      return obj[key][0];
+    }
+  }
+  return obj as Record<string, string>;
+}
+
 function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> | null {
   if (!raw) return null;
   // If it's an array (multi-product metadata), return the first item
   if (Array.isArray(raw)) {
     const first = raw[0];
-    return (first && typeof first === 'object') ? first : null;
+    return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
   }
-  if (typeof raw === 'object') return raw as Record<string, string>;
+  if (typeof raw === 'object') return unwrapFirstProduct(raw as Record<string, any>);
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const first = parsed[0];
-      return (first && typeof first === 'object') ? first : null;
+      return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
     }
-    return parsed;
+    return unwrapFirstProduct(parsed);
   } catch { return null; }
 }
 
