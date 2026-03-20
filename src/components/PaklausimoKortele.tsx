@@ -1747,53 +1747,29 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     <div>
       {/* ── Tank navigator ── */}
       {hasMultiple && (
-        <div className="mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={goPrev}
-              className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            >
-              <ChevronLeft className="w-5 h-5 text-base-content/50" />
-            </button>
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary max-w-[250px] truncate">
-                {tankTitle}
-              </span>
-              <span className="text-xs text-base-content/40">
-                {idx + 1} / {products.length}
-                {tanksWithDerva > 0 && (
-                  <span className="ml-1.5 text-success">({tanksWithDerva} su derva)</span>
-                )}
-              </span>
-            </div>
-            <button
-              onClick={goNext}
-              className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            >
-              <ChevronRight className="w-5 h-5 text-base-content/50" />
-            </button>
-          </div>
-          {/* Dot indicators */}
-          {products.length <= 20 && (
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
-              {products.map((_, i) => {
-                const hasDerva = !!dervaPerTank[String(i)];
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setCurrentIdx(i)}
-                    className={`w-2.5 h-2.5 rounded-full transition-all ${
-                      i === idx
-                        ? 'bg-primary scale-110'
-                        : hasDerva
-                          ? 'bg-success/60 hover:bg-success/80'
-                          : 'bg-base-content/15 hover:bg-base-content/25'
-                    }`}
-                    title={`${getProductTitle(products[i]) || `Talpa ${i + 1}`}${hasDerva ? ' ✓' : ''}`}
-                  />
-                );
-              })}
-            </div>
+        <div className="flex items-center gap-1 mb-5">
+          <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+            <ChevronLeft className="w-4 h-4 text-base-content/40" />
+          </button>
+          <select
+            value={idx}
+            onChange={e => setCurrentIdx(Number(e.target.value))}
+            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+          >
+            {products.map((p, i) => {
+              const hasDerva = !!dervaPerTank[String(i)];
+              return (
+                <option key={i} value={i}>
+                  {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}{hasDerva ? ' \u2713' : ''}
+                </option>
+              );
+            })}
+          </select>
+          <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+            <ChevronRight className="w-4 h-4 text-base-content/40" />
+          </button>
+          {tanksWithDerva > 0 && (
+            <span className="text-[11px] text-success shrink-0">{tanksWithDerva}/{products.length}</span>
           )}
         </div>
       )}
