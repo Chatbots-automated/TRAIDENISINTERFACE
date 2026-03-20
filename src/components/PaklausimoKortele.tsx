@@ -439,9 +439,11 @@ function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
 
-function TabBendra({ record, products }: { record: NestandartiniaiRecord; products: Record<string, any>[] }) {
+function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const hasMultiple = products.length > 1;
+  const [saving, setSaving] = useState(false);
+  const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
 
   // Clamp index if products array changes
   const idx = Math.min(currentIdx, products.length - 1);
@@ -475,8 +477,137 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
   const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
   const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
 
+  /** Persist an updated products array back to the metadata field */
+  const persistProducts = async (newProducts: Record<string, any>[]) => {
+    setSaving(true);
+    try {
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') {
+        try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; }
+      }
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        // Array-wrapped: [{ projektas, santrauka, talpos: [...] }]
+        const root = { ...rawMeta[0] };
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(root[k])) { wrapperKey = k; break; }
+        }
+        if (wrapperKey) {
+          root[wrapperKey] = newProducts;
+          if (root.santrauka && typeof root.santrauka === 'object') {
+            root.santrauka = { ...root.santrauka, Bendras_rastų_talpų_skaicius: newProducts.length };
+          }
+        } else {
+          updatedMeta = newProducts;
+          await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+          const updated = await fetchNestandartiniaiById(record.id);
+          if (updated) onRecordUpdated?.(updated);
+          return;
+        }
+        updatedMeta = [root, ...rawMeta.slice(1)];
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(rawMeta[k])) { wrapperKey = k; break; }
+        }
+        if (wrapperKey) {
+          updatedMeta = { ...rawMeta, [wrapperKey]: newProducts };
+        } else {
+          updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+        }
+      } else {
+        updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+      }
+      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+    } catch (e: any) {
+      console.error('Error updating tanks:', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addTank = async () => {
+    const newTank: Record<string, any> = { pavadinimas: `Nauja talpa ${products.length + 1}` };
+    const first = products[0];
+    if (first) {
+      for (const [k, v] of Object.entries(first)) {
+        if (k.startsWith('projekto_kontekstas_') && v) newTank[k] = v;
+      }
+    }
+    const newProducts = [...products, newTank];
+    await persistProducts(newProducts);
+    setCurrentIdx(newProducts.length - 1);
+  };
+
+  const deleteTank = async (deleteIdx: number) => {
+    if (products.length <= 1) return;
+    const newProducts = products.filter((_, i) => i !== deleteIdx);
+    if (currentIdx >= newProducts.length) setCurrentIdx(newProducts.length - 1);
+    else if (currentIdx > deleteIdx) setCurrentIdx(currentIdx - 1);
+    setConfirmDeleteIdx(null);
+    await persistProducts(newProducts);
+  };
+
   return (
     <div className="space-y-0">
+      {/* Tank management toolbar */}
+      {!readOnly && (
+        <div className="flex items-center justify-between mb-3 px-1">
+          <span className="text-xs text-base-content/40">
+            {products.length} {products.length === 1 ? 'talpa' : 'talpos'}
+          </span>
+          <div className="flex items-center gap-1.5">
+            {hasMultiple && (
+              <button
+                onClick={() => setConfirmDeleteIdx(idx)}
+                disabled={saving}
+                className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors text-error/60 hover:text-error hover:bg-error/5 disabled:opacity-40"
+                title="Ištrinti šią talpą"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Ištrinti</span>
+              </button>
+            )}
+            <button
+              onClick={addTank}
+              disabled={saving}
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors text-primary/70 hover:text-primary hover:bg-primary/5 disabled:opacity-40"
+              title="Pridėti naują talpą"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              <span>Pridėti talpą</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDeleteIdx !== null && (
+        <div className="mb-3 mx-1 p-3 rounded-lg border border-error/20 bg-error/5">
+          <p className="text-xs text-base-content/70 mb-2">
+            Ar tikrai norite ištrinti talpą <strong>{getProductTitle(products[confirmDeleteIdx]) || `#${confirmDeleteIdx + 1}`}</strong>?
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => deleteTank(confirmDeleteIdx)}
+              disabled={saving}
+              className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40"
+            >
+              {saving ? 'Trinama...' : 'Ištrinti'}
+            </button>
+            <button
+              onClick={() => setConfirmDeleteIdx(null)}
+              className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5"
+            >
+              Atšaukti
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Product navigator — only shown when multiple products exist */}
       {hasMultiple && (
         <div className="flex items-center justify-between mb-4 px-1">
@@ -2286,7 +2417,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -2534,7 +2665,7 @@ export default function PaklausimoKortelePage() {
             })}
           </div>
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
