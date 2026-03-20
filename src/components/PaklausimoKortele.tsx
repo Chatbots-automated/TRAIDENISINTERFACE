@@ -444,6 +444,10 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
   const hasMultiple = products.length > 1;
   const [saving, setSaving] = useState(false);
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState<Record<string, string>>({});
+  const [newFieldKey, setNewFieldKey] = useState('');
+  const [newFieldVal, setNewFieldVal] = useState('');
 
   // Clamp index if products array changes
   const idx = Math.min(currentIdx, products.length - 1);
@@ -474,8 +478,8 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
     }
   }
 
-  const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
-  const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
+  const goPrev = () => { setEditing(false); setCurrentIdx(i => (i - 1 + products.length) % products.length); };
+  const goNext = () => { setEditing(false); setCurrentIdx(i => (i + 1) % products.length); };
 
   /** Persist an updated products array back to the metadata field */
   const persistProducts = async (newProducts: Record<string, any>[]) => {
@@ -487,7 +491,6 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
       }
       let updatedMeta: any;
       if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
-        // Array-wrapped: [{ projektas, santrauka, talpos: [...] }]
         const root = { ...rawMeta[0] };
         let wrapperKey: string | null = null;
         for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
@@ -540,6 +543,9 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
     const newProducts = [...products, newTank];
     await persistProducts(newProducts);
     setCurrentIdx(newProducts.length - 1);
+    // Enter edit mode for the new tank
+    setEditing(true);
+    setEditDraft({});
   };
 
   const deleteTank = async (deleteIdx: number) => {
@@ -548,187 +554,262 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
     if (currentIdx >= newProducts.length) setCurrentIdx(newProducts.length - 1);
     else if (currentIdx > deleteIdx) setCurrentIdx(currentIdx - 1);
     setConfirmDeleteIdx(null);
+    setEditing(false);
     await persistProducts(newProducts);
+  };
+
+  const startEditing = () => {
+    // Build a draft from all scalar fields of the current tank
+    const draft: Record<string, string> = {};
+    for (const [k, v] of Object.entries(meta)) {
+      if (SKIP_DISPLAY_KEYS.has(k)) continue;
+      if (k.startsWith('_')) continue;
+      if (v && typeof v === 'object') continue;
+      draft[k] = v != null ? String(v) : '';
+    }
+    setEditDraft(draft);
+    setNewFieldKey('');
+    setNewFieldVal('');
+    setEditing(true);
+  };
+
+  const saveEditing = async () => {
+    const updated: Record<string, any> = {};
+    // Preserve nested objects from original
+    for (const [k, v] of Object.entries(meta)) {
+      if (v && typeof v === 'object') updated[k] = v;
+    }
+    // Apply scalar edits
+    for (const [k, v] of Object.entries(editDraft)) {
+      if (v.trim() === '') continue; // skip blanks — effectively deletes the field
+      updated[k] = v.trim();
+    }
+    const newProducts = [...products];
+    newProducts[idx] = updated;
+    setEditing(false);
+    await persistProducts(newProducts);
+  };
+
+  const addNewField = () => {
+    const key = newFieldKey.trim();
+    const val = newFieldVal.trim();
+    if (!key) return;
+    setEditDraft(d => ({ ...d, [key]: val }));
+    setNewFieldKey('');
+    setNewFieldVal('');
+  };
+
+  const removeField = (key: string) => {
+    setEditDraft(d => {
+      const copy = { ...d };
+      delete copy[key];
+      return copy;
+    });
   };
 
   return (
     <div className="space-y-0">
-      {/* Delete confirmation overlay */}
+      {/* Delete confirmation */}
       {confirmDeleteIdx !== null && (
         <div className="mb-3 p-3 rounded-lg border border-error/20 bg-error/5">
           <p className="text-xs text-base-content/70 mb-2">
             Ištrinti <strong>{getProductTitle(products[confirmDeleteIdx]) || `Talpa ${confirmDeleteIdx + 1}`}</strong>?
           </p>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => deleteTank(confirmDeleteIdx)}
-              disabled={saving}
-              className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40"
-            >
+            <button onClick={() => deleteTank(confirmDeleteIdx)} disabled={saving} className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40">
               {saving ? 'Trinama...' : 'Taip, ištrinti'}
             </button>
-            <button
-              onClick={() => setConfirmDeleteIdx(null)}
-              className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5"
-            >
+            <button onClick={() => setConfirmDeleteIdx(null)} className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5">
               Atšaukti
             </button>
           </div>
         </div>
       )}
 
-      {/* Unified tank navigation bar */}
+      {/* Tank nav: single row — ◂ [dropdown] ▸  +  🗑 */}
       {(hasMultiple || !readOnly) && (
-        <div className="mb-4 rounded-lg border border-base-content/8 bg-base-content/[0.02]">
-          {/* Top row: navigation + actions */}
-          <div className="flex items-center gap-2 px-3 py-2">
-            {/* Left: prev arrow */}
-            {hasMultiple && (
-              <button
-                onClick={goPrev}
-                className="p-1 rounded-md transition-colors hover:bg-base-content/8 active:bg-base-content/12"
-                title="Ankstesnė talpa"
-              >
-                <ChevronLeft className="w-4 h-4 text-base-content/40" />
+        <div className="flex items-center gap-1 mb-4">
+          {hasMultiple && (
+            <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+              <ChevronLeft className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
+          <select
+            value={idx}
+            onChange={e => { setEditing(false); setCurrentIdx(Number(e.target.value)); }}
+            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+          >
+            {products.map((p, i) => (
+              <option key={i} value={i}>
+                {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}
+              </option>
+            ))}
+          </select>
+          {hasMultiple && (
+            <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+              <ChevronRight className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
+          {!readOnly && (
+            <>
+              <button onClick={addTank} disabled={saving} className="p-1.5 rounded-md hover:bg-primary/8 text-base-content/30 hover:text-primary disabled:opacity-30" title="Pridėti talpą">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               </button>
-            )}
-
-            {/* Center: dropdown selector with tank name */}
-            <div className="flex-1 min-w-0 flex items-center justify-center">
-              {hasMultiple ? (
-                <select
-                  value={idx}
-                  onChange={e => setCurrentIdx(Number(e.target.value))}
-                  className="text-xs font-medium bg-transparent text-base-content/80 border-none focus:outline-none cursor-pointer text-center max-w-[320px] truncate px-1 py-0.5 rounded hover:bg-base-content/5"
-                >
-                  {products.map((p, i) => (
-                    <option key={i} value={i}>
-                      {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span className="text-xs font-medium text-base-content/60">
-                  {getProductTitle(meta) || 'Talpa 1'}
-                </span>
-              )}
-            </div>
-
-            {/* Right: next arrow */}
-            {hasMultiple && (
-              <button
-                onClick={goNext}
-                className="p-1 rounded-md transition-colors hover:bg-base-content/8 active:bg-base-content/12"
-                title="Kita talpa"
-              >
-                <ChevronRight className="w-4 h-4 text-base-content/40" />
-              </button>
-            )}
-          </div>
-
-          {/* Bottom row: counter + action buttons */}
-          <div className="flex items-center justify-between px-3 pb-2 pt-0">
-            <span className="text-[11px] text-base-content/35">
-              {hasMultiple ? `${idx + 1} iš ${products.length}` : `1 talpa`}
-            </span>
-            {!readOnly && (
-              <div className="flex items-center gap-0.5">
-                {hasMultiple && (
-                  <button
-                    onClick={() => setConfirmDeleteIdx(idx)}
-                    disabled={saving}
-                    className="p-1 rounded-md transition-colors text-base-content/25 hover:text-error hover:bg-error/5 disabled:opacity-30"
-                    title="Ištrinti šią talpą"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <button
-                  onClick={addTank}
-                  disabled={saving}
-                  className="p-1 rounded-md transition-colors text-base-content/25 hover:text-primary hover:bg-primary/5 disabled:opacity-30"
-                  title="Pridėti naują talpą"
-                >
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              {hasMultiple && (
+                <button onClick={() => setConfirmDeleteIdx(idx)} disabled={saving} className="p-1.5 rounded-md hover:bg-error/8 text-base-content/30 hover:text-error disabled:opacity-30" title="Ištrinti talpą">
+                  <Trash2 className="w-4 h-4" />
                 </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Edit mode toggle */}
+      {!readOnly && !editing && (
+        <div className="flex justify-end mb-2">
+          <button onClick={startEditing} className="flex items-center gap-1 text-xs text-base-content/40 hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-primary/5">
+            <Pencil className="w-3 h-3" />
+            <span>Redaguoti</span>
+          </button>
+        </div>
+      )}
+
+      {/* EDIT MODE: inline field editor */}
+      {editing && !readOnly ? (
+        <div className="space-y-3 mb-4">
+          {Object.entries(editDraft).map(([k, v]) => (
+            <div key={k} className="flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <label className="text-[11px] text-base-content/40 block mb-0.5">{formatMetaLabel(k)}</label>
+                <input
+                  type="text"
+                  value={v}
+                  onChange={e => setEditDraft(d => ({ ...d, [k]: e.target.value }))}
+                  className="w-full text-sm border border-base-content/10 rounded-md px-2.5 py-1.5 bg-transparent text-base-content focus:outline-none focus:border-primary/40"
+                />
               </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* OLD FORMAT: Info grid with known keys */}
-      {oldFormat && (hasRow1 || hasRow2 || meta.derva_musu) && (
-        <div className="pb-4">
-          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-            {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
-            {INFO_ROW_2.map(f => {
-              if (f.key === 'derva_org') {
-                return <InfoField key={f.key} label={f.label} value={dervaOrgDisplay || undefined} />;
-              }
-              return <InfoField key={f.key} label={f.label} value={meta[f.key]} />;
-            })}
-            {meta.derva_musu && <InfoField label="Derva (mūsų)" value={meta.derva_musu} />}
-          </div>
-        </div>
-      )}
-
-      {/* NEW FORMAT: Flexible rendering of all scalar fields */}
-      {!oldFormat && scalarFields.length > 0 && (
-        <div className="pb-4">
-          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-            {scalarFields.map(([k, v]) => (
-              <InfoField key={k} label={formatMetaLabel(k)} value={v} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* NEW FORMAT: Nested object sections (e.g. projekto_kontekstas, Cheminė_aplinka) */}
-      {!oldFormat && objectFields.length > 0 && (
-        <div className="border-t border-base-content/10 pt-2">
-          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-            {objectFields.map(([k, v]) => (
-              <NestedObjectField key={k} label={formatMetaLabel(k)} obj={v} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* NEW FORMAT: Pastabos (notes) — shown as a collapsible text block */}
-      {!oldFormat && pastabos && (
-        <div className="border-t border-base-content/10">
-          <CollapsibleSection title="Pastabos">
-            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
-              {pastabos}
+              <button onClick={() => removeField(k)} className="mt-5 p-1 rounded-md text-base-content/20 hover:text-error hover:bg-error/5" title="Pašalinti lauką">
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-          </CollapsibleSection>
-        </div>
-      )}
+          ))}
 
-      {/* Description */}
-      {record.description && (
-        <div className="border-t border-base-content/10">
-          <CollapsibleSection title="Aprašymas" defaultOpen>
-            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
-              {record.description}
+          {/* Add new field row */}
+          <div className="flex items-end gap-2 pt-2 border-t border-base-content/5">
+            <div className="flex-1 min-w-0">
+              <label className="text-[11px] text-base-content/40 block mb-0.5">Naujas laukas</label>
+              <input
+                type="text"
+                value={newFieldKey}
+                onChange={e => setNewFieldKey(e.target.value)}
+                placeholder="Pavadinimas"
+                className="w-full text-xs border border-base-content/10 rounded-md px-2.5 py-1.5 bg-transparent text-base-content placeholder:text-base-content/25 focus:outline-none focus:border-primary/40"
+              />
             </div>
-          </CollapsibleSection>
-        </div>
-      )}
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={newFieldVal}
+                onChange={e => setNewFieldVal(e.target.value)}
+                placeholder="Reikšmė"
+                onKeyDown={e => { if (e.key === 'Enter') addNewField(); }}
+                className="w-full text-xs border border-base-content/10 rounded-md px-2.5 py-1.5 bg-transparent text-base-content placeholder:text-base-content/25 focus:outline-none focus:border-primary/40"
+              />
+            </div>
+            <button onClick={addNewField} disabled={!newFieldKey.trim()} className="p-1.5 rounded-md text-base-content/30 hover:text-primary hover:bg-primary/5 disabled:opacity-20">
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
 
-      {/* OLD FORMAT: Extra metadata */}
-      {oldFormat && (extraMeta.length > 0 || record.derva || meta.talpa) && (
-        <div className="border-t border-base-content/10">
-          <CollapsibleSection title="Papildomi duomenys">
-            <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
-              {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
-              {meta.position && <InfoField label="Pozicija" value={meta.position} />}
-              {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
-              {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
-            </div>
-          </CollapsibleSection>
+          {/* Save / Cancel */}
+          <div className="flex items-center gap-2 pt-2">
+            <button onClick={saveEditing} disabled={saving} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              <span>Išsaugoti</span>
+            </button>
+            <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5">
+              Atšaukti
+            </button>
+          </div>
         </div>
+      ) : (
+        <>
+          {/* READ MODE: display fields */}
+          {/* OLD FORMAT */}
+          {oldFormat && (hasRow1 || hasRow2 || meta.derva_musu) && (
+            <div className="pb-4">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
+                {INFO_ROW_2.map(f => {
+                  if (f.key === 'derva_org') {
+                    return <InfoField key={f.key} label={f.label} value={dervaOrgDisplay || undefined} />;
+                  }
+                  return <InfoField key={f.key} label={f.label} value={meta[f.key]} />;
+                })}
+                {meta.derva_musu && <InfoField label="Derva (mūsų)" value={meta.derva_musu} />}
+              </div>
+            </div>
+          )}
+
+          {/* NEW FORMAT: scalar fields */}
+          {!oldFormat && scalarFields.length > 0 && (
+            <div className="pb-4">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                {scalarFields.map(([k, v]) => (
+                  <InfoField key={k} label={formatMetaLabel(k)} value={v} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* NEW FORMAT: nested objects */}
+          {!oldFormat && objectFields.length > 0 && (
+            <div className="border-t border-base-content/10 pt-2">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                {objectFields.map(([k, v]) => (
+                  <NestedObjectField key={k} label={formatMetaLabel(k)} obj={v} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Pastabos */}
+          {!oldFormat && pastabos && (
+            <div className="border-t border-base-content/10">
+              <CollapsibleSection title="Pastabos">
+                <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
+                  {pastabos}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+
+          {/* Description */}
+          {record.description && (
+            <div className="border-t border-base-content/10">
+              <CollapsibleSection title="Aprašymas" defaultOpen>
+                <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
+                  {record.description}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+
+          {/* OLD FORMAT: extra metadata */}
+          {oldFormat && (extraMeta.length > 0 || record.derva || meta.talpa) && (
+            <div className="border-t border-base-content/10">
+              <CollapsibleSection title="Papildomi duomenys">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
+                  {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
+                  {meta.position && <InfoField label="Pozicija" value={meta.position} />}
+                  {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
+                  {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
