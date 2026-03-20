@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -1995,12 +1995,19 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
 // Tab: Panašūs
 // ---------------------------------------------------------------------------
 
-function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
+function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
   const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
   const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
   const loading = useProcessing(record.id, 'similar');
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Price estimation state
+  const [estimating, setEstimating] = useState(false);
+  const [estimateStatus, setEstimateStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
+  const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
 
   // Sync with record prop when it refreshes
   useEffect(() => {
@@ -2050,6 +2057,93 @@ function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord
     }
   };
 
+  const handleEstimatePrice = async () => {
+    if (projects.length === 0) {
+      setEstimateError('Pirmiausia reikia rasti panašius projektus');
+      setEstimateStatus('error');
+      setTimeout(() => setEstimateStatus('idle'), 4000);
+      return;
+    }
+    setEstimating(true);
+    setEstimateStatus('idle');
+    setEstimateError(null);
+    setEstimatedPrice(null);
+    setEstimateReasoning(null);
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_price_estimation');
+      if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
+
+      // Build clean product metadata for all tanks
+      const cleanProducts = products.map((p, i) => {
+        const clean: Record<string, any> = {};
+        for (const [k, v] of Object.entries(p)) {
+          if (k.startsWith('_')) continue;
+          if (v === null || v === undefined || v === '') continue;
+          if (typeof v === 'object' && !Array.isArray(v)) continue;
+          clean[k] = v;
+        }
+        return { product_index: i, ...clean };
+      });
+
+      // Build enriched similar projects with metadata
+      const enrichedSimilar = projects.map(p => ({
+        id: p.id,
+        project_name: p.project_name,
+        similarity_score: p.similarity_score,
+        kaina: p.kaina ?? null,
+        metadata: p.metadata ?? null,
+      }));
+
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: record.id,
+          project_name: record.project_name,
+          description: record.description,
+          klientas: record.klientas,
+          derva: record.derva,
+          current_kaina: record.kaina,
+          products: cleanProducts,
+          product_count: products.length,
+          similar_projects: enrichedSimilar,
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(body || `Klaida: ${resp.status}`);
+      }
+
+      // The webhook may return the estimate directly or write to kaina field
+      let respData: any = null;
+      try { respData = await resp.json(); } catch { /* no json body */ }
+
+      // Re-fetch record to pick up any kaina update from n8n
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) {
+        onRecordUpdated?.(updated);
+        const newKaina = updated.kaina != null ? Number(updated.kaina) : null;
+        if (newKaina != null && !isNaN(newKaina)) setEstimatedPrice(newKaina);
+      }
+
+      // If webhook returned reasoning/explanation in the response body
+      if (respData?.reasoning) setEstimateReasoning(respData.reasoning);
+      if (respData?.estimated_price != null && estimatedPrice === null) {
+        setEstimatedPrice(Number(respData.estimated_price));
+      }
+
+      setEstimateStatus('success');
+      setTimeout(() => setEstimateStatus('idle'), 5000);
+    } catch (err: any) {
+      console.error('Price estimation error:', err);
+      setEstimateError(err?.message || 'Nepavyko įvertinti kainos');
+      setEstimateStatus('error');
+      setTimeout(() => setEstimateStatus('idle'), 5000);
+    } finally {
+      setEstimating(false);
+    }
+  };
+
   return (
     <div>
       {/* Trigger button */}
@@ -2085,26 +2179,34 @@ function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord
         </div>
       ) : projects.length > 0 ? (
         <div className="space-y-1.5">
-          {projects.map((p, i) => (
-            <a
-              key={p.id}
-              href={`/paklausimas/${p.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
-              style={{ background: 'rgba(0,0,0,0.02)' }}
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate text-base-content">
-                  {p.project_name || `Projektas #${p.id}`}
-                </p>
-                <p className="text-xs mt-0.5 text-base-content/40">ID: {p.id}</p>
-              </div>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
-                {Math.round(p.similarity_score * 100)}%
-              </span>
-            </a>
-          ))}
+          {projects.map((p, i) => {
+            const pKaina = p.kaina != null ? Number(p.kaina) : null;
+            return (
+              <a
+                key={p.id}
+                href={`/paklausimas/${p.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
+                style={{ background: 'rgba(0,0,0,0.02)' }}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate text-base-content">
+                    {p.project_name || `Projektas #${p.id}`}
+                  </p>
+                  <p className="text-xs mt-0.5 text-base-content/40">
+                    ID: {p.id}
+                    {pKaina != null && !isNaN(pKaina) && (
+                      <span className="ml-2 text-emerald-600">{pKaina.toLocaleString('lt-LT')} €</span>
+                    )}
+                  </p>
+                </div>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
+                  {Math.round(p.similarity_score * 100)}%
+                </span>
+              </a>
+            );
+          })}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -2115,6 +2217,63 @@ function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord
           <p className="text-xs max-w-[240px] text-base-content/40" style={{ lineHeight: '1.6' }}>
             Panašiausi projektai bus rodomi, kai bus sugeneruoti per n8n.
           </p>
+        </div>
+      )}
+
+      {/* ── AI Price Estimation ── */}
+      {projects.length > 0 && !readOnly && (
+        <div className="mt-6 pt-5 border-t border-base-content/10">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
+              <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
+            </div>
+            <button
+              onClick={handleEstimatePrice}
+              disabled={estimating}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
+              style={{
+                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
+                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
+                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
+              }}
+            >
+              {estimating
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
+                : estimateStatus === 'success'
+                  ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
+                  : estimateStatus === 'error'
+                    ? <><AlertCircle className="w-3 h-3" /> Klaida</>
+                    : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
+              }
+            </button>
+          </div>
+          {estimateError && estimateStatus === 'error' && (
+            <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
+          )}
+          {estimating && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin mb-2" style={{ color: '#AF52DE' }} />
+              <p className="text-xs text-base-content/50">Analizuojami panašūs projektai ir parametrai...</p>
+            </div>
+          )}
+          {estimatedPrice != null && !estimating && (
+            <div className="rounded-xl p-4 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
+              <div className="flex items-center gap-2 mb-1">
+                <Euro className="w-4 h-4 text-emerald-600" />
+                <span className="text-lg font-semibold text-emerald-600">{estimatedPrice.toLocaleString('lt-LT')} €</span>
+                <span className="text-[10px] uppercase tracking-wider text-base-content/30 font-medium">preliminari</span>
+              </div>
+              {estimateReasoning && (
+                <p className="text-xs text-base-content/50 mt-2 leading-relaxed">{estimateReasoning}</p>
+              )}
+            </div>
+          )}
+          {!estimating && estimatedPrice == null && estimateStatus !== 'error' && (
+            <p className="text-xs text-base-content/35" style={{ lineHeight: '1.6' }}>
+              AI įvertins preliminarią kainą pagal panašių projektų kainas, talpų parametrus, dervą ir kitus duomenis.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -2153,6 +2312,33 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
   const messagesChanged = pendingMessages !== null;
   const filesChanged = pendingFiles.length > 0;
+
+  // Price (kaina) state
+  const parseKaina = (v: any): number | null => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    return isNaN(n) ? null : n;
+  };
+  const [kainaEditing, setKainaEditing] = useState(false);
+  const [kainaInput, setKainaInput] = useState('');
+  const [kainaSaving, setKainaSaving] = useState(false);
+  const currentKaina = parseKaina(record.kaina);
+
+  const saveKaina = async () => {
+    setKainaSaving(true);
+    try {
+      const val = kainaInput.trim() === '' ? null : parseFloat(kainaInput.replace(',', '.'));
+      if (kainaInput.trim() !== '' && (val === null || isNaN(val!))) return;
+      await updateNestandartiniaiField(record.id, 'kaina', val);
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRefresh?.(updated);
+      setKainaEditing(false);
+    } catch (e) {
+      console.error('Error saving kaina:', e);
+    } finally {
+      setKainaSaving(false);
+    }
+  };
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -2358,6 +2544,40 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {/* Price badge */}
+              {kainaEditing ? (
+                <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+                  <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+                  <input
+                    type="text"
+                    value={kainaInput}
+                    onChange={e => setKainaInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveKaina(); if (e.key === 'Escape') setKainaEditing(false); }}
+                    className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+                    placeholder="0.00"
+                    autoFocus
+                  />
+                  <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                    {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                  </button>
+                  <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                    <X className="w-3 h-3 text-base-content/40" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { if (!isLocked) { setKainaInput(currentKaina != null ? String(currentKaina) : ''); setKainaEditing(true); } }}
+                  className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                    currentKaina != null
+                      ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                      : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+                  } ${isLocked ? 'cursor-default' : 'cursor-pointer'}`}
+                  title={isLocked ? 'Kaina' : 'Redaguoti kainą'}
+                >
+                  <Euro className="w-3 h-3" />
+                  {currentKaina != null ? `${currentKaina.toLocaleString('lt-LT')} €` : 'Kaina'}
+                </button>
+              )}
               {record.klientas && (
                 <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">
                   {record.klientas}
@@ -2476,7 +2696,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               </>
             )}
             {activeTab === 'derva' && <TabDerva record={record} products={products} onRecordUpdated={onRefresh} />}
-            {activeTab === 'panasus' && <TabPanasus record={record} onRecordUpdated={onRefresh} />}
+            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
           </div>
         </div>
       </div>
@@ -2685,9 +2905,19 @@ export default function PaklausimoKortelePage() {
                 </p>
               )}
             </div>
-            {record.klientas && (
-              <span className="text-xs font-medium px-3 py-1 rounded-full shrink-0 bg-primary/10 text-primary">{record.klientas}</span>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {(() => {
+                const rk = record.kaina != null ? Number(record.kaina) : null;
+                return rk != null && !isNaN(rk) ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600">
+                    <Euro className="w-3 h-3" />{rk.toLocaleString('lt-LT')} €
+                  </span>
+                ) : null;
+              })()}
+              {record.klientas && (
+                <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">{record.klientas}</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2715,7 +2945,7 @@ export default function PaklausimoKortelePage() {
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
             {activeTab === 'derva' && <TabDerva record={record} products={products} readOnly />}
-            {activeTab === 'panasus' && <TabPanasus record={record} />}
+            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly />}
           </div>
         </div>
       </div>

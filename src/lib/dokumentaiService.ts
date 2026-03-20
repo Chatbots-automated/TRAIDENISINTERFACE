@@ -120,7 +120,7 @@ export const getStandartinisByConversationId = async (
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,6 +154,8 @@ export interface SimilarProject {
   id: number;
   project_name: string;
   similarity_score: number;
+  kaina?: number | null;
+  metadata?: string | Record<string, any> | null;
 }
 
 export interface NestandartiniaiRecord {
@@ -170,6 +172,7 @@ export interface NestandartiniaiRecord {
   ai_conversation: AiConversationMessage[] | string | null;
   similar_projects: SimilarProject[] | string | null;
   status: boolean | null;
+  kaina: number | string | null;
 }
 
 // ---------------------------------------------------------------------------
