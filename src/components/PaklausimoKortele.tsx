@@ -2133,7 +2133,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
-                {record.project_name || 'Paklausimas'}
+                {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
               </h2>
               {(meta.pritaikymas || products[0]?.pritaikymas) ? (
                 <p className="text-sm mt-0.5 truncate text-base-content/50">
@@ -2393,7 +2393,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Ištrinti įrašą</p>
               </div>
               <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
-                Įrašas <strong className="text-base-content/70">{record.project_name || `#${record.id}`}</strong> ir visi susiję failai bus ištrinti negrįžtamai.
+                Įrašas <strong className="text-base-content/70">{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || `#${record.id}`}</strong> ir visi susiję failai bus ištrinti negrįžtamai.
               </p>
               {deleteError && (
                 <p className="text-xs text-error mb-4 ml-12">{deleteError}</p>
@@ -2462,7 +2462,7 @@ export default function PaklausimoKortelePage() {
         <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || 'Paklausimas'}</h2>
+              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
               {(meta.pritaikymas || products[0]?.pritaikymas) ? (
                 <p className="text-sm mt-0.5 truncate text-base-content/50">
                   {meta.pritaikymas || products[0]?.pritaikymas}

@@ -146,6 +146,17 @@ function formatDervaOrg(meta: Record<string, string> | null): string {
   return derva;
 }
 
+function getProjectNameFromMetadata(row: any): string | undefined {
+  const meta = parseMetadata(row.metadata);
+  if (!meta) return undefined;
+  // Top-level "projektas" field in metadata
+  if (meta.projektas) return String(meta.projektas);
+  // Check inside first product's projekto_kontekstas_Projekto_pavadinimas
+  const projName = getMetaValue(meta, 'projekto_kontekstas_Projekto_pavadinimas');
+  if (projName) return projName;
+  return undefined;
+}
+
 function getCellValue(row: any, col: ColumnDef): string {
   if (col.key === 'meta_derva_org') {
     const meta = parseMetadata(row.metadata);
@@ -156,6 +167,10 @@ function getCellValue(row: any, col: ColumnDef): string {
     return getMetaValue(meta, col.metaKey) || '—';
   }
   const val = row[col.key];
+  // Fallback: if project_name is empty, try extracting from metadata
+  if (col.key === 'project_name' && (val === null || val === undefined || val === '')) {
+    return getProjectNameFromMetadata(row) || '—';
+  }
   if (val === null || val === undefined) return '—';
   const str = String(val);
   return str.length > 120 ? str.slice(0, 120) + '…' : str;
