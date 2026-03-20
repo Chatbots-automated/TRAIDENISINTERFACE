@@ -1386,6 +1386,17 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         return;
       }
 
+      // Build clean tank metadata — only scalar fields relevant to this specific tank
+      const cleanTankMeta: Record<string, any> = {};
+      for (const [k, v] of Object.entries(tankMeta)) {
+        if (k.startsWith('_')) continue; // skip internal fields
+        if (v === null || v === undefined || v === '') continue;
+        if (typeof v === 'object' && !Array.isArray(v)) continue; // skip nested objects
+        cleanTankMeta[k] = v;
+      }
+
+      const currentDervaMusuValue = dervaMusuPerTank[tankKey] || 'neparinkta';
+
       // Send only this tank's metadata + product_index
       const resp = await fetch(webhookUrl, {
         method: 'POST',
@@ -1395,7 +1406,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           product_index: idx,
           product_count: products.length,
           product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
-          product_metadata: JSON.stringify(tankMeta),
+          product_metadata: cleanTankMeta,
+          derva_musu: currentDervaMusuValue,
           project_name: record.project_name,
           description: record.description,
           klientas: record.klientas,

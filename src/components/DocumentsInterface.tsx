@@ -53,6 +53,7 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'id', label: 'ID', width: 'w-16' },
   { key: 'status', label: 'Statusas', width: 'w-20', toggle: true },
   { key: 'project_name', label: 'Projektas' },
+  { key: 'talpu_kiekis', label: 'Talpu kiekis', width: 'w-24' },
   { key: 'klientas', label: 'Klientas', badge: true },
   { key: 'meta_orientacija', label: 'Orientacija', metaKey: 'orientacija' },
   { key: 'meta_talpa_tipas', label: 'Talpos tipas', metaKey: 'talpa_tipas' },
@@ -157,6 +158,37 @@ function getProjectNameFromMetadata(row: any): string | undefined {
   return undefined;
 }
 
+/** Count the number of tanks/products in the metadata JSON */
+function countTanksFromMetadata(raw: any): number {
+  if (!raw) return 0;
+  let obj = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return 0; }
+  }
+  // Direct array of products: [{...}, {...}]
+  if (Array.isArray(obj)) {
+    // If it's a wrapper array like [{ talpos: [...] }], check inside first element
+    if (obj.length === 1 && obj[0] && typeof obj[0] === 'object') {
+      for (const key of PRODUCT_WRAPPER_KEYS) {
+        if (Array.isArray(obj[0][key]) && obj[0][key].length > 0) {
+          return obj[0][key].length;
+        }
+      }
+    }
+    const items = obj.filter((item: any) => item && typeof item === 'object' && !Array.isArray(item));
+    return items.length;
+  }
+  if (obj && typeof obj === 'object') {
+    for (const key of PRODUCT_WRAPPER_KEYS) {
+      if (Array.isArray(obj[key]) && obj[key].length > 0) {
+        return obj[key].length;
+      }
+    }
+  }
+  // Single product (flat object)
+  return 1;
+}
+
 function getCellValue(row: any, col: ColumnDef): string {
   if (col.key === 'meta_derva_org') {
     const meta = parseMetadata(row.metadata);
@@ -166,11 +198,21 @@ function getCellValue(row: any, col: ColumnDef): string {
     const meta = parseMetadata(row.metadata);
     return getMetaValue(meta, col.metaKey) || '—';
   }
-  const val = row[col.key];
   // Fallback: if project_name is empty, try extracting from metadata
-  if (col.key === 'project_name' && (val === null || val === undefined || val === '')) {
-    return getProjectNameFromMetadata(row) || '—';
+  if (col.key === 'project_name') {
+    const val = row[col.key];
+    if (val === null || val === undefined || val === '') {
+      return getProjectNameFromMetadata(row) || '—';
+    }
+    const str = String(val);
+    return str.length > 120 ? str.slice(0, 120) + '…' : str;
   }
+  // Tank count from metadata
+  if (col.key === 'talpu_kiekis') {
+    const count = countTanksFromMetadata(row.metadata);
+    return count > 0 ? String(count) : '—';
+  }
+  const val = row[col.key];
   if (val === null || val === undefined) return '—';
   const str = String(val);
   return str.length > 120 ? str.slice(0, 120) + '…' : str;
