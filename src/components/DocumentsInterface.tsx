@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2 } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
@@ -66,18 +66,80 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
-function parseMetadata(raw: string | Record<string, string> | null | undefined): Record<string, string> | null {
+/** Wrapper keys that may contain the actual products array */
+const PRODUCT_WRAPPER_KEYS = ['products', 'talpos', 'gaminiai', 'items'];
+
+function unwrapFirstProduct(obj: Record<string, any>): Record<string, string> {
+  // Check if the object is a wrapper like { products: [{...}] }
+  for (const key of PRODUCT_WRAPPER_KEYS) {
+    if (Array.isArray(obj[key]) && obj[key].length > 0 && typeof obj[key][0] === 'object') {
+      return obj[key][0];
+    }
+  }
+  return obj as Record<string, string>;
+}
+
+function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> | null {
   if (!raw) return null;
-  if (typeof raw === 'object') return raw as Record<string, string>;
-  try { return JSON.parse(raw); } catch { return null; }
+  // If it's an array (multi-product metadata), return the first item
+  if (Array.isArray(raw)) {
+    const first = raw[0];
+    return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+  }
+  if (typeof raw === 'object') return unwrapFirstProduct(raw as Record<string, any>);
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const first = parsed[0];
+      return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+    }
+    return unwrapFirstProduct(parsed);
+  } catch { return null; }
+}
+
+/**
+ * Map from old-format table column keys to possible new-format key aliases.
+ * The LLM extraction prompt produces keys like "Orientacija", "Medžiaga",
+ * "Skersmuo_mm", etc., while the table columns expect "orientacija", "DN", etc.
+ */
+const META_KEY_ALIASES: Record<string, string[]> = {
+  orientacija: ['Orientacija', 'orientacija'],
+  talpa_tipas: ['Talpa_tipas', 'talpa_tipas', 'Medžiaga', 'Vieta'],
+  DN: ['DN', 'Skersmuo_mm', 'skersmuo_mm', 'Skersmuo Mm'],
+  derva: ['derva', 'Medžiaga'],
+  derva_musu: ['derva_musu', 'Derva_musu'],
+};
+
+/** Look up a metadata value by key, trying aliases and case-insensitive fallback */
+function getMetaValue(meta: Record<string, any> | null, key: string): string | undefined {
+  if (!meta) return undefined;
+
+  // 1. Direct match
+  if (meta[key] !== undefined && meta[key] !== null && meta[key] !== '') return String(meta[key]);
+
+  // 2. Check known aliases
+  const aliases = META_KEY_ALIASES[key];
+  if (aliases) {
+    for (const alias of aliases) {
+      if (meta[alias] !== undefined && meta[alias] !== null && meta[alias] !== '') return String(meta[alias]);
+    }
+  }
+
+  // 3. Case-insensitive fallback
+  const keyLower = key.toLowerCase();
+  for (const [k, v] of Object.entries(meta)) {
+    if (k.toLowerCase() === keyLower && v !== undefined && v !== null && v !== '') return String(v);
+  }
+
+  return undefined;
 }
 
 /** Format the original derva value with cheminis sluoksnis mm appended if present */
 function formatDervaOrg(meta: Record<string, string> | null): string {
   if (!meta) return '—';
-  const derva = meta.derva;
+  const derva = getMetaValue(meta, 'derva') || getMetaValue(meta, 'Medžiaga');
   if (!derva) return '—';
-  const sluoksnis = meta.derva_cheminis_sluoksnis_mm;
+  const sluoksnis = getMetaValue(meta, 'derva_cheminis_sluoksnis_mm');
   if (sluoksnis && sluoksnis.trim() !== '-' && sluoksnis.trim() !== '') {
     return `${derva} (+ ${sluoksnis.trim()})`;
   }
@@ -91,7 +153,7 @@ function getCellValue(row: any, col: ColumnDef): string {
   }
   if (col.metaKey) {
     const meta = parseMetadata(row.metadata);
-    return meta?.[col.metaKey] || '—';
+    return getMetaValue(meta, col.metaKey) || '—';
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
@@ -115,7 +177,8 @@ function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string):
   const set = new Set<string>();
   for (const r of records) {
     const meta = parseMetadata(r.metadata);
-    if (meta && meta[key]) set.add(meta[key]);
+    const val = getMetaValue(meta, key);
+    if (val) set.add(val);
   }
   return Array.from(set).sort();
 }
@@ -267,6 +330,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
   const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
@@ -354,10 +420,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         rows = rows.filter((row: NestandartiniaiRecord) => {
           const meta = parseMetadata(row.metadata);
           if (!meta) return false;
-          if (orientacija && meta.orientacija !== orientacija) return false;
-          if (derva && meta.derva !== derva) return false;
-          if (talpa_tipas && meta.talpa_tipas !== talpa_tipas) return false;
-          if (DN && meta.DN !== DN) return false;
+          if (orientacija && getMetaValue(meta, 'orientacija') !== orientacija) return false;
+          if (derva && getMetaValue(meta, 'derva') !== derva) return false;
+          if (talpa_tipas && getMetaValue(meta, 'talpa_tipas') !== talpa_tipas) return false;
+          if (DN && getMetaValue(meta, 'DN') !== DN) return false;
           if (metadataSearch) {
             const mq = metadataSearch.toLowerCase();
             if (!Object.entries(meta).some(([k, v]) => k.toLowerCase().includes(mq) || String(v).toLowerCase().includes(mq))) return false;
@@ -383,8 +449,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         if (aVal === '—') aVal = null;
         if (bVal === '—') bVal = null;
       } else if (colDef?.metaKey) {
-        aVal = parseMetadata(a.metadata)?.[colDef.metaKey] ?? null;
-        bVal = parseMetadata(b.metadata)?.[colDef.metaKey] ?? null;
+        aVal = getMetaValue(parseMetadata(a.metadata), colDef.metaKey) ?? null;
+        bVal = getMetaValue(parseMetadata(b.metadata), colDef.metaKey) ?? null;
       } else {
         aVal = a[sortConfig.column];
         bVal = b[sortConfig.column];
@@ -420,6 +486,50 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     } catch {
       // Revert on error
       setNestandartiniaiData(prev => prev.map(r => r.id === id ? { ...r, status: currentStatus } : r));
+    }
+  };
+
+  const toggleSelectId = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const visibleIds = sortedData.map((r: any) => r.id as number);
+    const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+    if (allSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleIds.forEach(id => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        visibleIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setBulkDeleting(true);
+    try {
+      const toDelete = nestandartiniaiData.filter(r => selectedIds.has(r.id));
+      for (const record of toDelete) {
+        await deleteNestandartiniaiRecord(record);
+      }
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+      await loadNestandartiniai();
+    } catch (err: any) {
+      console.error('Bulk delete error:', err);
+      alert(`Klaida trinant įrašus: ${err?.message || 'Nežinoma klaida'}`);
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -526,9 +636,45 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
           >
+            {/* Bulk actions bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
+                <span className="text-xs font-medium" style={{ color: '#007AFF' }}>
+                  Pasirinkta: {selectedIds.size}
+                </span>
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ color: '#e53e3e', background: 'rgba(229,62,62,0.08)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(229,62,62,0.15)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(229,62,62,0.08)')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Ištrinti
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-xs px-2 py-1.5 rounded-lg transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '')}
+                >
+                  Atšaukti
+                </button>
+              </div>
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
+                  <th className="w-10 px-2 py-3">
+                    <input
+                      type="checkbox"
+                      checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                      title="Pasirinkti visus"
+                    />
+                  </th>
                   <th className="w-10 px-2 py-3"></th>
                   {NESTANDARTINIAI_COLS.map(col => (
                     <th
@@ -552,11 +698,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   <tr
                     key={row.id ?? i}
                     className="cursor-pointer transition-colors"
-                    style={{ borderBottom: '1px solid #f8f6f3' }}
                     onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                    onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
+                    style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
                   >
+                    <td className="w-10 px-2 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(row.id as number)}
+                        onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
+                        onClick={e => e.stopPropagation()}
+                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                      />
+                    </td>
                     <td className="w-10 px-2 py-2.5">
                       <button
                         className="p-1.5 rounded-md transition-colors"
@@ -700,6 +855,46 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
         )}
       </div>
+
+      {/* Bulk delete confirmation */}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => !bulkDeleting && setShowBulkDeleteConfirm(false)}>
+          <div
+            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold mb-2" style={{ color: '#3d3935' }}>
+              Ištrinti {selectedIds.size} {selectedIds.size === 1 ? 'įrašą' : selectedIds.size < 10 ? 'įrašus' : 'įrašų'}?
+            </h3>
+            <p className="text-sm mb-5" style={{ color: '#8a857f' }}>
+              Pasirinkti įrašai ir jų failai bus ištrinti negrįžtamai. Šio veiksmo atšaukti negalima.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                disabled={bulkDeleting}
+                className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+                style={{ color: '#3d3935', background: '#f5f3f0' }}
+              >
+                Atšaukti
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
+                style={{ background: bulkDeleting ? '#f87171' : '#e53e3e' }}
+                onMouseEnter={e => { if (!bulkDeleting) e.currentTarget.style.background = '#c53030'; }}
+                onMouseLeave={e => { if (!bulkDeleting) e.currentTarget.style.background = '#e53e3e'; }}
+              >
+                {bulkDeleting && (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                )}
+                {bulkDeleting ? 'Trinama...' : 'Ištrinti'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
