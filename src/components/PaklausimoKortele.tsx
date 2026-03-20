@@ -553,42 +553,11 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
 
   return (
     <div className="space-y-0">
-      {/* Tank management toolbar */}
-      {!readOnly && (
-        <div className="flex items-center justify-between mb-3 px-1">
-          <span className="text-xs text-base-content/40">
-            {products.length} {products.length === 1 ? 'talpa' : 'talpos'}
-          </span>
-          <div className="flex items-center gap-1.5">
-            {hasMultiple && (
-              <button
-                onClick={() => setConfirmDeleteIdx(idx)}
-                disabled={saving}
-                className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors text-error/60 hover:text-error hover:bg-error/5 disabled:opacity-40"
-                title="Ištrinti šią talpą"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Ištrinti</span>
-              </button>
-            )}
-            <button
-              onClick={addTank}
-              disabled={saving}
-              className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors text-primary/70 hover:text-primary hover:bg-primary/5 disabled:opacity-40"
-              title="Pridėti naują talpą"
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-              <span>Pridėti talpą</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Delete confirmation */}
+      {/* Delete confirmation overlay */}
       {confirmDeleteIdx !== null && (
-        <div className="mb-3 mx-1 p-3 rounded-lg border border-error/20 bg-error/5">
+        <div className="mb-3 p-3 rounded-lg border border-error/20 bg-error/5">
           <p className="text-xs text-base-content/70 mb-2">
-            Ar tikrai norite ištrinti talpą <strong>{getProductTitle(products[confirmDeleteIdx]) || `#${confirmDeleteIdx + 1}`}</strong>?
+            Ištrinti <strong>{getProductTitle(products[confirmDeleteIdx]) || `Talpa ${confirmDeleteIdx + 1}`}</strong>?
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -596,7 +565,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
               disabled={saving}
               className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40"
             >
-              {saving ? 'Trinama...' : 'Ištrinti'}
+              {saving ? 'Trinama...' : 'Taip, ištrinti'}
             </button>
             <button
               onClick={() => setConfirmDeleteIdx(null)}
@@ -608,64 +577,83 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
         </div>
       )}
 
-      {/* Product navigator — only shown when multiple products exist */}
-      {hasMultiple && (
-        <div className="flex items-center justify-between mb-4 px-1">
-          <button
-            onClick={goPrev}
-            className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            title="Ankstesnis gaminys"
-          >
-            <ChevronLeft className="w-5 h-5 text-base-content/50" />
-          </button>
-          <div className="flex flex-col items-center gap-0.5">
-            {getProductTitle(meta) && (
-              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary max-w-[250px] truncate">
-                {getProductTitle(meta)}
-              </span>
+      {/* Unified tank navigation bar */}
+      {(hasMultiple || !readOnly) && (
+        <div className="mb-4 rounded-lg border border-base-content/8 bg-base-content/[0.02]">
+          {/* Top row: navigation + actions */}
+          <div className="flex items-center gap-2 px-3 py-2">
+            {/* Left: prev arrow */}
+            {hasMultiple && (
+              <button
+                onClick={goPrev}
+                className="p-1 rounded-md transition-colors hover:bg-base-content/8 active:bg-base-content/12"
+                title="Ankstesnė talpa"
+              >
+                <ChevronLeft className="w-4 h-4 text-base-content/40" />
+              </button>
             )}
-            <span className="text-xs text-base-content/40">
-              {idx + 1} / {products.length}
-            </span>
+
+            {/* Center: dropdown selector with tank name */}
+            <div className="flex-1 min-w-0 flex items-center justify-center">
+              {hasMultiple ? (
+                <select
+                  value={idx}
+                  onChange={e => setCurrentIdx(Number(e.target.value))}
+                  className="text-xs font-medium bg-transparent text-base-content/80 border-none focus:outline-none cursor-pointer text-center max-w-[320px] truncate px-1 py-0.5 rounded hover:bg-base-content/5"
+                >
+                  {products.map((p, i) => (
+                    <option key={i} value={i}>
+                      {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="text-xs font-medium text-base-content/60">
+                  {getProductTitle(meta) || 'Talpa 1'}
+                </span>
+              )}
+            </div>
+
+            {/* Right: next arrow */}
+            {hasMultiple && (
+              <button
+                onClick={goNext}
+                className="p-1 rounded-md transition-colors hover:bg-base-content/8 active:bg-base-content/12"
+                title="Kita talpa"
+              >
+                <ChevronRight className="w-4 h-4 text-base-content/40" />
+              </button>
+            )}
           </div>
-          <button
-            onClick={goNext}
-            className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            title="Kitas gaminys"
-          >
-            <ChevronRight className="w-5 h-5 text-base-content/50" />
-          </button>
-        </div>
-      )}
 
-      {/* Dot indicators for multiple products (up to 20, then just use arrows) */}
-      {hasMultiple && products.length <= 20 && (
-        <div className="flex items-center justify-center gap-1 pb-3 flex-wrap">
-          {products.map((p, i) => (
-            <button
-              key={i}
-              onClick={() => setCurrentIdx(i)}
-              className={`w-2 h-2 rounded-full transition-all ${i === idx ? 'bg-primary scale-110' : 'bg-base-content/15 hover:bg-base-content/25'}`}
-              title={getProductTitle(p) || `Gaminys ${i + 1}`}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* For >20 products, show a compact dropdown-style selector */}
-      {hasMultiple && products.length > 20 && (
-        <div className="flex items-center justify-center pb-3">
-          <select
-            value={idx}
-            onChange={e => setCurrentIdx(Number(e.target.value))}
-            className="text-xs border border-base-content/10 rounded-lg px-2 py-1 bg-transparent text-base-content/60 focus:outline-none focus:border-primary/30"
-          >
-            {products.map((p, i) => (
-              <option key={i} value={i}>
-                {i + 1}. {getProductTitle(p) || `Gaminys ${i + 1}`}
-              </option>
-            ))}
-          </select>
+          {/* Bottom row: counter + action buttons */}
+          <div className="flex items-center justify-between px-3 pb-2 pt-0">
+            <span className="text-[11px] text-base-content/35">
+              {hasMultiple ? `${idx + 1} iš ${products.length}` : `1 talpa`}
+            </span>
+            {!readOnly && (
+              <div className="flex items-center gap-0.5">
+                {hasMultiple && (
+                  <button
+                    onClick={() => setConfirmDeleteIdx(idx)}
+                    disabled={saving}
+                    className="p-1 rounded-md transition-colors text-base-content/25 hover:text-error hover:bg-error/5 disabled:opacity-30"
+                    title="Ištrinti šią talpą"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  onClick={addTank}
+                  disabled={saving}
+                  className="p-1 rounded-md transition-colors text-base-content/25 hover:text-primary hover:bg-primary/5 disabled:opacity-30"
+                  title="Pridėti naują talpą"
+                >
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
