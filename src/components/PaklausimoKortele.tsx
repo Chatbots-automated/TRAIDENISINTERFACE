@@ -1262,9 +1262,22 @@ function parseDervaPerTank(raw: string | null): Record<string, string> {
   return {};
 }
 
+/** Unwrap metadata to the root object where _derva_musu_per_tank lives */
+function unwrapMetaRoot(metadata: any): Record<string, any> {
+  let meta = metadata;
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta); } catch { return {}; }
+  }
+  if (Array.isArray(meta)) {
+    const first = meta[0];
+    return (first && typeof first === 'object' && !Array.isArray(first)) ? first : {};
+  }
+  return (meta && typeof meta === 'object') ? meta : {};
+}
+
 /** Parse per-tank derva_musu from metadata._derva_musu_per_tank */
 function parseDervaMusuPerTank(metadata: any): Record<string, string> {
-  const meta = typeof metadata === 'string' ? (() => { try { return JSON.parse(metadata); } catch { return {}; } })() : (metadata || {});
+  const meta = unwrapMetaRoot(metadata);
   const perTank = meta?._derva_musu_per_tank;
   if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) return perTank;
   // Legacy: flat derva_musu → assign to tank 0
@@ -1339,19 +1352,28 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
   const saveDervaMusu = async () => {
     setDervaMusuSaving(true);
     try {
-      const rawMeta = typeof record.metadata === 'string' ? (() => { try { return JSON.parse(record.metadata as string); } catch { return {}; } })() : (record.metadata || {});
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') {
+        try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; }
+      }
       const updatedMusuPerTank = { ...dervaMusuPerTank };
       if (dervaMusu.trim()) {
         updatedMusuPerTank[tankKey] = dervaMusu.trim();
       } else {
         delete updatedMusuPerTank[tankKey];
       }
-      const updatedMeta = { ...rawMeta, _derva_musu_per_tank: updatedMusuPerTank };
-      // Keep legacy derva_musu in sync with tank 0 for table column display
-      if (updatedMusuPerTank['0']) {
-        updatedMeta.derva_musu = updatedMusuPerTank['0'];
+      // Handle array-wrapped metadata: write _derva_musu_per_tank into the wrapper object
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        const root = { ...rawMeta[0], _derva_musu_per_tank: updatedMusuPerTank };
+        if (updatedMusuPerTank['0']) { root.derva_musu = updatedMusuPerTank['0']; } else { delete root.derva_musu; }
+        updatedMeta = [root, ...rawMeta.slice(1)];
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        updatedMeta = { ...rawMeta, _derva_musu_per_tank: updatedMusuPerTank };
+        if (updatedMusuPerTank['0']) { updatedMeta.derva_musu = updatedMusuPerTank['0']; } else { delete updatedMeta.derva_musu; }
       } else {
-        delete updatedMeta.derva_musu;
+        updatedMeta = { _derva_musu_per_tank: updatedMusuPerTank };
+        if (updatedMusuPerTank['0']) { updatedMeta.derva_musu = updatedMusuPerTank['0']; }
       }
       await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
       setDervaMusuPerTank(updatedMusuPerTank);
