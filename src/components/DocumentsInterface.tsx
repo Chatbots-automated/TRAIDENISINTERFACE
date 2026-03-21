@@ -328,7 +328,21 @@ function getColumns(rows: any[]): string[] {
   return keys;
 }
 
+/** Lithuanian display labels for standartiniai table columns */
+const STANDARTINIAI_COL_LABELS: Record<string, string> = {
+  id: 'ID',
+  html_content: 'Dokumentas',
+  hnv: 'HNV',
+  projekto_kodas: 'Projekto kodas',
+  user_created: 'Sukūrė',
+  user_updated: 'Atnaujino',
+  date_created: 'Sukūrimo data',
+  date_updated: 'Atnaujinimo data',
+  status: 'Būsena',
+};
+
 function formatColumnName(col: string): string {
+  if (STANDARTINIAI_COL_LABELS[col]) return STANDARTINIAI_COL_LABELS[col];
   return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
