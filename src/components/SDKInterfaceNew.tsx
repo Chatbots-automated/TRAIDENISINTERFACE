@@ -75,7 +75,6 @@ import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl } from '../lib/globalTemplateService';
-import { renderAsync } from 'docx-preview';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -219,7 +218,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [hasDocxTemplate, setHasDocxTemplate] = useState(false);
   const [docxUploading, setDocxUploading] = useState(false);
   const [tplEditorTab, setTplEditorTab] = useState<'html' | 'docx'>('html');
-  const docxPreviewRef = useRef<HTMLDivElement>(null);
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
 
@@ -2416,77 +2414,24 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
-  // Auto-load DOCX preview when tab switches to 'docx' (ref is mounted by then)
+  // Build Google Docs Viewer URL when switching to DOCX tab
+  const [docxViewerUrl, setDocxViewerUrl] = useState<string | null>(null);
   useEffect(() => {
     if (tplEditorTab === 'docx' && showTemplateEditor) {
-      loadDocxPreview();
+      setDocxPreviewLoading(true);
+      setDocxPreviewError(null);
+      getDocxTemplateFileId().then(fileId => {
+        if (!fileId) {
+          setDocxPreviewError('DOCX šablonas dar neįkeltas. Įkelkite .docx failą naudodami mygtuką viršuje.');
+          setDocxPreviewLoading(false);
+          return;
+        }
+        const assetUrl = getDocxTemplateUrl(fileId);
+        setDocxViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tplEditorTab, showTemplateEditor]);
-
-  /** Load DOCX preview into the preview container. */
-  const loadDocxPreview = async () => {
-    const container = docxPreviewRef.current;
-    if (!container) return;
-    container.innerHTML = '';
-    setDocxPreviewError(null);
-    setDocxPreviewLoading(true);
-    try {
-      const fileId = await getDocxTemplateFileId();
-      if (!fileId) {
-        setDocxPreviewError('DOCX šablonas dar neįkeltas. Įkelkite .docx failą naudodami mygtuką viršuje.');
-        return;
-      }
-      const resp = await fetch(getDocxTemplateUrl(fileId));
-      if (!resp.ok) throw new Error(`Nepavyko užkrauti: ${resp.status}`);
-      const blob = await resp.blob();
-      await renderAsync(blob, container, undefined, {
-        className: 'docx-preview',
-        inWrapper: true,
-        ignoreWidth: false,
-        ignoreHeight: false,
-        renderHeaders: true,
-        renderFooters: true,
-        renderFootnotes: true,
-      });
-      // Highlight {{variables}} with yellow boxes
-      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-      const varRegex = /\{\{([^}]+)\}\}/g;
-      const nodesToProcess: { node: Text; matches: { start: number; end: number; key: string }[] }[] = [];
-      let node: Text | null;
-      while ((node = walker.nextNode() as Text | null)) {
-        const text = node.textContent || '';
-        const matches: { start: number; end: number; key: string }[] = [];
-        let m: RegExpExecArray | null;
-        while ((m = varRegex.exec(text)) !== null) {
-          matches.push({ start: m.index, end: m.index + m[0].length, key: m[1].trim() });
-        }
-        if (matches.length > 0) nodesToProcess.push({ node, matches });
-      }
-      for (const { node: textNode, matches } of nodesToProcess) {
-        const parent = textNode.parentNode;
-        if (!parent) continue;
-        const text = textNode.textContent || '';
-        const frag = document.createDocumentFragment();
-        let lastIdx = 0;
-        for (const { start, end, key } of matches) {
-          if (start > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, start)));
-          const span = document.createElement('span');
-          span.textContent = `{{${key}}}`;
-          span.style.cssText = 'background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;display:inline;';
-          span.title = `Kintamasis: ${key}`;
-          frag.appendChild(span);
-          lastIdx = end;
-        }
-        if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-        parent.replaceChild(frag, textNode);
-      }
-    } catch (err) {
-      setDocxPreviewError(`Klaida: ${err instanceof Error ? err.message : err}`);
-    } finally {
-      setDocxPreviewLoading(false);
-    }
-  };
+  }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
 
   /** Revert the global template to a specific version from history. */
   const handleRevertTemplate = async (versionId: string) => {
@@ -4418,11 +4363,6 @@ Vartotojo instrukcija: ${instruction}`;
                         await uploadDocxTemplate(file);
                         setHasDocxTemplate(true);
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
-                        // Force reload preview if already on docx tab
-                        if (tplEditorTab === 'docx') {
-                          setTplEditorTab('html');
-                          setTimeout(() => setTplEditorTab('docx'), 50);
-                        }
                       } catch (err) {
                         addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
                       } finally {
@@ -4619,17 +4559,11 @@ Vartotojo instrukcija: ${instruction}`;
 
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
-                {/* DOCX preview panel */}
+                {/* DOCX preview panel — Google Docs Viewer iframe */}
                 {tplEditorTab === 'docx' && (
-                  <div className="flex-1 overflow-auto bg-base-200/40">
-                    {docxPreviewLoading && (
-                      <div className="flex items-center justify-center py-16">
-                        <Loader2 className="w-6 h-6 animate-spin text-base-content/40 mr-2" />
-                        <span className="text-sm text-base-content/40">Kraunama DOCX peržiūra...</span>
-                      </div>
-                    )}
+                  <div className="flex-1 flex flex-col bg-base-200/40">
                     {docxPreviewError && (
-                      <div className="flex items-center justify-center py-16">
+                      <div className="flex-1 flex items-center justify-center">
                         <div className="text-center">
                           <AlertCircle className="w-8 h-8 text-warning mx-auto mb-2" />
                           <p className="text-sm text-base-content/60">{docxPreviewError}</p>
@@ -4643,10 +4577,20 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     )}
-                    <div
-                      ref={docxPreviewRef}
-                      style={{ maxWidth: '900px', margin: '24px auto', minHeight: docxPreviewLoading ? 0 : undefined }}
-                    />
+                    {docxPreviewLoading && !docxPreviewError && (
+                      <div className="flex-1 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 animate-spin text-base-content/40 mr-2" />
+                        <span className="text-sm text-base-content/40">Kraunama DOCX peržiūra...</span>
+                      </div>
+                    )}
+                    {docxViewerUrl && !docxPreviewError && (
+                      <iframe
+                        src={docxViewerUrl}
+                        className="flex-1 w-full border-none"
+                        title="DOCX peržiūra"
+                        onLoad={() => setDocxPreviewLoading(false)}
+                      />
+                    )}
                   </div>
                 )}
                 {/* Visual editor iframe */}
