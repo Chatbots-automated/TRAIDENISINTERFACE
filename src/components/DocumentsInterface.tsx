@@ -163,16 +163,66 @@ function getMetaValue(meta: Record<string, any> | null, key: string): string | u
   return undefined;
 }
 
-/** Format the original derva value with cheminis sluoksnis mm appended if present */
-function formatDervaOrg(meta: Record<string, string> | null): string {
-  if (!meta) return '—';
-  const derva = getMetaValue(meta, 'derva') || getMetaValue(meta, 'Medžiaga');
-  if (!derva) return '—';
-  const sluoksnis = getMetaValue(meta, 'derva_cheminis_sluoksnis_mm');
-  if (sluoksnis && sluoksnis.trim() !== '-' && sluoksnis.trim() !== '') {
-    return `${derva} (+ ${sluoksnis.trim()})`;
+/** Parse ALL products from metadata (not just the first) */
+function parseAllProducts(raw: any): Record<string, any>[] {
+  if (!raw) return [];
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { return []; } }
+  if (Array.isArray(obj)) return obj.filter((item: any) => item && typeof item === 'object' && !Array.isArray(item));
+  if (obj && typeof obj === 'object') {
+    for (const key of PRODUCT_WRAPPER_KEYS) {
+      if (Array.isArray(obj[key]) && obj[key].length > 0) return obj[key];
+    }
+    return [obj];
   }
-  return derva;
+  return [];
+}
+
+/** Truncate a comma-separated list to fit ~30 chars */
+function truncateList(items: string[], maxLen = 30): string {
+  if (items.length === 0) return '—';
+  if (items.length === 1) return items[0].length > maxLen ? items[0].slice(0, maxLen - 1) + '…' : items[0];
+  let result = items[0];
+  for (let i = 1; i < items.length; i++) {
+    const next = result + ', ' + items[i];
+    if (next.length > maxLen) return result + ', …';
+    result = next;
+  }
+  return result;
+}
+
+/** Format derva (org) across all tanks — unique values, truncated */
+function formatDervaOrg(raw: any, maxLen = 30): string {
+  const products = parseAllProducts(raw);
+  if (products.length === 0) return '—';
+  const values: string[] = [];
+  for (const p of products) {
+    const d = getMetaValue(p, 'derva') || getMetaValue(p, 'Medžiaga');
+    if (d && !values.includes(d)) values.push(d);
+  }
+  return truncateList(values, maxLen);
+}
+
+/** Format derva (mūsų) across all tanks — unique values, truncated */
+function formatDervaMusu(raw: any, maxLen = 30): string {
+  const products = parseAllProducts(raw);
+  if (products.length === 0) return '—';
+  // Check _derva_musu_per_tank at the root level
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { obj = null; } }
+  const root = Array.isArray(obj) ? obj[0] : obj;
+  const perTank = root?._derva_musu_per_tank;
+  if (perTank && typeof perTank === 'object') {
+    const unique = [...new Set(Object.values(perTank).filter(Boolean).map(String))];
+    if (unique.length > 0) return truncateList(unique, maxLen);
+  }
+  // Fallback: check each product's derva_musu
+  const values: string[] = [];
+  for (const p of products) {
+    const d = getMetaValue(p, 'derva_musu');
+    if (d && !values.includes(d)) values.push(d);
+  }
+  return truncateList(values, maxLen);
 }
 
 function getProjectNameFromMetadata(row: any): string | undefined {
@@ -219,8 +269,10 @@ function countTanksFromMetadata(raw: any): number {
 
 function getCellValue(row: any, col: ColumnDef): string {
   if (col.key === 'meta_derva_org') {
-    const meta = parseMetadata(row.metadata);
-    return formatDervaOrg(meta);
+    return formatDervaOrg(row.metadata);
+  }
+  if (col.key === 'meta_derva_musu') {
+    return formatDervaMusu(row.metadata);
   }
   if (col.metaKey) {
     const meta = parseMetadata(row.metadata);
@@ -500,8 +552,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             }
           }
           // Formatted derva (org) with cheminis sluoksnis
-          const dervaOrgFormatted = formatDervaOrg(meta);
+          const dervaOrgFormatted = formatDervaOrg(row.metadata);
           if (dervaOrgFormatted !== '—') parts.push(dervaOrgFormatted);
+          const dervaMusuFormatted = formatDervaMusu(row.metadata);
+          if (dervaMusuFormatted !== '—') parts.push(dervaMusuFormatted);
 
           const blob = parts.join(' ').toLowerCase();
           return keywords.every(kw => blob.includes(kw));
@@ -555,8 +609,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       let aVal: any;
       let bVal: any;
       if (sortConfig.column === 'meta_derva_org') {
-        aVal = formatDervaOrg(parseMetadata(a.metadata));
-        bVal = formatDervaOrg(parseMetadata(b.metadata));
+        aVal = formatDervaOrg(a.metadata);
+        bVal = formatDervaOrg(b.metadata);
         if (aVal === '—') aVal = null;
         if (bVal === '—') bVal = null;
       } else if (colDef?.metaKey) {
@@ -858,6 +912,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         );
                       }
                       const val = getCellValue(row, col);
+                      const fullVal = (col.key === 'meta_derva_org') ? formatDervaOrg(row.metadata, 500)
+                        : (col.key === 'meta_derva_musu') ? formatDervaMusu(row.metadata, 500)
+                        : val;
                       return (
                         <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
                           {col.badge && val !== '—' ? (
@@ -871,7 +928,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                             <span
                               className="block truncate max-w-[200px]"
                               style={{ color: col.key === 'id' ? '#8a857f' : '#3d3935', fontSize: col.key === 'id' ? '12px' : '13px' }}
-                              title={val}
+                              title={fullVal}
                             >
                               {val}
                             </span>
