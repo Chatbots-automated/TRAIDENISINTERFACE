@@ -754,8 +754,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 {sortedData.map((row, i) => (
                   <tr
                     key={row.id ?? i}
-                    className="cursor-pointer transition-colors"
-                    onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
+                    className="transition-colors"
                     onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
                     style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
@@ -775,7 +774,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         style={{ color: '#8a857f' }}
                         onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
                         onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
-                        onClick={e => { e.stopPropagation(); setSelectedCard(row as NestandartiniaiRecord); }}
+                        onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
                         title="Atidaryti kortelę"
                       >
                         <FileText className="w-4 h-4" />
