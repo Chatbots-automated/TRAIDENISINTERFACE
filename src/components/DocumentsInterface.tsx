@@ -4,6 +4,7 @@ import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
+import { getAllUsersData } from '../lib/userService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
 interface DocumentsInterfaceProps {
@@ -317,9 +318,15 @@ function getCellValue(row: any, col: ColumnDef): string {
   return str.length > 120 ? str.slice(0, 120) + '…' : str;
 }
 
+/** Columns to hide from the standartiniai table */
+const HIDDEN_STANDARTINIAI_COLS = new Set(['conversation_id', 'yaml_content']);
+
+/** Columns whose values are user IDs that should be resolved to names */
+const USER_ID_COLS = new Set(['user_created', 'user_updated']);
+
 function getColumns(rows: any[]): string[] {
   if (rows.length === 0) return [];
-  const keys = Object.keys(rows[0]);
+  const keys = Object.keys(rows[0]).filter(k => !HIDDEN_STANDARTINIAI_COLS.has(k));
   const idIndex = keys.indexOf('id');
   if (idIndex > -1) { keys.splice(idIndex, 1); keys.sort(); keys.unshift('id'); } else { keys.sort(); }
   return keys;
@@ -535,6 +542,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const PAGE_SIZE = 50;
   const [currentPage, setCurrentPage] = useState(1);
 
+  // User name lookup (for standartiniai user_created / user_updated columns)
+  const [userNameMap, setUserNameMap] = useState<Map<string, string>>(new Map());
+
   // Column ordering (drag & drop, persisted)
   const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || NESTANDARTINIAI_COLS.map(c => c.key));
   const orderedCols = useMemo(() => getOrderedCols(colOrder), [colOrder]);
@@ -561,7 +571,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     dragOverColRef.current = null;
   }, []);
 
-  useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
+  useEffect(() => {
+    loadStandartiniai();
+    loadNestandartiniai();
+    getAllUsersData().then(users => {
+      const map = new Map<string, string>();
+      for (const u of users) {
+        const name = u.display_name || u.full_name || u.email || u.id;
+        map.set(u.id, name.split(' ')[0]); // first name only
+      }
+      setUserNameMap(map);
+    }).catch(() => {});
+  }, []);
 
   const loadStandartiniai = async () => {
     try { setLoadingStandartiniai(true); setErrorStandartiniai(null); setStandartiniaiData(await fetchStandartiniaiProjektai()); }
@@ -1138,12 +1159,14 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           </td>
                         );
                       }
-                      // Long text columns — truncate
-                      const isLongText = col === 'yaml_content';
-                      const maxLen = isLongText ? 60 : 120;
-                      const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
+                      // Resolve user ID columns to first names
+                      const resolvedVal = (USER_ID_COLS.has(col) && val && userNameMap.has(String(val)))
+                        ? userNameMap.get(String(val))!
+                        : val;
+                      const maxLen = 120;
+                      const display = resolvedVal === null || resolvedVal === undefined ? '—' : String(resolvedVal).length > maxLen ? String(resolvedVal).slice(0, maxLen) + '…' : String(resolvedVal);
                       return (
-                        <td key={col} className={`px-3 py-2.5 ${isLongText ? 'max-w-[200px]' : 'max-w-xs'} truncate`} style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(resolvedVal ?? '')}>
                           {display}
                         </td>
                       );
