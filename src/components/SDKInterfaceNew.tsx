@@ -3237,9 +3237,9 @@ Vartotojo instrukcija: ${instruction}`;
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
                     <button
-                      onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
+                      onClick={() => { documentPreviewRef.current?.downloadAsWord(); addNotification('info', 'Word', 'Dokumentas atsisiunčiamas kaip .docx failas.'); }}
                       className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Atsisiųsti PDF"
+                      title="Atsisiųsti Word dokumentą"
                     >
                       <Download className="w-3.5 h-3.5" />
                     </button>

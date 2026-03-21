@@ -1,10 +1,12 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { ZoomIn, ZoomOut, ImagePlus, Maximize2, RotateCcw, Crop, MoveHorizontal, X } from 'lucide-react';
 import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import { saveAs } from 'file-saver';
 import type { VariableCitation } from '../lib/sdkConversationService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
+  downloadAsWord: () => void;
   clearActiveVariable: () => void;
   /** Get the full outerHTML of the iframe document (includes user text edits + styles). */
   getEditedHtml: () => string | null;
@@ -321,6 +323,50 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
         if (iframe?.contentWindow) {
           iframe.contentWindow.print();
         }
+      },
+      downloadAsWord: () => {
+        const doc = iframeRef.current?.contentDocument;
+        if (!doc?.documentElement) return;
+        // Clone to strip preview-only artifacts
+        const clone = doc.documentElement.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('.citation-badge').forEach(el => el.remove());
+        clone.querySelectorAll('.template-var.active').forEach(el => el.classList.remove('active'));
+        clone.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
+        const body = clone.querySelector('body');
+        if (body) {
+          body.classList.remove('edit-mode', 'img-edit-mode');
+          body.contentEditable = 'false';
+        }
+        // Strip preview-only CSS
+        const styleEl = clone.querySelector('style');
+        if (styleEl) {
+          styleEl.textContent = (styleEl.textContent || '').replace(
+            /\/\* Preview host overrides \*\/[\s\S]*$/,
+            ''
+          );
+        }
+        // Build Word-compatible HTML with Word XML namespace
+        const wordHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<style>
+@page { size: A4; margin: 2cm; }
+@page Section1 { mso-page-orientation: portrait; }
+div.Section1 { page: Section1; }
+</style>
+${clone.querySelector('head')?.innerHTML || ''}
+</head>
+<body>
+<div class="Section1">
+${clone.querySelector('body')?.innerHTML || ''}
+</div>
+</body>
+</html>`;
+        const blob = new Blob(['\ufeff', wordHtml], { type: 'application/msword' });
+        saveAs(blob, 'komercinis-pasiulymas.doc');
       },
       clearActiveVariable: () => {
         const doc = iframeRef.current?.contentDocument;
