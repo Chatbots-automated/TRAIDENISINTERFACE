@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
@@ -62,6 +62,34 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
+
+const COL_ORDER_KEY = 'traidenis_col_order_nestandartiniai';
+
+function loadColumnOrder(): string[] | null {
+  try {
+    const raw = localStorage.getItem(COL_ORDER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+}
+
+function saveColumnOrder(keys: string[]) {
+  try { localStorage.setItem(COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
+}
+
+function getOrderedCols(savedOrder: string[] | null): ColumnDef[] {
+  if (!savedOrder) return NESTANDARTINIAI_COLS;
+  const byKey = new Map(NESTANDARTINIAI_COLS.map(c => [c.key, c]));
+  const ordered: ColumnDef[] = [];
+  for (const key of savedOrder) {
+    const col = byKey.get(key);
+    if (col) { ordered.push(col); byKey.delete(key); }
+  }
+  // Append any new columns not in saved order
+  for (const col of byKey.values()) ordered.push(col);
+  return ordered;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -390,6 +418,32 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  // Column ordering (drag & drop, persisted)
+  const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || NESTANDARTINIAI_COLS.map(c => c.key));
+  const orderedCols = useMemo(() => getOrderedCols(colOrder), [colOrder]);
+  const dragColRef = useRef<string | null>(null);
+  const dragOverColRef = useRef<string | null>(null);
+
+  const handleColDragStart = useCallback((key: string) => { dragColRef.current = key; }, []);
+  const handleColDragOver = useCallback((e: React.DragEvent, key: string) => { e.preventDefault(); dragOverColRef.current = key; }, []);
+  const handleColDrop = useCallback(() => {
+    const from = dragColRef.current;
+    const to = dragOverColRef.current;
+    if (!from || !to || from === to) return;
+    setColOrder(prev => {
+      const next = [...prev];
+      const fromIdx = next.indexOf(from);
+      const toIdx = next.indexOf(to);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, from);
+      saveColumnOrder(next);
+      return next;
+    });
+    dragColRef.current = null;
+    dragOverColRef.current = null;
+  }, []);
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
@@ -733,13 +787,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     />
                   </th>
                   <th className="w-10 px-2 py-3"></th>
-                  {NESTANDARTINIAI_COLS.map(col => (
+                  {orderedCols.map(col => (
                     <th
                       key={col.key}
+                      draggable
+                      onDragStart={() => handleColDragStart(col.key)}
+                      onDragOver={e => handleColDragOver(e, col.key)}
+                      onDrop={handleColDrop}
                       onClick={() => handleSort(col.key)}
                       className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
+                        <GripVertical className="w-3 h-3 text-base-content/20 shrink-0 cursor-grab active:cursor-grabbing" />
                         <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
                           <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
@@ -780,7 +839,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         <FileText className="w-4 h-4" />
                       </button>
                     </td>
-                    {NESTANDARTINIAI_COLS.map(col => {
+                    {orderedCols.map(col => {
                       if (col.toggle) {
                         const checked = !!row[col.key];
                         return (
