@@ -108,22 +108,41 @@ function unwrapFirstProduct(obj: Record<string, any>): Record<string, string> {
   return obj as Record<string, string>;
 }
 
+/** Cache for parseMetadata — avoids redundant JSON.parse across thousands of cell renders */
+const _metadataCache = new WeakMap<object, Record<string, string> | null>();
+const _metadataStringCache = new Map<string, Record<string, string> | null>();
+
 function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> | null {
   if (!raw) return null;
-  // If it's an array (multi-product metadata), return the first item
-  if (Array.isArray(raw)) {
-    const first = raw[0];
-    return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+
+  // For object/array refs, use WeakMap (GC-friendly)
+  if (typeof raw === 'object') {
+    if (_metadataCache.has(raw as object)) return _metadataCache.get(raw as object)!;
+    let result: Record<string, string> | null;
+    if (Array.isArray(raw)) {
+      const first = raw[0];
+      result = (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+    } else {
+      result = unwrapFirstProduct(raw as Record<string, any>);
+    }
+    _metadataCache.set(raw as object, result);
+    return result;
   }
-  if (typeof raw === 'object') return unwrapFirstProduct(raw as Record<string, any>);
+
+  // For strings, use a Map keyed by the string content
+  if (_metadataStringCache.has(raw)) return _metadataStringCache.get(raw)!;
+  let result: Record<string, string> | null = null;
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const first = parsed[0];
-      return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+      result = (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+    } else {
+      result = unwrapFirstProduct(parsed);
     }
-    return unwrapFirstProduct(parsed);
-  } catch { return null; }
+  } catch { /* invalid JSON */ }
+  _metadataStringCache.set(raw, result);
+  return result;
 }
 
 /**
@@ -324,11 +343,16 @@ function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string):
 // FilterDropdown
 // ---------------------------------------------------------------------------
 
+const DROPDOWN_SEARCH_THRESHOLD = 8;
+const DROPDOWN_MAX_VISIBLE = 30;
+
 function FilterDropdown({ label, value, options, onChange }: {
   label: string; value: string; options: string[]; onChange: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -337,7 +361,25 @@ function FilterDropdown({ label, value, options, onChange }: {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  useEffect(() => {
+    if (open && options.length >= DROPDOWN_SEARCH_THRESHOLD) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+    if (!open) setDropdownSearch('');
+  }, [open, options.length]);
+
   const isActive = value !== '';
+
+  const visibleOptions = useMemo(() => {
+    let filtered = options;
+    if (dropdownSearch.trim()) {
+      const kw = dropdownSearch.toLowerCase();
+      filtered = options.filter(o => o.toLowerCase().includes(kw));
+    }
+    return filtered.slice(0, DROPDOWN_MAX_VISIBLE);
+  }, [options, dropdownSearch]);
+
+  const hiddenCount = options.length - visibleOptions.length;
 
   return (
     <div className="relative" ref={ref}>
@@ -350,7 +392,7 @@ function FilterDropdown({ label, value, options, onChange }: {
         }`}
         style={isActive ? { background: '#007AFF' } : { background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)' }}
       >
-        <span>{isActive ? `${label}: ${value}` : label}</span>
+        <span>{isActive ? `${label}: ${value}` : `${label} (${options.length})`}</span>
         {isActive ? (
           <X className="w-3 h-3 opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onChange(''); }} />
         ) : (
@@ -360,9 +402,22 @@ function FilterDropdown({ label, value, options, onChange }: {
 
       {open && options.length > 0 && (
         <div
-          className="absolute z-50 top-full left-0 mt-1.5 min-w-[160px] max-h-56 overflow-auto bg-white rounded-macos-lg py-1"
+          className="absolute z-50 top-full left-0 mt-1.5 min-w-[180px] max-h-64 overflow-auto bg-white rounded-macos-lg py-1"
           style={{ border: '0.5px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}
         >
+          {options.length >= DROPDOWN_SEARCH_THRESHOLD && (
+            <div className="px-2 py-1.5 sticky top-0 bg-white" style={{ borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={dropdownSearch}
+                onChange={e => setDropdownSearch(e.target.value)}
+                placeholder="Ieškoti..."
+                className="w-full px-2 py-1 text-xs rounded bg-macos-gray-50 outline-none"
+                style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}
+              />
+            </div>
+          )}
           {value && (
             <button
               onClick={() => { onChange(''); setOpen(false); }}
@@ -371,7 +426,7 @@ function FilterDropdown({ label, value, options, onChange }: {
               Visi
             </button>
           )}
-          {options.map(opt => (
+          {visibleOptions.map(opt => (
             <button
               key={opt}
               onClick={() => { onChange(opt); setOpen(false); }}
@@ -383,6 +438,11 @@ function FilterDropdown({ label, value, options, onChange }: {
               {opt}
             </button>
           ))}
+          {hiddenCount > 0 && (
+            <div className="px-3 py-1.5 text-[10px] text-macos-gray-400">
+              +{hiddenCount} daugiau — naudokite paiešką
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -470,6 +530,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  // Pagination
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Column ordering (drag & drop, persisted)
   const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || NESTANDARTINIAI_COLS.map(c => c.key));
@@ -631,6 +695,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     });
   }, [filteredData, sortConfig, isNestandartiniai]);
 
+  // Reset to page 1 when filters, search, sort, or table change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, metadataFilters, sortConfig, selectedTable]);
+
+  // Pagination slice
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pagedData = useMemo(() => {
+    const start = (safeCurrentPage - 1) * PAGE_SIZE;
+    return sortedData.slice(start, start + PAGE_SIZE);
+  }, [sortedData, safeCurrentPage]);
+
   const handleSort = (column: string) => {
     setSortConfig(prev => prev.column === column ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { column, direction: 'asc' });
   };
@@ -663,7 +738,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   };
 
   const toggleSelectAll = () => {
-    const visibleIds = sortedData.map((r: any) => r.id as number);
+    const visibleIds = pagedData.map((r: any) => r.id as number);
     const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
     if (allSelected) {
       setSelectedIds(prev => {
@@ -864,7 +939,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </tr>
               </thead>
               <tbody>
-                {sortedData.map((row, i) => (
+                {pagedData.map((row, i) => (
                   <tr
                     key={row.id ?? i}
                     className="transition-colors"
@@ -946,8 +1021,65 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}
             >
               <span>
-                {sortedData.length < totalCount ? `${sortedData.length} iš ${totalCount} įrašų` : `${sortedData.length} įrašų`}
+                {sortedData.length < totalCount
+                  ? `${sortedData.length} iš ${totalCount} įrašų`
+                  : `${sortedData.length} įrašų`}
+                {totalPages > 1 && ` · puslapis ${safeCurrentPage} iš ${totalPages}`}
               </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safeCurrentPage <= 1}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    ««
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={safeCurrentPage <= 1}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    «
+                  </button>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let page: number;
+                    if (totalPages <= 5) {
+                      page = i + 1;
+                    } else if (safeCurrentPage <= 3) {
+                      page = i + 1;
+                    } else if (safeCurrentPage >= totalPages - 2) {
+                      page = totalPages - 4 + i;
+                    } else {
+                      page = safeCurrentPage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`px-2 py-0.5 rounded ${page === safeCurrentPage ? 'font-bold' : 'hover:bg-macos-gray-100'}`}
+                        style={page === safeCurrentPage ? { color: '#007AFF' } : undefined}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safeCurrentPage >= totalPages}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    »
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safeCurrentPage >= totalPages}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    »»
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (
