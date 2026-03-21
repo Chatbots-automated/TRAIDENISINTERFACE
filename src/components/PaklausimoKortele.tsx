@@ -788,7 +788,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
           {/* Description */}
           {record.description && (
             <div className="border-t border-base-content/10">
-              <CollapsibleSection title="Aprašymas" defaultOpen>
+              <CollapsibleSection title="Aprašymas">
                 <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
                   {record.description}
                 </div>
@@ -1589,12 +1589,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     }
   };
 
-  // AI conversation (record-level, shared across tanks)
-  const [conversation, setConversation] = useState<AiConversationMessage[]>(() => parseJSON<AiConversationMessage[]>(record.ai_conversation) || []);
-  const [input, setInput] = useState('');
-  const [chatSaving, setChatSaving] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-
   const triggerDervaSelect = async () => {
     setDervaError(null);
     setSuccess(false);
@@ -1678,58 +1672,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     } finally {
       setProcessing(record.id, 'derva', false);
       setSelectingTankIdx(null);
-    }
-  };
-
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text) return;
-    setChatError(null);
-    const userMsg: AiConversationMessage = { role: 'user', text, timestamp: new Date().toISOString() };
-    const withUserMsg = [...conversation, userMsg];
-    setConversation(withUserMsg);
-    setInput('');
-
-    try {
-      setChatSaving(true);
-      await updateNestandartiniaiAiConversation(record.id, withUserMsg);
-
-      const webhookUrl = await getWebhookUrl('n8n_ai_conversation');
-      if (webhookUrl) {
-        const resp = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            record_id: record.id,
-            product_index: idx,
-            product_metadata: JSON.stringify(tankMeta),
-            project_name: record.project_name,
-            description: record.description,
-            klientas: record.klientas,
-            derva: dervaResult,
-            chat_history: withUserMsg,
-            user_request: text,
-          }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json();
-          const aiText = typeof data === 'string' ? data : (data.response || data.text || data.message || data.output || JSON.stringify(data));
-          const aiMsg: AiConversationMessage = { role: 'assistant', text: aiText, timestamp: new Date().toISOString() };
-          const withAiMsg = [...withUserMsg, aiMsg];
-          setConversation(withAiMsg);
-          await updateNestandartiniaiAiConversation(record.id, withAiMsg);
-        } else {
-          setChatError(`Webhook klaida: ${resp.status}`);
-        }
-      } else {
-        setChatError('Webhook "n8n_ai_conversation" nesukonfigūruotas.');
-      }
-    } catch (e: any) {
-      console.error(e);
-      setChatError(e.message || 'Nepavyko gauti AI atsakymo');
-    } finally {
-      setChatSaving(false);
     }
   };
 
@@ -1920,73 +1862,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         )}
       </div>
 
-      {/* ── AI conversation section (record-level) ── */}
-      <div className="pt-5 border-t border-base-content/10">
-        <CollapsibleSection title="AI pokalbis" defaultOpen={conversation.length > 0}>
-          {conversation.length > 0 && (
-            <div className="mb-4">
-              {conversation.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2.5`}>
-                  <div
-                    className={`max-w-[80%] rounded-3xl px-4 py-2.5 ${msg.role === 'user' ? 'text-base-content' : 'text-base-content'}`}
-                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
-                  >
-                    <div className="overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
-                      {msg.role === 'assistant'
-                        ? <MarkdownText text={msg.text} />
-                        : <div className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.text}</div>
-                      }
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Typing indicator */}
-          {chatSaving && (
-            <div className="flex justify-start mb-2.5">
-              <div className="rounded-3xl px-4 py-2.5" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
-                <div className="flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-base-content/40" />
-                  <span className="text-xs text-base-content/40">AI rašo...</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {chatError && (
-            <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{chatError}</span>
-            </div>
-          )}
-
-          {!readOnly && (
-            <div className={`flex items-end gap-2 pt-3 ${conversation.length > 0 ? 'border-t border-base-content/10' : ''}`}>
-              <div className="flex-1 flex items-end rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f8f8f9' }}>
-                <AutoTextarea
-                  value={input}
-                  onChange={setInput}
-                  placeholder="Klauskite AI apie dervą..."
-                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 outline-none border-none py-0.5"
-                />
-              </div>
-              <button
-                onClick={sendMessage}
-                disabled={chatSaving || !input.trim()}
-                className="flex-shrink-0 w-8 h-8 mb-0.5 flex items-center justify-center rounded-full transition-all disabled:cursor-not-allowed disabled:bg-base-content/10 disabled:text-base-content/25 bg-base-content text-base-100 hover:opacity-80"
-              >
-                {chatSaving
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-                }
-              </button>
-            </div>
-          )}
-
-        </CollapsibleSection>
-      </div>
     </div>
   );
 }
