@@ -4,7 +4,6 @@ import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
-import { getAllUsersData } from '../lib/userService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
 interface DocumentsInterfaceProps {
@@ -319,10 +318,7 @@ function getCellValue(row: any, col: ColumnDef): string {
 }
 
 /** Columns to hide from the standartiniai table */
-const HIDDEN_STANDARTINIAI_COLS = new Set(['conversation_id', 'yaml_content']);
-
-/** Columns whose values are user IDs that should be resolved to names */
-const USER_ID_COLS = new Set(['user_created', 'user_updated']);
+const HIDDEN_STANDARTINIAI_COLS = new Set(['conversation_id', 'yaml_content', 'user_created', 'user_updated']);
 
 function getColumns(rows: any[]): string[] {
   if (rows.length === 0) return [];
@@ -542,9 +538,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const PAGE_SIZE = 50;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // User name lookup (for standartiniai user_created / user_updated columns)
-  const [userNameMap, setUserNameMap] = useState<Map<string, string>>(new Map());
-
   // Column ordering (drag & drop, persisted)
   const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || NESTANDARTINIAI_COLS.map(c => c.key));
   const orderedCols = useMemo(() => getOrderedCols(colOrder), [colOrder]);
@@ -571,18 +564,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     dragOverColRef.current = null;
   }, []);
 
-  useEffect(() => {
-    loadStandartiniai();
-    loadNestandartiniai();
-    getAllUsersData().then(users => {
-      const map = new Map<string, string>();
-      for (const u of users) {
-        const name = u.display_name || u.full_name || u.email || u.id;
-        map.set(u.id, name.split(' ')[0]); // first name only
-      }
-      setUserNameMap(map);
-    }).catch(() => {});
-  }, []);
+  useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
   const loadStandartiniai = async () => {
     try { setLoadingStandartiniai(true); setErrorStandartiniai(null); setStandartiniaiData(await fetchStandartiniaiProjektai()); }
@@ -1159,14 +1141,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           </td>
                         );
                       }
-                      // Resolve user ID columns to first names
-                      const resolvedVal = (USER_ID_COLS.has(col) && val && userNameMap.has(String(val)))
-                        ? userNameMap.get(String(val))!
-                        : val;
                       const maxLen = 120;
-                      const display = resolvedVal === null || resolvedVal === undefined ? '—' : String(resolvedVal).length > maxLen ? String(resolvedVal).slice(0, maxLen) + '…' : String(resolvedVal);
+                      const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
-                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(resolvedVal ?? '')}>
+                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
                           {display}
                         </td>
                       );
