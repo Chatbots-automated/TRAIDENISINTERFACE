@@ -2416,6 +2416,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
+  // Auto-load DOCX preview when tab switches to 'docx' (ref is mounted by then)
+  useEffect(() => {
+    if (tplEditorTab === 'docx' && showTemplateEditor) {
+      loadDocxPreview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tplEditorTab, showTemplateEditor]);
+
   /** Load DOCX preview into the preview container. */
   const loadDocxPreview = async () => {
     const container = docxPreviewRef.current;
@@ -4410,7 +4418,11 @@ Vartotojo instrukcija: ${instruction}`;
                         await uploadDocxTemplate(file);
                         setHasDocxTemplate(true);
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
-                        if (tplEditorTab === 'docx') loadDocxPreview();
+                        // Force reload preview if already on docx tab
+                        if (tplEditorTab === 'docx') {
+                          setTplEditorTab('html');
+                          setTimeout(() => setTplEditorTab('docx'), 50);
+                        }
                       } catch (err) {
                         addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
                       } finally {
@@ -4460,7 +4472,7 @@ Vartotojo instrukcija: ${instruction}`;
                     HTML šablonas
                   </button>
                   <button
-                    onClick={() => { setTplEditorTab('docx'); loadDocxPreview(); }}
+                    onClick={() => setTplEditorTab('docx')}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${tplEditorTab === 'docx' ? 'bg-base-content/10 text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
                   >
                     DOCX peržiūra
