@@ -29,7 +29,8 @@ import {
   RotateCcw,
   Crop,
   MoveHorizontal,
-  Save
+  Save,
+  Upload
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -73,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -211,6 +212,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [tplCropMode, setTplCropMode] = useState(false);
   const [tplCropValues, setTplCropValues] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
 
+  // DOCX template upload
+  const docxFileInputRef = useRef<HTMLInputElement>(null);
+  const [hasDocxTemplate, setHasDocxTemplate] = useState(false);
+  const [docxUploading, setDocxUploading] = useState(false);
+
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
     key: string;
@@ -264,6 +270,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadShareableUsers();
     // Hydrate global template cache from DB so all users share the same template
     loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
+    // Check if a DOCX template exists
+    getDocxTemplateFileId().then(id => setHasDocxTemplate(!!id));
   }, []);
 
   // Sync URL ↔ currentConversation
@@ -4286,6 +4294,37 @@ Vartotojo instrukcija: ${instruction}`;
                   >
                     {tplEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
                     {tplEditMode ? 'Redaguojama' : 'Užrakinta'}
+                  </button>
+                  {/* DOCX template upload */}
+                  <input
+                    ref={docxFileInputRef}
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        setDocxUploading(true);
+                        await uploadDocxTemplate(file);
+                        setHasDocxTemplate(true);
+                        addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
+                      } catch (err) {
+                        addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
+                      } finally {
+                        setDocxUploading(false);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => docxFileInputRef.current?.click()}
+                    className={`btn btn-soft btn-sm gap-1.5 ${hasDocxTemplate ? 'btn-success' : ''}`}
+                    title={hasDocxTemplate ? 'DOCX šablonas įkeltas — spauskite, kad pakeistumėte' : 'Įkelti DOCX šabloną (Word atsisiuntimui)'}
+                    disabled={docxUploading}
+                  >
+                    {docxUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {hasDocxTemplate ? '.docx ✓' : '.docx'}
                   </button>
                   {/* Version history / undo button */}
                   <button

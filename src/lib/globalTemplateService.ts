@@ -11,6 +11,10 @@ import { db } from './database';
 import { COMMERCIAL_OFFER_TEMPLATE } from '../templates/commercialOfferTemplate';
 import { appLogger } from './appLogger';
 
+// Directus instance credentials
+const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
+const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+
 /** Maximum number of version history entries to keep. */
 const MAX_VERSIONS = 30;
 
@@ -392,4 +396,108 @@ export async function isGlobalTemplateCustomizedInDb(): Promise<boolean> {
   const tpl = await getGlobalTemplate();
   if (!tpl) return false;
   return tpl.html_content !== COMMERCIAL_OFFER_TEMPLATE;
+}
+
+// ---------------------------------------------------------------------------
+// DOCX Template (stored as a Directus file, ID saved in global_template row)
+// ---------------------------------------------------------------------------
+
+/** In-memory cache for the docx template file ID. */
+let _cachedDocxFileId: string | null = null;
+let _docxCacheLoaded = false;
+
+/**
+ * Upload a .docx template file to Directus and save its ID in the
+ * global_template row. Replaces any previously uploaded docx template.
+ */
+export async function uploadDocxTemplate(file: File): Promise<string> {
+  // 1. Upload file to Directus /files
+  const form = new FormData();
+  form.append('file', file);
+  const resp = await fetch(`${DIRECTUS_URL}/files`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    body: form,
+  });
+  if (!resp.ok) throw new Error(`DOCX šablono įkėlimas nepavyko: ${resp.status}`);
+  const json = await resp.json();
+  const newFileId: string = json.data.id;
+
+  // 2. Delete the old file from Directus if one existed
+  const oldId = await getDocxTemplateFileId();
+  if (oldId) {
+    await fetch(`${DIRECTUS_URL}/files/${oldId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    }).catch(() => { /* best-effort cleanup */ });
+  }
+
+  // 3. Save the new file ID in the global_template row
+  const current = await getGlobalTemplate();
+  if (current) {
+    await db
+      .from('global_template')
+      .update({ docx_file_id: newFileId })
+      .eq('id', 1);
+  } else {
+    await db
+      .from('global_template')
+      .insert({ id: 1, html_content: COMMERCIAL_OFFER_TEMPLATE, docx_file_id: newFileId, version: 1 });
+  }
+
+  _cachedDocxFileId = newFileId;
+  _docxCacheLoaded = true;
+  return newFileId;
+}
+
+/**
+ * Get the Directus file ID of the current .docx template.
+ * Returns null if no template has been uploaded.
+ */
+export async function getDocxTemplateFileId(): Promise<string | null> {
+  if (_docxCacheLoaded) return _cachedDocxFileId;
+  try {
+    const { data, error } = await db
+      .from('global_template')
+      .select('docx_file_id')
+      .eq('id', 1)
+      .single();
+    if (error || !data) {
+      _docxCacheLoaded = true;
+      return null;
+    }
+    _cachedDocxFileId = (data as { docx_file_id: string | null }).docx_file_id || null;
+    _docxCacheLoaded = true;
+    return _cachedDocxFileId;
+  } catch {
+    _docxCacheLoaded = true;
+    return null;
+  }
+}
+
+/**
+ * Build the Directus asset URL for the .docx template file.
+ */
+export function getDocxTemplateUrl(fileId: string): string {
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+}
+
+/**
+ * Delete the current .docx template (both the file and the reference).
+ */
+export async function deleteDocxTemplate(): Promise<void> {
+  const fileId = await getDocxTemplateFileId();
+  if (!fileId) return;
+
+  await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+  }).catch(() => {});
+
+  await db
+    .from('global_template')
+    .update({ docx_file_id: null })
+    .eq('id', 1);
+
+  _cachedDocxFileId = null;
 }

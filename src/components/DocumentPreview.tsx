@@ -4,6 +4,7 @@ import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlF
 import { saveAs } from 'file-saver';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
+import { getDocxTemplateFileId, getDocxTemplateUrl } from '../lib/globalTemplateService';
 import type { VariableCitation } from '../lib/sdkConversationService';
 
 export interface DocumentPreviewHandle {
@@ -328,9 +329,11 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       },
       downloadAsWord: async () => {
         try {
-          // Fetch the .docx template from public/templates/
-          const response = await fetch('/templates/komercinis-pasiulymas.docx');
-          if (!response.ok) throw new Error('Nepavyko užkrauti šablono (.docx failas nerastas public/templates/ aplanke)');
+          // Fetch the .docx template from Directus
+          const fileId = await getDocxTemplateFileId();
+          if (!fileId) throw new Error('DOCX šablonas neįkeltas. Įkelkite .docx šabloną per šablono redaktorių.');
+          const response = await fetch(getDocxTemplateUrl(fileId));
+          if (!response.ok) throw new Error('Nepavyko užkrauti DOCX šablono iš serverio');
           const arrayBuffer = await response.arrayBuffer();
           const zip = new PizZip(arrayBuffer);
           const docx = new Docxtemplater(zip, {
