@@ -74,7 +74,8 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId } from '../lib/globalTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl } from '../lib/globalTemplateService';
+import { renderAsync } from 'docx-preview';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -197,6 +198,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [expandedDiff, setExpandedDiff] = useState<DiffSegment[] | null>(null);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
   const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
   // Template editor: edit mode + image editing
@@ -212,10 +214,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [tplCropMode, setTplCropMode] = useState(false);
   const [tplCropValues, setTplCropValues] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
 
-  // DOCX template upload
+  // DOCX template upload & preview
   const docxFileInputRef = useRef<HTMLInputElement>(null);
   const [hasDocxTemplate, setHasDocxTemplate] = useState(false);
   const [docxUploading, setDocxUploading] = useState(false);
+  const [tplEditorTab, setTplEditorTab] = useState<'html' | 'docx'>('html');
+  const docxPreviewRef = useRef<HTMLDivElement>(null);
+  const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
+  const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -2410,6 +2416,70 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
+  /** Load DOCX preview into the preview container. */
+  const loadDocxPreview = async () => {
+    const container = docxPreviewRef.current;
+    if (!container) return;
+    container.innerHTML = '';
+    setDocxPreviewError(null);
+    setDocxPreviewLoading(true);
+    try {
+      const fileId = await getDocxTemplateFileId();
+      if (!fileId) {
+        setDocxPreviewError('DOCX šablonas dar neįkeltas. Įkelkite .docx failą naudodami mygtuką viršuje.');
+        return;
+      }
+      const resp = await fetch(getDocxTemplateUrl(fileId));
+      if (!resp.ok) throw new Error(`Nepavyko užkrauti: ${resp.status}`);
+      const blob = await resp.blob();
+      await renderAsync(blob, container, undefined, {
+        className: 'docx-preview',
+        inWrapper: true,
+        ignoreWidth: false,
+        ignoreHeight: false,
+        renderHeaders: true,
+        renderFooters: true,
+        renderFootnotes: true,
+      });
+      // Highlight {{variables}} with yellow boxes
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      const varRegex = /\{\{([^}]+)\}\}/g;
+      const nodesToProcess: { node: Text; matches: { start: number; end: number; key: string }[] }[] = [];
+      let node: Text | null;
+      while ((node = walker.nextNode() as Text | null)) {
+        const text = node.textContent || '';
+        const matches: { start: number; end: number; key: string }[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = varRegex.exec(text)) !== null) {
+          matches.push({ start: m.index, end: m.index + m[0].length, key: m[1].trim() });
+        }
+        if (matches.length > 0) nodesToProcess.push({ node, matches });
+      }
+      for (const { node: textNode, matches } of nodesToProcess) {
+        const parent = textNode.parentNode;
+        if (!parent) continue;
+        const text = textNode.textContent || '';
+        const frag = document.createDocumentFragment();
+        let lastIdx = 0;
+        for (const { start, end, key } of matches) {
+          if (start > lastIdx) frag.appendChild(document.createTextNode(text.slice(lastIdx, start)));
+          const span = document.createElement('span');
+          span.textContent = `{{${key}}}`;
+          span.style.cssText = 'background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;font-size:0.85em;border:1px dashed #ffc107;white-space:nowrap;display:inline;';
+          span.title = `Kintamasis: ${key}`;
+          frag.appendChild(span);
+          lastIdx = end;
+        }
+        if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+        parent.replaceChild(frag, textNode);
+      }
+    } catch (err) {
+      setDocxPreviewError(`Klaida: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setDocxPreviewLoading(false);
+    }
+  };
+
   /** Revert the global template to a specific version from history. */
   const handleRevertTemplate = async (versionId: string) => {
     setTemplateSaving(true);
@@ -3244,13 +3314,44 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="flex items-center gap-1">
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
-                    <button
-                      onClick={() => { documentPreviewRef.current?.downloadAsWord(); addNotification('info', 'Word', 'Dokumentas atsisiunčiamas kaip .docx failas.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Atsisiųsti Word dokumentą"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowDownloadMenu(prev => !prev)}
+                        className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
+                        title="Atsisiųsti dokumentą"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      {showDownloadMenu && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
+                          <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-content/10 rounded-lg shadow-lg py-1 min-w-[180px]">
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
+                              onClick={() => {
+                                setShowDownloadMenu(false);
+                                documentPreviewRef.current?.downloadAsWord();
+                                addNotification('info', 'Word', 'Dokumentas atsisiunčiamas kaip .docx failas.');
+                              }}
+                            >
+                              <FileText className="w-4 h-4 text-blue-500" />
+                              Atsisiųsti .docx
+                            </button>
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
+                              onClick={() => {
+                                setShowDownloadMenu(false);
+                                documentPreviewRef.current?.print();
+                                addNotification('info', 'PDF', 'Naudokite „Save as PDF" spausdinimo dialoge.');
+                              }}
+                            >
+                              <FileText className="w-4 h-4 text-red-500" />
+                              Atsisiųsti .pdf
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
                     {artifactTab === 'preview' && !isReadOnly && (
                       <button
                         onClick={() => setDocEditMode(prev => !prev)}
@@ -4309,6 +4410,7 @@ Vartotojo instrukcija: ${instruction}`;
                         await uploadDocxTemplate(file);
                         setHasDocxTemplate(true);
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
+                        if (tplEditorTab === 'docx') loadDocxPreview();
                       } catch (err) {
                         addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
                       } finally {
@@ -4348,13 +4450,29 @@ Vartotojo instrukcija: ${instruction}`;
                   </button>
                 </div>
               </div>
-              {/* Info bar: last edited by + hint */}
+              {/* Info bar: tabs + last edited by */}
               <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
-                <span className="text-[10px] text-base-content/40">
-                  {tplEditMode
-                    ? 'Redaguokite tekstą ir paveikslėlius tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).'
-                    : 'Redagavimas užrakintas. Paspauskite „Redaguojama" mygtuką, kad atrakintumėte.'}
-                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setTplEditorTab('html')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${tplEditorTab === 'html' ? 'bg-base-content/10 text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
+                  >
+                    HTML šablonas
+                  </button>
+                  <button
+                    onClick={() => { setTplEditorTab('docx'); loadDocxPreview(); }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${tplEditorTab === 'docx' ? 'bg-base-content/10 text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
+                  >
+                    DOCX peržiūra
+                  </button>
+                  <span className="ml-2 text-[10px] text-base-content/40">
+                    {tplEditorTab === 'html'
+                      ? (tplEditMode
+                        ? 'Redaguokite tekstą ir paveikslėlius tiesiogiai. Geltonos etiketės = kintamieji.'
+                        : 'Redagavimas užrakintas.')
+                      : 'Tik peržiūra — DOCX failą redaguokite Word programoje ir įkelkite iš naujo.'}
+                  </span>
+                </div>
                 {lastEditedFirstName && (
                   <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
                     Paskutinį kartą redagavo: <span className="text-base-content/50 font-medium">{lastEditedFirstName}</span>
@@ -4489,8 +4607,38 @@ Vartotojo instrukcija: ${instruction}`;
 
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
+                {/* DOCX preview panel */}
+                {tplEditorTab === 'docx' && (
+                  <div className="flex-1 overflow-auto bg-base-200/40">
+                    {docxPreviewLoading && (
+                      <div className="flex items-center justify-center py-16">
+                        <Loader2 className="w-6 h-6 animate-spin text-base-content/40 mr-2" />
+                        <span className="text-sm text-base-content/40">Kraunama DOCX peržiūra...</span>
+                      </div>
+                    )}
+                    {docxPreviewError && (
+                      <div className="flex items-center justify-center py-16">
+                        <div className="text-center">
+                          <AlertCircle className="w-8 h-8 text-warning mx-auto mb-2" />
+                          <p className="text-sm text-base-content/60">{docxPreviewError}</p>
+                          <button
+                            onClick={() => docxFileInputRef.current?.click()}
+                            className="btn btn-soft btn-sm mt-3 gap-1.5"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            Įkelti DOCX šabloną
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div
+                      ref={docxPreviewRef}
+                      style={{ maxWidth: '900px', margin: '24px auto', minHeight: docxPreviewLoading ? 0 : undefined }}
+                    />
+                  </div>
+                )}
                 {/* Visual editor iframe */}
-                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
+                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`} style={{ display: tplEditorTab === 'html' ? undefined : 'none' }}>
                   <div style={{ width: '794px', margin: '24px auto' }}>
                     <iframe
                       ref={templateEditorIframeRef}

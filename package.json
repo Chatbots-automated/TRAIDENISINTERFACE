@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "docx-preview": "^0.3.7",
     "docxtemplater": "^3.68.3",
     "file-saver": "^2.0.5",
     "lucide-react": "^0.344.0",
