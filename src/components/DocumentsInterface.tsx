@@ -318,7 +318,7 @@ function getCellValue(row: any, col: ColumnDef): string {
 }
 
 /** Columns to hide from the standartiniai table */
-const HIDDEN_STANDARTINIAI_COLS = new Set(['conversation_id', 'yaml_content', 'user_created', 'user_updated']);
+const HIDDEN_STANDARTINIAI_COLS = new Set(['conversation_id', 'yaml_content']);
 
 function getColumns(rows: any[]): string[] {
   if (rows.length === 0) return [];

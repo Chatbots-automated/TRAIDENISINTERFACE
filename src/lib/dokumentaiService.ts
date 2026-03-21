@@ -33,6 +33,8 @@ export const createStandartinisProjektas = async (record: {
   yaml_content: string;
   projekto_kodas: string;
   hnv: string;
+  user_created?: string;
+  user_updated?: string;
 }): Promise<any> => {
   try {
     const { data, error } = await db
@@ -63,6 +65,7 @@ export const updateStandartinisProjektas = async (
     yaml_content?: string;
     projekto_kodas?: string;
     hnv?: string;
+    user_updated?: string;
   }
 ): Promise<any> => {
   try {
