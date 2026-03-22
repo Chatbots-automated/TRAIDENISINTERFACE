@@ -1804,21 +1804,40 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
             <p className="text-xs font-medium text-primary">AI rekomendacija</p>
           </div>
           {!readOnly && (
-            <button
-              onClick={triggerDervaSelect}
-              disabled={selecting}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-            >
-              {isCurrentTankSelecting
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
-                : selecting
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
-                  : dervaResult
-                    ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
-                    : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
-              }
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => dervaResult && saveDervaMusu(dervaResult)}
+                disabled={!dervaResult || selecting || dervaMusuSaving}
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                style={{
+                  background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
+                  color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
+                  border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
+                  cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
+                  opacity: !dervaResult || selecting ? 0.5 : 1,
+                }}
+              >
+                {dervaMusuSaving
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
+                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
+                }
+              </button>
+              <button
+                onClick={triggerDervaSelect}
+                disabled={selecting}
+                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
+                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              >
+                {isCurrentTankSelecting
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
+                  : selecting
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
+                    : dervaResult
+                      ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
+                      : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
+                }
+              </button>
+            </div>
           )}
         </div>
 
@@ -1864,28 +1883,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           </div>
         )}
 
-        {/* "Naudoti" button — apply recommendation to derva_musu */}
-        {!readOnly && (
-          <div className="flex justify-end mt-3">
-            <button
-              onClick={() => dervaResult && saveDervaMusu(dervaResult)}
-              disabled={!dervaResult || selecting || dervaMusuSaving}
-              className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-full transition-all"
-              style={{
-                background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
-                color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
-                border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
-                cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
-                opacity: !dervaResult || selecting ? 0.5 : 1,
-              }}
-            >
-              {dervaMusuSaving
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
-                : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
-              }
-            </button>
-          </div>
-        )}
       </div>
 
     </div>
