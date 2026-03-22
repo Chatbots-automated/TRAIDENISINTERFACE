@@ -2206,8 +2206,8 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
-  const [updatingMode, setUpdatingMode] = useState<'save' | 'process' | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'saved' | 'error'>('idle');
+  const [updatingMode, setUpdatingMode] = useState<'save' | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [dirtyTabs, setDirtyTabs] = useState<Set<ModalTab>>(new Set());
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const meta = parseMetadata(record.metadata);
@@ -2225,10 +2225,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   // Pending data: stored locally until Atnaujinti is pressed
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
-  const [showPartialWarning, setShowPartialWarning] = useState<'no-files' | 'no-messages' | null>(null);
 
-  const messagesChanged = pendingMessages !== null;
-  const filesChanged = pendingFiles.length > 0;
 
   // Price (kaina) state
   const parseKaina = (v: any): number | null => {
@@ -2324,11 +2321,10 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     });
   }, []);
 
-  const executeSaveAndProcess = async (triggerWebhook: boolean) => {
+  const executeSaveAndProcess = async () => {
     setUpdating(true);
-    setUpdatingMode(triggerWebhook ? 'process' : 'save');
+    setUpdatingMode('save');
     setUpdateStatus('idle');
-    setShowPartialWarning(null);
     try {
       // 1. Save pending messages to DB
       if (pendingMessages !== null) {
@@ -2360,23 +2356,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         setLocalFiles(newFilesValue);
       }
 
-      // 3. Trigger webhook only if requested
-      if (triggerWebhook) {
-        const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
-        if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
-        const resp = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            record_id: record.id,
-            ...(uploadedFileIds.length > 0 ? { uploaded_file_ids: uploadedFileIds } : {}),
-          }),
-        });
-        if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
-      }
-
-      // 4. Clear pending state
-      setUpdateStatus(triggerWebhook ? 'success' : 'saved');
+      // 3. Clear pending state
+      setUpdateStatus('saved');
       setPendingFiles([]);
       setPendingMessages(null);
       setDirtyTabs(new Set());
@@ -2392,18 +2373,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     }
   };
 
-  const handleUpdate = () => {
-    // If both changed or neither changed, proceed directly
-    if (messagesChanged === filesChanged) {
-      executeSaveAndProcess(true);
-      return;
-    }
-    // Only one type changed — warn the user
-    setShowPartialWarning(filesChanged ? 'no-messages' : 'no-files');
-  };
-
   const handleSaveOnly = () => {
-    executeSaveAndProcess(false);
+    executeSaveAndProcess();
   };
 
   const handleClose = () => {
@@ -2535,7 +2506,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 </button>
               );
             })}
-            {/* Save only (no processing) */}
+            {/* Save */}
             {!isLocked && (
               <button
                 onClick={handleSaveOnly}
@@ -2554,32 +2525,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                   : updateStatus === 'saved'
                     ? <><CheckCircle2 className="w-3.5 h-3.5" /> Išsaugota</>
                     : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>
-                }
-              </button>
-            )}
-            {/* Save + process (triggers webhook) */}
-            {!isLocked && (
-              <button
-                onClick={handleUpdate}
-                disabled={updating}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-1.5 ${
-                  updateStatus === 'success'
-                    ? 'text-success bg-success/10 border border-success/20'
-                    : updateStatus === 'error'
-                      ? 'text-error bg-error/5 border border-error/15'
-                      : hasContextChanges
-                        ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100'
-                        : 'text-base-content/40 border border-base-content/8 hover:bg-base-content/5'
-                } disabled:opacity-60`}
-                style={!hasContextChanges && updateStatus === 'idle' ? { background: '#f8f8f9' } : undefined}
-              >
-                {updatingMode === 'process'
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
-                  : updateStatus === 'success'
-                    ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
-                    : updateStatus === 'error'
-                      ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
-                      : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
                 }
               </button>
             )}
@@ -2619,53 +2564,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
       </div>
 
       {/* Partial-changes warning modal */}
-      {showPartialWarning && (
-        <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-          onClick={() => setShowPartialWarning(null)}
-        >
-          <div
-            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="h-1" style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)' }} />
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(245,158,11,0.1)' }}>
-                  <AlertCircle className="w-4 h-4 text-amber-500" />
-                </div>
-                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>
-                  {showPartialWarning === 'no-files' ? 'Nėra naujų failų' : 'Nėra žinučių pakeitimų'}
-                </p>
-              </div>
-              <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
-                {showPartialWarning === 'no-files'
-                  ? 'Pakeitėte susirašinėjimus, bet nepridėjote naujų failų. Ar tikrai norite tęsti be failų?'
-                  : 'Pridėjote naujų failų, bet nepakeitėte susirašinėjimų. Ar tikrai norite tęsti be žinučių pakeitimų?'
-                }
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowPartialWarning(null)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
-                >
-                  Grįžti
-                </button>
-                <button
-                  onClick={() => executeSaveAndProcess(true)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Tęsti
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Close confirmation dialog */}
       {showCloseConfirm && (
         <div
@@ -2698,7 +2596,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                     Uždaryti
                   </button>
                   <button
-                    onClick={() => { executeSaveAndProcess(false); }}
+                    onClick={() => { executeSaveAndProcess(); }}
                     disabled={updating}
                     className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/70 transition-all hover:bg-base-content/5 disabled:opacity-60"
                     style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
@@ -2706,14 +2604,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                     {updatingMode === 'save' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</> : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>}
                   </button>
                 </div>
-                <button
-                  onClick={handleUpdate}
-                  disabled={updating}
-                  className="w-full flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
-                >
-                  {updatingMode === 'process' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</> : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>}
-                </button>
               </div>
             </div>
           </div>
