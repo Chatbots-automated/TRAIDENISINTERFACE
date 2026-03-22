@@ -1809,25 +1809,37 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
               </div>
             )}
           </div>
-          {!readOnly && (
+          {!readOnly && (() => {
+            const isApplied = !!(dervaResult && dervaMusu.trim() === dervaResult.trim());
+            return (
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => dervaResult && saveDervaMusu(dervaResult)}
-                disabled={!dervaResult || selecting || dervaMusuSaving}
-                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
-                style={{
-                  background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
-                  color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
-                  border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
-                  cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
-                  opacity: !dervaResult || selecting ? 0.5 : 1,
-                }}
-              >
-                {dervaMusuSaving
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
-                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
-                }
-              </button>
+              {isApplied ? (
+                <div
+                  className="flex items-center justify-center w-9 h-9 rounded-full"
+                  style={{ background: 'rgba(52, 199, 89, 0.1)', border: '0.5px solid rgba(52, 199, 89, 0.3)' }}
+                  title="Rekomendacija jau naudojama"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+                </div>
+              ) : (
+                <button
+                  onClick={() => dervaResult && saveDervaMusu(dervaResult)}
+                  disabled={!dervaResult || selecting || dervaMusuSaving}
+                  className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                  style={{
+                    background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
+                    color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
+                    border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
+                    cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
+                    opacity: !dervaResult || selecting ? 0.5 : 1,
+                  }}
+                >
+                  {dervaMusuSaving
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
+                    : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
+                  }
+                </button>
+              )}
               <button
                 onClick={triggerDervaSelect}
                 disabled={selecting}
@@ -1844,7 +1856,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
                 }
               </button>
             </div>
-          )}
+            );
+          })()}
         </div>
 
         {/* Loading state */}
