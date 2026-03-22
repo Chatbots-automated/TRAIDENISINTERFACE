@@ -1549,7 +1549,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
   }, [record.metadata]);
 
-  const saveDervaMusu = async () => {
+  const saveDervaMusu = async (overrideValue?: string) => {
+    const valueToSave = overrideValue !== undefined ? overrideValue : dervaMusu;
     setDervaMusuSaving(true);
     try {
       let rawMeta: any = record.metadata;
@@ -1557,8 +1558,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; }
       }
       const updatedMusuPerTank = { ...dervaMusuPerTank };
-      if (dervaMusu.trim()) {
-        updatedMusuPerTank[tankKey] = dervaMusu.trim();
+      if (valueToSave.trim()) {
+        updatedMusuPerTank[tankKey] = valueToSave.trim();
       } else {
         delete updatedMusuPerTank[tankKey];
       }
@@ -1577,6 +1578,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
       }
       await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
       setDervaMusuPerTank(updatedMusuPerTank);
+      if (overrideValue !== undefined) setDervaMusu(valueToSave);
       setDervaMusuSaved(true);
       setDervaMusuEditing(false);
       setTimeout(() => setDervaMusuSaved(false), 3000);
@@ -1859,6 +1861,29 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
             </div>
             <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
             <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
+          </div>
+        )}
+
+        {/* "Naudoti" button — apply recommendation to derva_musu */}
+        {!readOnly && (
+          <div className="flex justify-end mt-3">
+            <button
+              onClick={() => dervaResult && saveDervaMusu(dervaResult)}
+              disabled={!dervaResult || selecting || dervaMusuSaving}
+              className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-full transition-all"
+              style={{
+                background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
+                color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
+                border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
+                cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
+                opacity: !dervaResult || selecting ? 0.5 : 1,
+              }}
+            >
+              {dervaMusuSaving
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
+                : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
+              }
+            </button>
           </div>
         )}
       </div>
