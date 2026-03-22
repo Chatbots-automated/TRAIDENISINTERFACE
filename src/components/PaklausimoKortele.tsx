@@ -1770,7 +1770,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
                 Atšaukti
               </button>
               <button
-                onClick={saveDervaMusu}
+                onClick={() => saveDervaMusu()}
                 disabled={dervaMusuSaving}
                 className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
                 style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
