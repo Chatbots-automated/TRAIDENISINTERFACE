@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
@@ -49,7 +49,8 @@ interface ColumnDef {
   toggle?: boolean;
 }
 
-const NESTANDARTINIAI_COLS: ColumnDef[] = [
+/** Default columns shown in the nestandartiniai table. */
+const DEFAULT_NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'id', label: 'ID', width: 'w-16' },
   { key: 'status', label: 'Statusas', width: 'w-20', toggle: true },
   { key: 'project_name', label: 'Projektas' },
@@ -60,10 +61,19 @@ const NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'meta_DN', label: 'DN', metaKey: 'DN', width: 'w-20' },
   { key: 'meta_derva_org', label: 'Derva (org)' },
   { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
+  { key: 'kaina', label: 'Kaina' },
+  { key: 'derva', label: 'Derva (AI)' },
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
 
+/** Keys of default-visible columns */
+const DEFAULT_VISIBLE_KEYS = new Set(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+
+/** DB-level fields that are not useful as columns */
+const HIDDEN_DB_FIELDS = new Set(['metadata', 'atsakymas', 'ai_conversation', 'similar_projects', 'tasks', 'files', 'description']);
+
 const COL_ORDER_KEY = 'traidenis_col_order_nestandartiniai';
+const COL_HIDDEN_KEY = 'traidenis_col_hidden_nestandartiniai';
 
 function loadColumnOrder(): string[] | null {
   try {
@@ -78,9 +88,22 @@ function saveColumnOrder(keys: string[]) {
   try { localStorage.setItem(COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
 }
 
-function getOrderedCols(savedOrder: string[] | null): ColumnDef[] {
-  if (!savedOrder) return NESTANDARTINIAI_COLS;
-  const byKey = new Map(NESTANDARTINIAI_COLS.map(c => [c.key, c]));
+function loadHiddenCols(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COL_HIDDEN_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch { return new Set(); }
+}
+
+function saveHiddenCols(hidden: Set<string>) {
+  try { localStorage.setItem(COL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ }
+}
+
+function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): ColumnDef[] {
+  if (!savedOrder) return allCols;
+  const byKey = new Map(allCols.map(c => [c.key, c]));
   const ordered: ColumnDef[] = [];
   for (const key of savedOrder) {
     const col = byKey.get(key);
@@ -89,6 +112,81 @@ function getOrderedCols(savedOrder: string[] | null): ColumnDef[] {
   // Append any new columns not in saved order
   for (const col of byKey.values()) ordered.push(col);
   return ordered;
+}
+
+/** Lithuanian labels for common metadata keys */
+const META_KEY_LABELS: Record<string, string> = {
+  orientacija: 'Orientacija',
+  talpa_tipas: 'Talpos tipas',
+  DN: 'DN',
+  derva: 'Derva (orig. meta)',
+  derva_musu: 'Derva (mūsų, meta)',
+  derva_cheminis_sluoksnis_mm: 'Cheminis sluoksnis (mm)',
+  chemija: 'Chemija',
+  koncentracija: 'Koncentracija',
+  pritaikymas: 'Pritaikymas',
+  talpa: 'Talpa',
+  termoizoliacija: 'Termoizoliacija',
+  sildymas: 'Šildymas',
+  maisytuvas: 'Maišytuvas',
+  dangtelis: 'Dangtelis',
+  stovas: 'Stovas',
+  padavimas: 'Padavimas',
+  issiurbimas: 'Išsiurbimas',
+  perlajas: 'Perlajas',
+  sluoksniu_sk: 'Sluoksnių sk.',
+};
+
+function formatMetaKeyLabel(key: string): string {
+  if (META_KEY_LABELS[key]) return META_KEY_LABELS[key];
+  return key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+}
+
+/** Collect all unique scalar metadata keys across all records */
+function collectAllMetaKeys(records: NestandartiniaiRecord[]): string[] {
+  const keys = new Set<string>();
+  for (const r of records) {
+    const products = parseAllProducts(r.metadata);
+    for (const p of products) {
+      for (const [k, v] of Object.entries(p)) {
+        if (v === null || v === undefined || v === '') continue;
+        if (typeof v === 'object' && !Array.isArray(v)) continue;
+        keys.add(k);
+      }
+    }
+  }
+  return [...keys].sort();
+}
+
+/** Build the full available column definitions from DB fields + metadata keys */
+function buildAllColumns(records: NestandartiniaiRecord[]): ColumnDef[] {
+  // Start with the hardcoded defaults (preserves order/width/badge/toggle config)
+  const byKey = new Map(DEFAULT_NESTANDARTINIAI_COLS.map(c => [c.key, c]));
+  const result = [...DEFAULT_NESTANDARTINIAI_COLS];
+
+  // Add DB-level fields not yet in defaults
+  const dbFields = ['id', 'project_name', 'klientas', 'pateikimo_data', 'status', 'kaina', 'derva'];
+  for (const f of dbFields) {
+    if (!byKey.has(f) && !HIDDEN_DB_FIELDS.has(f)) {
+      const col: ColumnDef = { key: f, label: formatMetaKeyLabel(f) };
+      result.push(col);
+      byKey.set(f, col);
+    }
+  }
+
+  // Add metadata-derived columns
+  const metaKeys = collectAllMetaKeys(records);
+  for (const mk of metaKeys) {
+    const colKey = `meta_${mk}`;
+    if (byKey.has(colKey)) continue;
+    // Skip keys already covered by computed columns (derva_org is computed from derva + cheminis)
+    if (mk === 'derva' || mk === 'derva_musu') continue;
+    const col: ColumnDef = { key: colKey, label: formatMetaKeyLabel(mk), metaKey: mk };
+    result.push(col);
+    byKey.set(colKey, col);
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +408,14 @@ function getCellValue(row: any, col: ColumnDef): string {
   if (col.key === 'talpu_kiekis') {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
+  }
+  // Kaina formatting
+  if (col.key === 'kaina') {
+    const v = row.kaina;
+    if (v === null || v === undefined || v === '') return '—';
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    if (isNaN(n)) return '—';
+    return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
@@ -552,9 +658,35 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const PAGE_SIZE = 50;
   const [currentPage, setCurrentPage] = useState(1);
 
+  // All possible columns (built from data)
+  const allCols = useMemo(() => buildAllColumns(nestandartiniaiData), [nestandartiniaiData]);
+
+  // Column visibility (persisted)
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
+    const saved = loadHiddenCols();
+    // On first load (nothing saved), hide non-default columns
+    if (saved.size === 0 && localStorage.getItem(COL_HIDDEN_KEY) === null) return new Set();
+    return saved;
+  });
+  const [showColConfig, setShowColConfig] = useState(false);
+  const colConfigRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!showColConfig) return;
+    const handler = (e: MouseEvent) => {
+      if (colConfigRef.current && !colConfigRef.current.contains(e.target as Node)) setShowColConfig(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showColConfig]);
+
+  // Visible columns = allCols minus hidden
+  const visibleCols = useMemo(() => allCols.filter(c => !hiddenCols.has(c.key)), [allCols, hiddenCols]);
+
   // Column ordering (drag & drop, persisted)
-  const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || NESTANDARTINIAI_COLS.map(c => c.key));
-  const orderedCols = useMemo(() => getOrderedCols(colOrder), [colOrder]);
+  const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+  const orderedCols = useMemo(() => getOrderedCols(visibleCols, colOrder), [visibleCols, colOrder]);
   const dragColRef = useRef<string | null>(null);
   const dragOverColRef = useRef<string | null>(null);
 
@@ -577,6 +709,24 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     dragColRef.current = null;
     dragOverColRef.current = null;
   }, []);
+
+  const toggleColumnVisibility = useCallback((key: string) => {
+    setHiddenCols(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      saveHiddenCols(next);
+      return next;
+    });
+  }, []);
+
+  const resetColumnsToDefault = useCallback(() => {
+    const allKeys = allCols.map(c => c.key);
+    const hidden = new Set(allKeys.filter(k => !DEFAULT_VISIBLE_KEYS.has(k)));
+    setHiddenCols(hidden);
+    saveHiddenCols(hidden);
+    setColOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+    saveColumnOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+  }, [allCols]);
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
@@ -686,7 +836,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
-      const colDef = isNestandartiniai ? NESTANDARTINIAI_COLS.find(c => c.key === sortConfig.column) : null;
+      const colDef = isNestandartiniai ? allCols.find(c => c.key === sortConfig.column) : null;
       let aVal: any;
       let bVal: any;
       if (sortConfig.column === 'meta_derva_org') {
@@ -854,6 +1004,55 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
             />
           </div>
+
+          {/* Column config button – only for nestandartiniai */}
+          {isNestandartiniai && (
+            <div className="relative" ref={colConfigRef}>
+              <button
+                onClick={() => setShowColConfig(v => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95 shrink-0"
+                style={{ background: showColConfig ? 'rgba(0,122,255,0.08)' : 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: showColConfig ? '#007AFF' : '#5a5550' }}
+              >
+                <Columns3 className="w-3.5 h-3.5" />
+                Stulpeliai
+              </button>
+              {showColConfig && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-50 w-72 max-h-[420px] overflow-auto rounded-xl shadow-lg border border-base-content/10 bg-base-100"
+                  style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}
+                >
+                  <div className="px-3 py-2.5 border-b border-base-content/10 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-base-content/70">Rodyti stulpelius</span>
+                    <button
+                      onClick={resetColumnsToDefault}
+                      className="text-[11px] text-blue-500 hover:text-blue-600 font-medium"
+                    >
+                      Atkurti numatytuosius
+                    </button>
+                  </div>
+                  {allCols.map(col => (
+                    <button
+                      key={col.key}
+                      onClick={() => toggleColumnVisibility(col.key)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-base-200/60 transition-colors text-sm"
+                    >
+                      <span
+                        className="w-4 h-4 rounded border flex items-center justify-center shrink-0"
+                        style={{
+                          borderColor: hiddenCols.has(col.key) ? 'rgba(0,0,0,0.15)' : '#007AFF',
+                          background: hiddenCols.has(col.key) ? 'transparent' : '#007AFF',
+                        }}
+                      >
+                        {!hiddenCols.has(col.key) && <Check className="w-3 h-3 text-white" />}
+                      </span>
+                      <span className="text-base-content/80 truncate">{col.label}</span>
+                      {col.metaKey && <span className="text-[10px] text-base-content/30 ml-auto shrink-0">meta</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Filters – only for nestandartiniai */}
