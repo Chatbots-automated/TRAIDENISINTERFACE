@@ -1623,6 +1623,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           product_count: products.length,
           product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
           product_metadata: cleanTankMeta,
+          derva_org: formatDervaOrg(tankMeta),
           derva_musu: currentDervaMusuValue,
           project_name: record.project_name,
           description: record.description,
