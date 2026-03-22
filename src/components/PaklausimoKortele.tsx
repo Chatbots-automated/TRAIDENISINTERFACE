@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -1753,13 +1753,13 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         </div>
         {dervaMusuEditing ? (
           <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
-            <input
-              type="text"
+            <textarea
               value={dervaMusu}
               onChange={e => setDervaMusu(e.target.value)}
               placeholder="Įveskite dervos reikšmę šiai talpai..."
-              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2"
-              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
+              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
+              rows={Math.max(3, dervaMusu.split('\n').length)}
+              onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
               autoFocus
             />
             <div className="flex justify-end gap-2">
@@ -1781,7 +1781,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           </div>
         ) : dervaMusu ? (
           <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
-            <p className="text-sm font-medium text-base-content">{dervaMusu}</p>
+            <MarkdownText text={dervaMusu} />
           </div>
         ) : (
           <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
@@ -1802,6 +1802,12 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           <div className="flex items-center gap-1.5">
             <Beaker className="w-3.5 h-3.5 text-primary" />
             <p className="text-xs font-medium text-primary">AI rekomendacija</p>
+            {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
+              <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
+                <ArrowUp className="w-3 h-3" />
+                <span>Naudojama</span>
+              </div>
+            )}
           </div>
           {!readOnly && (
             <div className="flex items-center gap-2">
@@ -1868,8 +1874,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           </div>
         )}
 
-        {/* Recommendation display */}
-        {dervaResult && !isCurrentTankSelecting ? (
+        {/* Recommendation display — hide content when already applied to derva_musu */}
+        {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
           <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
             <MarkdownText text={dervaResult} />
           </div>
