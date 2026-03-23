@@ -2332,9 +2332,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     setKainaMap(parseKainaMapStatic(record.kaina));
   }, [record.kaina]);
 
-  const totalKaina = Object.values(kainaMap).reduce((sum, v) => sum + v, 0);
-  const hasAnyKaina = Object.keys(kainaMap).length > 0;
-
   const handleTankKainaChange = async (tankIdx: number, value: number | null) => {
     const newMap = { ...kainaMap };
     if (value === null) {
@@ -2343,9 +2340,9 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
       newMap[String(tankIdx)] = value;
     }
     setKainaMap(newMap);
-    // Persist to DB as JSON
+    // Persist to DB — save as JSON object (Directus handles JSON natively)
     try {
-      const dbValue = Object.keys(newMap).length > 0 ? JSON.stringify(newMap) : null;
+      const dbValue = Object.keys(newMap).length > 0 ? newMap : null;
       await updateNestandartiniaiField(record.id, 'kaina', dbValue);
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) onRefresh?.(updated);
@@ -2532,18 +2529,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Total price badge (read-only summary — per-tank editing is in Bendra tab) */}
-              <span
-                className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full ${
-                  hasAnyKaina
-                    ? 'bg-emerald-500/10 text-emerald-600'
-                    : 'bg-base-content/5 text-base-content/35 border border-dashed border-base-content/15'
-                }`}
-                title={hasAnyKaina ? `Bendra kaina (${Object.keys(kainaMap).length} talp${Object.keys(kainaMap).length === 1 ? 'a' : 'os'})` : 'Kainos nenustatytos'}
-              >
-                <Euro className="w-3 h-3" />
-                {hasAnyKaina ? `${totalKaina.toLocaleString('lt-LT')} €` : 'Kaina'}
-              </span>
               {record.klientas && (
                 <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">
                   {record.klientas}
@@ -2793,15 +2778,6 @@ export default function PaklausimoKortelePage() {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {(() => {
-                const km = parseKainaMapStatic(record.kaina);
-                const total = Object.values(km).reduce((s, v) => s + v, 0);
-                return Object.keys(km).length > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600">
-                    <Euro className="w-3 h-3" />{total.toLocaleString('lt-LT')} €
-                  </span>
-                ) : null;
-              })()}
               {record.klientas && (
                 <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">{record.klientas}</span>
               )}

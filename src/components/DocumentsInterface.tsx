@@ -410,30 +410,32 @@ function getCellValue(row: any, col: ColumnDef): string {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
   }
-  // Kaina formatting — supports per-tank JSON map or legacy single number
+  // Kaina formatting — per-tank prices, shown individually
   if (col.key === 'kaina') {
     const v = row.kaina;
     if (v === null || v === undefined || v === '') return '—';
-    let total = 0;
-    let count = 0;
+    // Parse into per-tank map
+    let prices: Record<string, number> = {};
     if (typeof v === 'object' && !Array.isArray(v)) {
-      for (const val of Object.values(v)) { const n = Number(val); if (!isNaN(n)) { total += n; count++; } }
+      for (const [k, val] of Object.entries(v)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
     } else if (typeof v === 'string' && v.trim().startsWith('{')) {
       try {
         const parsed = JSON.parse(v);
-        for (const val of Object.values(parsed)) { const n = Number(val); if (!isNaN(n)) { total += n; count++; } }
+        for (const [k, val] of Object.entries(parsed)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
       } catch {
         const n = parseFloat(v);
-        if (isNaN(n)) return '—';
-        total = n; count = 1;
+        if (!isNaN(n)) prices['0'] = n;
       }
     } else {
       const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-      if (isNaN(n)) return '—';
-      total = n; count = 1;
+      if (!isNaN(n)) prices['0'] = n;
     }
-    if (count === 0) return '—';
-    return `€${total.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const entries = Object.entries(prices).sort(([a], [b]) => Number(a) - Number(b));
+    if (entries.length === 0) return '—';
+    if (entries.length === 1) {
+      return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return entries.map(([k, p]) => `T${Number(k) + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
