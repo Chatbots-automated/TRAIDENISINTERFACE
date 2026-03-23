@@ -1465,11 +1465,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       const val = row[col.key];
                       // docx_file_id — show download button
                       if (col.key === 'docx_file_id') {
+                        // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
+                        const fileId = typeof val === 'object' && val !== null ? val.id : val;
                         return (
                           <td key={col.key} className="px-3 py-2.5">
-                            {val ? (
+                            {fileId ? (
                               <a
-                                href={getDirectusFileUrl(val)}
+                                href={getDirectusFileUrl(fileId)}
                                 download
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
                                 style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
