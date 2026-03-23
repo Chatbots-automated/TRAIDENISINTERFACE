@@ -419,32 +419,31 @@ function getCellValue(row: any, col: ColumnDef): string {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
   }
-  // Kaina formatting — per-tank prices, shown individually
+  // Kaina formatting — prefer per-tank prices from metadata._kaina_per_tank
   if (col.key === 'kaina') {
+    // Try metadata._kaina_per_tank first (set by the detail view editor)
+    if (row.metadata) {
+      let metaObj: any = row.metadata;
+      if (typeof metaObj === 'string') { try { metaObj = JSON.parse(metaObj); } catch { metaObj = null; } }
+      const metaRoot = Array.isArray(metaObj) ? metaObj[0] : metaObj;
+      const perTank = metaRoot?._kaina_per_tank;
+      if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) {
+        const entries = Object.entries(perTank)
+          .map(([k, v]) => [k, Number(v)] as [string, number])
+          .filter(([, v]) => !isNaN(v))
+          .sort(([a], [b]) => Number(a) - Number(b));
+        if (entries.length > 0) {
+          if (entries.length === 1) return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          return entries.map(([k, p]) => `T${Number(k) + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
+        }
+      }
+    }
+    // Fallback: kaina is a real number (total or single-tank)
     const v = row.kaina;
     if (v === null || v === undefined || v === '') return '—';
-    // Parse into per-tank map
-    let prices: Record<string, number> = {};
-    if (typeof v === 'object' && !Array.isArray(v)) {
-      for (const [k, val] of Object.entries(v)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
-    } else if (typeof v === 'string' && v.trim().startsWith('{')) {
-      try {
-        const parsed = JSON.parse(v);
-        for (const [k, val] of Object.entries(parsed)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
-      } catch {
-        const n = parseFloat(v);
-        if (!isNaN(n)) prices['0'] = n;
-      }
-    } else {
-      const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-      if (!isNaN(n)) prices['0'] = n;
-    }
-    const entries = Object.entries(prices).sort(([a], [b]) => Number(a) - Number(b));
-    if (entries.length === 0) return '—';
-    if (entries.length === 1) {
-      return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    return entries.map(([k, p]) => `T${Number(k) + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
+    const n = Number(v);
+    if (!isNaN(n)) return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return '—';
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';

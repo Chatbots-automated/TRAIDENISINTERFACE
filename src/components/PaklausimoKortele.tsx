@@ -1583,6 +1583,25 @@ function parseDervaMusuPerTank(metadata: any): Record<string, string> {
   return {};
 }
 
+/** Parse per-tank kaina map from metadata._kaina_per_tank */
+function parseKainaPerTankFromMetadata(metadata: any): Record<string, number> {
+  const root = unwrapMetaRoot(metadata);
+  const perTank = root?._kaina_per_tank;
+  if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) {
+    const result: Record<string, number> = {};
+    for (const [k, val] of Object.entries(perTank)) { const n = Number(val); if (!isNaN(n)) result[k] = n; }
+    return result;
+  }
+  return {};
+}
+
+/** Resolve kainaMap: prefer metadata._kaina_per_tank, fall back to kaina field */
+function resolveKainaMap(rec: { kaina?: any; metadata?: any }): Record<string, number> {
+  const fromMeta = parseKainaPerTankFromMetadata(rec.metadata);
+  if (Object.keys(fromMeta).length > 0) return fromMeta;
+  return parseKainaMapStatic(rec.kaina);
+}
+
 /** Get a short summary of tank specs for display in the derva tab */
 function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] {
   const summaryKeys = ['Orientacija', 'orientacija', 'Vieta', 'Talpa M3', 'talpa_tipas', 'AukšTis Mm', 'Skersmuo Mm', 'DN', 'Medžiaga', 'chemija'];
@@ -2324,13 +2343,13 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
 
 
-  // Price (kaina) state — per-tank pricing stored as JSON map { "0": price, "1": price, ... }
-  const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => parseKainaMapStatic(record.kaina));
+  // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
+  const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => resolveKainaMap(record));
 
   // Re-sync when record changes
   useEffect(() => {
-    setKainaMap(parseKainaMapStatic(record.kaina));
-  }, [record.kaina]);
+    setKainaMap(resolveKainaMap(record));
+  }, [record.kaina, record.metadata]);
 
   const handleTankKainaChange = async (tankIdx: number, value: number | null) => {
     const newMap = { ...kainaMap };
@@ -2340,10 +2359,26 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
       newMap[String(tankIdx)] = value;
     }
     setKainaMap(newMap);
-    // Persist to DB — save as JSON object (Directus handles JSON natively)
     try {
-      const dbValue = Object.keys(newMap).length > 0 ? newMap : null;
-      await updateNestandartiniaiField(record.id, 'kaina', dbValue);
+      // kaina column is `real` — store total sum; per-tank detail goes into metadata
+      const total = Object.values(newMap).reduce((sum, p) => sum + p, 0);
+      const kainaValue = Object.keys(newMap).length > 0 ? total : null;
+
+      // Build updated metadata with _kaina_per_tank
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
+      const perTankData = Object.keys(newMap).length > 0 ? newMap : {};
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        updatedMeta = [{ ...rawMeta[0], _kaina_per_tank: perTankData }, ...rawMeta.slice(1)];
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        updatedMeta = { ...rawMeta, _kaina_per_tank: perTankData };
+      } else {
+        updatedMeta = { _kaina_per_tank: perTankData };
+      }
+
+      await updateNestandartiniaiField(record.id, 'kaina', kainaValue);
+      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) onRefresh?.(updated);
     } catch (e) {
