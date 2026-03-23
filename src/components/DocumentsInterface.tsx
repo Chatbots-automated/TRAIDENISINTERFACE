@@ -419,26 +419,22 @@ function getCellValue(row: any, col: ColumnDef): string {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
   }
-  // Kaina formatting — prefer per-tank prices from metadata._kaina_per_tank
+  // Kaina formatting — read kaina from each product object in metadata
   if (col.key === 'kaina') {
-    // Try metadata._kaina_per_tank first (set by the detail view editor)
-    if (row.metadata) {
-      let metaObj: any = row.metadata;
-      if (typeof metaObj === 'string') { try { metaObj = JSON.parse(metaObj); } catch { metaObj = null; } }
-      const metaRoot = Array.isArray(metaObj) ? metaObj[0] : metaObj;
-      const perTank = metaRoot?._kaina_per_tank;
-      if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) {
-        const entries = Object.entries(perTank)
-          .map(([k, v]) => [k, Number(v)] as [string, number])
-          .filter(([, v]) => !isNaN(v))
-          .sort(([a], [b]) => Number(a) - Number(b));
-        if (entries.length > 0) {
-          if (entries.length === 1) return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-          return entries.map(([k, p]) => `T${Number(k) + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
-        }
+    const products = parseAllProducts(row.metadata);
+    const entries: [number, number][] = [];
+    for (let i = 0; i < products.length; i++) {
+      const k = products[i].kaina ?? products[i].Kaina;
+      if (k !== undefined && k !== null && k !== '') {
+        const n = Number(k);
+        if (!isNaN(n)) entries.push([i, n]);
       }
     }
-    // Fallback: kaina is a real number (total or single-tank)
+    if (entries.length > 0) {
+      if (entries.length === 1) return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return entries.map(([i, p]) => `T${i + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
+    }
+    // Fallback: kaina column (real) — total or legacy single price
     const v = row.kaina;
     if (v === null || v === undefined || v === '') return '—';
     const n = Number(v);

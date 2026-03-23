@@ -1583,22 +1583,19 @@ function parseDervaMusuPerTank(metadata: any): Record<string, string> {
   return {};
 }
 
-/** Parse per-tank kaina map from metadata._kaina_per_tank */
-function parseKainaPerTankFromMetadata(metadata: any): Record<string, number> {
-  const root = unwrapMetaRoot(metadata);
-  const perTank = root?._kaina_per_tank;
-  if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) {
-    const result: Record<string, number> = {};
-    for (const [k, val] of Object.entries(perTank)) { const n = Number(val); if (!isNaN(n)) result[k] = n; }
-    return result;
-  }
-  return {};
-}
 
-/** Resolve kainaMap: prefer metadata._kaina_per_tank, fall back to kaina field */
+/** Resolve kainaMap: read kaina from each product object, fall back to kaina field */
 function resolveKainaMap(rec: { kaina?: any; metadata?: any }): Record<string, number> {
-  const fromMeta = parseKainaPerTankFromMetadata(rec.metadata);
-  if (Object.keys(fromMeta).length > 0) return fromMeta;
+  const prods = parseProducts(rec.metadata);
+  const fromProds: Record<string, number> = {};
+  for (let i = 0; i < prods.length; i++) {
+    const k = prods[i].kaina ?? prods[i].Kaina;
+    if (k !== undefined && k !== null && k !== '') {
+      const n = Number(k);
+      if (!isNaN(n)) fromProds[String(i)] = n;
+    }
+  }
+  if (Object.keys(fromProds).length > 0) return fromProds;
   return parseKainaMapStatic(rec.kaina);
 }
 
@@ -2360,25 +2357,50 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     }
     setKainaMap(newMap);
     try {
-      // kaina column is `real` — store total sum; per-tank detail goes into metadata
+      // Embed kaina inside the tank object itself (same pattern as persistProducts)
+      const currentProducts = parseProducts(record.metadata);
+      const newProducts = currentProducts.map((p, i) => {
+        if (i !== tankIdx) return p;
+        if (value === null) {
+          const { kaina: _removed, ...rest } = p;
+          return rest;
+        }
+        return { ...p, kaina: value };
+      });
+
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        const root = { ...rawMeta[0] };
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(root[k])) { wrapperKey = k; break; }
+        }
+        if (wrapperKey) {
+          root[wrapperKey] = newProducts;
+          updatedMeta = [root, ...rawMeta.slice(1)];
+        } else {
+          updatedMeta = newProducts;
+        }
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(rawMeta[k])) { wrapperKey = k; break; }
+        }
+        updatedMeta = wrapperKey
+          ? { ...rawMeta, [wrapperKey]: newProducts }
+          : (newProducts.length === 1 ? newProducts[0] : newProducts);
+      } else {
+        updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+      }
+
+      // kaina column is `real` — store the total sum
       const total = Object.values(newMap).reduce((sum, p) => sum + p, 0);
       const kainaValue = Object.keys(newMap).length > 0 ? total : null;
 
-      // Build updated metadata with _kaina_per_tank
-      let rawMeta: any = record.metadata;
-      if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
-      const perTankData = Object.keys(newMap).length > 0 ? newMap : {};
-      let updatedMeta: any;
-      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
-        updatedMeta = [{ ...rawMeta[0], _kaina_per_tank: perTankData }, ...rawMeta.slice(1)];
-      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
-        updatedMeta = { ...rawMeta, _kaina_per_tank: perTankData };
-      } else {
-        updatedMeta = { _kaina_per_tank: perTankData };
-      }
-
-      await updateNestandartiniaiField(record.id, 'kaina', kainaValue);
       await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+      await updateNestandartiniaiField(record.id, 'kaina', kainaValue);
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) onRefresh?.(updated);
     } catch (e) {
