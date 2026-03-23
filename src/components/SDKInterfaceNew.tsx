@@ -74,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl } from '../lib/globalTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -2182,15 +2182,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setIsSavingToStandartiniai(true);
 
       // 1. Generate the .docx blob from the template + current variables
-      const docxBlob = await documentPreviewRef.current?.generateDocxBlob();
-      if (!docxBlob) {
-        addNotification('error', 'Klaida', 'Nepavyko sugeneruoti DOCX failo. Patikrinkite, ar įkeltas DOCX šablonas.');
-        return;
-      }
+      const vars = mergeAllVariables();
+      const docxBlob = await buildDocxBlob(vars);
 
       // 2. Upload the .docx blob to Directus (delete previous file if updating)
       const previousFileId = savedDocxFileId || null;
-      const vars = mergeAllVariables();
       const projektoKodas = vars['code_yy/mm/dd'] || 'komercinis-pasiulymas';
       const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
       const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, previousFileId);
@@ -3242,41 +3238,39 @@ Vartotojo instrukcija: ${instruction}`;
                         <>
                           <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
                           <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-content/10 rounded-lg shadow-lg py-1 min-w-[180px]">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
-                              onClick={() => {
-                                setShowDownloadMenu(false);
-                                documentPreviewRef.current?.downloadAsWord();
-                                addNotification('info', 'Word', 'Dokumentas atsisiunčiamas kaip .docx failas.');
-                              }}
-                            >
-                              <FileText className="w-4 h-4 text-blue-500" />
-                              Atsisiųsti .docx
-                            </button>
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
-                              onClick={() => {
-                                setShowDownloadMenu(false);
-                                documentPreviewRef.current?.print();
-                                addNotification('info', 'PDF', 'Naudokite „Save as PDF" spausdinimo dialoge.');
-                              }}
-                            >
-                              <FileText className="w-4 h-4 text-red-500" />
-                              Atsisiųsti .pdf
-                            </button>
+                            {savedDocxFileId ? (
+                              <a
+                                href={getDirectusFileUrl(savedDocxFileId)}
+                                download
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
+                                onClick={() => setShowDownloadMenu(false)}
+                              >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                Atsisiųsti .docx
+                              </a>
+                            ) : (
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
+                                onClick={async () => {
+                                  setShowDownloadMenu(false);
+                                  try {
+                                    const { saveAs } = await import('file-saver');
+                                    const blob = await buildDocxBlob(mergeAllVariables());
+                                    saveAs(blob, 'komercinis-pasiulymas.docx');
+                                  } catch (err) {
+                                    addNotification('error', 'Klaida', `Nepavyko sugeneruoti DOCX: ${err instanceof Error ? err.message : err}`);
+                                  }
+                                }}
+                              >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                Generuoti ir atsisiųsti .docx
+                              </button>
+                            )}
                           </div>
                         </>
                       )}
                     </div>
-                    {artifactTab === 'preview' && !isReadOnly && (
-                      <button
-                        onClick={() => setDocEditMode(prev => !prev)}
-                        className={`btn btn-circle btn-text btn-xs ${docEditMode ? 'text-primary bg-primary/10' : 'text-base-content/40 hover:text-base-content/70'}`}
-                        title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
-                      >
-                        {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
+                    {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
                       className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
@@ -3319,32 +3313,33 @@ Vartotojo instrukcija: ${instruction}`;
 
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
-              <div className="flex-1 overflow-hidden min-h-0 relative">
-                <DocumentPreview
-                  ref={documentPreviewRef}
-                  variables={mergeAllVariables()}
-                  templateVersion={templateVersion}
-                  onVariableClick={handleVariableClick}
-                  onCitationClick={(info) => {
-                    if (!info) { setActiveCitation(null); return; }
-                    setEditingVariable(null); // close variable popup
-                    setActiveCitation(info);
-                  }}
-                  citations={currentConversation?.artifact?.variable_citations}
-                  editable={docEditMode}
-                  conversationId={currentConversation?.id}
-                  savedHtml={null}
-                  onScroll={() => {
-                    if (editingVariable) {
-                      setEditingVariable(null);
-                      documentPreviewRef.current?.clearActiveVariable();
-                    }
-                    if (activeCitation) setActiveCitation(null);
-                  }}
-                />
+              <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
+                {savedDocxFileId ? (
+                  <iframe
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId))}&embedded=true`}
+                    className="flex-1 w-full border-0"
+                    title="DOCX peržiūra"
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-center px-6">
+                    <div>
+                      <FileText className="w-10 h-10 mx-auto mb-3 text-base-content/20" />
+                      <p className="text-sm font-medium text-base-content/60 mb-1">DOCX dar neišsaugotas</p>
+                      <p className="text-xs text-base-content/40 mb-4">Spauskite „Išsaugoti", kad sugeneruotumėte ir peržiūrėtumėte dokumentą</p>
+                      <button
+                        onClick={handleSaveToStandartiniai}
+                        disabled={isSavingToStandartiniai}
+                        className="btn btn-sm btn-primary gap-1.5"
+                      >
+                        {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        Išsaugoti
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                {/* Click-outside overlay + floating variable editor popup */}
-                {editingVariable && (() => {
+                {/* Variable editing and citation popups removed — preview is now Google Docs Viewer */}
+                {false && editingVariable && (() => {
                   const cat = categorizeVariable(editingVariable.key);
                   const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
                   const label = paramDef?.label || editingVariable.key;
@@ -4253,15 +4248,6 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Edit mode toggle */}
-                  <button
-                    onClick={handleTplToggleEditMode}
-                    className={`btn btn-soft btn-sm gap-1.5 ${tplEditMode ? 'btn-active' : ''}`}
-                    title={tplEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
-                  >
-                    {tplEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                    {tplEditMode ? 'Redaguojama' : 'Užrakinta'}
-                  </button>
                   {/* DOCX template upload */}
                   <input
                     ref={docxFileInputRef}
@@ -4305,37 +4291,18 @@ Vartotojo instrukcija: ${instruction}`;
                     onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
                     className="btn btn-soft btn-sm"
                   >
-                    Atšaukti
-                  </button>
-                  <button
-                    onClick={handleSaveGlobalTemplate}
-                    className="btn btn-primary btn-sm"
-                  >
-                    Išsaugoti
+                    Uždaryti
                   </button>
                 </div>
               </div>
               {/* Info bar: tabs + last edited by */}
               <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
                 <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setTplEditorTab('html')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${tplEditorTab === 'html' ? 'bg-base-content/10 text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
-                  >
-                    HTML šablonas
-                  </button>
-                  <button
-                    onClick={() => setTplEditorTab('docx')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${tplEditorTab === 'docx' ? 'bg-base-content/10 text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
-                  >
-                    DOCX peržiūra
-                  </button>
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-base-content/10 text-base-content">
+                    DOCX šablono peržiūra
+                  </span>
                   <span className="ml-2 text-[10px] text-base-content/40">
-                    {tplEditorTab === 'html'
-                      ? (tplEditMode
-                        ? 'Redaguokite tekstą ir paveikslėlius tiesiogiai. Geltonos etiketės = kintamieji.'
-                        : 'Redagavimas užrakintas.')
-                      : 'Tik peržiūra — DOCX failą redaguokite Word programoje ir įkelkite iš naujo.'}
+                    Tik peržiūra — DOCX failą redaguokite Word programoje ir įkelkite iš naujo.
                   </span>
                 </div>
                 {lastEditedFirstName && (
@@ -4347,14 +4314,7 @@ Vartotojo instrukcija: ${instruction}`;
                   </span>
                 )}
               </div>
-              {/* Hidden file input for image replacement */}
-              <input
-                ref={templateEditorFileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleTplFileSelected}
-              />
+              {/* Image replacement input removed — HTML editor removed */}
 
               {/* Image editing toolbar (docked at top, shown when image selected) */}
               {tplSelectedImage && tplEditMode && (
@@ -4473,7 +4433,7 @@ Vartotojo instrukcija: ${instruction}`;
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
                 {/* DOCX preview panel — Google Docs Viewer iframe */}
-                {tplEditorTab === 'docx' && (
+                {(
                   <div className="flex-1 flex flex-col bg-base-200/40">
                     {docxPreviewError && (
                       <div className="flex-1 flex items-center justify-center">
@@ -4506,53 +4466,7 @@ Vartotojo instrukcija: ${instruction}`;
                     )}
                   </div>
                 )}
-                {/* Visual editor iframe */}
-                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`} style={{ display: tplEditorTab === 'html' ? undefined : 'none' }}>
-                  <div style={{ width: '794px', margin: '24px auto' }}>
-                    <iframe
-                      ref={templateEditorIframeRef}
-                      srcDoc={editorSrcdoc}
-                      title="Šablono redaktorius"
-                      /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
-                         content is sanitized by sanitizeHtmlForIframe() instead */
-                      scrolling="no"
-                      style={{ width: '794px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
-                      onLoad={() => {
-                        const doc = templateEditorIframeRef.current?.contentDocument;
-                        if (doc) {
-                          doc.body.contentEditable = tplEditMode ? 'true' : 'false';
-                          doc.body.style.outline = 'none';
-                          if (tplEditMode) doc.body.classList.add('img-edit-mode');
-
-                          // Auto-size iframe to content
-                          const h = doc.body.scrollHeight;
-                          if (templateEditorIframeRef.current) {
-                            templateEditorIframeRef.current.style.height = h + 'px';
-                          }
-
-                          // Image click handlers
-                          doc.querySelectorAll<HTMLImageElement>('img').forEach(img => {
-                            img.addEventListener('click', (e) => {
-                              if (!tplEditMode) return;
-                              e.preventDefault();
-                              e.stopPropagation();
-                              tplSelectImage(img);
-                            });
-                          });
-
-                          // Click on body deselects image
-                          doc.body.addEventListener('click', (e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.tagName === 'IMG') return;
-                            doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
-                            setTplSelectedImage(null);
-                            setTplCropMode(false);
-                          });
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
+                {/* HTML visual editor removed — .docx template is the single source of truth */}
                 {/* Version history sidebar */}
                 {showTemplateVersions && (
                   <div className="w-72 flex-shrink-0 flex flex-col bg-base-100 border-l border-base-content/10">

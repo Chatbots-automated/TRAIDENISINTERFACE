@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import { getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
@@ -949,6 +949,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
     setMetadataFilters({ ...EMPTY_FILTERS });
+    setSelectedIds(new Set());
   };
 
   const handleToggleStatus = async (id: number, currentStatus: boolean) => {
@@ -992,13 +993,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const handleBulkDelete = async () => {
     setBulkDeleting(true);
     try {
-      const toDelete = nestandartiniaiData.filter(r => selectedIds.has(r.id));
-      for (const record of toDelete) {
-        await deleteNestandartiniaiRecord(record);
+      if (isNestandartiniai) {
+        const toDelete = nestandartiniaiData.filter(r => selectedIds.has(r.id));
+        for (const record of toDelete) {
+          await deleteNestandartiniaiRecord(record);
+        }
+        setSelectedIds(new Set());
+        setShowBulkDeleteConfirm(false);
+        await loadNestandartiniai();
+      } else {
+        const toDelete = standartiniaiData.filter((r: any) => selectedIds.has(r.id));
+        for (const record of toDelete) {
+          await deleteStandartinisProjektas({ id: record.id, docx_file_id: record.docx_file_id });
+        }
+        setSelectedIds(new Set());
+        setShowBulkDeleteConfirm(false);
+        await loadStandartiniai();
       }
-      setSelectedIds(new Set());
-      setShowBulkDeleteConfirm(false);
-      await loadNestandartiniai();
     } catch (err: any) {
       console.error('Bulk delete error:', err);
       alert(`Klaida trinant įrašus: ${err?.message || 'Nežinoma klaida'}`);
@@ -1371,9 +1382,45 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
           >
+            {/* Bulk actions bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
+                <span className="text-xs font-medium" style={{ color: '#007AFF' }}>
+                  Pasirinkta: {selectedIds.size}
+                </span>
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ color: '#e53e3e', background: 'rgba(229,62,62,0.08)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(229,62,62,0.15)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(229,62,62,0.08)')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Ištrinti
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-xs px-2 py-1.5 rounded-lg transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '')}
+                >
+                  Atšaukti
+                </button>
+              </div>
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
+                  <th className="w-10 px-2 py-3">
+                    <input
+                      type="checkbox"
+                      checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                      title="Pasirinkti visus"
+                    />
+                  </th>
                   {orderedColsStand.map(col => (
                     <th
                       key={col.key}
@@ -1400,10 +1447,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 {sortedData.map((row, i) => (
                   <tr
                     key={row.id ?? i}
-                    style={{ borderBottom: '1px solid #f8f6f3' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                    className="transition-colors"
+                    style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
                   >
+                    <td className="w-10 px-2 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(row.id as number)}
+                        onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
+                        onClick={e => e.stopPropagation()}
+                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                      />
+                    </td>
                     {orderedColsStand.map(col => {
                       const val = row[col.key];
                       // docx_file_id — show download button

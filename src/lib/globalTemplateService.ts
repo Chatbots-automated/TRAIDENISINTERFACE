@@ -10,6 +10,8 @@
 import { db } from './database';
 import { COMMERCIAL_OFFER_TEMPLATE } from '../templates/commercialOfferTemplate';
 import { appLogger } from './appLogger';
+import Docxtemplater from 'docxtemplater';
+import PizZip from 'pizzip';
 
 // Directus instance credentials
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
@@ -538,4 +540,31 @@ export async function uploadDocxBlobToDirectus(
  */
 export function getDirectusFileUrl(fileId: string): string {
   return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+}
+
+/**
+ * Generate a .docx Blob by filling the uploaded template with variables.
+ * Standalone — no DOM/component dependency.
+ */
+export async function buildDocxBlob(variables: Record<string, string>): Promise<Blob> {
+  const fileId = await getDocxTemplateFileId();
+  if (!fileId) throw new Error('DOCX šablonas neįkeltas. Įkelkite .docx šabloną per šablono redaktorių.');
+  const response = await fetch(getDocxTemplateUrl(fileId));
+  if (!response.ok) throw new Error('Nepavyko užkrauti DOCX šablono iš serverio');
+  const arrayBuffer = await response.arrayBuffer();
+  const zip = new PizZip(arrayBuffer);
+  const docx = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    delimiters: { start: '{{', end: '}}' },
+  });
+  const cleanedVars: Record<string, string> = {};
+  for (const [k, v] of Object.entries(variables)) {
+    cleanedVars[k] = typeof v === 'string' ? v.replace(/\\n/g, '\n') : v;
+  }
+  docx.render(cleanedVars);
+  return docx.getZip().generate({
+    type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
 }
