@@ -1941,15 +1941,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
 
-        const userFullName = user.full_name || user.display_name || user.email;
         if (isNewArtifact) {
           const created = await createStandartinisProjektas({
             conversation_id: conversation.id,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-            user_created: userFullName,
-            user_updated: userFullName,
+            user_created: user.id,
+            user_updated: user.id,
           });
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
@@ -1958,7 +1957,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-            user_updated: userFullName,
+            user_updated: user.id,
           });
           console.log('[Standartiniai] Updated record after AI edit:', standartiniaiRecordId);
         }
@@ -2202,7 +2201,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // 3. Save record in standartiniai_projektai with the Directus file ID
       const yamlContent = currentConversation.artifact.content || '';
       const hnv = vars['economy_HNV'] || '';
-      const userFullName = user.full_name || user.display_name || user.email;
 
       if (standartiniaiRecordId) {
         await updateStandartinisProjektas(standartiniaiRecordId, {
@@ -2210,7 +2208,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           docx_file_id: newFileId,
-          user_updated: userFullName,
+          user_updated: user.id,
         });
       } else {
         const created = await createStandartinisProjektas({
@@ -2219,8 +2217,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           docx_file_id: newFileId,
-          user_created: userFullName,
-          user_updated: userFullName,
+          user_created: user.id,
+          user_updated: user.id,
         });
         setStandartiniaiRecordId(created.id);
       }
