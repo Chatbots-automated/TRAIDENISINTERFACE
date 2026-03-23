@@ -393,8 +393,17 @@ function getCellValue(row: any, col: ColumnDef): string {
     return formatDervaMusu(row.metadata);
   }
   if (col.metaKey) {
-    const meta = parseMetadata(row.metadata);
-    return getMetaValue(meta, col.metaKey) || '—';
+    const products = parseAllProducts(row.metadata);
+    if (products.length === 0) {
+      const meta = parseMetadata(row.metadata);
+      return getMetaValue(meta, col.metaKey) || '—';
+    }
+    const values: string[] = [];
+    for (const p of products) {
+      const v = getMetaValue(p, col.metaKey);
+      if (v && !values.includes(v)) values.push(v);
+    }
+    return truncateList(values, 60);
   }
   // Fallback: if project_name is empty, try extracting from metadata
   if (col.key === 'project_name') {
