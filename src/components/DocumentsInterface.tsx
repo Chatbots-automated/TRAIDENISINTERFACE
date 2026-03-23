@@ -410,13 +410,30 @@ function getCellValue(row: any, col: ColumnDef): string {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
   }
-  // Kaina formatting
+  // Kaina formatting — supports per-tank JSON map or legacy single number
   if (col.key === 'kaina') {
     const v = row.kaina;
     if (v === null || v === undefined || v === '') return '—';
-    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-    if (isNaN(n)) return '—';
-    return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    let total = 0;
+    let count = 0;
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      for (const val of Object.values(v)) { const n = Number(val); if (!isNaN(n)) { total += n; count++; } }
+    } else if (typeof v === 'string' && v.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(v);
+        for (const val of Object.values(parsed)) { const n = Number(val); if (!isNaN(n)) { total += n; count++; } }
+      } catch {
+        const n = parseFloat(v);
+        if (isNaN(n)) return '—';
+        total = n; count = 1;
+      }
+    } else {
+      const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+      if (isNaN(n)) return '—';
+      total = n; count = 1;
+    }
+    if (count === 0) return '—';
+    return `€${total.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
