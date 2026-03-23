@@ -2103,25 +2103,13 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       const webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
 
-      // Build clean product metadata for all tanks
-      const cleanProducts = products.map((p, i) => {
-        const clean: Record<string, any> = {};
-        for (const [k, v] of Object.entries(p)) {
-          if (k.startsWith('_')) continue;
-          if (v === null || v === undefined || v === '') continue;
-          if (typeof v === 'object' && !Array.isArray(v)) continue;
-          clean[k] = v;
-        }
-        return { product_index: i, ...clean };
-      });
-
-      // Build enriched similar projects with metadata
+      // Build enriched similar projects — send full parsed metadata so n8n has all tank details
       const enrichedSimilar = projects.map(p => ({
         id: p.id,
         project_name: p.project_name,
         similarity_score: p.similarity_score,
         kaina: p.kaina ?? null,
-        metadata: p.metadata ?? null,
+        metadata: parseJSON(p.metadata as any) ?? p.metadata ?? null,
       }));
 
       const resp = await fetch(webhookUrl, {
@@ -2134,8 +2122,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
           klientas: record.klientas,
           derva: record.derva,
           current_kaina: record.kaina,
-          products: cleanProducts,
-          product_count: products.length,
+          metadata: parseJSON(record.metadata as any) ?? record.metadata,
           similar_projects: enrichedSimilar,
         }),
       });
@@ -2210,7 +2197,8 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       ) : projects.length > 0 ? (
         <div className="space-y-1.5">
           {projects.map((p, i) => {
-            const pKaina = p.kaina != null ? Number(p.kaina) : null;
+            const kainaMap = resolveKainaMap({ kaina: p.kaina, metadata: p.metadata });
+            const kainaEntries = Object.entries(kainaMap).sort(([a], [b]) => Number(a) - Number(b));
             return (
               <a
                 key={p.id}
@@ -2226,10 +2214,17 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                   </p>
                   <p className="text-xs mt-0.5 text-base-content/40">
                     ID: {p.id}
-                    {pKaina != null && !isNaN(pKaina) && (
-                      <span className="ml-2 text-emerald-600">{pKaina.toLocaleString('lt-LT')} €</span>
-                    )}
                   </p>
+                  {kainaEntries.length > 0 && (
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+                      {kainaEntries.map(([idx, price]) => (
+                        <span key={idx} className="text-xs text-emerald-600">
+                          {kainaEntries.length > 1 && <span className="text-base-content/30 mr-0.5">#{Number(idx) + 1}</span>}
+                          {price.toLocaleString('lt-LT')} €
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
                   {Math.round(p.similarity_score * 100)}%
