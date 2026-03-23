@@ -2242,8 +2242,8 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
                         {visible.map(([idx, price]) => (
                           <span key={idx} className="text-xs text-emerald-600">
-                            {kainaEntries.length > 1 && <span className="text-base-content/30 mr-0.5">#{Number(idx) + 1}</span>}
-                            {price.toLocaleString('lt-LT')} €
+                            <span className="text-base-content/30">[{Number(idx) + 1}]</span>
+                            {' '}{price.toLocaleString('en-US')}€
                           </span>
                         ))}
                         {!isExpanded && hidden > 0 && (
@@ -2251,7 +2251,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                             onClick={e => { e.preventDefault(); setExpandedPrices(prev => new Set(prev).add(p.id)); }}
                             className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
                           >
-                            +{hidden} daugiau
+                            | + dar {hidden}
                           </button>
                         )}
                         {isExpanded && kainaEntries.length > PRICES_PREVIEW && (
@@ -2259,7 +2259,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                             onClick={e => { e.preventDefault(); setExpandedPrices(prev => { const s = new Set(prev); s.delete(p.id); return s; }); }}
                             className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
                           >
-                            mažiau
+                            | mažiau
                           </button>
                         )}
                       </div>
