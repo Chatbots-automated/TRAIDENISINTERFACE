@@ -2039,6 +2039,19 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
   const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
+  const [showTankDropdown, setShowTankDropdown] = useState(false);
+  const [selectedTankIdx, setSelectedTankIdx] = useState<number | null>(null);
+  const tankDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showTankDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (tankDropdownRef.current && !tankDropdownRef.current.contains(e.target as Node)) {
+        setShowTankDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showTankDropdown]);
 
   // Per-record kaina/metadata fetched from DB for each similar project
   const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any }>>({});
@@ -2105,13 +2118,14 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
     }
   };
 
-  const handleEstimatePrice = async () => {
+  const handleEstimatePrice = async (tankIdx: number) => {
     if (projects.length === 0) {
       setEstimateError('Pirmiausia reikia rasti panašius projektus');
       setEstimateStatus('error');
       setTimeout(() => setEstimateStatus('idle'), 4000);
       return;
     }
+    setSelectedTankIdx(tankIdx);
     setEstimating(true);
     setEstimateStatus('idle');
     setEstimateError(null);
@@ -2130,6 +2144,8 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
         metadata: parseJSON(p.metadata as any) ?? p.metadata ?? null,
       }));
 
+      const selectedTank = products[tankIdx] ?? null;
+
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2141,6 +2157,8 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
           derva: record.derva,
           current_kaina: record.kaina,
           metadata: parseJSON(record.metadata as any) ?? record.metadata,
+          tank_index: tankIdx,
+          selected_tank: selectedTank,
           similar_projects: enrichedSimilar,
         }),
       });
@@ -2293,25 +2311,59 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
               <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
               <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
             </div>
-            <button
-              onClick={handleEstimatePrice}
-              disabled={estimating}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
-              style={{
-                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
-                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
-                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
-              }}
-            >
-              {estimating
-                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
-                : estimateStatus === 'success'
-                  ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
-                  : estimateStatus === 'error'
-                    ? <><AlertCircle className="w-3 h-3" /> Klaida</>
-                    : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
-              }
-            </button>
+            <div className="relative" ref={tankDropdownRef}>
+              <button
+                onClick={() => {
+                  if (estimating) return;
+                  if (products.length <= 1) {
+                    handleEstimatePrice(0);
+                  } else {
+                    setShowTankDropdown(v => !v);
+                  }
+                }}
+                disabled={estimating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
+                style={{
+                  background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
+                  border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
+                  color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
+                }}
+              >
+                {estimating
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
+                  : estimateStatus === 'success'
+                    ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
+                    : estimateStatus === 'error'
+                      ? <><AlertCircle className="w-3 h-3" /> Klaida</>
+                      : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
+                }
+              </button>
+              {showTankDropdown && !estimating && (
+                <div
+                  className="absolute right-0 top-full mt-1.5 z-50 rounded-xl border border-base-content/10 shadow-lg overflow-hidden"
+                  style={{ background: 'var(--fallback-b1,oklch(var(--b1)))', minWidth: '160px' }}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-base-content/35 font-medium px-3 pt-2.5 pb-1">Pasirinkti talpą</p>
+                  {products.map((tank, i) => {
+                    const label =
+                      tank.talpa_tipas || tank.Talpa_tipas || tank.orientacija || tank.Orientacija
+                        ? [tank.talpa_tipas || tank.Talpa_tipas, tank.orientacija || tank.Orientacija].filter(Boolean).join(' · ')
+                        : null;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => { setShowTankDropdown(false); handleEstimatePrice(i); }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium transition-colors hover:bg-base-content/[0.05]"
+                        style={{ color: '#AF52DE' }}
+                      >
+                        <span className="text-base-content/40 font-normal mr-1">[{i + 1}]</span>
+                        {label || `Talpa ${i + 1}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           {estimateError && estimateStatus === 'error' && (
             <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
@@ -2324,6 +2376,11 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
           )}
           {estimatedPrice != null && !estimating && (
             <div className="rounded-xl p-4 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
+              {selectedTankIdx != null && products.length > 1 && (() => {
+                const tank = products[selectedTankIdx];
+                const label = [tank?.talpa_tipas || tank?.Talpa_tipas, tank?.orientacija || tank?.Orientacija].filter(Boolean).join(' · ') || `Talpa ${selectedTankIdx + 1}`;
+                return <p className="text-[10px] text-base-content/35 uppercase tracking-wider mb-1">[{selectedTankIdx + 1}] {label}</p>;
+              })()}
               <div className="flex items-center gap-2 mb-1">
                 <Euro className="w-4 h-4 text-emerald-600" />
                 <span className="text-lg font-semibold text-emerald-600">{estimatedPrice.toLocaleString('lt-LT')} €</span>
