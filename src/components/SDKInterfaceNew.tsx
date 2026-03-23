@@ -74,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl } from '../lib/globalTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -581,16 +581,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation(data);
       setError(null);
 
-      // Load linked standartiniai_projektai record (if any) for saved HTML restoration
+      // Load linked standartiniai_projektai record (if any) for docx download
       setStandartiniaiRecordId(null);
-      setSavedHtmlFromDb(null);
+      setSavedDocxFileId(null);
       if (data?.artifact) {
         try {
           const spRecord = await getStandartinisByConversationId(conversationId);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
-            if (spRecord.html_content) {
-              setSavedHtmlFromDb(spRecord.html_content);
+            if (spRecord.docx_file_id) {
+              setSavedDocxFileId(spRecord.docx_file_id);
             }
           }
         } catch (spErr) {
@@ -620,7 +620,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
         setStandartiniaiRecordId(null);
-        setSavedHtmlFromDb(null);
+        setSavedDocxFileId(null);
       }
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
@@ -773,7 +773,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setIsReadOnly(true);
       setShowArtifact(!!data.artifact);
       setStandartiniaiRecordId(null);
-      setSavedHtmlFromDb(null);
+      setSavedDocxFileId(null);
       setError(null);
 
       // Load linked standartiniai record for shared conversations too
@@ -1922,7 +1922,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
       // Clear saved HTML so the fresh AI-generated content renders (not stale saved edits)
-      setSavedHtmlFromDb(null);
+      setSavedDocxFileId(null);
       localStorage.removeItem('doc_edit_' + conversation.id);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
@@ -1935,16 +1935,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         autoGenerateTechDescription(bulletlist, conversation.id);
       }
 
-      // Auto-create or update standartiniai_projektai record
+      // Auto-create or update standartiniai_projektai record (YAML only — .docx is saved on manual Išsaugoti)
       try {
-        const yamlVars = parseYAMLContent(trimmedContent);
-        const tpl = getDefaultTemplate();
-        const citedKeySet = citations ? new Set(Object.keys(citations)) : undefined;
-        const fullHtml = renderTemplate(tpl, { ...yamlVars, ...offerParameters }, citedKeySet);
-        // Extract body innerHTML for restoration-friendly storage
-        const bodyMatch = fullHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        const bodyHtml = bodyMatch ? bodyMatch[1] : fullHtml;
-
         const vars = mergeAllVariables();
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
@@ -1953,7 +1945,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (isNewArtifact) {
           const created = await createStandartinisProjektas({
             conversation_id: conversation.id,
-            html_content: bodyHtml,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
@@ -1963,9 +1954,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
         } else if (standartiniaiRecordId) {
-          // AI updated existing artifact — update the DB record
           await updateStandartinisProjektas(standartiniaiRecordId, {
-            html_content: bodyHtml,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
@@ -2186,8 +2175,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Tracks the linked standartiniai_projektai record id for the current conversation.
   // null = not yet created; number = existing record to update.
   const [standartiniaiRecordId, setStandartiniaiRecordId] = useState<number | null>(null);
-  // Saved HTML from the DB — used to restore manual edits on page refresh
-  const [savedHtmlFromDb, setSavedHtmlFromDb] = useState<string | null>(null);
+  // Directus file ID of the saved .docx — enables download button
+  const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
 
   const handleSaveToStandartiniai = async () => {
@@ -2196,64 +2185,51 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       setIsSavingToStandartiniai(true);
 
-      // Save full HTML document (preserves styles, tables, formatting).
-      // Falls back to renderTemplate() when the preview tab isn't active.
-      let htmlContent = documentPreviewRef.current?.getEditedHtml() || null;
-
-      if (!htmlContent) {
-        // No live iframe — render full HTML from template
-        const vars = mergeAllVariables();
-        const tpl = getDefaultTemplate();
-        const citedKeys = currentConversation.artifact.variable_citations
-          ? new Set(Object.keys(currentConversation.artifact.variable_citations))
-          : undefined;
-        htmlContent = renderTemplate(tpl, vars, citedKeys);
-      }
-
-      if (!htmlContent) {
-        addNotification('error', 'Klaida', 'Nepavyko gauti dokumento turinio.');
+      // 1. Generate the .docx blob from the template + current variables
+      const docxBlob = await documentPreviewRef.current?.generateDocxBlob();
+      if (!docxBlob) {
+        addNotification('error', 'Klaida', 'Nepavyko sugeneruoti DOCX failo. Patikrinkite, ar įkeltas DOCX šablonas.');
         return;
       }
 
-      // Get the YAML content (between <commercial_offer> tags = artifact content)
-      const yamlContent = currentConversation.artifact.content || '';
-
-      // Get projekto_kodas and HNV from merged variables
+      // 2. Upload the .docx blob to Directus (delete previous file if updating)
+      const previousFileId = savedDocxFileId || null;
       const vars = mergeAllVariables();
-      const projektoKodas = vars['code_yy/mm/dd'] || '';
-      const hnv = vars['economy_HNV'] || '';
+      const projektoKodas = vars['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+      const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+      const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, previousFileId);
 
+      // 3. Save record in standartiniai_projektai with the Directus file ID
+      const yamlContent = currentConversation.artifact.content || '';
+      const hnv = vars['economy_HNV'] || '';
       const userFullName = user.full_name || user.display_name || user.email;
+
       if (standartiniaiRecordId) {
-        // UPDATE existing record
         await updateStandartinisProjektas(standartiniaiRecordId, {
-          html_content: htmlContent,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
+          docx_file_id: newFileId,
           user_updated: userFullName,
         });
       } else {
-        // CREATE new record linked to this conversation
         const created = await createStandartinisProjektas({
           conversation_id: currentConversation.id,
-          html_content: htmlContent,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
+          docx_file_id: newFileId,
           user_created: userFullName,
           user_updated: userFullName,
         });
         setStandartiniaiRecordId(created.id);
       }
 
-      // Keep saved HTML in memory so DocumentPreview can use it
-      setSavedHtmlFromDb(htmlContent);
-
-      addNotification('success', 'Išsaugota', 'Dokumentas išsaugotas.');
+      setSavedDocxFileId(newFileId);
+      addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
-      addNotification('error', 'Klaida', 'Nepavyko išsaugoti dokumento.');
+      addNotification('error', 'Klaida', `Nepavyko išsaugoti dokumento: ${err instanceof Error ? err.message : err}`);
     } finally {
       setIsSavingToStandartiniai(false);
     }
@@ -3320,11 +3296,22 @@ Vartotojo instrukcija: ${instruction}`;
                       onClick={handleSaveToStandartiniai}
                       disabled={isSavingToStandartiniai}
                       className="btn btn-sm btn-primary gap-1.5 ml-1"
-                      title="Išsaugoti į standartinių projektų lentelę"
+                      title="Išsaugoti DOCX į Directus"
                     >
                       {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       Išsaugoti
                     </button>
+                    {savedDocxFileId && (
+                      <a
+                        href={getDirectusFileUrl(savedDocxFileId)}
+                        download
+                        className="btn btn-sm btn-outline gap-1.5 ml-1"
+                        title="Atsisiųsti DOCX iš Directus"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        .docx
+                      </a>
+                    )}
                   </>
                 )}
                 <button
@@ -3354,7 +3341,7 @@ Vartotojo instrukcija: ${instruction}`;
                   citations={currentConversation?.artifact?.variable_citations}
                   editable={docEditMode}
                   conversationId={currentConversation?.id}
-                  savedHtml={savedHtmlFromDb}
+                  savedHtml={null}
                   onScroll={() => {
                     if (editingVariable) {
                       setEditingVariable(null);

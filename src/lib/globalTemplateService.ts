@@ -501,3 +501,41 @@ export async function deleteDocxTemplate(): Promise<void> {
 
   _cachedDocxFileId = null;
 }
+
+/**
+ * Upload a .docx Blob to Directus /files and return the new file ID.
+ * Optionally deletes a previous file to avoid orphans.
+ */
+export async function uploadDocxBlobToDirectus(
+  blob: Blob,
+  filename: string,
+  previousFileId?: string | null,
+): Promise<string> {
+  const form = new FormData();
+  form.append('file', blob, filename);
+  const resp = await fetch(`${DIRECTUS_URL}/files`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    body: form,
+  });
+  if (!resp.ok) throw new Error(`DOCX failo įkėlimas nepavyko: ${resp.status}`);
+  const json = await resp.json();
+  const newFileId: string = json.data.id;
+
+  // Best-effort cleanup of the previous file
+  if (previousFileId) {
+    fetch(`${DIRECTUS_URL}/files/${previousFileId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    }).catch(() => {});
+  }
+
+  return newFileId;
+}
+
+/**
+ * Build a Directus asset download URL for any file ID.
+ */
+export function getDirectusFileUrl(fileId: string): string {
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+}

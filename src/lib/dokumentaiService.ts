@@ -29,10 +29,11 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
  */
 export const createStandartinisProjektas = async (record: {
   conversation_id: string;
-  html_content: string;
+  html_content?: string;
   yaml_content: string;
   projekto_kodas: string;
   hnv: string;
+  docx_file_id?: string;
   user_created?: string;
   user_updated?: string;
 }): Promise<any> => {
@@ -65,6 +66,7 @@ export const updateStandartinisProjektas = async (
     yaml_content?: string;
     projekto_kodas?: string;
     hnv?: string;
+    docx_file_id?: string;
     user_updated?: string;
   }
 ): Promise<any> => {
