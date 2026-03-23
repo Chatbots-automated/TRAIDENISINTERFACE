@@ -2135,14 +2135,17 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       const webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
 
-      // Build enriched similar projects — send full parsed metadata so n8n has all tank details
-      const enrichedSimilar = projects.map(p => ({
-        id: p.id,
-        project_name: p.project_name,
-        similarity_score: p.similarity_score,
-        kaina: p.kaina ?? null,
-        metadata: parseJSON(p.metadata as any) ?? p.metadata ?? null,
-      }));
+      // Build enriched similar projects — use similarKainaMap (fetched from DB) for real metadata
+      const enrichedSimilar = projects.map(p => {
+        const fetched = similarKainaMap[p.id];
+        return {
+          id: p.id,
+          project_name: p.project_name,
+          similarity_score: p.similarity_score,
+          kaina: fetched?.kaina ?? p.kaina ?? null,
+          metadata: parseJSON(fetched?.metadata as any) ?? fetched?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
+        };
+      });
 
       const selectedTank = products[tankIdx] ?? null;
 
