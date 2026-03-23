@@ -2898,7 +2898,7 @@ export default function PaklausimoKortelePage() {
 
   const meta = parseMetadata(record.metadata);
   const products = parseProducts(record.metadata);
-  const kainaMap = parseKainaMapStatic(record.kaina);
+  const kainaMap = resolveKainaMap(record);
   const handleTankKainaChange = () => {}; // read-only page
 
   const readOnlyTabs = TABS;
