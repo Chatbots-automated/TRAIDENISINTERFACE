@@ -1,6 +1,9 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
 
+const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
+const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+
 /**
  * Fetch all records from standartiniai_projektai table
  */
@@ -29,10 +32,11 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
  */
 export const createStandartinisProjektas = async (record: {
   conversation_id: string;
-  html_content: string;
+  html_content?: string;
   yaml_content: string;
   projekto_kodas: string;
   hnv: string;
+  docx_file_id?: string;
 }): Promise<any> => {
   try {
     const { data, error } = await db
@@ -63,6 +67,7 @@ export const updateStandartinisProjektas = async (
     yaml_content?: string;
     projekto_kodas?: string;
     hnv?: string;
+    docx_file_id?: string;
   }
 ): Promise<any> => {
   try {
@@ -119,8 +124,36 @@ export const getStandartinisByConversationId = async (
   }
 };
 
+/**
+ * Delete a standartiniai_projektai record and its associated Directus .docx file.
+ */
+export const deleteStandartinisProjektas = async (record: { id: number; docx_file_id?: string | null }): Promise<void> => {
+  // 1. Delete associated .docx file from Directus storage
+  if (record.docx_file_id) {
+    try {
+      await fetch(`${DIRECTUS_URL}/files/${record.docx_file_id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      });
+    } catch (err) {
+      console.warn(`Failed to delete Directus file ${record.docx_file_id}:`, err);
+    }
+  }
+
+  // 2. Delete the DB row
+  const { error } = await db
+    .from('standartiniai_projektai')
+    .delete()
+    .eq('id', record.id);
+
+  if (error) {
+    console.error('Error deleting standartiniai_projektai record:', error);
+    throw error;
+  }
+};
+
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -154,6 +187,8 @@ export interface SimilarProject {
   id: number;
   project_name: string;
   similarity_score: number;
+  kaina?: number | null;
+  metadata?: string | Record<string, any> | null;
 }
 
 export interface NestandartiniaiRecord {
@@ -170,6 +205,7 @@ export interface NestandartiniaiRecord {
   ai_conversation: AiConversationMessage[] | string | null;
   similar_projects: SimilarProject[] | string | null;
   status: boolean | null;
+  kaina: number | string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -260,9 +296,6 @@ export const updateNestandartiniaiAiConversation = async (
 // ---------------------------------------------------------------------------
 // Delete
 // ---------------------------------------------------------------------------
-
-const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
-const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 
 /**
  * Delete a nestandartiniai record and all its associated Directus files.

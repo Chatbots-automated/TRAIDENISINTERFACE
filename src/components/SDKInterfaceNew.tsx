@@ -29,7 +29,8 @@ import {
   RotateCcw,
   Crop,
   MoveHorizontal,
-  Save
+  Save,
+  Upload
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -73,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment } from '../lib/globalTemplateService';
+import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -196,6 +197,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [expandedDiff, setExpandedDiff] = useState<DiffSegment[] | null>(null);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
   const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
   // Template editor: edit mode + image editing
@@ -210,6 +212,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [tplImgWidth, setTplImgWidth] = useState(100);
   const [tplCropMode, setTplCropMode] = useState(false);
   const [tplCropValues, setTplCropValues] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
+
+  // DOCX template upload & preview
+  const docxFileInputRef = useRef<HTMLInputElement>(null);
+  const [hasDocxTemplate, setHasDocxTemplate] = useState(false);
+  const [docxUploading, setDocxUploading] = useState(false);
+  const [tplEditorTab, setTplEditorTab] = useState<'html' | 'docx'>('html');
+  const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
+  const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -229,8 +239,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
-  const [techDescResult, setTechDescResult] = useState<string | null>(null);
-  const [techDescError, setTechDescError] = useState<string | null>(null);
 
   // AI-assisted variable editing state
   const [aiVarEditMode, setAiVarEditMode] = useState(false);
@@ -264,6 +272,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadShareableUsers();
     // Hydrate global template cache from DB so all users share the same template
     loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
+    // Check if a DOCX template exists
+    getDocxTemplateFileId().then(id => setHasDocxTemplate(!!id));
   }, []);
 
   // Sync URL ↔ currentConversation
@@ -571,16 +581,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation(data);
       setError(null);
 
-      // Load linked standartiniai_projektai record (if any) for saved HTML restoration
+      // Load linked standartiniai_projektai record (if any) for docx download
       setStandartiniaiRecordId(null);
-      setSavedHtmlFromDb(null);
+      setSavedDocxFileId(null);
       if (data?.artifact) {
         try {
           const spRecord = await getStandartinisByConversationId(conversationId);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
-            if (spRecord.html_content) {
-              setSavedHtmlFromDb(spRecord.html_content);
+            if (spRecord.docx_file_id) {
+              setSavedDocxFileId(spRecord.docx_file_id);
             }
           }
         } catch (spErr) {
@@ -610,7 +620,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation?.id === conversationId) {
         setCurrentConversation(null);
         setStandartiniaiRecordId(null);
-        setSavedHtmlFromDb(null);
+        setSavedDocxFileId(null);
       }
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
@@ -763,7 +773,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setIsReadOnly(true);
       setShowArtifact(!!data.artifact);
       setStandartiniaiRecordId(null);
-      setSavedHtmlFromDb(null);
+      setSavedDocxFileId(null);
       setError(null);
 
       // Load linked standartiniai record for shared conversations too
@@ -1912,21 +1922,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
       // Clear saved HTML so the fresh AI-generated content renders (not stale saved edits)
-      setSavedHtmlFromDb(null);
+      setSavedDocxFileId(null);
       localStorage.removeItem('doc_edit_' + conversation.id);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
 
-      // Auto-create or update standartiniai_projektai record
-      try {
-        const yamlVars = parseYAMLContent(trimmedContent);
-        const tpl = getDefaultTemplate();
-        const citedKeySet = citations ? new Set(Object.keys(citations)) : undefined;
-        const fullHtml = renderTemplate(tpl, { ...yamlVars, ...offerParameters }, citedKeySet);
-        // Extract body innerHTML for restoration-friendly storage
-        const bodyMatch = fullHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        const bodyHtml = bodyMatch ? bodyMatch[1] : fullHtml;
+      // Auto-generate technological description from the new artifact's components_bulletlist
+      const yamlForTechDesc = parseYAMLContent(trimmedContent);
+      const bulletlist = yamlForTechDesc['components_bulletlist'] || '';
+      if (bulletlist.trim()) {
+        // Fire-and-forget — runs in background, saves result automatically
+        autoGenerateTechDescription(bulletlist, conversation.id);
+      }
 
+      // Auto-create or update standartiniai_projektai record (YAML only — .docx is saved on manual Išsaugoti)
+      try {
         const vars = mergeAllVariables();
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
@@ -1934,7 +1944,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (isNewArtifact) {
           const created = await createStandartinisProjektas({
             conversation_id: conversation.id,
-            html_content: bodyHtml,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
@@ -1942,9 +1951,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
         } else if (standartiniaiRecordId) {
-          // AI updated existing artifact — update the DB record
           await updateStandartinisProjektas(standartiniaiRecordId, {
-            html_content: bodyHtml,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
@@ -2164,8 +2171,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Tracks the linked standartiniai_projektai record id for the current conversation.
   // null = not yet created; number = existing record to update.
   const [standartiniaiRecordId, setStandartiniaiRecordId] = useState<number | null>(null);
-  // Saved HTML from the DB — used to restore manual edits on page refresh
-  const [savedHtmlFromDb, setSavedHtmlFromDb] = useState<string | null>(null);
+  // Directus file ID of the saved .docx — enables download button
+  const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
 
   const handleSaveToStandartiniai = async () => {
@@ -2174,60 +2181,43 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       setIsSavingToStandartiniai(true);
 
-      // Save full HTML document (preserves styles, tables, formatting).
-      // Falls back to renderTemplate() when the preview tab isn't active.
-      let htmlContent = documentPreviewRef.current?.getEditedHtml() || null;
-
-      if (!htmlContent) {
-        // No live iframe — render full HTML from template
-        const vars = mergeAllVariables();
-        const tpl = getDefaultTemplate();
-        const citedKeys = currentConversation.artifact.variable_citations
-          ? new Set(Object.keys(currentConversation.artifact.variable_citations))
-          : undefined;
-        htmlContent = renderTemplate(tpl, vars, citedKeys);
-      }
-
-      if (!htmlContent) {
-        addNotification('error', 'Klaida', 'Nepavyko gauti dokumento turinio.');
-        return;
-      }
-
-      // Get the YAML content (between <commercial_offer> tags = artifact content)
-      const yamlContent = currentConversation.artifact.content || '';
-
-      // Get projekto_kodas and HNV from merged variables
+      // 1. Generate the .docx blob from the template + current variables
       const vars = mergeAllVariables();
-      const projektoKodas = vars['code_yy/mm/dd'] || '';
+      const docxBlob = await buildDocxBlob(vars);
+
+      // 2. Upload the .docx blob to Directus (delete previous file if updating)
+      const previousFileId = savedDocxFileId || null;
+      const projektoKodas = vars['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+      const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+      const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, previousFileId);
+
+      // 3. Save record in standartiniai_projektai with the Directus file ID
+      const yamlContent = currentConversation.artifact.content || '';
       const hnv = vars['economy_HNV'] || '';
 
       if (standartiniaiRecordId) {
-        // UPDATE existing record
         await updateStandartinisProjektas(standartiniaiRecordId, {
-          html_content: htmlContent,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
+          docx_file_id: newFileId,
         });
       } else {
-        // CREATE new record linked to this conversation
         const created = await createStandartinisProjektas({
           conversation_id: currentConversation.id,
-          html_content: htmlContent,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
+          docx_file_id: newFileId,
         });
         setStandartiniaiRecordId(created.id);
       }
 
-      // Keep saved HTML in memory so DocumentPreview can use it
-      setSavedHtmlFromDb(htmlContent);
-
-      addNotification('success', 'Išsaugota', 'Dokumentas išsaugotas.');
+      setSavedDocxFileId(newFileId);
+      addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
-      addNotification('error', 'Klaida', 'Nepavyko išsaugoti dokumento.');
+      addNotification('error', 'Klaida', `Nepavyko išsaugoti dokumento: ${err instanceof Error ? err.message : err}`);
     } finally {
       setIsSavingToStandartiniai(false);
     }
@@ -2394,6 +2384,25 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
   };
 
+  // Build Google Docs Viewer URL when switching to DOCX tab
+  const [docxViewerUrl, setDocxViewerUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (tplEditorTab === 'docx' && showTemplateEditor) {
+      setDocxPreviewLoading(true);
+      setDocxPreviewError(null);
+      getDocxTemplateFileId().then(fileId => {
+        if (!fileId) {
+          setDocxPreviewError('DOCX šablonas dar neįkeltas. Įkelkite .docx failą naudodami mygtuką viršuje.');
+          setDocxPreviewLoading(false);
+          return;
+        }
+        const assetUrl = getDocxTemplateUrl(fileId);
+        setDocxViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
+
   /** Revert the global template to a specific version from history. */
   const handleRevertTemplate = async (versionId: string) => {
     setTemplateSaving(true);
@@ -2479,35 +2488,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     documentPreviewRef.current?.clearActiveVariable();
   };
 
-  /** Generate the technological description via API call with the component list. */
-  const handleGenerateTechDescription = async () => {
+  /** Auto-generate technological description after artifact creation — fire-and-forget. */
+  const autoGenerateTechDescription = async (componentsList: string, conversationId: string) => {
     setTechDescLoading(true);
-    setTechDescResult(null);
-    setTechDescError(null);
-
     try {
       if (!anthropicApiKey) throw new Error('API key not found');
 
-      // Get component list from YAML artifact
-      const yamlVars: Record<string, string> = currentConversation?.artifact
-        ? parseYAMLContent(currentConversation.artifact.content)
-        : {};
-      const componentsList = yamlVars['components_bulletlist'] || '';
-
-      if (!componentsList.trim()) {
-        setTechDescError('Komponentų sąrašas tuščias. Pirma sugeneruokite komponentų sąrašą per čatą.');
-        setTechDescLoading(false);
-        return;
-      }
-
-      // Fetch the tech description prompt from instruction_variables table
       const promptVar = await getInstructionVariable('tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
-        setTechDescError('Technologinio aprašymo prompt nerastas duomenų bazėje (variable_key: tech_description_prompt).');
-        setTechDescLoading(false);
+        console.warn('[AutoTechDesc] No tech_description_prompt found in DB, skipping.');
         return;
       }
-      const techDescSystemPrompt = promptVar.content;
 
       const anthropic = new Anthropic({
         apiKey: anthropicApiKey,
@@ -2517,7 +2508,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
-        system: techDescSystemPrompt,
+        system: promptVar.content,
         messages: [{ role: 'user', content: componentsList }],
       });
 
@@ -2526,10 +2517,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         .map((b) => b.text)
         .join('');
 
-      setTechDescResult(text);
+      if (text) {
+        // Auto-save to offerParameters
+        const updated = { ...offerParameters, technological_description: text };
+        setOfferParameters(updated);
+        saveOfferParameters(conversationId, updated);
+        addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
+        console.log('[AutoTechDesc] Generated and saved successfully.');
+      }
     } catch (err: any) {
-      console.error('Tech description generation failed:', err);
-      setTechDescError(err.message || 'Nepavyko sugeneruoti');
+      console.error('[AutoTechDesc] Failed:', err);
+      addNotification('error', 'Technologinis aprašymas', 'Nepavyko automatiškai sugeneruoti.');
     } finally {
       setTechDescLoading(false);
     }
@@ -3228,22 +3226,51 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="flex items-center gap-1">
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
-                    <button
-                      onClick={() => { documentPreviewRef.current?.print(); addNotification('info', 'PDF', 'Spausdinimo langas atidarytas.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                      title="Atsisiųsti PDF"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                    {artifactTab === 'preview' && !isReadOnly && (
+                    <div className="relative">
                       <button
-                        onClick={() => setDocEditMode(prev => !prev)}
-                        className={`btn btn-circle btn-text btn-xs ${docEditMode ? 'text-primary bg-primary/10' : 'text-base-content/40 hover:text-base-content/70'}`}
-                        title={docEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
+                        onClick={() => setShowDownloadMenu(prev => !prev)}
+                        className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
+                        title="Atsisiųsti dokumentą"
                       >
-                        {docEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                        <Download className="w-3.5 h-3.5" />
                       </button>
-                    )}
+                      {showDownloadMenu && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
+                          <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-content/10 rounded-lg shadow-lg py-1 min-w-[180px]">
+                            {savedDocxFileId ? (
+                              <a
+                                href={getDirectusFileUrl(savedDocxFileId)}
+                                download
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
+                                onClick={() => setShowDownloadMenu(false)}
+                              >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                Atsisiųsti .docx
+                              </a>
+                            ) : (
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
+                                onClick={async () => {
+                                  setShowDownloadMenu(false);
+                                  try {
+                                    const { saveAs } = await import('file-saver');
+                                    const blob = await buildDocxBlob(mergeAllVariables());
+                                    saveAs(blob, 'komercinis-pasiulymas.docx');
+                                  } catch (err) {
+                                    addNotification('error', 'Klaida', `Nepavyko sugeneruoti DOCX: ${err instanceof Error ? err.message : err}`);
+                                  }
+                                }}
+                              >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                Generuoti ir atsisiųsti .docx
+                              </button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
                       className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
@@ -3255,11 +3282,22 @@ Vartotojo instrukcija: ${instruction}`;
                       onClick={handleSaveToStandartiniai}
                       disabled={isSavingToStandartiniai}
                       className="btn btn-sm btn-primary gap-1.5 ml-1"
-                      title="Išsaugoti į standartinių projektų lentelę"
+                      title="Išsaugoti DOCX į Directus"
                     >
                       {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                       Išsaugoti
                     </button>
+                    {savedDocxFileId && (
+                      <a
+                        href={getDirectusFileUrl(savedDocxFileId)}
+                        download
+                        className="btn btn-sm btn-outline gap-1.5 ml-1"
+                        title="Atsisiųsti DOCX iš Directus"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        .docx
+                      </a>
+                    )}
                   </>
                 )}
                 <button
@@ -3275,32 +3313,33 @@ Vartotojo instrukcija: ${instruction}`;
 
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
-              <div className="flex-1 overflow-hidden min-h-0 relative">
-                <DocumentPreview
-                  ref={documentPreviewRef}
-                  variables={mergeAllVariables()}
-                  templateVersion={templateVersion}
-                  onVariableClick={handleVariableClick}
-                  onCitationClick={(info) => {
-                    if (!info) { setActiveCitation(null); return; }
-                    setEditingVariable(null); // close variable popup
-                    setActiveCitation(info);
-                  }}
-                  citations={currentConversation?.artifact?.variable_citations}
-                  editable={docEditMode}
-                  conversationId={currentConversation?.id}
-                  savedHtml={savedHtmlFromDb}
-                  onScroll={() => {
-                    if (editingVariable) {
-                      setEditingVariable(null);
-                      documentPreviewRef.current?.clearActiveVariable();
-                    }
-                    if (activeCitation) setActiveCitation(null);
-                  }}
-                />
+              <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
+                {savedDocxFileId ? (
+                  <iframe
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId))}&embedded=true`}
+                    className="flex-1 w-full border-0"
+                    title="DOCX peržiūra"
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-center px-6">
+                    <div>
+                      <FileText className="w-10 h-10 mx-auto mb-3 text-base-content/20" />
+                      <p className="text-sm font-medium text-base-content/60 mb-1">DOCX dar neišsaugotas</p>
+                      <p className="text-xs text-base-content/40 mb-4">Spauskite „Išsaugoti", kad sugeneruotumėte ir peržiūrėtumėte dokumentą</p>
+                      <button
+                        onClick={handleSaveToStandartiniai}
+                        disabled={isSavingToStandartiniai}
+                        className="btn btn-sm btn-primary gap-1.5"
+                      >
+                        {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        Išsaugoti
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                {/* Click-outside overlay + floating variable editor popup */}
-                {editingVariable && (() => {
+                {/* Variable editing and citation popups removed — preview is now Google Docs Viewer */}
+                {false && editingVariable && (() => {
                   const cat = categorizeVariable(editingVariable.key);
                   const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
                   const label = paramDef?.label || editingVariable.key;
@@ -3393,83 +3432,22 @@ Vartotojo instrukcija: ${instruction}`;
 
                             {cat === 'tech_description' && (
                               <div>
-                                {!techDescResult && !techDescLoading && !techDescError && (
-                                  <div>
-                                    {editingVariable.editValue ? (
-                                      <div className="text-[12px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
-                                        {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
-                                      </div>
-                                    ) : (
-                                      <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
-                                        Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
-                                      </span>
-                                    )}
-                                    <button
-                                      onClick={handleGenerateTechDescription}
-                                      className="w-full mt-2 text-[12px] px-3 py-2 rounded-lg font-medium transition-colors"
-                                      style={{ background: '#0891b2', color: 'white' }}
-                                      onMouseEnter={(e) => e.currentTarget.style.background = '#0e7490'}
-                                      onMouseLeave={(e) => e.currentTarget.style.background = '#0891b2'}
-                                    >
-                                      Generuoti
-                                    </button>
-                                  </div>
-                                )}
-                                {techDescLoading && (
+                                {techDescLoading ? (
                                   <div className="flex items-center justify-center gap-2 py-4">
                                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
-                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
+                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama automatiškai...</span>
                                   </div>
-                                )}
-                                {techDescError && !techDescLoading && (
+                                ) : editingVariable.editValue ? (
                                   <div>
-                                    <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
-                                      {techDescError}
-                                    </div>
-                                    <button
-                                      onClick={() => setTechDescError(null)}
-                                      className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                      style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
-                                      onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                      Grįžti
-                                    </button>
-                                  </div>
-                                )}
-                                {techDescResult && !techDescLoading && (
-                                  <div>
-                                    <div
-                                      className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
-                                      style={{ color: '#3d3935', lineHeight: '1.6', background: '#f8f7f6', border: '1px solid #e5e2dd' }}
-                                    >
-                                      {techDescResult}
-                                    </div>
-                                    <div className="flex justify-end mt-2.5 gap-2">
-                                      <button
-                                        onClick={() => { setTechDescResult(null); }}
-                                        className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                        style={{ color: '#ef4444' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                      >
-                                        Atmesti
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleVariableSave('technological_description', techDescResult!);
-                                          setTechDescResult(null);
-                                          addNotification('success', 'Aprašymas priimtas', 'Technologinis aprašymas įrašytas į dokumentą.');
-                                        }}
-                                        className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
-                                        style={{ background: '#059669', color: 'white' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#047857'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = '#059669'}
-                                      >
-                                        Priimti
-                                      </button>
+                                    <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
+                                    <div className="mt-1 text-[12px] max-h-48 overflow-y-auto" style={{ color: '#3d3935', lineHeight: '1.6' }}>
+                                      {editingVariable.editValue}
                                     </div>
                                   </div>
+                                ) : (
+                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
+                                    Automatiškai sugeneruojama kai sukuriamas komercinis pasiūlymas
+                                  </span>
                                 )}
                               </div>
                             )}
@@ -4270,14 +4248,36 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* Edit mode toggle */}
+                  {/* DOCX template upload */}
+                  <input
+                    ref={docxFileInputRef}
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        setDocxUploading(true);
+                        await uploadDocxTemplate(file);
+                        setHasDocxTemplate(true);
+                        addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
+                      } catch (err) {
+                        addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
+                      } finally {
+                        setDocxUploading(false);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
                   <button
-                    onClick={handleTplToggleEditMode}
-                    className={`btn btn-soft btn-sm gap-1.5 ${tplEditMode ? 'btn-active' : ''}`}
-                    title={tplEditMode ? 'Užrakinti redagavimą' : 'Atrakinti redagavimą'}
+                    onClick={() => docxFileInputRef.current?.click()}
+                    className={`btn btn-soft btn-sm gap-1.5 ${hasDocxTemplate ? 'btn-success' : ''}`}
+                    title={hasDocxTemplate ? 'DOCX šablonas įkeltas — spauskite, kad pakeistumėte' : 'Įkelti DOCX šabloną (Word atsisiuntimui)'}
+                    disabled={docxUploading}
                   >
-                    {tplEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                    {tplEditMode ? 'Redaguojama' : 'Užrakinta'}
+                    {docxUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {hasDocxTemplate ? '.docx ✓' : '.docx'}
                   </button>
                   {/* Version history / undo button */}
                   <button
@@ -4291,23 +4291,20 @@ Vartotojo instrukcija: ${instruction}`;
                     onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
                     className="btn btn-soft btn-sm"
                   >
-                    Atšaukti
-                  </button>
-                  <button
-                    onClick={handleSaveGlobalTemplate}
-                    className="btn btn-primary btn-sm"
-                  >
-                    Išsaugoti
+                    Uždaryti
                   </button>
                 </div>
               </div>
-              {/* Info bar: last edited by + hint */}
+              {/* Info bar: tabs + last edited by */}
               <div className="px-5 py-1.5 flex-shrink-0 bg-base-content/[0.02] border-b border-base-content/10 flex items-center justify-between">
-                <span className="text-[10px] text-base-content/40">
-                  {tplEditMode
-                    ? 'Redaguokite tekstą ir paveikslėlius tiesiogiai. Geltonos etiketės = kintamieji (nekeiskite jų pavadinimų).'
-                    : 'Redagavimas užrakintas. Paspauskite „Redaguojama" mygtuką, kad atrakintumėte.'}
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-base-content/10 text-base-content">
+                    DOCX šablono peržiūra
+                  </span>
+                  <span className="ml-2 text-[10px] text-base-content/40">
+                    Tik peržiūra — DOCX failą redaguokite Word programoje ir įkelkite iš naujo.
+                  </span>
+                </div>
                 {lastEditedFirstName && (
                   <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
                     Paskutinį kartą redagavo: <span className="text-base-content/50 font-medium">{lastEditedFirstName}</span>
@@ -4317,14 +4314,7 @@ Vartotojo instrukcija: ${instruction}`;
                   </span>
                 )}
               </div>
-              {/* Hidden file input for image replacement */}
-              <input
-                ref={templateEditorFileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleTplFileSelected}
-              />
+              {/* Image replacement input removed — HTML editor removed */}
 
               {/* Image editing toolbar (docked at top, shown when image selected) */}
               {tplSelectedImage && tplEditMode && (
@@ -4442,53 +4432,41 @@ Vartotojo instrukcija: ${instruction}`;
 
               {/* Main content area: editor + optional version sidebar */}
               <div className="flex-1 flex min-h-0 overflow-hidden">
-                {/* Visual editor iframe */}
-                <div className={`flex-1 overflow-auto bg-base-200/40 ${showTemplateVersions ? '' : ''}`}>
-                  <div style={{ width: '794px', margin: '24px auto' }}>
-                    <iframe
-                      ref={templateEditorIframeRef}
-                      srcDoc={editorSrcdoc}
-                      title="Šablono redaktorius"
-                      /* sandbox removed: allow-scripts+allow-same-origin is effectively unsandboxed;
-                         content is sanitized by sanitizeHtmlForIframe() instead */
-                      scrolling="no"
-                      style={{ width: '794px', border: 'none', display: 'block', overflow: 'hidden', minHeight: '800px' }}
-                      onLoad={() => {
-                        const doc = templateEditorIframeRef.current?.contentDocument;
-                        if (doc) {
-                          doc.body.contentEditable = tplEditMode ? 'true' : 'false';
-                          doc.body.style.outline = 'none';
-                          if (tplEditMode) doc.body.classList.add('img-edit-mode');
-
-                          // Auto-size iframe to content
-                          const h = doc.body.scrollHeight;
-                          if (templateEditorIframeRef.current) {
-                            templateEditorIframeRef.current.style.height = h + 'px';
-                          }
-
-                          // Image click handlers
-                          doc.querySelectorAll<HTMLImageElement>('img').forEach(img => {
-                            img.addEventListener('click', (e) => {
-                              if (!tplEditMode) return;
-                              e.preventDefault();
-                              e.stopPropagation();
-                              tplSelectImage(img);
-                            });
-                          });
-
-                          // Click on body deselects image
-                          doc.body.addEventListener('click', (e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.tagName === 'IMG') return;
-                            doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
-                            setTplSelectedImage(null);
-                            setTplCropMode(false);
-                          });
-                        }
-                      }}
-                    />
+                {/* DOCX preview panel — Google Docs Viewer iframe */}
+                {(
+                  <div className="flex-1 flex flex-col bg-base-200/40">
+                    {docxPreviewError && (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <AlertCircle className="w-8 h-8 text-warning mx-auto mb-2" />
+                          <p className="text-sm text-base-content/60">{docxPreviewError}</p>
+                          <button
+                            onClick={() => docxFileInputRef.current?.click()}
+                            className="btn btn-soft btn-sm mt-3 gap-1.5"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            Įkelti DOCX šabloną
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {docxPreviewLoading && !docxPreviewError && (
+                      <div className="flex-1 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 animate-spin text-base-content/40 mr-2" />
+                        <span className="text-sm text-base-content/40">Kraunama DOCX peržiūra...</span>
+                      </div>
+                    )}
+                    {docxViewerUrl && !docxPreviewError && (
+                      <iframe
+                        src={docxViewerUrl}
+                        className="flex-1 w-full border-none"
+                        title="DOCX peržiūra"
+                        onLoad={() => setDocxPreviewLoading(false)}
+                      />
+                    )}
                   </div>
-                </div>
+                )}
+                {/* HTML visual editor removed — .docx template is the single source of truth */}
                 {/* Version history sidebar */}
                 {showTemplateVersions && (
                   <div className="w-72 flex-shrink-0 flex flex-col bg-base-100 border-l border-base-content/10">

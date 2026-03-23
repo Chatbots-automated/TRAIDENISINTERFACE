@@ -278,6 +278,9 @@ components_bulletlist: |
   • Orapūčių dėžė DŽ-4 su orapūtėmis MD(RD)-30
   • Koagulianto dozavimo mazgas
 
+technological_description: |
+  Nuotekų valymo įrenginys HNV-N-12 yra biologinio valymo sistema, skirta 12 gyventojų ekvivalento (GE) nuotekų valymui. Įrenginys veikia SBR (Sequencing Batch Reactor) principu, užtikrinant efektyvų organinių teršalų, azoto ir fosforo šalinimą. Sistema susideda iš pirminio nusodintovo, aeracijos kameros su orapūtėmis ir antrinio nusodintovo.
+
 economy_HNV: "Biologinis valymo įrenginys HNV-N-12 DN2400 L7200, įgil. 1,2 m"
 economy_HNV_price: "18994.18 EUR"
 economy_priceNoPVM: "15698.50 EUR"
@@ -353,6 +356,7 @@ maxi_con3: "Reikia daugiausiai vietos visai sistemai"
 6. ❌ **NEVER** create human-readable documents
 7. ✅ **ALWAYS** use ONLY the variable keys shown in the CORRECT FORMAT example
 8. ✅ **ALWAYS** output pure YAML with variable: "value" format
+9. ✅ **ALWAYS** include \`components_bulletlist\` (bullet list of all main system components) and \`technological_description\` (professional technical description of the system in Lithuanian) in every commercial offer
 
 **YOU ARE GENERATING DATA, NOT A DOCUMENT!**
 
@@ -372,6 +376,8 @@ maxi_con3: "Reikia daugiausiai vietos visai sistemai"
 - MAXI: All MIDI components + additional components (SGK, MPŠ, KDŠ)
 
 **Variable Mapping:**
+- \`components_bulletlist\` = Bullet list of all main components included in the system (multiline, use \`|\` block scalar)
+- \`technological_description\` = Technical description of the wastewater treatment system — explain the technology, operating principle, and main components in a professional paragraph (multiline, use \`|\` block scalar). Write in Lithuanian.
 - \`midi_component3\` = Dumblo tankintuvas
 - \`midi_component4\` = Valdymo skydas
 - \`maxi_2component\` = Debito apskaitos šulinys (KDŠ)

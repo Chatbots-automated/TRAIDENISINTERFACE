@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
+import { getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -49,18 +50,145 @@ interface ColumnDef {
   toggle?: boolean;
 }
 
-const NESTANDARTINIAI_COLS: ColumnDef[] = [
+/** Default columns shown in the nestandartiniai table. */
+const DEFAULT_NESTANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'id', label: 'ID', width: 'w-16' },
   { key: 'status', label: 'Statusas', width: 'w-20', toggle: true },
   { key: 'project_name', label: 'Projektas' },
+  { key: 'talpu_kiekis', label: 'Talpu kiekis', width: 'w-24' },
   { key: 'klientas', label: 'Klientas', badge: true },
   { key: 'meta_orientacija', label: 'Orientacija', metaKey: 'orientacija' },
   { key: 'meta_talpa_tipas', label: 'Talpos tipas', metaKey: 'talpa_tipas' },
   { key: 'meta_DN', label: 'DN', metaKey: 'DN', width: 'w-20' },
   { key: 'meta_derva_org', label: 'Derva (org)' },
   { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
+  { key: 'kaina', label: 'Kaina' },
+  { key: 'derva', label: 'Derva (AI)' },
   { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
 ];
+
+/** Keys of default-visible columns */
+const DEFAULT_VISIBLE_KEYS = new Set(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+
+/** DB-level fields that are not useful as columns */
+const HIDDEN_DB_FIELDS = new Set(['metadata', 'atsakymas', 'ai_conversation', 'similar_projects', 'tasks', 'files', 'description']);
+
+const COL_ORDER_KEY = 'traidenis_col_order_nestandartiniai';
+const COL_HIDDEN_KEY = 'traidenis_col_hidden_nestandartiniai';
+
+function loadColumnOrder(): string[] | null {
+  try {
+    const raw = localStorage.getItem(COL_ORDER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
+}
+
+function saveColumnOrder(keys: string[]) {
+  try { localStorage.setItem(COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
+}
+
+function loadHiddenCols(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COL_HIDDEN_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch { return new Set(); }
+}
+
+function saveHiddenCols(hidden: Set<string>) {
+  try { localStorage.setItem(COL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ }
+}
+
+function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): ColumnDef[] {
+  if (!savedOrder) return allCols;
+  const byKey = new Map(allCols.map(c => [c.key, c]));
+  const ordered: ColumnDef[] = [];
+  for (const key of savedOrder) {
+    const col = byKey.get(key);
+    if (col) { ordered.push(col); byKey.delete(key); }
+  }
+  // Append any new columns not in saved order
+  for (const col of byKey.values()) ordered.push(col);
+  return ordered;
+}
+
+/** Lithuanian labels for common metadata keys */
+const META_KEY_LABELS: Record<string, string> = {
+  orientacija: 'Orientacija',
+  talpa_tipas: 'Talpos tipas',
+  DN: 'DN',
+  derva: 'Derva (orig. meta)',
+  derva_musu: 'Derva (mūsų, meta)',
+  derva_cheminis_sluoksnis_mm: 'Cheminis sluoksnis (mm)',
+  chemija: 'Chemija',
+  koncentracija: 'Koncentracija',
+  pritaikymas: 'Pritaikymas',
+  talpa: 'Talpa',
+  termoizoliacija: 'Termoizoliacija',
+  sildymas: 'Šildymas',
+  maisytuvas: 'Maišytuvas',
+  dangtelis: 'Dangtelis',
+  stovas: 'Stovas',
+  padavimas: 'Padavimas',
+  issiurbimas: 'Išsiurbimas',
+  perlajas: 'Perlajas',
+  sluoksniu_sk: 'Sluoksnių sk.',
+};
+
+function formatMetaKeyLabel(key: string): string {
+  if (META_KEY_LABELS[key]) return META_KEY_LABELS[key];
+  return key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+}
+
+/** Collect all unique scalar metadata keys across all records */
+function collectAllMetaKeys(records: NestandartiniaiRecord[]): string[] {
+  const keys = new Set<string>();
+  for (const r of records) {
+    const products = parseAllProducts(r.metadata);
+    for (const p of products) {
+      for (const [k, v] of Object.entries(p)) {
+        if (v === null || v === undefined || v === '') continue;
+        if (typeof v === 'object' && !Array.isArray(v)) continue;
+        keys.add(k);
+      }
+    }
+  }
+  return [...keys].sort();
+}
+
+/** Build the full available column definitions from DB fields + metadata keys */
+function buildAllColumns(records: NestandartiniaiRecord[]): ColumnDef[] {
+  // Start with the hardcoded defaults (preserves order/width/badge/toggle config)
+  const byKey = new Map(DEFAULT_NESTANDARTINIAI_COLS.map(c => [c.key, c]));
+  const result = [...DEFAULT_NESTANDARTINIAI_COLS];
+
+  // Add DB-level fields not yet in defaults
+  const dbFields = ['id', 'project_name', 'klientas', 'pateikimo_data', 'status', 'kaina', 'derva'];
+  for (const f of dbFields) {
+    if (!byKey.has(f) && !HIDDEN_DB_FIELDS.has(f)) {
+      const col: ColumnDef = { key: f, label: formatMetaKeyLabel(f) };
+      result.push(col);
+      byKey.set(f, col);
+    }
+  }
+
+  // Add metadata-derived columns
+  const metaKeys = collectAllMetaKeys(records);
+  for (const mk of metaKeys) {
+    const colKey = `meta_${mk}`;
+    if (byKey.has(colKey)) continue;
+    // Skip keys already covered by computed columns (derva_org is computed from derva + cheminis)
+    if (mk === 'derva' || mk === 'derva_musu') continue;
+    const col: ColumnDef = { key: colKey, label: formatMetaKeyLabel(mk), metaKey: mk };
+    result.push(col);
+    byKey.set(colKey, col);
+  }
+
+  return result;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,22 +207,41 @@ function unwrapFirstProduct(obj: Record<string, any>): Record<string, string> {
   return obj as Record<string, string>;
 }
 
+/** Cache for parseMetadata — avoids redundant JSON.parse across thousands of cell renders */
+const _metadataCache = new WeakMap<object, Record<string, string> | null>();
+const _metadataStringCache = new Map<string, Record<string, string> | null>();
+
 function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> | null {
   if (!raw) return null;
-  // If it's an array (multi-product metadata), return the first item
-  if (Array.isArray(raw)) {
-    const first = raw[0];
-    return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+
+  // For object/array refs, use WeakMap (GC-friendly)
+  if (typeof raw === 'object') {
+    if (_metadataCache.has(raw as object)) return _metadataCache.get(raw as object)!;
+    let result: Record<string, string> | null;
+    if (Array.isArray(raw)) {
+      const first = raw[0];
+      result = (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+    } else {
+      result = unwrapFirstProduct(raw as Record<string, any>);
+    }
+    _metadataCache.set(raw as object, result);
+    return result;
   }
-  if (typeof raw === 'object') return unwrapFirstProduct(raw as Record<string, any>);
+
+  // For strings, use a Map keyed by the string content
+  if (_metadataStringCache.has(raw)) return _metadataStringCache.get(raw)!;
+  let result: Record<string, string> | null = null;
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
       const first = parsed[0];
-      return (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+      result = (first && typeof first === 'object') ? unwrapFirstProduct(first) : null;
+    } else {
+      result = unwrapFirstProduct(parsed);
     }
-    return unwrapFirstProduct(parsed);
-  } catch { return null; }
+  } catch { /* invalid JSON */ }
+  _metadataStringCache.set(raw, result);
+  return result;
 }
 
 /**
@@ -134,26 +281,142 @@ function getMetaValue(meta: Record<string, any> | null, key: string): string | u
   return undefined;
 }
 
-/** Format the original derva value with cheminis sluoksnis mm appended if present */
-function formatDervaOrg(meta: Record<string, string> | null): string {
-  if (!meta) return '—';
-  const derva = getMetaValue(meta, 'derva') || getMetaValue(meta, 'Medžiaga');
-  if (!derva) return '—';
-  const sluoksnis = getMetaValue(meta, 'derva_cheminis_sluoksnis_mm');
-  if (sluoksnis && sluoksnis.trim() !== '-' && sluoksnis.trim() !== '') {
-    return `${derva} (+ ${sluoksnis.trim()})`;
+/** Parse ALL products from metadata (not just the first) */
+function parseAllProducts(raw: any): Record<string, any>[] {
+  if (!raw) return [];
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { return []; } }
+  if (Array.isArray(obj)) return obj.filter((item: any) => item && typeof item === 'object' && !Array.isArray(item));
+  if (obj && typeof obj === 'object') {
+    for (const key of PRODUCT_WRAPPER_KEYS) {
+      if (Array.isArray(obj[key]) && obj[key].length > 0) return obj[key];
+    }
+    return [obj];
   }
-  return derva;
+  return [];
+}
+
+/** Truncate a comma-separated list to fit ~30 chars */
+function truncateList(items: string[], maxLen = 30): string {
+  if (items.length === 0) return '—';
+  if (items.length === 1) return items[0].length > maxLen ? items[0].slice(0, maxLen - 1) + '…' : items[0];
+  let result = items[0];
+  for (let i = 1; i < items.length; i++) {
+    const next = result + ', ' + items[i];
+    if (next.length > maxLen) return result + ', …';
+    result = next;
+  }
+  return result;
+}
+
+/** Format derva (org) across all tanks — unique values, truncated */
+function formatDervaOrg(raw: any, maxLen = 30): string {
+  const products = parseAllProducts(raw);
+  if (products.length === 0) return '—';
+  const values: string[] = [];
+  for (const p of products) {
+    const d = getMetaValue(p, 'derva') || getMetaValue(p, 'Medžiaga');
+    if (d && !values.includes(d)) values.push(d);
+  }
+  return truncateList(values, maxLen);
+}
+
+/** Format derva (mūsų) across all tanks — unique values, truncated */
+function formatDervaMusu(raw: any, maxLen = 30): string {
+  const products = parseAllProducts(raw);
+  if (products.length === 0) return '—';
+  // Check _derva_musu_per_tank at the root level
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { obj = null; } }
+  const root = Array.isArray(obj) ? obj[0] : obj;
+  const perTank = root?._derva_musu_per_tank;
+  if (perTank && typeof perTank === 'object') {
+    const unique = [...new Set(Object.values(perTank).filter(Boolean).map(String))];
+    if (unique.length > 0) return truncateList(unique, maxLen);
+  }
+  // Fallback: check each product's derva_musu
+  const values: string[] = [];
+  for (const p of products) {
+    const d = getMetaValue(p, 'derva_musu');
+    if (d && !values.includes(d)) values.push(d);
+  }
+  return truncateList(values, maxLen);
+}
+
+function getProjectNameFromMetadata(row: any): string | undefined {
+  const meta = parseMetadata(row.metadata);
+  if (!meta) return undefined;
+  // Top-level "projektas" field in metadata
+  if (meta.projektas) return String(meta.projektas);
+  // Check inside first product's projekto_kontekstas_Projekto_pavadinimas
+  const projName = getMetaValue(meta, 'projekto_kontekstas_Projekto_pavadinimas');
+  if (projName) return projName;
+  return undefined;
+}
+
+/** Count the number of tanks/products in the metadata JSON */
+function countTanksFromMetadata(raw: any): number {
+  if (!raw) return 0;
+  let obj = raw;
+  if (typeof raw === 'string') {
+    try { obj = JSON.parse(raw); } catch { return 0; }
+  }
+  // Direct array of products: [{...}, {...}]
+  if (Array.isArray(obj)) {
+    // If it's a wrapper array like [{ talpos: [...] }], check inside first element
+    if (obj.length === 1 && obj[0] && typeof obj[0] === 'object') {
+      for (const key of PRODUCT_WRAPPER_KEYS) {
+        if (Array.isArray(obj[0][key]) && obj[0][key].length > 0) {
+          return obj[0][key].length;
+        }
+      }
+    }
+    const items = obj.filter((item: any) => item && typeof item === 'object' && !Array.isArray(item));
+    return items.length;
+  }
+  if (obj && typeof obj === 'object') {
+    for (const key of PRODUCT_WRAPPER_KEYS) {
+      if (Array.isArray(obj[key]) && obj[key].length > 0) {
+        return obj[key].length;
+      }
+    }
+  }
+  // Single product (flat object)
+  return 1;
 }
 
 function getCellValue(row: any, col: ColumnDef): string {
   if (col.key === 'meta_derva_org') {
-    const meta = parseMetadata(row.metadata);
-    return formatDervaOrg(meta);
+    return formatDervaOrg(row.metadata);
+  }
+  if (col.key === 'meta_derva_musu') {
+    return formatDervaMusu(row.metadata);
   }
   if (col.metaKey) {
     const meta = parseMetadata(row.metadata);
     return getMetaValue(meta, col.metaKey) || '—';
+  }
+  // Fallback: if project_name is empty, try extracting from metadata
+  if (col.key === 'project_name') {
+    const val = row[col.key];
+    if (val === null || val === undefined || val === '') {
+      return getProjectNameFromMetadata(row) || '—';
+    }
+    const str = String(val);
+    return str.length > 120 ? str.slice(0, 120) + '…' : str;
+  }
+  // Tank count from metadata
+  if (col.key === 'talpu_kiekis') {
+    const count = countTanksFromMetadata(row.metadata);
+    return count > 0 ? String(count) : '—';
+  }
+  // Kaina formatting
+  if (col.key === 'kaina') {
+    const v = row.kaina;
+    if (v === null || v === undefined || v === '') return '—';
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    if (isNaN(n)) return '—';
+    return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
@@ -161,14 +424,58 @@ function getCellValue(row: any, col: ColumnDef): string {
   return str.length > 120 ? str.slice(0, 120) + '…' : str;
 }
 
-function getColumns(rows: any[]): string[] {
-  if (rows.length === 0) return [];
-  const keys = Object.keys(rows[0]);
-  const idIndex = keys.indexOf('id');
-  if (idIndex > -1) { keys.splice(idIndex, 1); keys.sort(); keys.unshift('id'); } else { keys.sort(); }
-  return keys;
+// ---------------------------------------------------------------------------
+// Column config for standartiniai – same ColumnDef pattern as nestandartiniai
+// ---------------------------------------------------------------------------
+
+/** Default columns shown in the standartiniai table. */
+const DEFAULT_STANDARTINIAI_COLS: ColumnDef[] = [
+  { key: 'id', label: 'ID', width: 'w-16' },
+  { key: 'projekto_kodas', label: 'Projekto kodas' },
+  { key: 'hnv', label: 'HNV' },
+  { key: 'docx_file_id', label: 'DOCX' },
+  { key: 'date_created', label: 'Sukūrimo data', width: 'w-36' },
+  { key: 'date_updated', label: 'Atnaujinimo data', width: 'w-36' },
+  { key: 'status', label: 'Būsena', width: 'w-24' },
+];
+
+const DEFAULT_STANDARTINIAI_VISIBLE_KEYS = new Set(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+
+/** DB fields not useful as columns in standartiniai */
+const HIDDEN_STANDARTINIAI_DB_FIELDS = new Set(['conversation_id', 'yaml_content', 'html_content']);
+
+const STANDARTINIAI_COL_ORDER_KEY = 'traidenis_col_order_standartiniai';
+const STANDARTINIAI_COL_HIDDEN_KEY = 'traidenis_col_hidden_standartiniai';
+
+function loadStandartiniaiColOrder(): string[] | null {
+  try { const raw = localStorage.getItem(STANDARTINIAI_COL_ORDER_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function saveStandartiniaiColOrder(keys: string[]) {
+  try { localStorage.setItem(STANDARTINIAI_COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
+}
+function loadStandartiniaiHiddenCols(): Set<string> {
+  try { const raw = localStorage.getItem(STANDARTINIAI_COL_HIDDEN_KEY); return raw ? new Set(JSON.parse(raw)) : new Set(); } catch { return new Set(); }
+}
+function saveStandartiniaiHiddenCols(hidden: Set<string>) {
+  try { localStorage.setItem(STANDARTINIAI_COL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ }
 }
 
+/** Build all available standartiniai columns from data + defaults */
+function buildAllStandartiniaiColumns(rows: any[]): ColumnDef[] {
+  const byKey = new Map(DEFAULT_STANDARTINIAI_COLS.map(c => [c.key, c]));
+  const result = [...DEFAULT_STANDARTINIAI_COLS];
+  if (rows.length > 0) {
+    for (const key of Object.keys(rows[0])) {
+      if (byKey.has(key) || HIDDEN_STANDARTINIAI_DB_FIELDS.has(key)) continue;
+      const label = key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+      result.push({ key, label });
+      byKey.set(key, { key, label });
+    }
+  }
+  return result;
+}
+
+/** Lithuanian label fallback for any column */
 function formatColumnName(col: string): string {
   return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
@@ -187,11 +494,16 @@ function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string):
 // FilterDropdown
 // ---------------------------------------------------------------------------
 
+const DROPDOWN_SEARCH_THRESHOLD = 8;
+const DROPDOWN_MAX_VISIBLE = 30;
+
 function FilterDropdown({ label, value, options, onChange }: {
   label: string; value: string; options: string[]; onChange: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [dropdownSearch, setDropdownSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -200,7 +512,25 @@ function FilterDropdown({ label, value, options, onChange }: {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  useEffect(() => {
+    if (open && options.length >= DROPDOWN_SEARCH_THRESHOLD) {
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    }
+    if (!open) setDropdownSearch('');
+  }, [open, options.length]);
+
   const isActive = value !== '';
+
+  const visibleOptions = useMemo(() => {
+    let filtered = options;
+    if (dropdownSearch.trim()) {
+      const kw = dropdownSearch.toLowerCase();
+      filtered = options.filter(o => o.toLowerCase().includes(kw));
+    }
+    return filtered.slice(0, DROPDOWN_MAX_VISIBLE);
+  }, [options, dropdownSearch]);
+
+  const hiddenCount = options.length - visibleOptions.length;
 
   return (
     <div className="relative" ref={ref}>
@@ -213,7 +543,7 @@ function FilterDropdown({ label, value, options, onChange }: {
         }`}
         style={isActive ? { background: '#007AFF' } : { background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)' }}
       >
-        <span>{isActive ? `${label}: ${value}` : label}</span>
+        <span>{isActive ? `${label}: ${value}` : `${label} (${options.length})`}</span>
         {isActive ? (
           <X className="w-3 h-3 opacity-70 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onChange(''); }} />
         ) : (
@@ -223,9 +553,22 @@ function FilterDropdown({ label, value, options, onChange }: {
 
       {open && options.length > 0 && (
         <div
-          className="absolute z-50 top-full left-0 mt-1.5 min-w-[160px] max-h-56 overflow-auto bg-white rounded-macos-lg py-1"
+          className="absolute z-50 top-full left-0 mt-1.5 min-w-[180px] max-h-64 overflow-auto bg-white rounded-macos-lg py-1"
           style={{ border: '0.5px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}
         >
+          {options.length >= DROPDOWN_SEARCH_THRESHOLD && (
+            <div className="px-2 py-1.5 sticky top-0 bg-white" style={{ borderBottom: '0.5px solid rgba(0,0,0,0.06)' }}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={dropdownSearch}
+                onChange={e => setDropdownSearch(e.target.value)}
+                placeholder="Ieškoti..."
+                className="w-full px-2 py-1 text-xs rounded bg-macos-gray-50 outline-none"
+                style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}
+              />
+            </div>
+          )}
           {value && (
             <button
               onClick={() => { onChange(''); setOpen(false); }}
@@ -234,7 +577,7 @@ function FilterDropdown({ label, value, options, onChange }: {
               Visi
             </button>
           )}
-          {options.map(opt => (
+          {visibleOptions.map(opt => (
             <button
               key={opt}
               onClick={() => { onChange(opt); setOpen(false); }}
@@ -246,6 +589,11 @@ function FilterDropdown({ label, value, options, onChange }: {
               {opt}
             </button>
           ))}
+          {hiddenCount > 0 && (
+            <div className="px-3 py-1.5 text-[10px] text-macos-gray-400">
+              +{hiddenCount} daugiau — naudokite paiešką
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -334,6 +682,123 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
+  // Pagination
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const isNestandartiniai = selectedTable === 'n8n_vector_store';
+
+  // ── Nestandartiniai column config ──
+  const allColsNest = useMemo(() => buildAllColumns(nestandartiniaiData), [nestandartiniaiData]);
+  const [hiddenColsNest, setHiddenColsNest] = useState<Set<string>>(() => {
+    const saved = loadHiddenCols();
+    if (saved.size === 0 && localStorage.getItem(COL_HIDDEN_KEY) === null) return new Set();
+    return saved;
+  });
+  const [colOrderNest, setColOrderNest] = useState<string[]>(() => loadColumnOrder() || DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+  const visibleColsNest = useMemo(() => allColsNest.filter(c => !hiddenColsNest.has(c.key)), [allColsNest, hiddenColsNest]);
+  const orderedColsNest = useMemo(() => getOrderedCols(visibleColsNest, colOrderNest), [visibleColsNest, colOrderNest]);
+
+  // ── Standartiniai column config ──
+  const allColsStand = useMemo(() => buildAllStandartiniaiColumns(standartiniaiData), [standartiniaiData]);
+  const [hiddenColsStand, setHiddenColsStand] = useState<Set<string>>(() => {
+    const saved = loadStandartiniaiHiddenCols();
+    if (saved.size === 0 && localStorage.getItem(STANDARTINIAI_COL_HIDDEN_KEY) === null) return new Set();
+    return saved;
+  });
+  const [colOrderStand, setColOrderStand] = useState<string[]>(() => loadStandartiniaiColOrder() || DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+  const visibleColsStand = useMemo(() => allColsStand.filter(c => !hiddenColsStand.has(c.key)), [allColsStand, hiddenColsStand]);
+  const orderedColsStand = useMemo(() => getOrderedCols(visibleColsStand, colOrderStand), [visibleColsStand, colOrderStand]);
+
+  // ── Unified column config (switches by active table) ──
+  const allCols = isNestandartiniai ? allColsNest : allColsStand;
+  const orderedCols = isNestandartiniai ? orderedColsNest : orderedColsStand;
+
+  const [showColConfig, setShowColConfig] = useState(false);
+  const colConfigRef = useRef<HTMLDivElement>(null);
+  const dragColRef = useRef<string | null>(null);
+  const dragOverColRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!showColConfig) return;
+    const handler = (e: MouseEvent) => {
+      if (colConfigRef.current && !colConfigRef.current.contains(e.target as Node)) setShowColConfig(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showColConfig]);
+
+  const hiddenCols = isNestandartiniai ? hiddenColsNest : hiddenColsStand;
+
+  const handleColDragStart = useCallback((key: string) => { dragColRef.current = key; }, []);
+  const handleColDragOver = useCallback((e: React.DragEvent, key: string) => { e.preventDefault(); dragOverColRef.current = key; }, []);
+  const handleColDrop = useCallback(() => {
+    const from = dragColRef.current;
+    const to = dragOverColRef.current;
+    if (!from || !to || from === to) return;
+    if (isNestandartiniai) {
+      setColOrderNest(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(from);
+        const toIdx = next.indexOf(to);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, from);
+        saveColumnOrder(next);
+        return next;
+      });
+    } else {
+      setColOrderStand(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(from);
+        const toIdx = next.indexOf(to);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, from);
+        saveStandartiniaiColOrder(next);
+        return next;
+      });
+    }
+    dragColRef.current = null;
+    dragOverColRef.current = null;
+  }, [isNestandartiniai]);
+
+  const toggleColumnVisibility = useCallback((key: string) => {
+    if (isNestandartiniai) {
+      setHiddenColsNest(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        saveHiddenCols(next);
+        return next;
+      });
+    } else {
+      setHiddenColsStand(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        saveStandartiniaiHiddenCols(next);
+        return next;
+      });
+    }
+  }, [isNestandartiniai]);
+
+  const resetColumnsToDefault = useCallback(() => {
+    if (isNestandartiniai) {
+      const allKeys = allColsNest.map(c => c.key);
+      const hidden = new Set(allKeys.filter(k => !DEFAULT_VISIBLE_KEYS.has(k)));
+      setHiddenColsNest(hidden);
+      saveHiddenCols(hidden);
+      setColOrderNest(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+      saveColumnOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+    } else {
+      const allKeys = allColsStand.map(c => c.key);
+      const hidden = new Set(allKeys.filter(k => !DEFAULT_STANDARTINIAI_VISIBLE_KEYS.has(k)));
+      setHiddenColsStand(hidden);
+      saveStandartiniaiHiddenCols(hidden);
+      setColOrderStand(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+      saveStandartiniaiColOrder(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+    }
+  }, [isNestandartiniai, allColsNest, allColsStand]);
+
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
   const loadStandartiniai = async () => {
@@ -354,13 +819,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
   }), [nestandartiniaiData]);
 
-  const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const currentLoading = isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
   const currentError = isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
   const currentReload = isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
-
-  // Generic columns for standartiniai
-  const genericCols = useMemo(() => getColumns(standartiniaiData), [standartiniaiData]);
 
   // Filtering
   const filteredData = useMemo(() => {
@@ -389,8 +850,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             }
           }
           // Formatted derva (org) with cheminis sluoksnis
-          const dervaOrgFormatted = formatDervaOrg(meta);
+          const dervaOrgFormatted = formatDervaOrg(row.metadata);
           if (dervaOrgFormatted !== '—') parts.push(dervaOrgFormatted);
+          const dervaMusuFormatted = formatDervaMusu(row.metadata);
+          if (dervaMusuFormatted !== '—') parts.push(dervaMusuFormatted);
 
           const blob = parts.join(' ').toLowerCase();
           return keywords.every(kw => blob.includes(kw));
@@ -403,9 +866,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           if (row.projekto_kodas) parts.push(row.projekto_kodas);
           if (row.hnv) parts.push(row.hnv);
           if (row.yaml_content) parts.push(String(row.yaml_content));
-          // Also search all other fields for completeness
-          for (const col of genericCols) {
-            const val = row[col];
+          // Also search all visible column fields for completeness
+          for (const col of allColsStand) {
+            const val = row[col.key];
             if (val !== null && val !== undefined) parts.push(String(val));
           }
           const blob = parts.join(' ').toLowerCase();
@@ -434,18 +897,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
 
     return rows;
-  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, genericCols, metadataFilters]);
+  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters]);
 
   // Sorting
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
-      const colDef = isNestandartiniai ? NESTANDARTINIAI_COLS.find(c => c.key === sortConfig.column) : null;
+      const colDef = isNestandartiniai ? allCols.find(c => c.key === sortConfig.column) : null;
       let aVal: any;
       let bVal: any;
       if (sortConfig.column === 'meta_derva_org') {
-        aVal = formatDervaOrg(parseMetadata(a.metadata));
-        bVal = formatDervaOrg(parseMetadata(b.metadata));
+        aVal = formatDervaOrg(a.metadata);
+        bVal = formatDervaOrg(b.metadata);
         if (aVal === '—') aVal = null;
         if (bVal === '—') bVal = null;
       } else if (colDef?.metaKey) {
@@ -466,6 +929,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     });
   }, [filteredData, sortConfig, isNestandartiniai]);
 
+  // Reset to page 1 when filters, search, sort, or table change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, metadataFilters, sortConfig, selectedTable]);
+
+  // Pagination slice
+  const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pagedData = useMemo(() => {
+    const start = (safeCurrentPage - 1) * PAGE_SIZE;
+    return sortedData.slice(start, start + PAGE_SIZE);
+  }, [sortedData, safeCurrentPage]);
+
   const handleSort = (column: string) => {
     setSortConfig(prev => prev.column === column ? { column, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { column, direction: 'asc' });
   };
@@ -475,6 +949,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
     setMetadataFilters({ ...EMPTY_FILTERS });
+    setSelectedIds(new Set());
   };
 
   const handleToggleStatus = async (id: number, currentStatus: boolean) => {
@@ -498,7 +973,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   };
 
   const toggleSelectAll = () => {
-    const visibleIds = sortedData.map((r: any) => r.id as number);
+    const visibleIds = pagedData.map((r: any) => r.id as number);
     const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
     if (allSelected) {
       setSelectedIds(prev => {
@@ -518,13 +993,23 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const handleBulkDelete = async () => {
     setBulkDeleting(true);
     try {
-      const toDelete = nestandartiniaiData.filter(r => selectedIds.has(r.id));
-      for (const record of toDelete) {
-        await deleteNestandartiniaiRecord(record);
+      if (isNestandartiniai) {
+        const toDelete = nestandartiniaiData.filter(r => selectedIds.has(r.id));
+        for (const record of toDelete) {
+          await deleteNestandartiniaiRecord(record);
+        }
+        setSelectedIds(new Set());
+        setShowBulkDeleteConfirm(false);
+        await loadNestandartiniai();
+      } else {
+        const toDelete = standartiniaiData.filter((r: any) => selectedIds.has(r.id));
+        for (const record of toDelete) {
+          await deleteStandartinisProjektas({ id: record.id, docx_file_id: record.docx_file_id });
+        }
+        setSelectedIds(new Set());
+        setShowBulkDeleteConfirm(false);
+        await loadStandartiniai();
       }
-      setSelectedIds(new Set());
-      setShowBulkDeleteConfirm(false);
-      await loadNestandartiniai();
     } catch (err: any) {
       console.error('Bulk delete error:', err);
       alert(`Klaida trinant įrašus: ${err?.message || 'Nežinoma klaida'}`);
@@ -597,6 +1082,55 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
             />
           </div>
+
+          {/* Column config button */}
+          {(
+            <div className="relative" ref={colConfigRef}>
+              <button
+                onClick={() => setShowColConfig(v => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95 shrink-0"
+                style={{ background: showColConfig ? 'rgba(0,122,255,0.08)' : 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: showColConfig ? '#007AFF' : '#5a5550' }}
+              >
+                <Columns3 className="w-3.5 h-3.5" />
+                Stulpeliai
+              </button>
+              {showColConfig && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-50 w-72 max-h-[420px] overflow-auto rounded-xl shadow-lg border border-base-content/10 bg-base-100"
+                  style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}
+                >
+                  <div className="px-3 py-2.5 border-b border-base-content/10 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-base-content/70">Rodyti stulpelius</span>
+                    <button
+                      onClick={resetColumnsToDefault}
+                      className="text-[11px] text-blue-500 hover:text-blue-600 font-medium"
+                    >
+                      Atkurti numatytuosius
+                    </button>
+                  </div>
+                  {allCols.map(col => (
+                    <button
+                      key={col.key}
+                      onClick={() => toggleColumnVisibility(col.key)}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-base-200/60 transition-colors text-sm"
+                    >
+                      <span
+                        className="w-4 h-4 rounded border flex items-center justify-center shrink-0"
+                        style={{
+                          borderColor: hiddenCols.has(col.key) ? 'rgba(0,0,0,0.15)' : '#007AFF',
+                          background: hiddenCols.has(col.key) ? 'transparent' : '#007AFF',
+                        }}
+                      >
+                        {!hiddenCols.has(col.key) && <Check className="w-3 h-3 text-white" />}
+                      </span>
+                      <span className="text-base-content/80 truncate">{col.label}</span>
+                      {col.metaKey && <span className="text-[10px] text-base-content/30 ml-auto shrink-0">meta</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Filters – only for nestandartiniai */}
@@ -676,13 +1210,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     />
                   </th>
                   <th className="w-10 px-2 py-3"></th>
-                  {NESTANDARTINIAI_COLS.map(col => (
+                  {orderedCols.map(col => (
                     <th
                       key={col.key}
+                      draggable
+                      onDragStart={() => handleColDragStart(col.key)}
+                      onDragOver={e => handleColDragOver(e, col.key)}
+                      onDrop={handleColDrop}
                       onClick={() => handleSort(col.key)}
                       className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
+                        <GripVertical className="w-3 h-3 text-base-content/20 shrink-0 cursor-grab active:cursor-grabbing" />
                         <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
                           <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
@@ -694,11 +1233,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </tr>
               </thead>
               <tbody>
-                {sortedData.map((row, i) => (
+                {pagedData.map((row, i) => (
                   <tr
                     key={row.id ?? i}
-                    className="cursor-pointer transition-colors"
-                    onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
+                    className="transition-colors"
                     onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
                     style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
@@ -718,13 +1256,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         style={{ color: '#8a857f' }}
                         onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
                         onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
-                        onClick={e => { e.stopPropagation(); setSelectedCard(row as NestandartiniaiRecord); }}
+                        onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
                         title="Atidaryti kortelę"
                       >
                         <FileText className="w-4 h-4" />
                       </button>
                     </td>
-                    {NESTANDARTINIAI_COLS.map(col => {
+                    {orderedCols.map(col => {
                       if (col.toggle) {
                         const checked = !!row[col.key];
                         return (
@@ -743,6 +1281,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         );
                       }
                       const val = getCellValue(row, col);
+                      const fullVal = (col.key === 'meta_derva_org') ? formatDervaOrg(row.metadata, 500)
+                        : (col.key === 'meta_derva_musu') ? formatDervaMusu(row.metadata, 500)
+                        : val;
                       return (
                         <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
                           {col.badge && val !== '—' ? (
@@ -756,7 +1297,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                             <span
                               className="block truncate max-w-[200px]"
                               style={{ color: col.key === 'id' ? '#8a857f' : '#3d3935', fontSize: col.key === 'id' ? '12px' : '13px' }}
-                              title={val}
+                              title={fullVal}
                             >
                               {val}
                             </span>
@@ -774,30 +1315,128 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}
             >
               <span>
-                {sortedData.length < totalCount ? `${sortedData.length} iš ${totalCount} įrašų` : `${sortedData.length} įrašų`}
+                {sortedData.length < totalCount
+                  ? `${sortedData.length} iš ${totalCount} įrašų`
+                  : `${sortedData.length} įrašų`}
+                {totalPages > 1 && ` · puslapis ${safeCurrentPage} iš ${totalPages}`}
               </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safeCurrentPage <= 1}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    ««
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={safeCurrentPage <= 1}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    «
+                  </button>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let page: number;
+                    if (totalPages <= 5) {
+                      page = i + 1;
+                    } else if (safeCurrentPage <= 3) {
+                      page = i + 1;
+                    } else if (safeCurrentPage >= totalPages - 2) {
+                      page = totalPages - 4 + i;
+                    } else {
+                      page = safeCurrentPage - 2 + i;
+                    }
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`px-2 py-0.5 rounded ${page === safeCurrentPage ? 'font-bold' : 'hover:bg-macos-gray-100'}`}
+                        style={page === safeCurrentPage ? { color: '#007AFF' } : undefined}
+                      >
+                        {page}
+                      </button>
+                    );
+                  })}
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={safeCurrentPage >= totalPages}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    »
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safeCurrentPage >= totalPages}
+                    className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default"
+                  >
+                    »»
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (
-          /* ---- Standartiniai table (all columns) ---- */
+          /* ---- Standartiniai table (configurable columns) ---- */
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
           >
+            {/* Bulk actions bar */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
+                <span className="text-xs font-medium" style={{ color: '#007AFF' }}>
+                  Pasirinkta: {selectedIds.size}
+                </span>
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                  style={{ color: '#e53e3e', background: 'rgba(229,62,62,0.08)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(229,62,62,0.15)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(229,62,62,0.08)')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Ištrinti
+                </button>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  className="text-xs px-2 py-1.5 rounded-lg transition-colors"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '')}
+                >
+                  Atšaukti
+                </button>
+              </div>
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  {genericCols.map(col => (
+                  <th className="w-10 px-2 py-3">
+                    <input
+                      type="checkbox"
+                      checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                      title="Pasirinkti visus"
+                    />
+                  </th>
+                  {orderedColsStand.map(col => (
                     <th
-                      key={col}
-                      onClick={() => handleSort(col)}
-                      className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
+                      key={col.key}
+                      draggable
+                      onDragStart={() => handleColDragStart(col.key)}
+                      onDragOver={e => handleColDragOver(e, col.key)}
+                      onDrop={handleColDrop}
+                      onClick={() => handleSort(col.key)}
+                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{formatColumnName(col)}</span>
+                        <GripVertical className="w-3 h-3 text-base-content/20 shrink-0 cursor-grab" />
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
-                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
-                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col.key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
                         </span>
                       </div>
                     </th>
@@ -808,38 +1447,56 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 {sortedData.map((row, i) => (
                   <tr
                     key={row.id ?? i}
-                    style={{ borderBottom: '1px solid #f8f6f3' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                    className="transition-colors"
+                    style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
                   >
-                    {genericCols.map(col => {
-                      const val = row[col];
-                      // html_content — show preview button instead of raw HTML
-                      if (col === 'html_content') {
-                        const hasHtml = val && String(val).trim().length > 0;
+                    <td className="w-10 px-2 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(row.id as number)}
+                        onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
+                        onClick={e => e.stopPropagation()}
+                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                      />
+                    </td>
+                    {orderedColsStand.map(col => {
+                      const val = row[col.key];
+                      // docx_file_id — show download button
+                      if (col.key === 'docx_file_id') {
                         return (
-                          <td key={col} className="px-3 py-2.5">
-                            {hasHtml ? (
-                              <button
-                                onClick={() => setHtmlPreview(val)}
+                          <td key={col.key} className="px-3 py-2.5">
+                            {val ? (
+                              <a
+                                href={getDirectusFileUrl(val)}
+                                download
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
                                 style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                Peržiūrėti
-                              </button>
+                                <Download className="w-3.5 h-3.5" />
+                                Atsisiųsti
+                              </a>
                             ) : (
                               <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>
                             )}
                           </td>
                         );
                       }
-                      // Long text columns — truncate
-                      const isLongText = col === 'yaml_content';
-                      const maxLen = isLongText ? 60 : 120;
+                      // Date columns — format nicely
+                      if ((col.key === 'date_created' || col.key === 'date_updated') && val) {
+                        const d = new Date(val);
+                        const formatted = isNaN(d.getTime()) ? String(val) : d.toLocaleDateString('lt-LT') + ' ' + d.toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <td key={col.key} className="px-3 py-2.5 whitespace-nowrap" style={{ color: '#3d3935', fontSize: '13px' }}>
+                            {formatted}
+                          </td>
+                        );
+                      }
+                      const maxLen = 120;
                       const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
-                        <td key={col} className={`px-3 py-2.5 ${isLongText ? 'max-w-[200px]' : 'max-w-xs'} truncate`} style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                        <td key={col.key} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
                           {display}
                         </td>
                       );

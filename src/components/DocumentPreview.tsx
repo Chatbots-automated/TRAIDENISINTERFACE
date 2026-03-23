@@ -1,10 +1,17 @@
 import React, { useMemo, useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { ZoomIn, ZoomOut, ImagePlus, Maximize2, RotateCcw, Crop, MoveHorizontal, X } from 'lucide-react';
 import { renderTemplate, getDefaultTemplate, getUnfilledVariables, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import { saveAs } from 'file-saver';
+import Docxtemplater from 'docxtemplater';
+import PizZip from 'pizzip';
+import { getDocxTemplateFileId, getDocxTemplateUrl } from '../lib/globalTemplateService';
 import type { VariableCitation } from '../lib/sdkConversationService';
 
 export interface DocumentPreviewHandle {
   print: () => void;
+  downloadAsWord: () => void;
+  /** Generate the .docx blob without triggering a download. */
+  generateDocxBlob: () => Promise<Blob>;
   clearActiveVariable: () => void;
   /** Get the full outerHTML of the iframe document (includes user text edits + styles). */
   getEditedHtml: () => string | null;
@@ -314,12 +321,46 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
       );
     }, [renderedHtml]);
 
+    // Build a .docx blob from the current template + variables
+    const buildDocxBlob = async (): Promise<Blob> => {
+      const fileId = await getDocxTemplateFileId();
+      if (!fileId) throw new Error('DOCX šablonas neįkeltas. Įkelkite .docx šabloną per šablono redaktorių.');
+      const response = await fetch(getDocxTemplateUrl(fileId));
+      if (!response.ok) throw new Error('Nepavyko užkrauti DOCX šablono iš serverio');
+      const arrayBuffer = await response.arrayBuffer();
+      const zip = new PizZip(arrayBuffer);
+      const docx = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        delimiters: { start: '{{', end: '}}' },
+      });
+      const cleanedVars: Record<string, string> = {};
+      for (const [k, v] of Object.entries(variables)) {
+        cleanedVars[k] = typeof v === 'string' ? v.replace(/\\n/g, '\n') : v;
+      }
+      docx.render(cleanedVars);
+      return docx.getZip().generate({
+        type: 'blob',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+    };
+
     // Expose methods to parent via ref
     useImperativeHandle(ref, () => ({
       print: () => {
         const iframe = iframeRef.current;
         if (iframe?.contentWindow) {
           iframe.contentWindow.print();
+        }
+      },
+      generateDocxBlob: () => buildDocxBlob(),
+      downloadAsWord: async () => {
+        try {
+          const blob = await buildDocxBlob();
+          saveAs(blob, 'komercinis-pasiulymas.docx');
+        } catch (err) {
+          console.error('Word download failed:', err);
+          alert(`Klaida generuojant Word dokumentą: ${err instanceof Error ? err.message : err}`);
         }
       },
       clearActiveVariable: () => {

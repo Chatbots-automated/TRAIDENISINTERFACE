@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiById,
@@ -439,9 +439,15 @@ function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
 
-function TabBendra({ record, products }: { record: NestandartiniaiRecord; products: Record<string, any>[] }) {
+function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const hasMultiple = products.length > 1;
+  const [saving, setSaving] = useState(false);
+  const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState<Record<string, string>>({});
+  const [newFieldKey, setNewFieldKey] = useState('');
+  const [newFieldVal, setNewFieldVal] = useState('');
 
   // Clamp index if products array changes
   const idx = Math.min(currentIdx, products.length - 1);
@@ -472,144 +478,338 @@ function TabBendra({ record, products }: { record: NestandartiniaiRecord; produc
     }
   }
 
-  const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
-  const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
+  const goPrev = () => { setEditing(false); setCurrentIdx(i => (i - 1 + products.length) % products.length); };
+  const goNext = () => { setEditing(false); setCurrentIdx(i => (i + 1) % products.length); };
+
+  /** Persist an updated products array back to the metadata field */
+  const persistProducts = async (newProducts: Record<string, any>[]) => {
+    setSaving(true);
+    try {
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') {
+        try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; }
+      }
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        const root = { ...rawMeta[0] };
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(root[k])) { wrapperKey = k; break; }
+        }
+        if (wrapperKey) {
+          root[wrapperKey] = newProducts;
+          if (root.santrauka && typeof root.santrauka === 'object') {
+            root.santrauka = { ...root.santrauka, Bendras_rastų_talpų_skaicius: newProducts.length };
+          }
+        } else {
+          updatedMeta = newProducts;
+          await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+          const updated = await fetchNestandartiniaiById(record.id);
+          if (updated) onRecordUpdated?.(updated);
+          return;
+        }
+        updatedMeta = [root, ...rawMeta.slice(1)];
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(rawMeta[k])) { wrapperKey = k; break; }
+        }
+        if (wrapperKey) {
+          updatedMeta = { ...rawMeta, [wrapperKey]: newProducts };
+        } else {
+          updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+        }
+      } else {
+        updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+      }
+      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+    } catch (e: any) {
+      console.error('Error updating tanks:', e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addTank = async () => {
+    const newTank: Record<string, any> = { pavadinimas: `Nauja talpa ${products.length + 1}` };
+    const first = products[0];
+    if (first) {
+      for (const [k, v] of Object.entries(first)) {
+        if (k.startsWith('projekto_kontekstas_') && v) newTank[k] = v;
+      }
+    }
+    const newProducts = [...products, newTank];
+    await persistProducts(newProducts);
+    setCurrentIdx(newProducts.length - 1);
+    // Enter edit mode for the new tank
+    setEditing(true);
+    setEditDraft({});
+  };
+
+  const deleteTank = async (deleteIdx: number) => {
+    if (products.length <= 1) return;
+    const newProducts = products.filter((_, i) => i !== deleteIdx);
+    if (currentIdx >= newProducts.length) setCurrentIdx(newProducts.length - 1);
+    else if (currentIdx > deleteIdx) setCurrentIdx(currentIdx - 1);
+    setConfirmDeleteIdx(null);
+    setEditing(false);
+    await persistProducts(newProducts);
+  };
+
+  const startEditing = () => {
+    // Build a draft from all scalar fields of the current tank
+    const draft: Record<string, string> = {};
+    for (const [k, v] of Object.entries(meta)) {
+      if (SKIP_DISPLAY_KEYS.has(k)) continue;
+      if (k.startsWith('_')) continue;
+      if (v && typeof v === 'object') continue;
+      draft[k] = v != null ? String(v) : '';
+    }
+    setEditDraft(draft);
+    setNewFieldKey('');
+    setNewFieldVal('');
+    setEditing(true);
+  };
+
+  const saveEditing = async () => {
+    const updated: Record<string, any> = {};
+    // Preserve nested objects from original
+    for (const [k, v] of Object.entries(meta)) {
+      if (v && typeof v === 'object') updated[k] = v;
+    }
+    // Apply scalar edits
+    for (const [k, v] of Object.entries(editDraft)) {
+      if (v.trim() === '') continue; // skip blanks — effectively deletes the field
+      updated[k] = v.trim();
+    }
+    const newProducts = [...products];
+    newProducts[idx] = updated;
+    setEditing(false);
+    await persistProducts(newProducts);
+  };
+
+  const addNewField = () => {
+    const key = newFieldKey.trim();
+    const val = newFieldVal.trim();
+    if (!key) return;
+    setEditDraft(d => ({ ...d, [key]: val }));
+    setNewFieldKey('');
+    setNewFieldVal('');
+  };
+
+  const removeField = (key: string) => {
+    setEditDraft(d => {
+      const copy = { ...d };
+      delete copy[key];
+      return copy;
+    });
+  };
 
   return (
     <div className="space-y-0">
-      {/* Product navigator — only shown when multiple products exist */}
-      {hasMultiple && (
-        <div className="flex items-center justify-between mb-4 px-1">
-          <button
-            onClick={goPrev}
-            className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            title="Ankstesnis gaminys"
-          >
-            <ChevronLeft className="w-5 h-5 text-base-content/50" />
-          </button>
-          <div className="flex flex-col items-center gap-0.5">
-            {getProductTitle(meta) && (
-              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary max-w-[250px] truncate">
-                {getProductTitle(meta)}
-              </span>
-            )}
-            <span className="text-xs text-base-content/40">
-              {idx + 1} / {products.length}
-            </span>
+      {/* Delete confirmation */}
+      {confirmDeleteIdx !== null && (
+        <div className="mb-3 p-3 rounded-lg border border-error/20 bg-error/5">
+          <p className="text-xs text-base-content/70 mb-2">
+            Ištrinti <strong>{getProductTitle(products[confirmDeleteIdx]) || `Talpa ${confirmDeleteIdx + 1}`}</strong>?
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => deleteTank(confirmDeleteIdx)} disabled={saving} className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40">
+              {saving ? 'Trinama...' : 'Taip, ištrinti'}
+            </button>
+            <button onClick={() => setConfirmDeleteIdx(null)} className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5">
+              Atšaukti
+            </button>
           </div>
-          <button
-            onClick={goNext}
-            className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            title="Kitas gaminys"
-          >
-            <ChevronRight className="w-5 h-5 text-base-content/50" />
-          </button>
         </div>
       )}
 
-      {/* Dot indicators for multiple products (up to 20, then just use arrows) */}
-      {hasMultiple && products.length <= 20 && (
-        <div className="flex items-center justify-center gap-1 pb-3 flex-wrap">
-          {products.map((p, i) => (
-            <button
-              key={i}
-              onClick={() => setCurrentIdx(i)}
-              className={`w-2 h-2 rounded-full transition-all ${i === idx ? 'bg-primary scale-110' : 'bg-base-content/15 hover:bg-base-content/25'}`}
-              title={getProductTitle(p) || `Gaminys ${i + 1}`}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* For >20 products, show a compact dropdown-style selector */}
-      {hasMultiple && products.length > 20 && (
-        <div className="flex items-center justify-center pb-3">
+      {/* Tank nav: single row — ◂ [dropdown] ▸  +  🗑 */}
+      {(hasMultiple || !readOnly) && (
+        <div className="flex items-center gap-1 mb-4">
+          {hasMultiple && (
+            <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+              <ChevronLeft className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
           <select
             value={idx}
-            onChange={e => setCurrentIdx(Number(e.target.value))}
-            className="text-xs border border-base-content/10 rounded-lg px-2 py-1 bg-transparent text-base-content/60 focus:outline-none focus:border-primary/30"
+            onChange={e => { setEditing(false); setCurrentIdx(Number(e.target.value)); }}
+            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
           >
             {products.map((p, i) => (
               <option key={i} value={i}>
-                {i + 1}. {getProductTitle(p) || `Gaminys ${i + 1}`}
+                {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}
               </option>
             ))}
           </select>
+          {hasMultiple && (
+            <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+              <ChevronRight className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
+          {!readOnly && (
+            <>
+              <button onClick={addTank} disabled={saving} className="p-1.5 rounded-md hover:bg-primary/8 text-base-content/30 hover:text-primary disabled:opacity-30" title="Pridėti talpą">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              </button>
+              {hasMultiple && (
+                <button onClick={() => setConfirmDeleteIdx(idx)} disabled={saving} className="p-1.5 rounded-md hover:bg-error/8 text-base-content/30 hover:text-error disabled:opacity-30" title="Ištrinti talpą">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 
-      {/* OLD FORMAT: Info grid with known keys */}
-      {oldFormat && (hasRow1 || hasRow2 || meta.derva_musu) && (
-        <div className="pb-4">
-          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-            {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
-            {INFO_ROW_2.map(f => {
-              if (f.key === 'derva_org') {
-                return <InfoField key={f.key} label={f.label} value={dervaOrgDisplay || undefined} />;
-              }
-              return <InfoField key={f.key} label={f.label} value={meta[f.key]} />;
-            })}
-            {meta.derva_musu && <InfoField label="Derva (mūsų)" value={meta.derva_musu} />}
+      {/* Edit mode toggle */}
+      {!readOnly && !editing && (
+        <div className="flex justify-end mb-2">
+          <button onClick={startEditing} className="flex items-center gap-1 text-xs text-base-content/40 hover:text-primary transition-colors px-2 py-1 rounded-md hover:bg-primary/5">
+            <Pencil className="w-3 h-3" />
+            <span>Redaguoti</span>
+          </button>
+        </div>
+      )}
+
+      {/* EDIT MODE: inline field editor */}
+      {editing && !readOnly ? (
+        <div className="space-y-3 mb-4">
+          {Object.entries(editDraft).map(([k, v]) => (
+            <div key={k} className="flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <label className="text-[11px] text-base-content/40 block mb-0.5">{formatMetaLabel(k)}</label>
+                <input
+                  type="text"
+                  value={v}
+                  onChange={e => setEditDraft(d => ({ ...d, [k]: e.target.value }))}
+                  className="w-full text-sm border border-base-content/10 rounded-md px-2.5 py-1.5 bg-transparent text-base-content focus:outline-none focus:border-primary/40"
+                />
+              </div>
+              <button onClick={() => removeField(k)} className="mt-5 p-1 rounded-md text-base-content/20 hover:text-error hover:bg-error/5" title="Pašalinti lauką">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+
+          {/* Add new field row */}
+          <div className="flex items-end gap-2 pt-2 border-t border-base-content/5">
+            <div className="flex-1 min-w-0">
+              <label className="text-[11px] text-base-content/40 block mb-0.5">Naujas laukas</label>
+              <input
+                type="text"
+                value={newFieldKey}
+                onChange={e => setNewFieldKey(e.target.value)}
+                placeholder="Pavadinimas"
+                className="w-full text-xs border border-base-content/10 rounded-md px-2.5 py-1.5 bg-transparent text-base-content placeholder:text-base-content/25 focus:outline-none focus:border-primary/40"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={newFieldVal}
+                onChange={e => setNewFieldVal(e.target.value)}
+                placeholder="Reikšmė"
+                onKeyDown={e => { if (e.key === 'Enter') addNewField(); }}
+                className="w-full text-xs border border-base-content/10 rounded-md px-2.5 py-1.5 bg-transparent text-base-content placeholder:text-base-content/25 focus:outline-none focus:border-primary/40"
+              />
+            </div>
+            <button onClick={addNewField} disabled={!newFieldKey.trim()} className="p-1.5 rounded-md text-base-content/30 hover:text-primary hover:bg-primary/5 disabled:opacity-20">
+              <Plus className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Save / Cancel */}
+          <div className="flex items-center gap-2 pt-2">
+            <button onClick={saveEditing} disabled={saving} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-40">
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              <span>Išsaugoti</span>
+            </button>
+            <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5">
+              Atšaukti
+            </button>
           </div>
         </div>
-      )}
-
-      {/* NEW FORMAT: Flexible rendering of all scalar fields */}
-      {!oldFormat && scalarFields.length > 0 && (
-        <div className="pb-4">
-          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-            {scalarFields.map(([k, v]) => (
-              <InfoField key={k} label={formatMetaLabel(k)} value={v} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* NEW FORMAT: Nested object sections (e.g. projekto_kontekstas, Cheminė_aplinka) */}
-      {!oldFormat && objectFields.length > 0 && (
-        <div className="border-t border-base-content/10 pt-2">
-          <div className="grid grid-cols-3 gap-x-6 gap-y-3">
-            {objectFields.map(([k, v]) => (
-              <NestedObjectField key={k} label={formatMetaLabel(k)} obj={v} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* NEW FORMAT: Pastabos (notes) — shown as a collapsible text block */}
-      {!oldFormat && pastabos && (
-        <div className="border-t border-base-content/10">
-          <CollapsibleSection title="Pastabos">
-            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
-              {pastabos}
+      ) : (
+        <>
+          {/* READ MODE: display fields */}
+          {/* OLD FORMAT */}
+          {oldFormat && (hasRow1 || hasRow2 || meta.derva_musu) && (
+            <div className="pb-4">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                {INFO_ROW_1.map(f => <InfoField key={f.key} label={f.label} value={meta[f.key]} />)}
+                {INFO_ROW_2.map(f => {
+                  if (f.key === 'derva_org') {
+                    return <InfoField key={f.key} label={f.label} value={dervaOrgDisplay || undefined} />;
+                  }
+                  return <InfoField key={f.key} label={f.label} value={meta[f.key]} />;
+                })}
+                {meta.derva_musu && <InfoField label="Derva (mūsų)" value={meta.derva_musu} />}
+              </div>
             </div>
-          </CollapsibleSection>
-        </div>
-      )}
+          )}
 
-      {/* Description */}
-      {record.description && (
-        <div className="border-t border-base-content/10">
-          <CollapsibleSection title="Aprašymas" defaultOpen>
-            <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
-              {record.description}
+          {/* NEW FORMAT: scalar fields */}
+          {!oldFormat && scalarFields.length > 0 && (
+            <div className="pb-4">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                {scalarFields.map(([k, v]) => (
+                  <InfoField key={k} label={formatMetaLabel(k)} value={v} />
+                ))}
+              </div>
             </div>
-          </CollapsibleSection>
-        </div>
-      )}
+          )}
 
-      {/* OLD FORMAT: Extra metadata */}
-      {oldFormat && (extraMeta.length > 0 || record.derva || meta.talpa) && (
-        <div className="border-t border-base-content/10">
-          <CollapsibleSection title="Papildomi duomenys">
-            <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
-              {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
-              {meta.position && <InfoField label="Pozicija" value={meta.position} />}
-              {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
-              {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+          {/* NEW FORMAT: nested objects */}
+          {!oldFormat && objectFields.length > 0 && (
+            <div className="border-t border-base-content/10 pt-2">
+              <div className="grid grid-cols-3 gap-x-6 gap-y-3">
+                {objectFields.map(([k, v]) => (
+                  <NestedObjectField key={k} label={formatMetaLabel(k)} obj={v} />
+                ))}
+              </div>
             </div>
-          </CollapsibleSection>
-        </div>
+          )}
+
+          {/* Pastabos */}
+          {!oldFormat && pastabos && (
+            <div className="border-t border-base-content/10">
+              <CollapsibleSection title="Pastabos">
+                <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
+                  {pastabos}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+
+          {/* Description */}
+          {record.description && (
+            <div className="border-t border-base-content/10">
+              <CollapsibleSection title="Aprašymas">
+                <div className="text-sm leading-[1.7] whitespace-pre-wrap overflow-y-auto rounded-lg p-4 mb-3 text-base-content bg-base-content/[0.02] border border-base-content/5" style={{ maxHeight: '220px' }}>
+                  {record.description}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+
+          {/* OLD FORMAT: extra metadata */}
+          {oldFormat && (extraMeta.length > 0 || record.derva || meta.talpa) && (
+            <div className="border-t border-base-content/10">
+              <CollapsibleSection title="Papildomi duomenys">
+                <div className="grid grid-cols-3 gap-x-6 gap-y-2 pb-3">
+                  {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
+                  {meta.position && <InfoField label="Pozicija" value={meta.position} />}
+                  {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
+                  {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                </div>
+              </CollapsibleSection>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1262,9 +1462,22 @@ function parseDervaPerTank(raw: string | null): Record<string, string> {
   return {};
 }
 
+/** Unwrap metadata to the root object where _derva_musu_per_tank lives */
+function unwrapMetaRoot(metadata: any): Record<string, any> {
+  let meta = metadata;
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta); } catch { return {}; }
+  }
+  if (Array.isArray(meta)) {
+    const first = meta[0];
+    return (first && typeof first === 'object' && !Array.isArray(first)) ? first : {};
+  }
+  return (meta && typeof meta === 'object') ? meta : {};
+}
+
 /** Parse per-tank derva_musu from metadata._derva_musu_per_tank */
 function parseDervaMusuPerTank(metadata: any): Record<string, string> {
-  const meta = typeof metadata === 'string' ? (() => { try { return JSON.parse(metadata); } catch { return {}; } })() : (metadata || {});
+  const meta = unwrapMetaRoot(metadata);
   const perTank = meta?._derva_musu_per_tank;
   if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) return perTank;
   // Legacy: flat derva_musu → assign to tank 0
@@ -1336,25 +1549,36 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
   }, [record.metadata]);
 
-  const saveDervaMusu = async () => {
+  const saveDervaMusu = async (overrideValue?: string) => {
+    const valueToSave = overrideValue !== undefined ? overrideValue : dervaMusu;
     setDervaMusuSaving(true);
     try {
-      const rawMeta = typeof record.metadata === 'string' ? (() => { try { return JSON.parse(record.metadata as string); } catch { return {}; } })() : (record.metadata || {});
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') {
+        try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; }
+      }
       const updatedMusuPerTank = { ...dervaMusuPerTank };
-      if (dervaMusu.trim()) {
-        updatedMusuPerTank[tankKey] = dervaMusu.trim();
+      if (valueToSave.trim()) {
+        updatedMusuPerTank[tankKey] = valueToSave.trim();
       } else {
         delete updatedMusuPerTank[tankKey];
       }
-      const updatedMeta = { ...rawMeta, _derva_musu_per_tank: updatedMusuPerTank };
-      // Keep legacy derva_musu in sync with tank 0 for table column display
-      if (updatedMusuPerTank['0']) {
-        updatedMeta.derva_musu = updatedMusuPerTank['0'];
+      // Handle array-wrapped metadata: write _derva_musu_per_tank into the wrapper object
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        const root = { ...rawMeta[0], _derva_musu_per_tank: updatedMusuPerTank };
+        if (updatedMusuPerTank['0']) { root.derva_musu = updatedMusuPerTank['0']; } else { delete root.derva_musu; }
+        updatedMeta = [root, ...rawMeta.slice(1)];
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        updatedMeta = { ...rawMeta, _derva_musu_per_tank: updatedMusuPerTank };
+        if (updatedMusuPerTank['0']) { updatedMeta.derva_musu = updatedMusuPerTank['0']; } else { delete updatedMeta.derva_musu; }
       } else {
-        delete updatedMeta.derva_musu;
+        updatedMeta = { _derva_musu_per_tank: updatedMusuPerTank };
+        if (updatedMusuPerTank['0']) { updatedMeta.derva_musu = updatedMusuPerTank['0']; }
       }
       await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
       setDervaMusuPerTank(updatedMusuPerTank);
+      if (overrideValue !== undefined) setDervaMusu(valueToSave);
       setDervaMusuSaved(true);
       setDervaMusuEditing(false);
       setTimeout(() => setDervaMusuSaved(false), 3000);
@@ -1366,12 +1590,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
       setDervaMusuSaving(false);
     }
   };
-
-  // AI conversation (record-level, shared across tanks)
-  const [conversation, setConversation] = useState<AiConversationMessage[]>(() => parseJSON<AiConversationMessage[]>(record.ai_conversation) || []);
-  const [input, setInput] = useState('');
-  const [chatSaving, setChatSaving] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
 
   const triggerDervaSelect = async () => {
     setDervaError(null);
@@ -1386,6 +1604,17 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         return;
       }
 
+      // Build clean tank metadata — only scalar fields relevant to this specific tank
+      const cleanTankMeta: Record<string, any> = {};
+      for (const [k, v] of Object.entries(tankMeta)) {
+        if (k.startsWith('_')) continue; // skip internal fields
+        if (v === null || v === undefined || v === '') continue;
+        if (typeof v === 'object' && !Array.isArray(v)) continue; // skip nested objects
+        cleanTankMeta[k] = v;
+      }
+
+      const currentDervaMusuValue = dervaMusuPerTank[tankKey] || 'neparinkta';
+
       // Send only this tank's metadata + product_index
       const resp = await fetch(webhookUrl, {
         method: 'POST',
@@ -1395,7 +1624,9 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           product_index: idx,
           product_count: products.length,
           product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
-          product_metadata: JSON.stringify(tankMeta),
+          product_metadata: cleanTankMeta,
+          derva_org: formatDervaOrg(tankMeta),
+          derva_musu: currentDervaMusuValue,
           project_name: record.project_name,
           description: record.description,
           klientas: record.klientas,
@@ -1447,58 +1678,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     }
   };
 
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text) return;
-    setChatError(null);
-    const userMsg: AiConversationMessage = { role: 'user', text, timestamp: new Date().toISOString() };
-    const withUserMsg = [...conversation, userMsg];
-    setConversation(withUserMsg);
-    setInput('');
-
-    try {
-      setChatSaving(true);
-      await updateNestandartiniaiAiConversation(record.id, withUserMsg);
-
-      const webhookUrl = await getWebhookUrl('n8n_ai_conversation');
-      if (webhookUrl) {
-        const resp = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            record_id: record.id,
-            product_index: idx,
-            product_metadata: JSON.stringify(tankMeta),
-            project_name: record.project_name,
-            description: record.description,
-            klientas: record.klientas,
-            derva: dervaResult,
-            chat_history: withUserMsg,
-            user_request: text,
-          }),
-        });
-
-        if (resp.ok) {
-          const data = await resp.json();
-          const aiText = typeof data === 'string' ? data : (data.response || data.text || data.message || data.output || JSON.stringify(data));
-          const aiMsg: AiConversationMessage = { role: 'assistant', text: aiText, timestamp: new Date().toISOString() };
-          const withAiMsg = [...withUserMsg, aiMsg];
-          setConversation(withAiMsg);
-          await updateNestandartiniaiAiConversation(record.id, withAiMsg);
-        } else {
-          setChatError(`Webhook klaida: ${resp.status}`);
-        }
-      } else {
-        setChatError('Webhook "n8n_ai_conversation" nesukonfigūruotas.');
-      }
-    } catch (e: any) {
-      console.error(e);
-      setChatError(e.message || 'Nepavyko gauti AI atsakymo');
-    } finally {
-      setChatSaving(false);
-    }
-  };
-
   const tankTitle = getProductTitle(tankMeta) || `Talpa ${idx + 1}`;
   const tankSpecs = getTankSpecsSummary(tankMeta);
   const isCurrentTankSelecting = selecting && selectingTankIdx === idx;
@@ -1513,53 +1692,29 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     <div>
       {/* ── Tank navigator ── */}
       {hasMultiple && (
-        <div className="mb-5">
-          <div className="flex items-center justify-between mb-3">
-            <button
-              onClick={goPrev}
-              className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            >
-              <ChevronLeft className="w-5 h-5 text-base-content/50" />
-            </button>
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary max-w-[250px] truncate">
-                {tankTitle}
-              </span>
-              <span className="text-xs text-base-content/40">
-                {idx + 1} / {products.length}
-                {tanksWithDerva > 0 && (
-                  <span className="ml-1.5 text-success">({tanksWithDerva} su derva)</span>
-                )}
-              </span>
-            </div>
-            <button
-              onClick={goNext}
-              className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5 active:bg-base-content/10"
-            >
-              <ChevronRight className="w-5 h-5 text-base-content/50" />
-            </button>
-          </div>
-          {/* Dot indicators */}
-          {products.length <= 20 && (
-            <div className="flex items-center justify-center gap-1.5 flex-wrap">
-              {products.map((_, i) => {
-                const hasDerva = !!dervaPerTank[String(i)];
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setCurrentIdx(i)}
-                    className={`w-2.5 h-2.5 rounded-full transition-all ${
-                      i === idx
-                        ? 'bg-primary scale-110'
-                        : hasDerva
-                          ? 'bg-success/60 hover:bg-success/80'
-                          : 'bg-base-content/15 hover:bg-base-content/25'
-                    }`}
-                    title={`${getProductTitle(products[i]) || `Talpa ${i + 1}`}${hasDerva ? ' ✓' : ''}`}
-                  />
-                );
-              })}
-            </div>
+        <div className="flex items-center gap-1 mb-5">
+          <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+            <ChevronLeft className="w-4 h-4 text-base-content/40" />
+          </button>
+          <select
+            value={idx}
+            onChange={e => setCurrentIdx(Number(e.target.value))}
+            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+          >
+            {products.map((p, i) => {
+              const hasDerva = !!dervaPerTank[String(i)];
+              return (
+                <option key={i} value={i}>
+                  {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}{hasDerva ? ' \u2713' : ''}
+                </option>
+              );
+            })}
+          </select>
+          <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+            <ChevronRight className="w-4 h-4 text-base-content/40" />
+          </button>
+          {tanksWithDerva > 0 && (
+            <span className="text-[11px] text-success shrink-0">{tanksWithDerva}/{products.length}</span>
           )}
         </div>
       )}
@@ -1598,13 +1753,13 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         </div>
         {dervaMusuEditing ? (
           <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
-            <input
-              type="text"
+            <textarea
               value={dervaMusu}
               onChange={e => setDervaMusu(e.target.value)}
               placeholder="Įveskite dervos reikšmę šiai talpai..."
-              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2"
-              onKeyDown={e => { if (e.key === 'Enter') saveDervaMusu(); if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
+              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
+              rows={Math.max(3, dervaMusu.split('\n').length)}
+              onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
               autoFocus
             />
             <div className="flex justify-end gap-2">
@@ -1615,7 +1770,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
                 Atšaukti
               </button>
               <button
-                onClick={saveDervaMusu}
+                onClick={() => saveDervaMusu()}
                 disabled={dervaMusuSaving}
                 className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
                 style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
@@ -1626,7 +1781,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           </div>
         ) : dervaMusu ? (
           <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
-            <p className="text-sm font-medium text-base-content">{dervaMusu}</p>
+            <MarkdownText text={dervaMusu} />
           </div>
         ) : (
           <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
@@ -1647,24 +1802,62 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           <div className="flex items-center gap-1.5">
             <Beaker className="w-3.5 h-3.5 text-primary" />
             <p className="text-xs font-medium text-primary">AI rekomendacija</p>
+            {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
+              <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
+                <ArrowUp className="w-3 h-3" />
+                <span>Naudojama</span>
+              </div>
+            )}
           </div>
-          {!readOnly && (
-            <button
-              onClick={triggerDervaSelect}
-              disabled={selecting}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-            >
-              {isCurrentTankSelecting
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
-                : selecting
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
-                  : dervaResult
-                    ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
-                    : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
-              }
-            </button>
-          )}
+          {!readOnly && (() => {
+            const isApplied = !!(dervaResult && dervaMusu.trim() === dervaResult.trim());
+            return (
+            <div className="flex items-center gap-2">
+              {isApplied ? (
+                <div
+                  className="flex items-center justify-center w-9 h-9 rounded-full"
+                  style={{ background: 'rgba(52, 199, 89, 0.1)', border: '0.5px solid rgba(52, 199, 89, 0.3)' }}
+                  title="Rekomendacija jau naudojama"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+                </div>
+              ) : (
+                <button
+                  onClick={() => dervaResult && saveDervaMusu(dervaResult)}
+                  disabled={!dervaResult || selecting || dervaMusuSaving}
+                  className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                  style={{
+                    background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
+                    color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
+                    border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
+                    cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
+                    opacity: !dervaResult || selecting ? 0.5 : 1,
+                  }}
+                >
+                  {dervaMusuSaving
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
+                    : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
+                  }
+                </button>
+              )}
+              <button
+                onClick={triggerDervaSelect}
+                disabled={selecting}
+                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
+                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              >
+                {isCurrentTankSelecting
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
+                  : selecting
+                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
+                    : dervaResult
+                      ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
+                      : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
+                }
+              </button>
+            </div>
+            );
+          })()}
         </div>
 
         {/* Loading state */}
@@ -1694,8 +1887,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
           </div>
         )}
 
-        {/* Recommendation display */}
-        {dervaResult && !isCurrentTankSelecting ? (
+        {/* Recommendation display — hide content when already applied to derva_musu */}
+        {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
           <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
             <MarkdownText text={dervaResult} />
           </div>
@@ -1708,75 +1901,9 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
             <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
           </div>
         )}
+
       </div>
 
-      {/* ── AI conversation section (record-level) ── */}
-      <div className="pt-5 border-t border-base-content/10">
-        <CollapsibleSection title="AI pokalbis" defaultOpen={conversation.length > 0}>
-          {conversation.length > 0 && (
-            <div className="mb-4">
-              {conversation.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2.5`}>
-                  <div
-                    className={`max-w-[80%] rounded-3xl px-4 py-2.5 ${msg.role === 'user' ? 'text-base-content' : 'text-base-content'}`}
-                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
-                  >
-                    <div className="overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 6)' }}>
-                      {msg.role === 'assistant'
-                        ? <MarkdownText text={msg.text} />
-                        : <div className="text-[15px] leading-relaxed whitespace-pre-wrap">{msg.text}</div>
-                      }
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Typing indicator */}
-          {chatSaving && (
-            <div className="flex justify-start mb-2.5">
-              <div className="rounded-3xl px-4 py-2.5" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
-                <div className="flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-base-content/40" />
-                  <span className="text-xs text-base-content/40">AI rašo...</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {chatError && (
-            <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{chatError}</span>
-            </div>
-          )}
-
-          {!readOnly && (
-            <div className={`flex items-end gap-2 pt-3 ${conversation.length > 0 ? 'border-t border-base-content/10' : ''}`}>
-              <div className="flex-1 flex items-end rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f8f8f9' }}>
-                <AutoTextarea
-                  value={input}
-                  onChange={setInput}
-                  placeholder="Klauskite AI apie dervą..."
-                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 outline-none border-none py-0.5"
-                />
-              </div>
-              <button
-                onClick={sendMessage}
-                disabled={chatSaving || !input.trim()}
-                className="flex-shrink-0 w-8 h-8 mb-0.5 flex items-center justify-center rounded-full transition-all disabled:cursor-not-allowed disabled:bg-base-content/10 disabled:text-base-content/25 bg-base-content text-base-100 hover:opacity-80"
-              >
-                {chatSaving
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-                }
-              </button>
-            </div>
-          )}
-
-        </CollapsibleSection>
-      </div>
     </div>
   );
 }
@@ -1785,12 +1912,19 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
 // Tab: Panašūs
 // ---------------------------------------------------------------------------
 
-function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
+function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
   const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
   const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
   const loading = useProcessing(record.id, 'similar');
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Price estimation state
+  const [estimating, setEstimating] = useState(false);
+  const [estimateStatus, setEstimateStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [estimateError, setEstimateError] = useState<string | null>(null);
+  const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
+  const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
 
   // Sync with record prop when it refreshes
   useEffect(() => {
@@ -1840,6 +1974,93 @@ function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord
     }
   };
 
+  const handleEstimatePrice = async () => {
+    if (projects.length === 0) {
+      setEstimateError('Pirmiausia reikia rasti panašius projektus');
+      setEstimateStatus('error');
+      setTimeout(() => setEstimateStatus('idle'), 4000);
+      return;
+    }
+    setEstimating(true);
+    setEstimateStatus('idle');
+    setEstimateError(null);
+    setEstimatedPrice(null);
+    setEstimateReasoning(null);
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_price_estimation');
+      if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
+
+      // Build clean product metadata for all tanks
+      const cleanProducts = products.map((p, i) => {
+        const clean: Record<string, any> = {};
+        for (const [k, v] of Object.entries(p)) {
+          if (k.startsWith('_')) continue;
+          if (v === null || v === undefined || v === '') continue;
+          if (typeof v === 'object' && !Array.isArray(v)) continue;
+          clean[k] = v;
+        }
+        return { product_index: i, ...clean };
+      });
+
+      // Build enriched similar projects with metadata
+      const enrichedSimilar = projects.map(p => ({
+        id: p.id,
+        project_name: p.project_name,
+        similarity_score: p.similarity_score,
+        kaina: p.kaina ?? null,
+        metadata: p.metadata ?? null,
+      }));
+
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: record.id,
+          project_name: record.project_name,
+          description: record.description,
+          klientas: record.klientas,
+          derva: record.derva,
+          current_kaina: record.kaina,
+          products: cleanProducts,
+          product_count: products.length,
+          similar_projects: enrichedSimilar,
+        }),
+      });
+      if (!resp.ok) {
+        const body = await resp.text();
+        throw new Error(body || `Klaida: ${resp.status}`);
+      }
+
+      // The webhook may return the estimate directly or write to kaina field
+      let respData: any = null;
+      try { respData = await resp.json(); } catch { /* no json body */ }
+
+      // Re-fetch record to pick up any kaina update from n8n
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) {
+        onRecordUpdated?.(updated);
+        const newKaina = updated.kaina != null ? Number(updated.kaina) : null;
+        if (newKaina != null && !isNaN(newKaina)) setEstimatedPrice(newKaina);
+      }
+
+      // If webhook returned reasoning/explanation in the response body
+      if (respData?.reasoning) setEstimateReasoning(respData.reasoning);
+      if (respData?.estimated_price != null && estimatedPrice === null) {
+        setEstimatedPrice(Number(respData.estimated_price));
+      }
+
+      setEstimateStatus('success');
+      setTimeout(() => setEstimateStatus('idle'), 5000);
+    } catch (err: any) {
+      console.error('Price estimation error:', err);
+      setEstimateError(err?.message || 'Nepavyko įvertinti kainos');
+      setEstimateStatus('error');
+      setTimeout(() => setEstimateStatus('idle'), 5000);
+    } finally {
+      setEstimating(false);
+    }
+  };
+
   return (
     <div>
       {/* Trigger button */}
@@ -1875,26 +2096,34 @@ function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord
         </div>
       ) : projects.length > 0 ? (
         <div className="space-y-1.5">
-          {projects.map((p, i) => (
-            <a
-              key={p.id}
-              href={`/paklausimas/${p.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
-              style={{ background: 'rgba(0,0,0,0.02)' }}
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate text-base-content">
-                  {p.project_name || `Projektas #${p.id}`}
-                </p>
-                <p className="text-xs mt-0.5 text-base-content/40">ID: {p.id}</p>
-              </div>
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
-                {Math.round(p.similarity_score * 100)}%
-              </span>
-            </a>
-          ))}
+          {projects.map((p, i) => {
+            const pKaina = p.kaina != null ? Number(p.kaina) : null;
+            return (
+              <a
+                key={p.id}
+                href={`/paklausimas/${p.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
+                style={{ background: 'rgba(0,0,0,0.02)' }}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate text-base-content">
+                    {p.project_name || `Projektas #${p.id}`}
+                  </p>
+                  <p className="text-xs mt-0.5 text-base-content/40">
+                    ID: {p.id}
+                    {pKaina != null && !isNaN(pKaina) && (
+                      <span className="ml-2 text-emerald-600">{pKaina.toLocaleString('lt-LT')} €</span>
+                    )}
+                  </p>
+                </div>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
+                  {Math.round(p.similarity_score * 100)}%
+                </span>
+              </a>
+            );
+          })}
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -1905,6 +2134,63 @@ function TabPanasus({ record, onRecordUpdated }: { record: NestandartiniaiRecord
           <p className="text-xs max-w-[240px] text-base-content/40" style={{ lineHeight: '1.6' }}>
             Panašiausi projektai bus rodomi, kai bus sugeneruoti per n8n.
           </p>
+        </div>
+      )}
+
+      {/* ── AI Price Estimation ── */}
+      {projects.length > 0 && !readOnly && (
+        <div className="mt-6 pt-5 border-t border-base-content/10">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
+              <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
+            </div>
+            <button
+              onClick={handleEstimatePrice}
+              disabled={estimating}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
+              style={{
+                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
+                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
+                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
+              }}
+            >
+              {estimating
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
+                : estimateStatus === 'success'
+                  ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
+                  : estimateStatus === 'error'
+                    ? <><AlertCircle className="w-3 h-3" /> Klaida</>
+                    : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
+              }
+            </button>
+          </div>
+          {estimateError && estimateStatus === 'error' && (
+            <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
+          )}
+          {estimating && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <Loader2 className="w-5 h-5 animate-spin mb-2" style={{ color: '#AF52DE' }} />
+              <p className="text-xs text-base-content/50">Analizuojami panašūs projektai ir parametrai...</p>
+            </div>
+          )}
+          {estimatedPrice != null && !estimating && (
+            <div className="rounded-xl p-4 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
+              <div className="flex items-center gap-2 mb-1">
+                <Euro className="w-4 h-4 text-emerald-600" />
+                <span className="text-lg font-semibold text-emerald-600">{estimatedPrice.toLocaleString('lt-LT')} €</span>
+                <span className="text-[10px] uppercase tracking-wider text-base-content/30 font-medium">preliminari</span>
+              </div>
+              {estimateReasoning && (
+                <p className="text-xs text-base-content/50 mt-2 leading-relaxed">{estimateReasoning}</p>
+              )}
+            </div>
+          )}
+          {!estimating && estimatedPrice == null && estimateStatus !== 'error' && (
+            <p className="text-xs text-base-content/35" style={{ lineHeight: '1.6' }}>
+              AI įvertins preliminarią kainą pagal panašių projektų kainas, talpų parametrus, dervą ir kitus duomenis.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -1920,8 +2206,8 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
   const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
   const [updating, setUpdating] = useState(false);
-  const [updatingMode, setUpdatingMode] = useState<'save' | 'process' | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'success' | 'saved' | 'error'>('idle');
+  const [updatingMode, setUpdatingMode] = useState<'save' | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'saved' | 'error'>('idle');
   const [dirtyTabs, setDirtyTabs] = useState<Set<ModalTab>>(new Set());
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const meta = parseMetadata(record.metadata);
@@ -1939,10 +2225,34 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   // Pending data: stored locally until Atnaujinti is pressed
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
-  const [showPartialWarning, setShowPartialWarning] = useState<'no-files' | 'no-messages' | null>(null);
 
-  const messagesChanged = pendingMessages !== null;
-  const filesChanged = pendingFiles.length > 0;
+
+  // Price (kaina) state
+  const parseKaina = (v: any): number | null => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+    return isNaN(n) ? null : n;
+  };
+  const [kainaEditing, setKainaEditing] = useState(false);
+  const [kainaInput, setKainaInput] = useState('');
+  const [kainaSaving, setKainaSaving] = useState(false);
+  const currentKaina = parseKaina(record.kaina);
+
+  const saveKaina = async () => {
+    setKainaSaving(true);
+    try {
+      const val = kainaInput.trim() === '' ? null : parseFloat(kainaInput.replace(',', '.'));
+      if (kainaInput.trim() !== '' && (val === null || isNaN(val!))) return;
+      await updateNestandartiniaiField(record.id, 'kaina', val);
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRefresh?.(updated);
+      setKainaEditing(false);
+    } catch (e) {
+      console.error('Error saving kaina:', e);
+    } finally {
+      setKainaSaving(false);
+    }
+  };
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -2011,11 +2321,10 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     });
   }, []);
 
-  const executeSaveAndProcess = async (triggerWebhook: boolean) => {
+  const executeSaveAndProcess = async () => {
     setUpdating(true);
-    setUpdatingMode(triggerWebhook ? 'process' : 'save');
+    setUpdatingMode('save');
     setUpdateStatus('idle');
-    setShowPartialWarning(null);
     try {
       // 1. Save pending messages to DB
       if (pendingMessages !== null) {
@@ -2047,23 +2356,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         setLocalFiles(newFilesValue);
       }
 
-      // 3. Trigger webhook only if requested
-      if (triggerWebhook) {
-        const webhookUrl = await getWebhookUrl('nestandartinio_iraso_atnaujinimas');
-        if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
-        const resp = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            record_id: record.id,
-            ...(uploadedFileIds.length > 0 ? { uploaded_file_ids: uploadedFileIds } : {}),
-          }),
-        });
-        if (!resp.ok) throw new Error(`Klaida: ${resp.status}`);
-      }
-
-      // 4. Clear pending state
-      setUpdateStatus(triggerWebhook ? 'success' : 'saved');
+      // 3. Clear pending state
+      setUpdateStatus('saved');
       setPendingFiles([]);
       setPendingMessages(null);
       setDirtyTabs(new Set());
@@ -2079,18 +2373,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     }
   };
 
-  const handleUpdate = () => {
-    // If both changed or neither changed, proceed directly
-    if (messagesChanged === filesChanged) {
-      executeSaveAndProcess(true);
-      return;
-    }
-    // Only one type changed — warn the user
-    setShowPartialWarning(filesChanged ? 'no-messages' : 'no-files');
-  };
-
   const handleSaveOnly = () => {
-    executeSaveAndProcess(false);
+    executeSaveAndProcess();
   };
 
   const handleClose = () => {
@@ -2133,7 +2417,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
-                {record.project_name || 'Paklausimas'}
+                {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
               </h2>
               {(meta.pritaikymas || products[0]?.pritaikymas) ? (
                 <p className="text-sm mt-0.5 truncate text-base-content/50">
@@ -2148,6 +2432,40 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {/* Price badge */}
+              {kainaEditing ? (
+                <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+                  <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+                  <input
+                    type="text"
+                    value={kainaInput}
+                    onChange={e => setKainaInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveKaina(); if (e.key === 'Escape') setKainaEditing(false); }}
+                    className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+                    placeholder="0.00"
+                    autoFocus
+                  />
+                  <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                    {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                  </button>
+                  <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                    <X className="w-3 h-3 text-base-content/40" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { if (!isLocked) { setKainaInput(currentKaina != null ? String(currentKaina) : ''); setKainaEditing(true); } }}
+                  className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                    currentKaina != null
+                      ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                      : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+                  } ${isLocked ? 'cursor-default' : 'cursor-pointer'}`}
+                  title={isLocked ? 'Kaina' : 'Redaguoti kainą'}
+                >
+                  <Euro className="w-3 h-3" />
+                  {currentKaina != null ? `${currentKaina.toLocaleString('lt-LT')} €` : 'Kaina'}
+                </button>
+              )}
               {record.klientas && (
                 <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">
                   {record.klientas}
@@ -2188,7 +2506,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 </button>
               );
             })}
-            {/* Save only (no processing) */}
+            {/* Save */}
             {!isLocked && (
               <button
                 onClick={handleSaveOnly}
@@ -2210,32 +2528,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 }
               </button>
             )}
-            {/* Save + process (triggers webhook) */}
-            {!isLocked && (
-              <button
-                onClick={handleUpdate}
-                disabled={updating}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-3xl text-xs font-medium transition-all mt-1.5 ${
-                  updateStatus === 'success'
-                    ? 'text-success bg-success/10 border border-success/20'
-                    : updateStatus === 'error'
-                      ? 'text-error bg-error/5 border border-error/15'
-                      : hasContextChanges
-                        ? 'text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100'
-                        : 'text-base-content/40 border border-base-content/8 hover:bg-base-content/5'
-                } disabled:opacity-60`}
-                style={!hasContextChanges && updateStatus === 'idle' ? { background: '#f8f8f9' } : undefined}
-              >
-                {updatingMode === 'process'
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</>
-                  : updateStatus === 'success'
-                    ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
-                    : updateStatus === 'error'
-                      ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
-                      : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>
-                }
-              </button>
-            )}
             {/* Delete record – pushed to bottom */}
             <div className="mt-auto pt-3">
               {!isLocked && (
@@ -2252,7 +2544,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -2266,59 +2558,12 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               </>
             )}
             {activeTab === 'derva' && <TabDerva record={record} products={products} onRecordUpdated={onRefresh} />}
-            {activeTab === 'panasus' && <TabPanasus record={record} onRecordUpdated={onRefresh} />}
+            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
           </div>
         </div>
       </div>
 
       {/* Partial-changes warning modal */}
-      {showPartialWarning && (
-        <div
-          className="fixed inset-0 z-[10000] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-          onClick={() => setShowPartialWarning(null)}
-        >
-          <div
-            className="bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl w-full max-w-sm mx-4"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="h-1" style={{ background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)' }} />
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(245,158,11,0.1)' }}>
-                  <AlertCircle className="w-4 h-4 text-amber-500" />
-                </div>
-                <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>
-                  {showPartialWarning === 'no-files' ? 'Nėra naujų failų' : 'Nėra žinučių pakeitimų'}
-                </p>
-              </div>
-              <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
-                {showPartialWarning === 'no-files'
-                  ? 'Pakeitėte susirašinėjimus, bet nepridėjote naujų failų. Ar tikrai norite tęsti be failų?'
-                  : 'Pridėjote naujų failų, bet nepakeitėte susirašinėjimų. Ar tikrai norite tęsti be žinučių pakeitimų?'
-                }
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowPartialWarning(null)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
-                >
-                  Grįžti
-                </button>
-                <button
-                  onClick={() => executeSaveAndProcess(true)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Tęsti
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Close confirmation dialog */}
       {showCloseConfirm && (
         <div
@@ -2351,7 +2596,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                     Uždaryti
                   </button>
                   <button
-                    onClick={() => { executeSaveAndProcess(false); }}
+                    onClick={() => { executeSaveAndProcess(); }}
                     disabled={updating}
                     className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/70 transition-all hover:bg-base-content/5 disabled:opacity-60"
                     style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
@@ -2359,14 +2604,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                     {updatingMode === 'save' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</> : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>}
                   </button>
                 </div>
-                <button
-                  onClick={handleUpdate}
-                  disabled={updating}
-                  className="w-full flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(180deg, #f59e0b 0%, #d97706 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
-                >
-                  {updatingMode === 'process' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Atnaujinama...</> : <><RefreshCw className="w-3.5 h-3.5" /> Atnaujinti</>}
-                </button>
               </div>
             </div>
           </div>
@@ -2393,7 +2630,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <p className="text-[15px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Ištrinti įrašą</p>
               </div>
               <p className="text-sm text-base-content/50 mb-6 ml-12" style={{ lineHeight: '1.6' }}>
-                Įrašas <strong className="text-base-content/70">{record.project_name || `#${record.id}`}</strong> ir visi susiję failai bus ištrinti negrįžtamai.
+                Įrašas <strong className="text-base-content/70">{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || `#${record.id}`}</strong> ir visi susiję failai bus ištrinti negrįžtamai.
               </p>
               {deleteError && (
                 <p className="text-xs text-error mb-4 ml-12">{deleteError}</p>
@@ -2462,7 +2699,7 @@ export default function PaklausimoKortelePage() {
         <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || 'Paklausimas'}</h2>
+              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
               {(meta.pritaikymas || products[0]?.pritaikymas) ? (
                 <p className="text-sm mt-0.5 truncate text-base-content/50">
                   {meta.pritaikymas || products[0]?.pritaikymas}
@@ -2475,9 +2712,19 @@ export default function PaklausimoKortelePage() {
                 </p>
               )}
             </div>
-            {record.klientas && (
-              <span className="text-xs font-medium px-3 py-1 rounded-full shrink-0 bg-primary/10 text-primary">{record.klientas}</span>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {(() => {
+                const rk = record.kaina != null ? Number(record.kaina) : null;
+                return rk != null && !isNaN(rk) ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600">
+                    <Euro className="w-3 h-3" />{rk.toLocaleString('lt-LT')} €
+                  </span>
+                ) : null;
+              })()}
+              {record.klientas && (
+                <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">{record.klientas}</span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2500,12 +2747,12 @@ export default function PaklausimoKortelePage() {
             })}
           </div>
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
             {activeTab === 'derva' && <TabDerva record={record} products={products} readOnly />}
-            {activeTab === 'panasus' && <TabPanasus record={record} />}
+            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly />}
           </div>
         </div>
       </div>
