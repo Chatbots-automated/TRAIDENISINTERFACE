@@ -239,8 +239,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
-  const [techDescResult, setTechDescResult] = useState<string | null>(null);
-  const [techDescError, setTechDescError] = useState<string | null>(null);
 
   // AI-assisted variable editing state
   const [aiVarEditMode, setAiVarEditMode] = useState(false);
@@ -1929,6 +1927,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
 
+      // Auto-generate technological description from the new artifact's components_bulletlist
+      const yamlForTechDesc = parseYAMLContent(trimmedContent);
+      const bulletlist = yamlForTechDesc['components_bulletlist'] || '';
+      if (bulletlist.trim()) {
+        // Fire-and-forget — runs in background, saves result automatically
+        autoGenerateTechDescription(bulletlist, conversation.id);
+      }
+
       // Auto-create or update standartiniai_projektai record
       try {
         const yamlVars = parseYAMLContent(trimmedContent);
@@ -2518,35 +2524,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     documentPreviewRef.current?.clearActiveVariable();
   };
 
-  /** Generate the technological description via API call with the component list. */
-  const handleGenerateTechDescription = async () => {
+  /** Auto-generate technological description after artifact creation — fire-and-forget. */
+  const autoGenerateTechDescription = async (componentsList: string, conversationId: string) => {
     setTechDescLoading(true);
-    setTechDescResult(null);
-    setTechDescError(null);
-
     try {
       if (!anthropicApiKey) throw new Error('API key not found');
 
-      // Get component list from YAML artifact
-      const yamlVars: Record<string, string> = currentConversation?.artifact
-        ? parseYAMLContent(currentConversation.artifact.content)
-        : {};
-      const componentsList = yamlVars['components_bulletlist'] || '';
-
-      if (!componentsList.trim()) {
-        setTechDescError('Komponentų sąrašas tuščias. Pirma sugeneruokite komponentų sąrašą per čatą.');
-        setTechDescLoading(false);
-        return;
-      }
-
-      // Fetch the tech description prompt from instruction_variables table
       const promptVar = await getInstructionVariable('tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
-        setTechDescError('Technologinio aprašymo prompt nerastas duomenų bazėje (variable_key: tech_description_prompt).');
-        setTechDescLoading(false);
+        console.warn('[AutoTechDesc] No tech_description_prompt found in DB, skipping.');
         return;
       }
-      const techDescSystemPrompt = promptVar.content;
 
       const anthropic = new Anthropic({
         apiKey: anthropicApiKey,
@@ -2556,7 +2544,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4000,
-        system: techDescSystemPrompt,
+        system: promptVar.content,
         messages: [{ role: 'user', content: componentsList }],
       });
 
@@ -2565,10 +2553,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         .map((b) => b.text)
         .join('');
 
-      setTechDescResult(text);
+      if (text) {
+        // Auto-save to offerParameters
+        const updated = { ...offerParameters, technological_description: text };
+        setOfferParameters(updated);
+        saveOfferParameters(conversationId, updated);
+        addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
+        console.log('[AutoTechDesc] Generated and saved successfully.');
+      }
     } catch (err: any) {
-      console.error('Tech description generation failed:', err);
-      setTechDescError(err.message || 'Nepavyko sugeneruoti');
+      console.error('[AutoTechDesc] Failed:', err);
+      addNotification('error', 'Technologinis aprašymas', 'Nepavyko automatiškai sugeneruoti.');
     } finally {
       setTechDescLoading(false);
     }
@@ -3463,83 +3458,22 @@ Vartotojo instrukcija: ${instruction}`;
 
                             {cat === 'tech_description' && (
                               <div>
-                                {!techDescResult && !techDescLoading && !techDescError && (
-                                  <div>
-                                    {editingVariable.editValue ? (
-                                      <div className="text-[12px] max-h-32 overflow-y-auto mb-2" style={{ color: '#3d3935', lineHeight: '1.5' }}>
-                                        {editingVariable.editValue.slice(0, 200)}{editingVariable.editValue.length > 200 ? '...' : ''}
-                                      </div>
-                                    ) : (
-                                      <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
-                                        Sugeneruoti technologinį aprašymą pagal komponentų sąrašą
-                                      </span>
-                                    )}
-                                    <button
-                                      onClick={handleGenerateTechDescription}
-                                      className="w-full mt-2 text-[12px] px-3 py-2 rounded-lg font-medium transition-colors"
-                                      style={{ background: '#0891b2', color: 'white' }}
-                                      onMouseEnter={(e) => e.currentTarget.style.background = '#0e7490'}
-                                      onMouseLeave={(e) => e.currentTarget.style.background = '#0891b2'}
-                                    >
-                                      Generuoti
-                                    </button>
-                                  </div>
-                                )}
-                                {techDescLoading && (
+                                {techDescLoading ? (
                                   <div className="flex items-center justify-center gap-2 py-4">
                                     <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
-                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama...</span>
+                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama automatiškai...</span>
                                   </div>
-                                )}
-                                {techDescError && !techDescLoading && (
+                                ) : editingVariable.editValue ? (
                                   <div>
-                                    <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
-                                      {techDescError}
-                                    </div>
-                                    <button
-                                      onClick={() => setTechDescError(null)}
-                                      className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                      style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
-                                      onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                      Grįžti
-                                    </button>
-                                  </div>
-                                )}
-                                {techDescResult && !techDescLoading && (
-                                  <div>
-                                    <div
-                                      className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
-                                      style={{ color: '#3d3935', lineHeight: '1.6', background: '#f8f7f6', border: '1px solid #e5e2dd' }}
-                                    >
-                                      {techDescResult}
-                                    </div>
-                                    <div className="flex justify-end mt-2.5 gap-2">
-                                      <button
-                                        onClick={() => { setTechDescResult(null); }}
-                                        className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                        style={{ color: '#ef4444' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                      >
-                                        Atmesti
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleVariableSave('technological_description', techDescResult!);
-                                          setTechDescResult(null);
-                                          addNotification('success', 'Aprašymas priimtas', 'Technologinis aprašymas įrašytas į dokumentą.');
-                                        }}
-                                        className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
-                                        style={{ background: '#059669', color: 'white' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#047857'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = '#059669'}
-                                      >
-                                        Priimti
-                                      </button>
+                                    <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
+                                    <div className="mt-1 text-[12px] max-h-48 overflow-y-auto" style={{ color: '#3d3935', lineHeight: '1.6' }}>
+                                      {editingVariable.editValue}
                                     </div>
                                   </div>
+                                ) : (
+                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
+                                    Automatiškai sugeneruojama kai sukuriamas komercinis pasiūlymas
+                                  </span>
                                 )}
                               </div>
                             )}
