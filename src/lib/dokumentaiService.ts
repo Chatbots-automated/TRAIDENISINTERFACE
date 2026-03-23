@@ -34,8 +34,6 @@ export const createStandartinisProjektas = async (record: {
   projekto_kodas: string;
   hnv: string;
   docx_file_id?: string;
-  user_created?: string;
-  user_updated?: string;
 }): Promise<any> => {
   try {
     const { data, error } = await db
@@ -67,7 +65,6 @@ export const updateStandartinisProjektas = async (
     projekto_kodas?: string;
     hnv?: string;
     docx_file_id?: string;
-    user_updated?: string;
   }
 ): Promise<any> => {
   try {

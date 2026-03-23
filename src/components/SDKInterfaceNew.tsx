@@ -1947,8 +1947,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-            user_created: user.id,
-            user_updated: user.id,
           });
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
@@ -1957,7 +1955,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-            user_updated: user.id,
           });
           console.log('[Standartiniai] Updated record after AI edit:', standartiniaiRecordId);
         }
@@ -2208,7 +2205,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           docx_file_id: newFileId,
-          user_updated: user.id,
         });
       } else {
         const created = await createStandartinisProjektas({
@@ -2217,8 +2213,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           docx_file_id: newFileId,
-          user_created: user.id,
-          user_updated: user.id,
         });
         setStandartiniaiRecordId(created.id);
       }
