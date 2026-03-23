@@ -342,7 +342,12 @@ const DocumentPreview = forwardRef<DocumentPreviewHandle, DocumentPreviewProps>(
             delimiters: { start: '{{', end: '}}' },
           });
           // Replace all {{variable}} placeholders with current values
-          docx.render(variables);
+          // Convert literal \n strings to real newlines so docxtemplater inserts line breaks
+          const cleanedVars: Record<string, string> = {};
+          for (const [k, v] of Object.entries(variables)) {
+            cleanedVars[k] = typeof v === 'string' ? v.replace(/\\n/g, '\n') : v;
+          }
+          docx.render(cleanedVars);
           const out = docx.getZip().generate({
             type: 'blob',
             mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
