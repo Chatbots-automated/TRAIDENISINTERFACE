@@ -216,6 +216,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // DOCX template upload & preview
   const docxFileInputRef = useRef<HTMLInputElement>(null);
   const [hasDocxTemplate, setHasDocxTemplate] = useState(false);
+  const [globalDocxFileId, setGlobalDocxFileId] = useState<string | null>(null);
   const [docxUploading, setDocxUploading] = useState(false);
   const [tplEditorTab, setTplEditorTab] = useState<'html' | 'docx'>('html');
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
@@ -273,7 +274,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Hydrate global template cache from DB so all users share the same template
     loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
     // Check if a DOCX template exists
-    getDocxTemplateFileId().then(id => setHasDocxTemplate(!!id));
+    getDocxTemplateFileId().then(id => { setHasDocxTemplate(!!id); setGlobalDocxFileId(id); });
   }, []);
 
   // Sync URL ↔ currentConversation
@@ -590,7 +591,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
             if (spRecord.docx_file_id) {
-              setSavedDocxFileId(spRecord.docx_file_id);
+              // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
+              const fid = typeof spRecord.docx_file_id === 'object' && spRecord.docx_file_id !== null
+                ? spRecord.docx_file_id.id
+                : spRecord.docx_file_id;
+              if (fid) setSavedDocxFileId(fid);
             }
           }
         } catch (spErr) {
@@ -3314,18 +3319,33 @@ Vartotojo instrukcija: ${instruction}`;
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
               <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
-                {savedDocxFileId ? (
-                  <iframe
-                    src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId))}&embedded=true`}
-                    className="flex-1 w-full border-0"
-                    title="DOCX peržiūra"
-                  />
+                {(savedDocxFileId || globalDocxFileId) ? (
+                  <>
+                    {!savedDocxFileId && globalDocxFileId && (
+                      <div className="px-4 py-2 text-xs text-base-content/50 bg-base-content/3 flex items-center justify-between border-b border-base-content/5">
+                        <span>Rodomas DOCX šablonas. Spauskite „Išsaugoti", kad sugeneruotumėte dokumentą su kintamaisiais.</span>
+                        <button
+                          onClick={handleSaveToStandartiniai}
+                          disabled={isSavingToStandartiniai}
+                          className="btn btn-xs btn-primary gap-1 ml-2"
+                        >
+                          {isSavingToStandartiniai ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                          Išsaugoti
+                        </button>
+                      </div>
+                    )}
+                    <iframe
+                      src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId || globalDocxFileId!))}&embedded=true`}
+                      className="flex-1 w-full border-0"
+                      title="DOCX peržiūra"
+                    />
+                  </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-center px-6">
                     <div>
                       <FileText className="w-10 h-10 mx-auto mb-3 text-base-content/20" />
-                      <p className="text-sm font-medium text-base-content/60 mb-1">DOCX dar neišsaugotas</p>
-                      <p className="text-xs text-base-content/40 mb-4">Spauskite „Išsaugoti", kad sugeneruotumėte ir peržiūrėtumėte dokumentą</p>
+                      <p className="text-sm font-medium text-base-content/60 mb-1">DOCX šablonas neįkeltas</p>
+                      <p className="text-xs text-base-content/40 mb-4">Įkelkite DOCX šabloną per šablono redaktorių arba spauskite „Išsaugoti"</p>
                       <button
                         onClick={handleSaveToStandartiniai}
                         disabled={isSavingToStandartiniai}
@@ -4261,6 +4281,7 @@ Vartotojo instrukcija: ${instruction}`;
                         setDocxUploading(true);
                         await uploadDocxTemplate(file);
                         setHasDocxTemplate(true);
+                        getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
                       } catch (err) {
                         addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);

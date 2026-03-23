@@ -40,6 +40,33 @@ function parseMetadata(raw: string | Record<string, string> | any[] | null | und
   } catch { return {}; }
 }
 
+/** Parse kaina field into a per-tank price map. Backward-compatible with single numbers. */
+function parseKainaMapStatic(v: any): Record<string, number> {
+  if (v === null || v === undefined || v === '') return {};
+  if (typeof v === 'number') return { '0': v };
+  if (typeof v === 'string') {
+    const trimmed = v.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const result: Record<string, number> = {};
+          for (const [k, val] of Object.entries(parsed)) { const n = Number(val); if (!isNaN(n)) result[k] = n; }
+          return result;
+        }
+      } catch { /* fall through */ }
+    }
+    const n = parseFloat(trimmed);
+    if (!isNaN(n)) return { '0': n };
+  }
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const result: Record<string, number> = {};
+    for (const [k, val] of Object.entries(v)) { const n = Number(val); if (!isNaN(n)) result[k] = n; }
+    return result;
+  }
+  return {};
+}
+
 /**
  * Extract an array of product specs from metadata.
  * Supports multiple formats:
@@ -439,7 +466,7 @@ function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
 
-function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
+function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const hasMultiple = products.length > 1;
   const [saving, setSaving] = useState(false);
@@ -448,6 +475,11 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [newFieldKey, setNewFieldKey] = useState('');
   const [newFieldVal, setNewFieldVal] = useState('');
+
+  // Per-tank price editing state
+  const [tankKainaEditing, setTankKainaEditing] = useState(false);
+  const [tankKainaInput, setTankKainaInput] = useState('');
+  const [tankKainaSaving, setTankKainaSaving] = useState(false);
 
   // Clamp index if products array changes
   const idx = Math.min(currentIdx, products.length - 1);
@@ -664,6 +696,71 @@ function TabBendra({ record, products, readOnly, onRecordUpdated }: { record: Ne
           )}
         </div>
       )}
+
+      {/* Per-tank price input */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-[11px] text-base-content/40 shrink-0">Kaina:</span>
+        {tankKainaEditing ? (
+          <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+            <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+            <input
+              type="text"
+              value={tankKainaInput}
+              onChange={e => setTankKainaInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const parsed = tankKainaInput.trim() === '' ? null : parseFloat(tankKainaInput.replace(',', '.'));
+                  if (tankKainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
+                  setTankKainaSaving(true);
+                  onKainaChange(idx, parsed);
+                  setTankKainaSaving(false);
+                  setTankKainaEditing(false);
+                }
+                if (e.key === 'Escape') setTankKainaEditing(false);
+              }}
+              className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+              placeholder="0.00"
+              autoFocus
+            />
+            <button
+              onClick={() => {
+                const parsed = tankKainaInput.trim() === '' ? null : parseFloat(tankKainaInput.replace(',', '.'));
+                if (tankKainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
+                setTankKainaSaving(true);
+                onKainaChange(idx, parsed);
+                setTankKainaSaving(false);
+                setTankKainaEditing(false);
+              }}
+              disabled={tankKainaSaving}
+              className="p-1 rounded-full hover:bg-base-content/10 transition-colors"
+            >
+              {tankKainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+            </button>
+            <button onClick={() => setTankKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+              <X className="w-3 h-3 text-base-content/40" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => {
+              if (!readOnly) {
+                const currentVal = kainaMap[String(idx)];
+                setTankKainaInput(currentVal != null ? String(currentVal) : '');
+                setTankKainaEditing(true);
+              }
+            }}
+            className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+              kainaMap[String(idx)] != null
+                ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+            } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+            title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
+          >
+            <Euro className="w-3 h-3" />
+            {kainaMap[String(idx)] != null ? `${kainaMap[String(idx)].toLocaleString('lt-LT')} €` : 'Nustatyti kainą'}
+          </button>
+        )}
+      </div>
 
       {/* Edit mode toggle */}
       {!readOnly && !editing && (
@@ -2227,30 +2324,30 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
 
 
-  // Price (kaina) state
-  const parseKaina = (v: any): number | null => {
-    if (v === null || v === undefined || v === '') return null;
-    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-    return isNaN(n) ? null : n;
-  };
-  const [kainaEditing, setKainaEditing] = useState(false);
-  const [kainaInput, setKainaInput] = useState('');
-  const [kainaSaving, setKainaSaving] = useState(false);
-  const currentKaina = parseKaina(record.kaina);
+  // Price (kaina) state — per-tank pricing stored as JSON map { "0": price, "1": price, ... }
+  const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => parseKainaMapStatic(record.kaina));
 
-  const saveKaina = async () => {
-    setKainaSaving(true);
+  // Re-sync when record changes
+  useEffect(() => {
+    setKainaMap(parseKainaMapStatic(record.kaina));
+  }, [record.kaina]);
+
+  const handleTankKainaChange = async (tankIdx: number, value: number | null) => {
+    const newMap = { ...kainaMap };
+    if (value === null) {
+      delete newMap[String(tankIdx)];
+    } else {
+      newMap[String(tankIdx)] = value;
+    }
+    setKainaMap(newMap);
+    // Persist to DB — save as JSON object (Directus handles JSON natively)
     try {
-      const val = kainaInput.trim() === '' ? null : parseFloat(kainaInput.replace(',', '.'));
-      if (kainaInput.trim() !== '' && (val === null || isNaN(val!))) return;
-      await updateNestandartiniaiField(record.id, 'kaina', val);
+      const dbValue = Object.keys(newMap).length > 0 ? newMap : null;
+      await updateNestandartiniaiField(record.id, 'kaina', dbValue);
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) onRefresh?.(updated);
-      setKainaEditing(false);
     } catch (e) {
       console.error('Error saving kaina:', e);
-    } finally {
-      setKainaSaving(false);
     }
   };
 
@@ -2432,40 +2529,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Price badge */}
-              {kainaEditing ? (
-                <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
-                  <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
-                  <input
-                    type="text"
-                    value={kainaInput}
-                    onChange={e => setKainaInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveKaina(); if (e.key === 'Escape') setKainaEditing(false); }}
-                    className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
-                    placeholder="0.00"
-                    autoFocus
-                  />
-                  <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
-                    {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
-                  </button>
-                  <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
-                    <X className="w-3 h-3 text-base-content/40" />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => { if (!isLocked) { setKainaInput(currentKaina != null ? String(currentKaina) : ''); setKainaEditing(true); } }}
-                  className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-                    currentKaina != null
-                      ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
-                      : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
-                  } ${isLocked ? 'cursor-default' : 'cursor-pointer'}`}
-                  title={isLocked ? 'Kaina' : 'Redaguoti kainą'}
-                >
-                  <Euro className="w-3 h-3" />
-                  {currentKaina != null ? `${currentKaina.toLocaleString('lt-LT')} €` : 'Kaina'}
-                </button>
-              )}
               {record.klientas && (
                 <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">
                   {record.klientas}
@@ -2544,7 +2607,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -2686,6 +2749,8 @@ export default function PaklausimoKortelePage() {
 
   const meta = parseMetadata(record.metadata);
   const products = parseProducts(record.metadata);
+  const kainaMap = parseKainaMapStatic(record.kaina);
+  const handleTankKainaChange = () => {}; // read-only page
 
   const readOnlyTabs = TABS;
 
@@ -2713,14 +2778,6 @@ export default function PaklausimoKortelePage() {
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {(() => {
-                const rk = record.kaina != null ? Number(record.kaina) : null;
-                return rk != null && !isNaN(rk) ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600">
-                    <Euro className="w-3 h-3" />{rk.toLocaleString('lt-LT')} €
-                  </span>
-                ) : null;
-              })()}
               {record.klientas && (
                 <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">{record.klientas}</span>
               )}
@@ -2747,7 +2804,7 @@ export default function PaklausimoKortelePage() {
             })}
           </div>
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly kainaMap={kainaMap} onKainaChange={handleTankKainaChange} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}

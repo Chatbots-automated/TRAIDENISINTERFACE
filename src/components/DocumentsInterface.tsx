@@ -410,13 +410,32 @@ function getCellValue(row: any, col: ColumnDef): string {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
   }
-  // Kaina formatting
+  // Kaina formatting — per-tank prices, shown individually
   if (col.key === 'kaina') {
     const v = row.kaina;
     if (v === null || v === undefined || v === '') return '—';
-    const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-    if (isNaN(n)) return '—';
-    return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    // Parse into per-tank map
+    let prices: Record<string, number> = {};
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      for (const [k, val] of Object.entries(v)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
+    } else if (typeof v === 'string' && v.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(v);
+        for (const [k, val] of Object.entries(parsed)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
+      } catch {
+        const n = parseFloat(v);
+        if (!isNaN(n)) prices['0'] = n;
+      }
+    } else {
+      const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+      if (!isNaN(n)) prices['0'] = n;
+    }
+    const entries = Object.entries(prices).sort(([a], [b]) => Number(a) - Number(b));
+    if (entries.length === 0) return '—';
+    if (entries.length === 1) {
+      return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return entries.map(([k, p]) => `T${Number(k) + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';
@@ -1465,11 +1484,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       const val = row[col.key];
                       // docx_file_id — show download button
                       if (col.key === 'docx_file_id') {
+                        // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
+                        const fileId = typeof val === 'object' && val !== null ? val.id : val;
                         return (
                           <td key={col.key} className="px-3 py-2.5">
-                            {val ? (
+                            {fileId ? (
                               <a
-                                href={getDirectusFileUrl(val)}
+                                href={getDirectusFileUrl(fileId)}
                                 download
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
                                 style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
