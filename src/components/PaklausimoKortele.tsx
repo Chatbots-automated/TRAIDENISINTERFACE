@@ -6,6 +6,7 @@ import {
   Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
 } from 'lucide-react';
 import {
+  fetchNestandartiniaiKainaByIds,
   fetchNestandartiniaiById,
   updateNestandartiniaiAtsakymas,
   updateNestandartiniaiTasks,
@@ -2039,11 +2040,25 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
   const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
 
+  // Per-record kaina/metadata fetched from DB for each similar project
+  const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any }>>({});
+
   // Sync with record prop when it refreshes
   useEffect(() => {
     const parsed = parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
     if (parsed.length > 0) setLocalProjects(parsed);
   }, [record.similar_projects]);
+
+  // Fetch actual kaina+metadata for all similar project IDs
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const ids = projects.map(p => p.id);
+    fetchNestandartiniaiKainaByIds(ids).then(rows => {
+      const map: Record<number, { kaina: any; metadata: any }> = {};
+      for (const r of rows) map[r.id] = { kaina: r.kaina, metadata: r.metadata };
+      setSimilarKainaMap(map);
+    }).catch(() => {});
+  }, [projects.map(p => p.id).join(',')]);
 
   const handleFindSimilar = async () => {
     setProcessing(record.id, 'similar', true);
@@ -2197,7 +2212,8 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       ) : projects.length > 0 ? (
         <div className="space-y-1.5">
           {projects.map((p, i) => {
-            const kainaMap = resolveKainaMap({ kaina: p.kaina, metadata: p.metadata });
+            const fetched = similarKainaMap[p.id];
+            const kainaMap = resolveKainaMap(fetched ?? { kaina: p.kaina, metadata: p.metadata });
             const kainaEntries = Object.entries(kainaMap).sort(([a], [b]) => Number(a) - Number(b));
             return (
               <a
