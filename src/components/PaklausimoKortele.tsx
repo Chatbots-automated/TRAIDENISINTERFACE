@@ -2042,6 +2042,9 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
 
   // Per-record kaina/metadata fetched from DB for each similar project
   const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any }>>({});
+  const [expandedPrices, setExpandedPrices] = useState<Set<number>>(new Set());
+
+  const PRICES_PREVIEW = 3;
 
   // Sync with record prop when it refreshes
   useEffect(() => {
@@ -2231,16 +2234,37 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                   <p className="text-xs mt-0.5 text-base-content/40">
                     ID: {p.id}
                   </p>
-                  {kainaEntries.length > 0 && (
-                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
-                      {kainaEntries.map(([idx, price]) => (
-                        <span key={idx} className="text-xs text-emerald-600">
-                          {kainaEntries.length > 1 && <span className="text-base-content/30 mr-0.5">#{Number(idx) + 1}</span>}
-                          {price.toLocaleString('lt-LT')} €
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {kainaEntries.length > 0 && (() => {
+                    const isExpanded = expandedPrices.has(p.id);
+                    const visible = isExpanded ? kainaEntries : kainaEntries.slice(0, PRICES_PREVIEW);
+                    const hidden = kainaEntries.length - PRICES_PREVIEW;
+                    return (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+                        {visible.map(([idx, price]) => (
+                          <span key={idx} className="text-xs text-emerald-600">
+                            {kainaEntries.length > 1 && <span className="text-base-content/30 mr-0.5">#{Number(idx) + 1}</span>}
+                            {price.toLocaleString('lt-LT')} €
+                          </span>
+                        ))}
+                        {!isExpanded && hidden > 0 && (
+                          <button
+                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => new Set(prev).add(p.id)); }}
+                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
+                          >
+                            +{hidden} daugiau
+                          </button>
+                        )}
+                        {isExpanded && kainaEntries.length > PRICES_PREVIEW && (
+                          <button
+                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => { const s = new Set(prev); s.delete(p.id); return s; }); }}
+                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
+                          >
+                            mažiau
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
                   {Math.round(p.similarity_score * 100)}%
