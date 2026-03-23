@@ -2242,7 +2242,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
                         {visible.map(([idx, price]) => (
                           <span key={idx} className="text-xs text-emerald-600">
-                            <span className="text-base-content/30">[{Number(idx) + 1}]</span>
+                            <span className="font-bold text-base-content/40">[{Number(idx) + 1}]</span>
                             {' '}{price.toLocaleString('en-US')}€
                           </span>
                         ))}
