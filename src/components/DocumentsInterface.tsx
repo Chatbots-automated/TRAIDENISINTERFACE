@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
+import { getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -423,32 +424,59 @@ function getCellValue(row: any, col: ColumnDef): string {
   return str.length > 120 ? str.slice(0, 120) + '…' : str;
 }
 
-/** Columns to hide from the standartiniai table */
-const HIDDEN_STANDARTINIAI_COLS = new Set(['conversation_id', 'yaml_content']);
+// ---------------------------------------------------------------------------
+// Column config for standartiniai – same ColumnDef pattern as nestandartiniai
+// ---------------------------------------------------------------------------
 
-function getColumns(rows: any[]): string[] {
-  if (rows.length === 0) return [];
-  const keys = Object.keys(rows[0]).filter(k => !HIDDEN_STANDARTINIAI_COLS.has(k));
-  const idIndex = keys.indexOf('id');
-  if (idIndex > -1) { keys.splice(idIndex, 1); keys.sort(); keys.unshift('id'); } else { keys.sort(); }
-  return keys;
+/** Default columns shown in the standartiniai table. */
+const DEFAULT_STANDARTINIAI_COLS: ColumnDef[] = [
+  { key: 'id', label: 'ID', width: 'w-16' },
+  { key: 'projekto_kodas', label: 'Projekto kodas' },
+  { key: 'hnv', label: 'HNV' },
+  { key: 'docx_file_id', label: 'DOCX' },
+  { key: 'date_created', label: 'Sukūrimo data', width: 'w-36' },
+  { key: 'date_updated', label: 'Atnaujinimo data', width: 'w-36' },
+  { key: 'status', label: 'Būsena', width: 'w-24' },
+];
+
+const DEFAULT_STANDARTINIAI_VISIBLE_KEYS = new Set(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+
+/** DB fields not useful as columns in standartiniai */
+const HIDDEN_STANDARTINIAI_DB_FIELDS = new Set(['conversation_id', 'yaml_content', 'html_content']);
+
+const STANDARTINIAI_COL_ORDER_KEY = 'traidenis_col_order_standartiniai';
+const STANDARTINIAI_COL_HIDDEN_KEY = 'traidenis_col_hidden_standartiniai';
+
+function loadStandartiniaiColOrder(): string[] | null {
+  try { const raw = localStorage.getItem(STANDARTINIAI_COL_ORDER_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function saveStandartiniaiColOrder(keys: string[]) {
+  try { localStorage.setItem(STANDARTINIAI_COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
+}
+function loadStandartiniaiHiddenCols(): Set<string> {
+  try { const raw = localStorage.getItem(STANDARTINIAI_COL_HIDDEN_KEY); return raw ? new Set(JSON.parse(raw)) : new Set(); } catch { return new Set(); }
+}
+function saveStandartiniaiHiddenCols(hidden: Set<string>) {
+  try { localStorage.setItem(STANDARTINIAI_COL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ }
 }
 
-/** Lithuanian display labels for standartiniai table columns */
-const STANDARTINIAI_COL_LABELS: Record<string, string> = {
-  id: 'ID',
-  html_content: 'Dokumentas',
-  hnv: 'HNV',
-  projekto_kodas: 'Projekto kodas',
-  user_created: 'Sukūrė',
-  user_updated: 'Atnaujino',
-  date_created: 'Sukūrimo data',
-  date_updated: 'Atnaujinimo data',
-  status: 'Būsena',
-};
+/** Build all available standartiniai columns from data + defaults */
+function buildAllStandartiniaiColumns(rows: any[]): ColumnDef[] {
+  const byKey = new Map(DEFAULT_STANDARTINIAI_COLS.map(c => [c.key, c]));
+  const result = [...DEFAULT_STANDARTINIAI_COLS];
+  if (rows.length > 0) {
+    for (const key of Object.keys(rows[0])) {
+      if (byKey.has(key) || HIDDEN_STANDARTINIAI_DB_FIELDS.has(key)) continue;
+      const label = key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+      result.push({ key, label });
+      byKey.set(key, { key, label });
+    }
+  }
+  return result;
+}
 
+/** Lithuanian label fallback for any column */
 function formatColumnName(col: string): string {
-  if (STANDARTINIAI_COL_LABELS[col]) return STANDARTINIAI_COL_LABELS[col];
   return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 }
 
@@ -658,20 +686,39 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const PAGE_SIZE = 50;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // All possible columns (built from data)
-  const allCols = useMemo(() => buildAllColumns(nestandartiniaiData), [nestandartiniaiData]);
+  const isNestandartiniai = selectedTable === 'n8n_vector_store';
 
-  // Column visibility (persisted)
-  const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
+  // ── Nestandartiniai column config ──
+  const allColsNest = useMemo(() => buildAllColumns(nestandartiniaiData), [nestandartiniaiData]);
+  const [hiddenColsNest, setHiddenColsNest] = useState<Set<string>>(() => {
     const saved = loadHiddenCols();
-    // On first load (nothing saved), hide non-default columns
     if (saved.size === 0 && localStorage.getItem(COL_HIDDEN_KEY) === null) return new Set();
     return saved;
   });
+  const [colOrderNest, setColOrderNest] = useState<string[]>(() => loadColumnOrder() || DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+  const visibleColsNest = useMemo(() => allColsNest.filter(c => !hiddenColsNest.has(c.key)), [allColsNest, hiddenColsNest]);
+  const orderedColsNest = useMemo(() => getOrderedCols(visibleColsNest, colOrderNest), [visibleColsNest, colOrderNest]);
+
+  // ── Standartiniai column config ──
+  const allColsStand = useMemo(() => buildAllStandartiniaiColumns(standartiniaiData), [standartiniaiData]);
+  const [hiddenColsStand, setHiddenColsStand] = useState<Set<string>>(() => {
+    const saved = loadStandartiniaiHiddenCols();
+    if (saved.size === 0 && localStorage.getItem(STANDARTINIAI_COL_HIDDEN_KEY) === null) return new Set();
+    return saved;
+  });
+  const [colOrderStand, setColOrderStand] = useState<string[]>(() => loadStandartiniaiColOrder() || DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+  const visibleColsStand = useMemo(() => allColsStand.filter(c => !hiddenColsStand.has(c.key)), [allColsStand, hiddenColsStand]);
+  const orderedColsStand = useMemo(() => getOrderedCols(visibleColsStand, colOrderStand), [visibleColsStand, colOrderStand]);
+
+  // ── Unified column config (switches by active table) ──
+  const allCols = isNestandartiniai ? allColsNest : allColsStand;
+  const orderedCols = isNestandartiniai ? orderedColsNest : orderedColsStand;
+
   const [showColConfig, setShowColConfig] = useState(false);
   const colConfigRef = useRef<HTMLDivElement>(null);
+  const dragColRef = useRef<string | null>(null);
+  const dragOverColRef = useRef<string | null>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!showColConfig) return;
     const handler = (e: MouseEvent) => {
@@ -681,14 +728,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     return () => document.removeEventListener('mousedown', handler);
   }, [showColConfig]);
 
-  // Visible columns = allCols minus hidden
-  const visibleCols = useMemo(() => allCols.filter(c => !hiddenCols.has(c.key)), [allCols, hiddenCols]);
-
-  // Column ordering (drag & drop, persisted)
-  const [colOrder, setColOrder] = useState<string[]>(() => loadColumnOrder() || DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-  const orderedCols = useMemo(() => getOrderedCols(visibleCols, colOrder), [visibleCols, colOrder]);
-  const dragColRef = useRef<string | null>(null);
-  const dragOverColRef = useRef<string | null>(null);
+  const hiddenCols = isNestandartiniai ? hiddenColsNest : hiddenColsStand;
 
   const handleColDragStart = useCallback((key: string) => { dragColRef.current = key; }, []);
   const handleColDragOver = useCallback((e: React.DragEvent, key: string) => { e.preventDefault(); dragOverColRef.current = key; }, []);
@@ -696,37 +736,68 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     const from = dragColRef.current;
     const to = dragOverColRef.current;
     if (!from || !to || from === to) return;
-    setColOrder(prev => {
-      const next = [...prev];
-      const fromIdx = next.indexOf(from);
-      const toIdx = next.indexOf(to);
-      if (fromIdx === -1 || toIdx === -1) return prev;
-      next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, from);
-      saveColumnOrder(next);
-      return next;
-    });
+    if (isNestandartiniai) {
+      setColOrderNest(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(from);
+        const toIdx = next.indexOf(to);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, from);
+        saveColumnOrder(next);
+        return next;
+      });
+    } else {
+      setColOrderStand(prev => {
+        const next = [...prev];
+        const fromIdx = next.indexOf(from);
+        const toIdx = next.indexOf(to);
+        if (fromIdx === -1 || toIdx === -1) return prev;
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, from);
+        saveStandartiniaiColOrder(next);
+        return next;
+      });
+    }
     dragColRef.current = null;
     dragOverColRef.current = null;
-  }, []);
+  }, [isNestandartiniai]);
 
   const toggleColumnVisibility = useCallback((key: string) => {
-    setHiddenCols(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      saveHiddenCols(next);
-      return next;
-    });
-  }, []);
+    if (isNestandartiniai) {
+      setHiddenColsNest(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        saveHiddenCols(next);
+        return next;
+      });
+    } else {
+      setHiddenColsStand(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        saveStandartiniaiHiddenCols(next);
+        return next;
+      });
+    }
+  }, [isNestandartiniai]);
 
   const resetColumnsToDefault = useCallback(() => {
-    const allKeys = allCols.map(c => c.key);
-    const hidden = new Set(allKeys.filter(k => !DEFAULT_VISIBLE_KEYS.has(k)));
-    setHiddenCols(hidden);
-    saveHiddenCols(hidden);
-    setColOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-    saveColumnOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-  }, [allCols]);
+    if (isNestandartiniai) {
+      const allKeys = allColsNest.map(c => c.key);
+      const hidden = new Set(allKeys.filter(k => !DEFAULT_VISIBLE_KEYS.has(k)));
+      setHiddenColsNest(hidden);
+      saveHiddenCols(hidden);
+      setColOrderNest(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+      saveColumnOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
+    } else {
+      const allKeys = allColsStand.map(c => c.key);
+      const hidden = new Set(allKeys.filter(k => !DEFAULT_STANDARTINIAI_VISIBLE_KEYS.has(k)));
+      setHiddenColsStand(hidden);
+      saveStandartiniaiHiddenCols(hidden);
+      setColOrderStand(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+      saveStandartiniaiColOrder(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+    }
+  }, [isNestandartiniai, allColsNest, allColsStand]);
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
 
@@ -748,13 +819,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
   }), [nestandartiniaiData]);
 
-  const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const currentLoading = isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
   const currentError = isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
   const currentReload = isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
-
-  // Generic columns for standartiniai
-  const genericCols = useMemo(() => getColumns(standartiniaiData), [standartiniaiData]);
 
   // Filtering
   const filteredData = useMemo(() => {
@@ -799,9 +866,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           if (row.projekto_kodas) parts.push(row.projekto_kodas);
           if (row.hnv) parts.push(row.hnv);
           if (row.yaml_content) parts.push(String(row.yaml_content));
-          // Also search all other fields for completeness
-          for (const col of genericCols) {
-            const val = row[col];
+          // Also search all visible column fields for completeness
+          for (const col of allColsStand) {
+            const val = row[col.key];
             if (val !== null && val !== undefined) parts.push(String(val));
           }
           const blob = parts.join(' ').toLowerCase();
@@ -830,7 +897,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
 
     return rows;
-  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, genericCols, metadataFilters]);
+  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters]);
 
   // Sorting
   const sortedData = useMemo(() => {
@@ -1005,8 +1072,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             />
           </div>
 
-          {/* Column config button – only for nestandartiniai */}
-          {isNestandartiniai && (
+          {/* Column config button */}
+          {(
             <div className="relative" ref={colConfigRef}>
               <button
                 onClick={() => setShowColConfig(v => !v)}
@@ -1299,7 +1366,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
           </div>
         ) : (
-          /* ---- Standartiniai table (all columns) ---- */
+          /* ---- Standartiniai table (configurable columns) ---- */
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
@@ -1307,17 +1374,22 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             <table className="w-full text-sm">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  {genericCols.map(col => (
+                  {orderedColsStand.map(col => (
                     <th
-                      key={col}
-                      onClick={() => handleSort(col)}
-                      className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
+                      key={col.key}
+                      draggable
+                      onDragStart={() => handleColDragStart(col.key)}
+                      onDragOver={e => handleColDragOver(e, col.key)}
+                      onDrop={handleColDrop}
+                      onClick={() => handleSort(col.key)}
+                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{formatColumnName(col)}</span>
+                        <GripVertical className="w-3 h-3 text-base-content/20 shrink-0 cursor-grab" />
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
-                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
-                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col.key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
                         </span>
                       </div>
                     </th>
@@ -1332,32 +1404,42 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
                     onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
-                    {genericCols.map(col => {
-                      const val = row[col];
-                      // html_content — show preview button instead of raw HTML
-                      if (col === 'html_content') {
-                        const hasHtml = val && String(val).trim().length > 0;
+                    {orderedColsStand.map(col => {
+                      const val = row[col.key];
+                      // docx_file_id — show download button
+                      if (col.key === 'docx_file_id') {
                         return (
-                          <td key={col} className="px-3 py-2.5">
-                            {hasHtml ? (
-                              <button
-                                onClick={() => setHtmlPreview(val)}
+                          <td key={col.key} className="px-3 py-2.5">
+                            {val ? (
+                              <a
+                                href={getDirectusFileUrl(val)}
+                                download
                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
                                 style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
                               >
-                                <Eye className="w-3.5 h-3.5" />
-                                Peržiūrėti
-                              </button>
+                                <Download className="w-3.5 h-3.5" />
+                                Atsisiųsti
+                              </a>
                             ) : (
                               <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>
                             )}
                           </td>
                         );
                       }
+                      // Date columns — format nicely
+                      if ((col.key === 'date_created' || col.key === 'date_updated') && val) {
+                        const d = new Date(val);
+                        const formatted = isNaN(d.getTime()) ? String(val) : d.toLocaleDateString('lt-LT') + ' ' + d.toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <td key={col.key} className="px-3 py-2.5 whitespace-nowrap" style={{ color: '#3d3935', fontSize: '13px' }}>
+                            {formatted}
+                          </td>
+                        );
+                      }
                       const maxLen = 120;
                       const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
-                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                        <td key={col.key} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
                           {display}
                         </td>
                       );
