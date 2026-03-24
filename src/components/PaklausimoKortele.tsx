@@ -802,6 +802,12 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
         const hasGroupPrice = currentGroup.quantity > 1
           ? currentGroup.originalIndices.some(oi => kainaMap[String(oi)] != null)
           : perTankKaina != null;
+        const aiEstimate: number | null = (() => {
+          const v = currentGroup.tank.kaina_ai ?? currentGroup.tank.Kaina_ai;
+          if (v == null) return null;
+          const n = Number(v);
+          return isNaN(n) ? null : n;
+        })();
         const applyKainaToGroup = (value: number | null) => {
           currentGroup.originalIndices.forEach(oi => onKainaChange(oi, value));
         };
@@ -875,6 +881,17 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
             {currentGroup.quantity > 1 && hasGroupPrice && !tankKainaEditing && (
               <span className="text-[11px] text-base-content/40">
                 = <strong className="text-base-content/60">{(groupTotalKaina ?? 0).toLocaleString('lt-LT')} €</strong> iš viso
+              </span>
+            )}
+            {/* AI price estimate badge — read-only, separate from user-editable price */}
+            {aiEstimate != null && !tankKainaEditing && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
+                title="AI preliminari kaina"
+              >
+                <Sparkles className="w-2.5 h-2.5" />
+                {aiEstimate.toLocaleString('lt-LT')} €
               </span>
             )}
           </div>
@@ -2323,7 +2340,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
             const base = latest ?? record;
             const currentProducts = parseProducts(base.metadata);
             const newProducts = currentProducts.map((p, i) =>
-              group.originalIndices.includes(i) ? { ...p, kaina: estimatedPrice } : p
+              group.originalIndices.includes(i) ? { ...p, kaina_ai: estimatedPrice } : p
             );
 
             let rawMeta: any = base.metadata;
