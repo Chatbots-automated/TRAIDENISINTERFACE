@@ -393,8 +393,17 @@ function getCellValue(row: any, col: ColumnDef): string {
     return formatDervaMusu(row.metadata);
   }
   if (col.metaKey) {
-    const meta = parseMetadata(row.metadata);
-    return getMetaValue(meta, col.metaKey) || '—';
+    const products = parseAllProducts(row.metadata);
+    if (products.length === 0) {
+      const meta = parseMetadata(row.metadata);
+      return getMetaValue(meta, col.metaKey) || '—';
+    }
+    const values: string[] = [];
+    for (const p of products) {
+      const v = getMetaValue(p, col.metaKey);
+      if (v && !values.includes(v)) values.push(v);
+    }
+    return truncateList(values, 60);
   }
   // Fallback: if project_name is empty, try extracting from metadata
   if (col.key === 'project_name') {
@@ -410,32 +419,27 @@ function getCellValue(row: any, col: ColumnDef): string {
     const count = countTanksFromMetadata(row.metadata);
     return count > 0 ? String(count) : '—';
   }
-  // Kaina formatting — per-tank prices, shown individually
+  // Kaina formatting — read kaina from each product object in metadata
   if (col.key === 'kaina') {
+    const products = parseAllProducts(row.metadata);
+    const entries: [number, number][] = [];
+    for (let i = 0; i < products.length; i++) {
+      const k = products[i].kaina ?? products[i].Kaina;
+      if (k !== undefined && k !== null && k !== '') {
+        const n = Number(k);
+        if (!isNaN(n)) entries.push([i, n]);
+      }
+    }
+    if (entries.length > 0) {
+      if (entries.length === 1) return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return entries.map(([i, p]) => `T${i + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
+    }
+    // Fallback: kaina column (real) — total or legacy single price
     const v = row.kaina;
     if (v === null || v === undefined || v === '') return '—';
-    // Parse into per-tank map
-    let prices: Record<string, number> = {};
-    if (typeof v === 'object' && !Array.isArray(v)) {
-      for (const [k, val] of Object.entries(v)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
-    } else if (typeof v === 'string' && v.trim().startsWith('{')) {
-      try {
-        const parsed = JSON.parse(v);
-        for (const [k, val] of Object.entries(parsed)) { const n = Number(val); if (!isNaN(n)) prices[k] = n; }
-      } catch {
-        const n = parseFloat(v);
-        if (!isNaN(n)) prices['0'] = n;
-      }
-    } else {
-      const n = typeof v === 'string' ? parseFloat(v) : Number(v);
-      if (!isNaN(n)) prices['0'] = n;
-    }
-    const entries = Object.entries(prices).sort(([a], [b]) => Number(a) - Number(b));
-    if (entries.length === 0) return '—';
-    if (entries.length === 1) {
-      return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    return entries.map(([k, p]) => `T${Number(k) + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
+    const n = Number(v);
+    if (!isNaN(n)) return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return '—';
   }
   const val = row[col.key];
   if (val === null || val === undefined) return '—';

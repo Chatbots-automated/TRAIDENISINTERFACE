@@ -6,6 +6,7 @@ import {
   Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
 } from 'lucide-react';
 import {
+  fetchNestandartiniaiKainaByIds,
   fetchNestandartiniaiById,
   updateNestandartiniaiAtsakymas,
   updateNestandartiniaiTasks,
@@ -1583,6 +1584,22 @@ function parseDervaMusuPerTank(metadata: any): Record<string, string> {
   return {};
 }
 
+
+/** Resolve kainaMap: read kaina from each product object, fall back to kaina field */
+function resolveKainaMap(rec: { kaina?: any; metadata?: any }): Record<string, number> {
+  const prods = parseProducts(rec.metadata);
+  const fromProds: Record<string, number> = {};
+  for (let i = 0; i < prods.length; i++) {
+    const k = prods[i].kaina ?? prods[i].Kaina;
+    if (k !== undefined && k !== null && k !== '') {
+      const n = Number(k);
+      if (!isNaN(n)) fromProds[String(i)] = n;
+    }
+  }
+  if (Object.keys(fromProds).length > 0) return fromProds;
+  return parseKainaMapStatic(rec.kaina);
+}
+
 /** Get a short summary of tank specs for display in the derva tab */
 function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] {
   const summaryKeys = ['Orientacija', 'orientacija', 'Vieta', 'Talpa M3', 'talpa_tipas', 'AukšTis Mm', 'Skersmuo Mm', 'DN', 'Medžiaga', 'chemija'];
@@ -2022,12 +2039,42 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
   const [estimateError, setEstimateError] = useState<string | null>(null);
   const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
   const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
+  const [showTankDropdown, setShowTankDropdown] = useState(false);
+  const [selectedTankIdx, setSelectedTankIdx] = useState<number | null>(null);
+  const tankDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showTankDropdown) return;
+    const handler = (e: MouseEvent) => {
+      if (tankDropdownRef.current && !tankDropdownRef.current.contains(e.target as Node)) {
+        setShowTankDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showTankDropdown]);
+
+  // Per-record kaina/metadata fetched from DB for each similar project
+  const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any }>>({});
+  const [expandedPrices, setExpandedPrices] = useState<Set<number>>(new Set());
+
+  const PRICES_PREVIEW = 3;
 
   // Sync with record prop when it refreshes
   useEffect(() => {
     const parsed = parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
     if (parsed.length > 0) setLocalProjects(parsed);
   }, [record.similar_projects]);
+
+  // Fetch actual kaina+metadata for all similar project IDs
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const ids = projects.map(p => p.id);
+    fetchNestandartiniaiKainaByIds(ids).then(rows => {
+      const map: Record<number, { kaina: any; metadata: any }> = {};
+      for (const r of rows) map[r.id] = { kaina: r.kaina, metadata: r.metadata };
+      setSimilarKainaMap(map);
+    }).catch(() => {});
+  }, [projects.map(p => p.id).join(',')]);
 
   const handleFindSimilar = async () => {
     setProcessing(record.id, 'similar', true);
@@ -2071,13 +2118,14 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
     }
   };
 
-  const handleEstimatePrice = async () => {
+  const handleEstimatePrice = async (tankIdx: number) => {
     if (projects.length === 0) {
       setEstimateError('Pirmiausia reikia rasti panašius projektus');
       setEstimateStatus('error');
       setTimeout(() => setEstimateStatus('idle'), 4000);
       return;
     }
+    setSelectedTankIdx(tankIdx);
     setEstimating(true);
     setEstimateStatus('idle');
     setEstimateError(null);
@@ -2087,26 +2135,19 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       const webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
 
-      // Build clean product metadata for all tanks
-      const cleanProducts = products.map((p, i) => {
-        const clean: Record<string, any> = {};
-        for (const [k, v] of Object.entries(p)) {
-          if (k.startsWith('_')) continue;
-          if (v === null || v === undefined || v === '') continue;
-          if (typeof v === 'object' && !Array.isArray(v)) continue;
-          clean[k] = v;
-        }
-        return { product_index: i, ...clean };
+      // Build enriched similar projects — use similarKainaMap (fetched from DB) for real metadata
+      const enrichedSimilar = projects.map(p => {
+        const fetched = similarKainaMap[p.id];
+        return {
+          id: p.id,
+          project_name: p.project_name,
+          similarity_score: p.similarity_score,
+          kaina: fetched?.kaina ?? p.kaina ?? null,
+          metadata: parseJSON(fetched?.metadata as any) ?? fetched?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
+        };
       });
 
-      // Build enriched similar projects with metadata
-      const enrichedSimilar = projects.map(p => ({
-        id: p.id,
-        project_name: p.project_name,
-        similarity_score: p.similarity_score,
-        kaina: p.kaina ?? null,
-        metadata: p.metadata ?? null,
-      }));
+      const selectedTank = products[tankIdx] ?? null;
 
       const resp = await fetch(webhookUrl, {
         method: 'POST',
@@ -2118,8 +2159,9 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
           klientas: record.klientas,
           derva: record.derva,
           current_kaina: record.kaina,
-          products: cleanProducts,
-          product_count: products.length,
+          metadata: parseJSON(record.metadata as any) ?? record.metadata,
+          tank_index: tankIdx,
+          selected_tank: selectedTank,
           similar_projects: enrichedSimilar,
         }),
       });
@@ -2194,7 +2236,9 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       ) : projects.length > 0 ? (
         <div className="space-y-1.5">
           {projects.map((p, i) => {
-            const pKaina = p.kaina != null ? Number(p.kaina) : null;
+            const fetched = similarKainaMap[p.id];
+            const kainaMap = resolveKainaMap(fetched ?? { kaina: p.kaina, metadata: p.metadata });
+            const kainaEntries = Object.entries(kainaMap).sort(([a], [b]) => Number(a) - Number(b));
             return (
               <a
                 key={p.id}
@@ -2210,10 +2254,38 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
                   </p>
                   <p className="text-xs mt-0.5 text-base-content/40">
                     ID: {p.id}
-                    {pKaina != null && !isNaN(pKaina) && (
-                      <span className="ml-2 text-emerald-600">{pKaina.toLocaleString('lt-LT')} €</span>
-                    )}
                   </p>
+                  {kainaEntries.length > 0 && (() => {
+                    const isExpanded = expandedPrices.has(p.id);
+                    const visible = isExpanded ? kainaEntries : kainaEntries.slice(0, PRICES_PREVIEW);
+                    const hidden = kainaEntries.length - PRICES_PREVIEW;
+                    return (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
+                        {visible.map(([idx, price]) => (
+                          <span key={idx} className="text-xs text-base-content/60">
+                            <span className="font-bold text-base-content/40">[{Number(idx) + 1}]</span>
+                            {' '}{price.toLocaleString('en-US')}€
+                          </span>
+                        ))}
+                        {!isExpanded && hidden > 0 && (
+                          <button
+                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => new Set(prev).add(p.id)); }}
+                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
+                          >
+                            | + dar {hidden}
+                          </button>
+                        )}
+                        {isExpanded && kainaEntries.length > PRICES_PREVIEW && (
+                          <button
+                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => { const s = new Set(prev); s.delete(p.id); return s; }); }}
+                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
+                          >
+                            | mažiau
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
                   {Math.round(p.similarity_score * 100)}%
@@ -2242,25 +2314,59 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
               <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
               <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
             </div>
-            <button
-              onClick={handleEstimatePrice}
-              disabled={estimating}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
-              style={{
-                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
-                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
-                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
-              }}
-            >
-              {estimating
-                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
-                : estimateStatus === 'success'
-                  ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
-                  : estimateStatus === 'error'
-                    ? <><AlertCircle className="w-3 h-3" /> Klaida</>
-                    : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
-              }
-            </button>
+            <div className="relative" ref={tankDropdownRef}>
+              <button
+                onClick={() => {
+                  if (estimating) return;
+                  if (products.length <= 1) {
+                    handleEstimatePrice(0);
+                  } else {
+                    setShowTankDropdown(v => !v);
+                  }
+                }}
+                disabled={estimating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
+                style={{
+                  background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
+                  border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
+                  color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
+                }}
+              >
+                {estimating
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
+                  : estimateStatus === 'success'
+                    ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
+                    : estimateStatus === 'error'
+                      ? <><AlertCircle className="w-3 h-3" /> Klaida</>
+                      : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
+                }
+              </button>
+              {showTankDropdown && !estimating && (
+                <div
+                  className="absolute right-0 top-full mt-1.5 z-50 rounded-xl border border-base-content/10 shadow-lg overflow-hidden"
+                  style={{ background: 'var(--fallback-b1,oklch(var(--b1)))', minWidth: '160px' }}
+                >
+                  <p className="text-[10px] uppercase tracking-wider text-base-content/35 font-medium px-3 pt-2.5 pb-1">Pasirinkti talpą</p>
+                  {products.map((tank, i) => {
+                    const label =
+                      tank.talpa_tipas || tank.Talpa_tipas || tank.orientacija || tank.Orientacija
+                        ? [tank.talpa_tipas || tank.Talpa_tipas, tank.orientacija || tank.Orientacija].filter(Boolean).join(' · ')
+                        : null;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => { setShowTankDropdown(false); handleEstimatePrice(i); }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium transition-colors hover:bg-base-content/[0.05]"
+                        style={{ color: '#AF52DE' }}
+                      >
+                        <span className="text-base-content/40 font-normal mr-1">[{i + 1}]</span>
+                        {label || `Talpa ${i + 1}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           {estimateError && estimateStatus === 'error' && (
             <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
@@ -2273,6 +2379,11 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
           )}
           {estimatedPrice != null && !estimating && (
             <div className="rounded-xl p-4 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
+              {selectedTankIdx != null && products.length > 1 && (() => {
+                const tank = products[selectedTankIdx];
+                const label = [tank?.talpa_tipas || tank?.Talpa_tipas, tank?.orientacija || tank?.Orientacija].filter(Boolean).join(' · ') || `Talpa ${selectedTankIdx + 1}`;
+                return <p className="text-[10px] text-base-content/35 uppercase tracking-wider mb-1">[{selectedTankIdx + 1}] {label}</p>;
+              })()}
               <div className="flex items-center gap-2 mb-1">
                 <Euro className="w-4 h-4 text-emerald-600" />
                 <span className="text-lg font-semibold text-emerald-600">{estimatedPrice.toLocaleString('lt-LT')} €</span>
@@ -2324,13 +2435,13 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
 
 
-  // Price (kaina) state — per-tank pricing stored as JSON map { "0": price, "1": price, ... }
-  const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => parseKainaMapStatic(record.kaina));
+  // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
+  const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => resolveKainaMap(record));
 
   // Re-sync when record changes
   useEffect(() => {
-    setKainaMap(parseKainaMapStatic(record.kaina));
-  }, [record.kaina]);
+    setKainaMap(resolveKainaMap(record));
+  }, [record.kaina, record.metadata]);
 
   const handleTankKainaChange = async (tankIdx: number, value: number | null) => {
     const newMap = { ...kainaMap };
@@ -2340,10 +2451,51 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
       newMap[String(tankIdx)] = value;
     }
     setKainaMap(newMap);
-    // Persist to DB — save as JSON object (Directus handles JSON natively)
     try {
-      const dbValue = Object.keys(newMap).length > 0 ? newMap : null;
-      await updateNestandartiniaiField(record.id, 'kaina', dbValue);
+      // Embed kaina inside the tank object itself (same pattern as persistProducts)
+      const currentProducts = parseProducts(record.metadata);
+      const newProducts = currentProducts.map((p, i) => {
+        if (i !== tankIdx) return p;
+        if (value === null) {
+          const { kaina: _removed, ...rest } = p;
+          return rest;
+        }
+        return { ...p, kaina: value };
+      });
+
+      let rawMeta: any = record.metadata;
+      if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
+      let updatedMeta: any;
+      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
+        const root = { ...rawMeta[0] };
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(root[k])) { wrapperKey = k; break; }
+        }
+        if (wrapperKey) {
+          root[wrapperKey] = newProducts;
+          updatedMeta = [root, ...rawMeta.slice(1)];
+        } else {
+          updatedMeta = newProducts;
+        }
+      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+        let wrapperKey: string | null = null;
+        for (const k of ['products', 'talpos', 'gaminiai', 'items']) {
+          if (Array.isArray(rawMeta[k])) { wrapperKey = k; break; }
+        }
+        updatedMeta = wrapperKey
+          ? { ...rawMeta, [wrapperKey]: newProducts }
+          : (newProducts.length === 1 ? newProducts[0] : newProducts);
+      } else {
+        updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+      }
+
+      // kaina column is `real` — store the total sum
+      const total = Object.values(newMap).reduce((sum, p) => sum + p, 0);
+      const kainaValue = Object.keys(newMap).length > 0 ? total : null;
+
+      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+      await updateNestandartiniaiField(record.id, 'kaina', kainaValue);
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) onRefresh?.(updated);
     } catch (e) {
@@ -2749,7 +2901,7 @@ export default function PaklausimoKortelePage() {
 
   const meta = parseMetadata(record.metadata);
   const products = parseProducts(record.metadata);
-  const kainaMap = parseKainaMapStatic(record.kaina);
+  const kainaMap = resolveKainaMap(record);
   const handleTankKainaChange = () => {}; // read-only page
 
   const readOnlyTabs = TABS;
