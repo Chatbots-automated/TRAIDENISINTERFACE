@@ -2155,21 +2155,8 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
   const [estimating, setEstimating] = useState(false);
   const [estimateStatus, setEstimateStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [estimateError, setEstimateError] = useState<string | null>(null);
-  const [estimatedPrice, setEstimatedPrice] = useState<number | null>(null);
+  const [estimateProgress, setEstimateProgress] = useState<{ current: number; total: number } | null>(null);
   const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
-  const [showTankDropdown, setShowTankDropdown] = useState(false);
-  const [selectedTankIdx, setSelectedTankIdx] = useState<number | null>(null);
-  const tankDropdownRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showTankDropdown) return;
-    const handler = (e: MouseEvent) => {
-      if (tankDropdownRef.current && !tankDropdownRef.current.contains(e.target as Node)) {
-        setShowTankDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showTankDropdown]);
 
   // Per-record kaina/metadata fetched from DB for each similar project
   const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any; tasks: any }>>({});
@@ -2236,99 +2223,160 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
     }
   };
 
-  const handleEstimatePrice = async (tankIdx: number) => {
+  const handleEstimateAllPrices = async () => {
     if (projects.length === 0) {
       setEstimateError('Pirmiausia reikia rasti panašius projektus');
       setEstimateStatus('error');
       setTimeout(() => setEstimateStatus('idle'), 4000);
       return;
     }
-    setSelectedTankIdx(tankIdx);
+
     setEstimating(true);
     setEstimateStatus('idle');
     setEstimateError(null);
-    setEstimatedPrice(null);
     setEstimateReasoning(null);
+    setEstimateProgress(null);
+
+    let webhookUrl: string | null = null;
     try {
-      const webhookUrl = await getWebhookUrl('n8n_price_estimation');
+      webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
-
-      // Fetch fresh full records for all similar projects directly from DB
-      const similarIds = projects.map(p => p.id);
-      let freshRecords: Record<number, any> = {};
-      try {
-        const rows = await fetchNestandartiniaiKainaByIds(similarIds);
-        for (const r of rows) freshRecords[r.id] = r;
-      } catch (fetchErr: any) {
-        console.warn('Could not fetch similar project details from DB, falling back to cached data:', fetchErr?.message);
-      }
-
-      const enrichedSimilar = projects.map(p => {
-        const r = freshRecords[p.id];
-        return {
-          id: p.id,
-          project_name: p.project_name,
-          similarity_score: p.similarity_score,
-          kaina: r?.kaina ?? p.kaina ?? null,
-          metadata: parseJSON(r?.metadata) ?? r?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
-          description: r?.description ?? null,
-          derva: r?.derva ?? null,
-          klientas: r?.klientas ?? null,
-          tasks: parseJSON(r?.tasks) ?? r?.tasks ?? null,
-        };
-      });
-
-      const selectedTank = products[tankIdx] ?? null;
-
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          record_id: record.id,
-          project_name: record.project_name,
-          description: record.description,
-          klientas: record.klientas,
-          derva: record.derva,
-          current_kaina: record.kaina,
-          metadata: parseJSON(record.metadata as any) ?? record.metadata,
-          tank_index: tankIdx,
-          selected_tank: selectedTank,
-          similar_projects: enrichedSimilar,
-        }),
-      });
-      if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(body || `Klaida: ${resp.status}`);
-      }
-
-      // The webhook may return the estimate directly or write to kaina field
-      let respData: any = null;
-      try { respData = await resp.json(); } catch { /* no json body */ }
-
-      // Re-fetch record to pick up any kaina update from n8n
-      const updated = await fetchNestandartiniaiById(record.id);
-      if (updated) {
-        onRecordUpdated?.(updated);
-        const newKaina = updated.kaina != null ? Number(updated.kaina) : null;
-        if (newKaina != null && !isNaN(newKaina)) setEstimatedPrice(newKaina);
-      }
-
-      // If webhook returned reasoning/explanation in the response body
-      if (respData?.reasoning) setEstimateReasoning(respData.reasoning);
-      if (respData?.estimated_price != null && estimatedPrice === null) {
-        setEstimatedPrice(Number(respData.estimated_price));
-      }
-
-      setEstimateStatus('success');
-      setTimeout(() => setEstimateStatus('idle'), 5000);
     } catch (err: any) {
-      console.error('Price estimation error:', err);
-      setEstimateError(err?.message || 'Nepavyko įvertinti kainos');
+      setEstimateError(err?.message || 'Nepavyko gauti webhook URL');
       setEstimateStatus('error');
-      setTimeout(() => setEstimateStatus('idle'), 5000);
-    } finally {
       setEstimating(false);
+      setTimeout(() => setEstimateStatus('idle'), 5000);
+      return;
     }
+
+    // Fetch fresh full records for all similar projects directly from DB
+    let freshRecords: Record<number, any> = {};
+    try {
+      const rows = await fetchNestandartiniaiKainaByIds(projects.map(p => p.id));
+      for (const r of rows) freshRecords[r.id] = r;
+    } catch (fetchErr: any) {
+      console.warn('Could not fetch similar project details from DB, falling back to cached data:', fetchErr?.message);
+    }
+
+    const enrichedSimilar = projects.map(p => {
+      const r = freshRecords[p.id];
+      return {
+        id: p.id,
+        project_name: p.project_name,
+        similarity_score: p.similarity_score,
+        kaina: r?.kaina ?? p.kaina ?? null,
+        metadata: parseJSON(r?.metadata) ?? r?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
+        description: r?.description ?? null,
+        derva: r?.derva ?? null,
+        klientas: r?.klientas ?? null,
+        tasks: parseJSON(r?.tasks) ?? r?.tasks ?? null,
+      };
+    });
+
+    // Deduplicate tanks — process one webhook call per unique spec group
+    const groups = deduplicateProducts(products);
+    setEstimateProgress({ current: 0, total: groups.length });
+
+    let anySuccess = false;
+    let lastReasoning: string | null = null;
+    const groupErrors: string[] = [];
+
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi];
+      setEstimateProgress({ current: gi + 1, total: groups.length });
+
+      try {
+        const resp = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            record_id: record.id,
+            project_name: record.project_name,
+            description: record.description,
+            klientas: record.klientas,
+            derva: record.derva,
+            current_kaina: record.kaina,
+            metadata: parseJSON(record.metadata as any) ?? record.metadata,
+            tank: group.tank,
+            quantity: group.quantity,
+            original_indices: group.originalIndices,
+            similar_projects: enrichedSimilar,
+          }),
+        });
+
+        if (!resp.ok) {
+          const body = await resp.text().catch(() => '');
+          throw new Error(body || `HTTP ${resp.status}`);
+        }
+
+        let respData: any = null;
+        try { respData = await resp.json(); } catch { /* no json body */ }
+
+        const estimatedPrice = respData?.estimated_price != null ? Number(respData.estimated_price) : null;
+        if (lastReasoning == null && respData?.reasoning) lastReasoning = respData.reasoning;
+
+        // Write estimated price back into each matching tank in metadata
+        if (estimatedPrice != null && !isNaN(estimatedPrice)) {
+          try {
+            // Re-fetch latest record so we always patch the freshest metadata
+            const latest = await fetchNestandartiniaiById(record.id);
+            const base = latest ?? record;
+            const currentProducts = parseProducts(base.metadata);
+            const newProducts = currentProducts.map((p, i) =>
+              group.originalIndices.includes(i) ? { ...p, kaina: estimatedPrice } : p
+            );
+
+            let rawMeta: any = base.metadata;
+            if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
+            let updatedMeta: any;
+            if (Array.isArray(rawMeta) && rawMeta.length > 0 && typeof rawMeta[0] === 'object') {
+              const root = { ...rawMeta[0] };
+              const wrapperKey = ['products', 'talpos', 'gaminiai', 'items'].find(k => Array.isArray(root[k])) ?? null;
+              updatedMeta = wrapperKey
+                ? [{ ...root, [wrapperKey]: newProducts }, ...rawMeta.slice(1)]
+                : newProducts;
+            } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+              const wrapperKey = ['products', 'talpos', 'gaminiai', 'items'].find(k => Array.isArray(rawMeta[k])) ?? null;
+              updatedMeta = wrapperKey
+                ? { ...rawMeta, [wrapperKey]: newProducts }
+                : (newProducts.length === 1 ? newProducts[0] : newProducts);
+            } else {
+              updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
+            }
+
+            await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+
+            // Propagate updated record upstream so UI reflects new prices
+            const refreshed = await fetchNestandartiniaiById(record.id);
+            if (refreshed) onRecordUpdated?.(refreshed);
+          } catch (writeErr: any) {
+            console.warn(`Failed to write price for group ${gi + 1}:`, writeErr?.message);
+          }
+        }
+
+        anySuccess = true;
+      } catch (groupErr: any) {
+        console.error(`Price estimation error for group ${gi + 1}:`, groupErr);
+        groupErrors.push(`Talpa ${group.originalIndices.map(i => i + 1).join('/')}: ${groupErr?.message ?? 'Klaida'}`);
+      }
+    }
+
+    setEstimateProgress(null);
+
+    if (groupErrors.length > 0 && !anySuccess) {
+      setEstimateError(groupErrors.join(' | '));
+      setEstimateStatus('error');
+      setTimeout(() => setEstimateStatus('idle'), 6000);
+    } else {
+      if (groupErrors.length > 0) {
+        setEstimateError(groupErrors.join(' | '));
+      }
+      if (lastReasoning) setEstimateReasoning(lastReasoning);
+      setEstimateStatus('success');
+      setTimeout(() => { setEstimateStatus('idle'); setEstimateError(null); }, 5000);
+    }
+
+    setEstimating(false);
   };
 
   return (
@@ -2445,89 +2493,52 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
               <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
               <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
             </div>
-            <div className="relative" ref={tankDropdownRef}>
-              <button
-                onClick={() => {
-                  if (estimating) return;
-                  if (products.length <= 1) {
-                    handleEstimatePrice(0);
-                  } else {
-                    setShowTankDropdown(v => !v);
-                  }
-                }}
-                disabled={estimating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
-                style={{
-                  background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
-                  border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
-                  color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
-                }}
-              >
-                {estimating
-                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama...</>
+            <button
+              onClick={handleEstimateAllPrices}
+              disabled={estimating}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
+              style={{
+                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
+                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
+                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
+              }}
+            >
+              {estimating && estimateProgress
+                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama {estimateProgress.current}/{estimateProgress.total}...</>
+                : estimating
+                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Kraunama...</>
                   : estimateStatus === 'success'
                     ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
                     : estimateStatus === 'error'
                       ? <><AlertCircle className="w-3 h-3" /> Klaida</>
                       : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
-                }
-              </button>
-              {showTankDropdown && !estimating && (
-                <div
-                  className="absolute right-0 top-full mt-1.5 z-50 rounded-xl border border-base-content/10 shadow-lg overflow-hidden"
-                  style={{ background: 'var(--fallback-b1,oklch(var(--b1)))', minWidth: '160px' }}
-                >
-                  <p className="text-[10px] uppercase tracking-wider text-base-content/35 font-medium px-3 pt-2.5 pb-1">Pasirinkti talpą</p>
-                  {products.map((tank, i) => {
-                    const label =
-                      tank.talpa_tipas || tank.Talpa_tipas || tank.orientacija || tank.Orientacija
-                        ? [tank.talpa_tipas || tank.Talpa_tipas, tank.orientacija || tank.Orientacija].filter(Boolean).join(' · ')
-                        : null;
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => { setShowTankDropdown(false); handleEstimatePrice(i); }}
-                        className="w-full text-left px-3 py-2 text-xs font-medium transition-colors hover:bg-base-content/[0.05]"
-                        style={{ color: '#AF52DE' }}
-                      >
-                        <span className="text-base-content/40 font-normal mr-1">[{i + 1}]</span>
-                        {label || `Talpa ${i + 1}`}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+              }
+            </button>
           </div>
-          {estimateError && estimateStatus === 'error' && (
+          {estimateError && (
             <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
           )}
           {estimating && (
             <div className="flex flex-col items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin mb-2" style={{ color: '#AF52DE' }} />
-              <p className="text-xs text-base-content/50">Analizuojami panašūs projektai ir parametrai...</p>
+              <p className="text-xs text-base-content/50">
+                {estimateProgress
+                  ? `Vertinama talpa ${estimateProgress.current} iš ${estimateProgress.total}...`
+                  : 'Ruošiama...'}
+              </p>
             </div>
           )}
-          {estimatedPrice != null && !estimating && (
-            <div className="rounded-xl p-4 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
-              {selectedTankIdx != null && products.length > 1 && (() => {
-                const tank = products[selectedTankIdx];
-                const label = [tank?.talpa_tipas || tank?.Talpa_tipas, tank?.orientacija || tank?.Orientacija].filter(Boolean).join(' · ') || `Talpa ${selectedTankIdx + 1}`;
-                return <p className="text-[10px] text-base-content/35 uppercase tracking-wider mb-1">[{selectedTankIdx + 1}] {label}</p>;
-              })()}
-              <div className="flex items-center gap-2 mb-1">
-                <Euro className="w-4 h-4 text-emerald-600" />
-                <span className="text-lg font-semibold text-emerald-600">{estimatedPrice.toLocaleString('lt-LT')} €</span>
-                <span className="text-[10px] uppercase tracking-wider text-base-content/30 font-medium">preliminari</span>
-              </div>
+          {!estimating && estimateStatus === 'success' && (
+            <div className="rounded-xl px-4 py-3 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
+              <p className="text-xs text-emerald-600 font-medium">Kainos įrašytos į talpų korteles</p>
               {estimateReasoning && (
-                <p className="text-xs text-base-content/50 mt-2 leading-relaxed">{estimateReasoning}</p>
+                <p className="text-xs text-base-content/50 mt-1 leading-relaxed">{estimateReasoning}</p>
               )}
             </div>
           )}
-          {!estimating && estimatedPrice == null && estimateStatus !== 'error' && (
+          {!estimating && estimateStatus === 'idle' && (
             <p className="text-xs text-base-content/35" style={{ lineHeight: '1.6' }}>
-              AI įvertins preliminarią kainą pagal panašių projektų kainas, talpų parametrus, dervą ir kitus duomenis.
+              AI įvertins preliminarią kainą kiekvienai unikaliai talpai ir įrašys ją į talpos kortelę.
             </p>
           )}
         </div>
