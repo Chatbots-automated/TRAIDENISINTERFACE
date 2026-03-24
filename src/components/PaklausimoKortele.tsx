@@ -2172,7 +2172,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
   }, [showTankDropdown]);
 
   // Per-record kaina/metadata fetched from DB for each similar project
-  const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any }>>({});
+  const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any; tasks: any }>>({});
   const [expandedPrices, setExpandedPrices] = useState<Set<number>>(new Set());
 
   const PRICES_PREVIEW = 3;
@@ -2189,7 +2189,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
     const ids = projects.map(p => p.id);
     fetchNestandartiniaiKainaByIds(ids).then(rows => {
       const map: Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any }> = {};
-      for (const r of rows) map[r.id] = { kaina: r.kaina, metadata: r.metadata, description: r.description, derva: r.derva, klientas: r.klientas };
+      for (const r of rows) map[r.id] = { kaina: r.kaina, metadata: r.metadata, description: r.description, derva: r.derva, klientas: r.klientas, tasks: r.tasks };
       setSimilarKainaMap(map);
     }).catch(() => {});
   }, [projects.map(p => p.id).join(',')]);
@@ -2265,6 +2265,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
           description: fetched?.description ?? null,
           derva: fetched?.derva ?? null,
           klientas: fetched?.klientas ?? null,
+          tasks: parseJSON(fetched?.tasks as any) ?? fetched?.tasks ?? null,
         };
       });
 

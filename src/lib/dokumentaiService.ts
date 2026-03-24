@@ -231,15 +231,15 @@ export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiR
   }
 };
 
-export const fetchNestandartiniaiKainaByIds = async (ids: number[]): Promise<Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'description' | 'derva' | 'klientas'>[]> => {
+export const fetchNestandartiniaiKainaByIds = async (ids: number[]): Promise<Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'description' | 'derva' | 'klientas' | 'tasks'>[]> => {
   if (ids.length === 0) return [];
   try {
     const { data, error } = await db
       .from('n8n_vector_store')
-      .select('id,kaina,metadata,description,derva,klientas')
+      .select('id,kaina,metadata,description,derva,klientas,tasks')
       .in('id', ids);
     if (error) throw error;
-    return (data ?? []) as Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'description' | 'derva' | 'klientas'>[];
+    return (data ?? []) as Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'description' | 'derva' | 'klientas' | 'tasks'>[];
   } catch (error: any) {
     console.error('Error in fetchNestandartiniaiKainaByIds:', error);
     return [];
