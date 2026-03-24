@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
@@ -279,6 +279,69 @@ const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'p
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
 
+// ---------------------------------------------------------------------------
+// Tank deduplication helpers
+// ---------------------------------------------------------------------------
+
+/** Keys excluded from metadata fingerprint when comparing tanks for deduplication */
+const DEDUP_EXCLUDE_KEYS = new Set([
+  ...SKIP_DISPLAY_KEYS,
+  ...TITLE_KEYS,
+  'Pastabos', 'pastabos',
+]);
+
+/** Recursively sort object keys so JSON.stringify produces a stable result */
+function sortedJson(value: any): any {
+  if (Array.isArray(value)) return value.map(sortedJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, v]) => [k, sortedJson(v)])
+    );
+  }
+  return value;
+}
+
+/** Create a canonical string fingerprint of a tank's spec fields (ignoring title/internal fields) */
+function getTankFingerprint(tank: Record<string, any>): string {
+  const comparable: Record<string, any> = {};
+  for (const [k, v] of Object.entries(tank)) {
+    if (k.startsWith('_')) continue;
+    if (k.startsWith('projekto_kontekstas_')) continue;
+    if (DEDUP_EXCLUDE_KEYS.has(k)) continue;
+    comparable[k] = v;
+  }
+  return JSON.stringify(sortedJson(comparable));
+}
+
+interface TankGroup {
+  /** Representative tank object (first occurrence) */
+  tank: Record<string, any>;
+  /** How many tanks share the same spec fingerprint */
+  quantity: number;
+  /** Original indices in the products array */
+  originalIndices: number[];
+}
+
+/** Group identical tanks (same spec fingerprint) into TankGroups for display */
+function deduplicateProducts(products: Record<string, any>[]): TankGroup[] {
+  const groups: TankGroup[] = [];
+  const fpToGroupIdx = new Map<string, number>();
+  for (let i = 0; i < products.length; i++) {
+    const fp = getTankFingerprint(products[i]);
+    const existing = fpToGroupIdx.get(fp);
+    if (existing !== undefined) {
+      groups[existing].quantity++;
+      groups[existing].originalIndices.push(i);
+    } else {
+      fpToGroupIdx.set(fp, groups.length);
+      groups.push({ tank: products[i], quantity: 1, originalIndices: [i] });
+    }
+  }
+  return groups;
+}
+
 /** Format a metadata key into a human-readable label */
 function formatMetaLabel(key: string): string {
   return key
@@ -469,8 +532,8 @@ function isOldFormat(meta: Record<string, any>): boolean {
 
 function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void }) {
   const [currentIdx, setCurrentIdx] = useState(0);
-  const hasMultiple = products.length > 1;
   const [saving, setSaving] = useState(false);
+  // confirmDeleteIdx stores group index (not product index)
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
@@ -482,9 +545,16 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
   const [tankKainaInput, setTankKainaInput] = useState('');
   const [tankKainaSaving, setTankKainaSaving] = useState(false);
 
-  // Clamp index if products array changes
-  const idx = Math.min(currentIdx, products.length - 1);
-  const meta = products[idx] || {};
+  // Deduplicate identical tanks for display
+  const groups = useMemo(() => deduplicateProducts(products), [products]);
+  const hasMultiple = groups.length > 1;
+
+  // Clamp group index if groups change
+  const groupIdx = Math.min(currentIdx, groups.length - 1);
+  const currentGroup = groups[groupIdx] ?? { tank: {}, quantity: 1, originalIndices: [0] };
+  const meta = currentGroup.tank;
+  // Legacy `idx` alias used in price map lookups (first original index of the group)
+  const idx = currentGroup.originalIndices[0] ?? 0;
 
   // Detect format: old flat keys vs new LLM-generated keys
   const oldFormat = isOldFormat(meta);
@@ -511,8 +581,8 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
     }
   }
 
-  const goPrev = () => { setEditing(false); setCurrentIdx(i => (i - 1 + products.length) % products.length); };
-  const goNext = () => { setEditing(false); setCurrentIdx(i => (i + 1) % products.length); };
+  const goPrev = () => { setEditing(false); setCurrentIdx(i => (i - 1 + groups.length) % groups.length); };
+  const goNext = () => { setEditing(false); setCurrentIdx(i => (i + 1) % groups.length); };
 
   /** Persist an updated products array back to the metadata field */
   const persistProducts = async (newProducts: Record<string, any>[]) => {
@@ -581,11 +651,15 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
     setEditDraft({});
   };
 
-  const deleteTank = async (deleteIdx: number) => {
-    if (products.length <= 1) return;
-    const newProducts = products.filter((_, i) => i !== deleteIdx);
-    if (currentIdx >= newProducts.length) setCurrentIdx(newProducts.length - 1);
-    else if (currentIdx > deleteIdx) setCurrentIdx(currentIdx - 1);
+  /** Delete all tanks belonging to the group at the given group index */
+  const deleteTankGroup = async (deleteGroupIdx: number) => {
+    const group = groups[deleteGroupIdx];
+    if (!group || products.length <= group.quantity) return;
+    const toRemove = new Set(group.originalIndices);
+    const newProducts = products.filter((_, i) => !toRemove.has(i));
+    // Recompute new groups to find correct currentIdx
+    const newGroups = deduplicateProducts(newProducts);
+    if (currentIdx >= newGroups.length) setCurrentIdx(Math.max(0, newGroups.length - 1));
     setConfirmDeleteIdx(null);
     setEditing(false);
     await persistProducts(newProducts);
@@ -618,7 +692,10 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
       updated[k] = v.trim();
     }
     const newProducts = [...products];
-    newProducts[idx] = updated;
+    // Apply to ALL tanks in this group (they are identical, so edit all together)
+    for (const origIdx of currentGroup.originalIndices) {
+      newProducts[origIdx] = { ...updated };
+    }
     setEditing(false);
     await persistProducts(newProducts);
   };
@@ -643,38 +720,45 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
   return (
     <div className="space-y-0">
       {/* Delete confirmation */}
-      {confirmDeleteIdx !== null && (
-        <div className="mb-3 p-3 rounded-lg border border-error/20 bg-error/5">
-          <p className="text-xs text-base-content/70 mb-2">
-            Ištrinti <strong>{getProductTitle(products[confirmDeleteIdx]) || `Talpa ${confirmDeleteIdx + 1}`}</strong>?
-          </p>
-          <div className="flex items-center gap-2">
-            <button onClick={() => deleteTank(confirmDeleteIdx)} disabled={saving} className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40">
-              {saving ? 'Trinama...' : 'Taip, ištrinti'}
-            </button>
-            <button onClick={() => setConfirmDeleteIdx(null)} className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5">
-              Atšaukti
-            </button>
+      {confirmDeleteIdx !== null && (() => {
+        const grp = groups[confirmDeleteIdx];
+        const title = grp ? (getProductTitle(grp.tank) || `Talpa ${confirmDeleteIdx + 1}`) : `Talpa ${confirmDeleteIdx + 1}`;
+        const qty = grp?.quantity ?? 1;
+        return (
+          <div className="mb-3 p-3 rounded-lg border border-error/20 bg-error/5">
+            <p className="text-xs text-base-content/70 mb-2">
+              Ištrinti <strong>{title}</strong>
+              {qty > 1 && <span> (visi <strong>{qty}</strong> vienodi)</span>}?
+            </p>
+            <div className="flex items-center gap-2">
+              <button onClick={() => deleteTankGroup(confirmDeleteIdx)} disabled={saving} className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40">
+                {saving ? 'Trinama...' : 'Taip, ištrinti'}
+              </button>
+              <button onClick={() => setConfirmDeleteIdx(null)} className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5">
+                Atšaukti
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Tank nav: single row — ◂ [dropdown] ▸  +  🗑 */}
       {(hasMultiple || !readOnly) && (
-        <div className="flex items-center gap-1 mb-4">
+        <div className="flex items-center gap-1 mb-2">
           {hasMultiple && (
             <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
               <ChevronLeft className="w-4 h-4 text-base-content/40" />
             </button>
           )}
           <select
-            value={idx}
+            value={groupIdx}
             onChange={e => { setEditing(false); setCurrentIdx(Number(e.target.value)); }}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
           >
-            {products.map((p, i) => (
+            {groups.map((g, i) => (
               <option key={i} value={i}>
-                {i + 1}. {getProductTitle(p) || `Talpa ${i + 1}`}
+                {i + 1}. {getProductTitle(g.tank) || `Talpa ${i + 1}`}
+                {g.quantity > 1 ? ` (×${g.quantity})` : ''}
               </option>
             ))}
           </select>
@@ -689,7 +773,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               </button>
               {hasMultiple && (
-                <button onClick={() => setConfirmDeleteIdx(idx)} disabled={saving} className="p-1.5 rounded-md hover:bg-error/8 text-base-content/30 hover:text-error disabled:opacity-30" title="Ištrinti talpą">
+                <button onClick={() => setConfirmDeleteIdx(groupIdx)} disabled={saving} className="p-1.5 rounded-md hover:bg-error/8 text-base-content/30 hover:text-error disabled:opacity-30" title="Ištrinti talpą">
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
@@ -698,70 +782,104 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
         </div>
       )}
 
+      {/* Kiekis badge — shown when current group has more than one identical tank */}
+      {currentGroup.quantity > 1 && (
+        <div className="flex items-center gap-1.5 mb-3">
+          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/15">
+            Kiekis: {currentGroup.quantity}
+          </span>
+          <span className="text-[11px] text-base-content/35">vienodų talpų</span>
+        </div>
+      )}
+
       {/* Per-tank price input */}
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-[11px] text-base-content/40 shrink-0">Kaina:</span>
-        {tankKainaEditing ? (
-          <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
-            <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
-            <input
-              type="text"
-              value={tankKainaInput}
-              onChange={e => setTankKainaInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  const parsed = tankKainaInput.trim() === '' ? null : parseFloat(tankKainaInput.replace(',', '.'));
-                  if (tankKainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
-                  setTankKainaSaving(true);
-                  onKainaChange(idx, parsed);
-                  setTankKainaSaving(false);
-                  setTankKainaEditing(false);
-                }
-                if (e.key === 'Escape') setTankKainaEditing(false);
-              }}
-              className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
-              placeholder="0.00"
-              autoFocus
-            />
-            <button
-              onClick={() => {
-                const parsed = tankKainaInput.trim() === '' ? null : parseFloat(tankKainaInput.replace(',', '.'));
-                if (tankKainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
-                setTankKainaSaving(true);
-                onKainaChange(idx, parsed);
-                setTankKainaSaving(false);
-                setTankKainaEditing(false);
-              }}
-              disabled={tankKainaSaving}
-              className="p-1 rounded-full hover:bg-base-content/10 transition-colors"
-            >
-              {tankKainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
-            </button>
-            <button onClick={() => setTankKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
-              <X className="w-3 h-3 text-base-content/40" />
-            </button>
+      {(() => {
+        // For a group, show per-tank price (representative) and total when qty > 1
+        const perTankKaina = kainaMap[String(idx)];
+        const groupTotalKaina = currentGroup.quantity > 1
+          ? currentGroup.originalIndices.reduce((sum, oi) => sum + (kainaMap[String(oi)] ?? 0), 0)
+          : perTankKaina;
+        const hasGroupPrice = currentGroup.quantity > 1
+          ? currentGroup.originalIndices.some(oi => kainaMap[String(oi)] != null)
+          : perTankKaina != null;
+        const applyKainaToGroup = (value: number | null) => {
+          currentGroup.originalIndices.forEach(oi => onKainaChange(oi, value));
+        };
+        return (
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-[11px] text-base-content/40 shrink-0">
+              {currentGroup.quantity > 1 ? 'Kaina / vnt.:' : 'Kaina:'}
+            </span>
+            {tankKainaEditing ? (
+              <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+                <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+                <input
+                  type="text"
+                  value={tankKainaInput}
+                  onChange={e => setTankKainaInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      const parsed = tankKainaInput.trim() === '' ? null : parseFloat(tankKainaInput.replace(',', '.'));
+                      if (tankKainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
+                      setTankKainaSaving(true);
+                      applyKainaToGroup(parsed);
+                      setTankKainaSaving(false);
+                      setTankKainaEditing(false);
+                    }
+                    if (e.key === 'Escape') setTankKainaEditing(false);
+                  }}
+                  className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+                  placeholder="0.00"
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    const parsed = tankKainaInput.trim() === '' ? null : parseFloat(tankKainaInput.replace(',', '.'));
+                    if (tankKainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
+                    setTankKainaSaving(true);
+                    applyKainaToGroup(parsed);
+                    setTankKainaSaving(false);
+                    setTankKainaEditing(false);
+                  }}
+                  disabled={tankKainaSaving}
+                  className="p-1 rounded-full hover:bg-base-content/10 transition-colors"
+                >
+                  {tankKainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                </button>
+                <button onClick={() => setTankKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                  <X className="w-3 h-3 text-base-content/40" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  if (!readOnly) {
+                    setTankKainaInput(perTankKaina != null ? String(perTankKaina) : '');
+                    setTankKainaEditing(true);
+                  }
+                }}
+                className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                  hasGroupPrice
+                    ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                    : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+                } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
+              >
+                <Euro className="w-3 h-3" />
+                {hasGroupPrice
+                  ? (perTankKaina != null ? `${perTankKaina.toLocaleString('lt-LT')} €` : 'Nustatyti kainą')
+                  : 'Nustatyti kainą'}
+              </button>
+            )}
+            {/* Group total price shown alongside per-unit price */}
+            {currentGroup.quantity > 1 && hasGroupPrice && !tankKainaEditing && (
+              <span className="text-[11px] text-base-content/40">
+                = <strong className="text-base-content/60">{(groupTotalKaina ?? 0).toLocaleString('lt-LT')} €</strong> iš viso
+              </span>
+            )}
           </div>
-        ) : (
-          <button
-            onClick={() => {
-              if (!readOnly) {
-                const currentVal = kainaMap[String(idx)];
-                setTankKainaInput(currentVal != null ? String(currentVal) : '');
-                setTankKainaEditing(true);
-              }
-            }}
-            className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-              kainaMap[String(idx)] != null
-                ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
-                : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
-            } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
-            title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
-          >
-            <Euro className="w-3 h-3" />
-            {kainaMap[String(idx)] != null ? `${kainaMap[String(idx)].toLocaleString('lt-LT')} €` : 'Nustatyti kainą'}
-          </button>
-        )}
-      </div>
+        );
+      })()}
 
       {/* Edit mode toggle */}
       {!readOnly && !editing && (
