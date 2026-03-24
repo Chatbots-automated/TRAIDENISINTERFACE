@@ -2253,19 +2253,28 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
       const webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
 
-      // Build enriched similar projects — use similarKainaMap (fetched from DB) for real metadata
+      // Fetch fresh full records for all similar projects directly from DB
+      const similarIds = projects.map(p => p.id);
+      let freshRecords: Record<number, any> = {};
+      try {
+        const rows = await fetchNestandartiniaiKainaByIds(similarIds);
+        for (const r of rows) freshRecords[r.id] = r;
+      } catch (fetchErr: any) {
+        console.warn('Could not fetch similar project details from DB, falling back to cached data:', fetchErr?.message);
+      }
+
       const enrichedSimilar = projects.map(p => {
-        const fetched = similarKainaMap[p.id];
+        const r = freshRecords[p.id];
         return {
           id: p.id,
           project_name: p.project_name,
           similarity_score: p.similarity_score,
-          kaina: fetched?.kaina ?? p.kaina ?? null,
-          metadata: parseJSON(fetched?.metadata as any) ?? fetched?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
-          description: fetched?.description ?? null,
-          derva: fetched?.derva ?? null,
-          klientas: fetched?.klientas ?? null,
-          tasks: parseJSON(fetched?.tasks as any) ?? fetched?.tasks ?? null,
+          kaina: r?.kaina ?? p.kaina ?? null,
+          metadata: parseJSON(r?.metadata) ?? r?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
+          description: r?.description ?? null,
+          derva: r?.derva ?? null,
+          klientas: r?.klientas ?? null,
+          tasks: parseJSON(r?.tasks) ?? r?.tasks ?? null,
         };
       });
 
