@@ -1698,7 +1698,7 @@ function parseDervaPerTank(raw: string | null): Record<string, string> {
   return {};
 }
 
-/** Unwrap metadata to the root object where _derva_musu_per_tank lives */
+/** Parse metadata into a raw JS object, unwrapping strings and array-wrapped roots */
 function unwrapMetaRoot(metadata: any): Record<string, any> {
   let meta = metadata;
   if (typeof meta === 'string') {
@@ -1711,13 +1711,62 @@ function unwrapMetaRoot(metadata: any): Record<string, any> {
   return (meta && typeof meta === 'object') ? meta : {};
 }
 
-/** Parse per-tank derva_musu from metadata._derva_musu_per_tank */
+/**
+ * Write a field into every tank object at the specified indices inside the metadata,
+ * preserving all other top-level metadata fields (klientas, projektas, etc.).
+ * Works with all wrapper shapes: { talpos: [...] }, { products: [...] }, plain array, single object.
+ * Pass value=null/undefined to delete the field.
+ */
+function buildUpdatedMeta(
+  rawMetadata: any,
+  fieldName: string,
+  value: any,
+  indicesToUpdate: number[],
+): any {
+  let rawMeta: any = rawMetadata;
+  if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
+
+  const currentProducts = parseProducts(rawMeta);
+  const newProducts = currentProducts.map((p, i) => {
+    if (!indicesToUpdate.includes(i)) return p;
+    if (value == null || (typeof value === 'string' && value.trim() === '')) {
+      const { [fieldName]: _removed, ...rest } = p as any;
+      return rest;
+    }
+    return { ...p, [fieldName]: value };
+  });
+
+  if (Array.isArray(rawMeta) && rawMeta.length > 0 && typeof rawMeta[0] === 'object') {
+    const root = { ...rawMeta[0] };
+    const wrapperKey = ['products', 'talpos', 'gaminiai', 'items'].find(k => Array.isArray(root[k])) ?? null;
+    return wrapperKey
+      ? [{ ...root, [wrapperKey]: newProducts }, ...rawMeta.slice(1)]
+      : newProducts;
+  } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
+    const wrapperKey = ['products', 'talpos', 'gaminiai', 'items'].find(k => Array.isArray(rawMeta[k])) ?? null;
+    return wrapperKey
+      ? { ...rawMeta, [wrapperKey]: newProducts }
+      : (newProducts.length === 1 ? newProducts[0] : newProducts);
+  } else {
+    return newProducts.length === 1 ? newProducts[0] : newProducts;
+  }
+}
+
+/** Parse per-tank derva_musu — reads from each tank object's derva_musu field.
+ *  Falls back to legacy root-level _derva_musu_per_tank for old records. */
 function parseDervaMusuPerTank(metadata: any): Record<string, string> {
-  const meta = unwrapMetaRoot(metadata);
-  const perTank = meta?._derva_musu_per_tank;
+  const prods = parseProducts(metadata);
+  const result: Record<string, string> = {};
+  for (let i = 0; i < prods.length; i++) {
+    const v = prods[i]?.derva_musu;
+    if (v && typeof v === 'string' && v.trim()) result[String(i)] = v.trim();
+  }
+  if (Object.keys(result).length > 0) return result;
+  // Legacy fallback: root _derva_musu_per_tank
+  const root = unwrapMetaRoot(metadata);
+  const perTank = root?._derva_musu_per_tank;
   if (perTank && typeof perTank === 'object' && !Array.isArray(perTank)) return perTank;
-  // Legacy: flat derva_musu → assign to tank 0
-  const legacy = meta?.derva_musu;
+  const legacy = root?.derva_musu;
   if (legacy && typeof legacy === 'string') return { '0': legacy };
   return {};
 }
@@ -1805,30 +1854,20 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
     const valueToSave = overrideValue !== undefined ? overrideValue : dervaMusu;
     setDervaMusuSaving(true);
     try {
-      let rawMeta: any = record.metadata;
-      if (typeof rawMeta === 'string') {
-        try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; }
-      }
-      const updatedMusuPerTank = { ...dervaMusuPerTank };
-      if (valueToSave.trim()) {
-        updatedMusuPerTank[tankKey] = valueToSave.trim();
-      } else {
-        delete updatedMusuPerTank[tankKey];
-      }
-      // Handle array-wrapped metadata: write _derva_musu_per_tank into the wrapper object
-      let updatedMeta: any;
-      if (Array.isArray(rawMeta) && rawMeta.length > 0 && rawMeta[0] && typeof rawMeta[0] === 'object') {
-        const root = { ...rawMeta[0], _derva_musu_per_tank: updatedMusuPerTank };
-        if (updatedMusuPerTank['0']) { root.derva_musu = updatedMusuPerTank['0']; } else { delete root.derva_musu; }
-        updatedMeta = [root, ...rawMeta.slice(1)];
-      } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
-        updatedMeta = { ...rawMeta, _derva_musu_per_tank: updatedMusuPerTank };
-        if (updatedMusuPerTank['0']) { updatedMeta.derva_musu = updatedMusuPerTank['0']; } else { delete updatedMeta.derva_musu; }
-      } else {
-        updatedMeta = { _derva_musu_per_tank: updatedMusuPerTank };
-        if (updatedMusuPerTank['0']) { updatedMeta.derva_musu = updatedMusuPerTank['0']; }
-      }
+      // Apply to all tanks with the same fingerprint as the current one
+      const fp = getTankFingerprint(products[idx]);
+      const indicesToUpdate = products.map((p, i) => ({ i, match: getTankFingerprint(p) === fp }))
+        .filter(x => x.match).map(x => x.i);
+
+      const updatedMeta = buildUpdatedMeta(record.metadata, 'derva_musu', valueToSave.trim() || null, indicesToUpdate);
       await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+
+      // Update local state for all affected indices
+      const updatedMusuPerTank = { ...dervaMusuPerTank };
+      for (const i of indicesToUpdate) {
+        if (valueToSave.trim()) updatedMusuPerTank[String(i)] = valueToSave.trim();
+        else delete updatedMusuPerTank[String(i)];
+      }
       setDervaMusuPerTank(updatedMusuPerTank);
       if (overrideValue !== undefined) setDervaMusu(valueToSave);
       setDervaMusuSaved(true);
@@ -2344,42 +2383,17 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
           onAiEstimate?.(group.originalIndices, estimatedPrice);
         }
 
-        // Write estimated price back into each matching tank in metadata
+        // Write kaina_ai into each matching tank object in metadata
         if (estimatedPrice != null && !isNaN(estimatedPrice)) {
           try {
-            // Re-fetch latest record so we always patch the freshest metadata
             const latest = await fetchNestandartiniaiById(record.id);
             const base = latest ?? record;
-            const currentProducts = parseProducts(base.metadata);
-            const newProducts = currentProducts.map((p, i) =>
-              group.originalIndices.includes(i) ? { ...p, kaina_ai: estimatedPrice } : p
-            );
-
-            let rawMeta: any = base.metadata;
-            if (typeof rawMeta === 'string') { try { rawMeta = JSON.parse(rawMeta); } catch { rawMeta = {}; } }
-            let updatedMeta: any;
-            if (Array.isArray(rawMeta) && rawMeta.length > 0 && typeof rawMeta[0] === 'object') {
-              const root = { ...rawMeta[0] };
-              const wrapperKey = ['products', 'talpos', 'gaminiai', 'items'].find(k => Array.isArray(root[k])) ?? null;
-              updatedMeta = wrapperKey
-                ? [{ ...root, [wrapperKey]: newProducts }, ...rawMeta.slice(1)]
-                : newProducts;
-            } else if (rawMeta && typeof rawMeta === 'object' && !Array.isArray(rawMeta)) {
-              const wrapperKey = ['products', 'talpos', 'gaminiai', 'items'].find(k => Array.isArray(rawMeta[k])) ?? null;
-              updatedMeta = wrapperKey
-                ? { ...rawMeta, [wrapperKey]: newProducts }
-                : (newProducts.length === 1 ? newProducts[0] : newProducts);
-            } else {
-              updatedMeta = newProducts.length === 1 ? newProducts[0] : newProducts;
-            }
-
+            const updatedMeta = buildUpdatedMeta(base.metadata, 'kaina_ai', estimatedPrice, group.originalIndices);
             await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
-
-            // Propagate updated record upstream so UI reflects new prices
             const refreshed = await fetchNestandartiniaiById(record.id);
             if (refreshed) onRecordUpdated?.(refreshed);
           } catch (writeErr: any) {
-            console.warn(`Failed to write price for group ${gi + 1}:`, writeErr?.message);
+            console.warn(`Failed to write kaina_ai for group ${gi + 1}:`, writeErr?.message);
           }
         }
 
