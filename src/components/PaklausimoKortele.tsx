@@ -530,7 +530,7 @@ function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
 
-function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange, aiEstimatesMap }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void; aiEstimatesMap?: Record<number, number> }) {
+function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange, aiEstimatesMap, aiReasoningMap }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void; aiEstimatesMap?: Record<number, number>; aiReasoningMap?: Record<number, string> }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [saving, setSaving] = useState(false);
   // confirmDeleteIdx stores group index (not product index)
@@ -811,6 +811,10 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
           const n = Number(v);
           return isNaN(n) ? null : n;
         })();
+        const aiReasoning: string | null =
+          aiReasoningMap?.[idx] ??
+          currentGroup.tank.kaina_ai_reasoning ??
+          null;
         const applyKainaToGroup = (value: number | null) => {
           currentGroup.originalIndices.forEach(oi => onKainaChange(oi, value));
         };
@@ -891,13 +895,19 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
               <span
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium"
                 style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
-                title="AI preliminari kaina"
+                title={aiReasoning ?? 'AI preliminari kaina'}
               >
                 <Sparkles className="w-2.5 h-2.5" />
                 {aiEstimate.toLocaleString('lt-LT')} €
               </span>
             )}
           </div>
+          {/* AI reasoning shown below the price row */}
+          {aiEstimate != null && aiReasoning && !tankKainaEditing && (
+            <p className="text-[11px] leading-relaxed mb-3 -mt-2" style={{ color: 'rgba(175,82,222,0.7)' }}>
+              {aiReasoning}
+            </p>
+          )}
         );
       })()}
 
@@ -2203,7 +2213,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
 // Tab: Panašūs
 // ---------------------------------------------------------------------------
 
-function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; onAiEstimate?: (indices: number[], price: number) => void }) {
+function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; onAiEstimate?: (indices: number[], price: number, reasoning: string | null) => void }) {
   const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
   const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
   const loading = useProcessing(record.id, 'similar');
@@ -2386,20 +2396,26 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
           return isNaN(parsed) ? null : parsed;
         })();
         console.log('[PriceEstimate] rawPrice:', rawPrice, '→ estimatedPrice:', estimatedPrice);
-        if (lastReasoning == null && respData?.reasoning) lastReasoning = respData.reasoning;
+        const groupReasoning: string | null =
+          respData?.reasoning ?? respData?.statement ?? respData?.explanation ??
+          respData?.reason ?? respData?.message ?? respData?.note ?? null;
+        if (lastReasoning == null && groupReasoning) lastReasoning = groupReasoning;
 
-        // Immediately surface the estimate to TabBendra via shared state (no DB round-trip needed)
+        // Immediately surface estimate + reasoning to TabBendra via shared state
         if (estimatedPrice != null && !isNaN(estimatedPrice)) {
-          onAiEstimate?.(group.originalIndices, estimatedPrice);
+          onAiEstimate?.(group.originalIndices, estimatedPrice, groupReasoning);
         }
 
-        // Write kaina_ai into each matching tank object in metadata
+        // Write kaina_ai (and reasoning) into each matching tank object in metadata
         if (estimatedPrice != null && !isNaN(estimatedPrice)) {
           try {
             const latest = await fetchNestandartiniaiById(record.id);
             const base = latest ?? record;
             console.log('[PriceEstimate] base.metadata type:', typeof base.metadata, 'value:', base.metadata);
-            const updatedMeta = buildUpdatedMeta(base.metadata, 'kaina_ai', estimatedPrice, group.originalIndices);
+            let updatedMeta = buildUpdatedMeta(base.metadata, 'kaina_ai', estimatedPrice, group.originalIndices);
+            if (groupReasoning) {
+              updatedMeta = buildUpdatedMeta(updatedMeta, 'kaina_ai_reasoning', groupReasoning, group.originalIndices);
+            }
             console.log('[PriceEstimate] updatedMeta computed, calling PATCH for group', gi + 1, ':', JSON.stringify(updatedMeta).slice(0, 300));
             await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
             console.log('[PriceEstimate] PATCH done for group', gi + 1);
@@ -2635,14 +2651,22 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
   // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
   const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => resolveKainaMap(record));
-  // AI price estimates keyed by tank index — populated by TabPanasus, displayed in TabBendra
+  // AI price estimates + reasoning keyed by tank index — populated by TabPanasus, displayed in TabBendra
   const [aiEstimatesMap, setAiEstimatesMap] = useState<Record<number, number>>({});
-  const handleAiEstimate = (indices: number[], price: number) => {
+  const [aiReasoningMap, setAiReasoningMap] = useState<Record<number, string>>({});
+  const handleAiEstimate = (indices: number[], price: number, reasoning: string | null) => {
     setAiEstimatesMap(prev => {
       const next = { ...prev };
       for (const i of indices) next[i] = price;
       return next;
     });
+    if (reasoning) {
+      setAiReasoningMap(prev => {
+        const next = { ...prev };
+        for (const i of indices) next[i] = reasoning;
+        return next;
+      });
+    }
   };
 
   // Re-sync when record changes
@@ -2966,7 +2990,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} aiEstimatesMap={aiEstimatesMap} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} aiEstimatesMap={aiEstimatesMap} aiReasoningMap={aiReasoningMap} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
