@@ -216,6 +216,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   // --- Document list ---
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(true);
+  const [docsError, setDocsError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // --- Selected document ---
@@ -258,10 +259,17 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const loadDocuments = async () => {
     try {
       setDocsLoading(true);
+      setDocsError('');
       const docs = await fetchParsedDocuments(user.id);
       setDocuments(docs);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load documents:', err);
+      const msg: string = err?.message || '';
+      setDocsError(
+        msg.toLowerCase().includes('permission') || err?.code === '403'
+          ? 'Prieigos klaida (403) – patikrinkite VITE_DIRECTUS_TOKEN konfigūraciją Netlify aplinkoje.'
+          : msg || 'Nepavyko įkelti dokumentų.'
+      );
     } finally {
       setDocsLoading(false);
     }
@@ -731,6 +739,11 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
           {docsLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#8a857f' }} />
+            </div>
+          ) : docsError ? (
+            <div className="mx-2 mt-2 p-2.5 rounded-lg flex items-start gap-2" style={{ background: 'rgba(239,68,68,0.07)', border: '0.5px solid rgba(239,68,68,0.18)' }}>
+              <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#ef4444' }} />
+              <span className="text-xs" style={{ color: '#ef4444' }}>{docsError}</span>
             </div>
           ) : filteredDocs.length === 0 ? (
             <div className="text-center py-12">
