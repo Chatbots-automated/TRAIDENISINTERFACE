@@ -819,6 +819,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
           currentGroup.originalIndices.forEach(oi => onKainaChange(oi, value));
         };
         return (
+          <>
           <div className="flex items-center gap-2 mb-4">
             <span className="text-[11px] text-base-content/40 shrink-0">
               {currentGroup.quantity > 1 ? 'Kaina / vnt.:' : 'Kaina:'}
@@ -908,6 +909,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
               {aiReasoning}
             </p>
           )}
+          </>
         );
       })()}
 
