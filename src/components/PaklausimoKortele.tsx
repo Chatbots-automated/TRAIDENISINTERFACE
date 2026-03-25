@@ -2372,10 +2372,12 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
         try { respData = await resp.json(); } catch { /* no json body */ }
         // n8n often wraps the response in an array
         if (Array.isArray(respData)) respData = respData[0] ?? null;
+        console.log('[PriceEstimate] raw webhook response for group', gi + 1, ':', respData);
 
         // Accept common field names for the price
         const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? null;
         const estimatedPrice = rawPrice != null ? Number(rawPrice) : null;
+        console.log('[PriceEstimate] rawPrice:', rawPrice, '→ estimatedPrice:', estimatedPrice);
         if (lastReasoning == null && respData?.reasoning) lastReasoning = respData.reasoning;
 
         // Immediately surface the estimate to TabBendra via shared state (no DB round-trip needed)
@@ -2388,12 +2390,15 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
           try {
             const latest = await fetchNestandartiniaiById(record.id);
             const base = latest ?? record;
+            console.log('[PriceEstimate] base.metadata type:', typeof base.metadata, 'value:', base.metadata);
             const updatedMeta = buildUpdatedMeta(base.metadata, 'kaina_ai', estimatedPrice, group.originalIndices);
+            console.log('[PriceEstimate] updatedMeta computed, calling PATCH for group', gi + 1, ':', JSON.stringify(updatedMeta).slice(0, 300));
             await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+            console.log('[PriceEstimate] PATCH done for group', gi + 1);
             const refreshed = await fetchNestandartiniaiById(record.id);
             if (refreshed) onRecordUpdated?.(refreshed);
           } catch (writeErr: any) {
-            console.warn(`Failed to write kaina_ai for group ${gi + 1}:`, writeErr?.message);
+            console.error(`[PriceEstimate] Failed to write kaina_ai for group ${gi + 1}:`, writeErr?.message, writeErr);
           }
         }
 
