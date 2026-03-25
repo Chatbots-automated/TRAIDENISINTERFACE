@@ -530,7 +530,7 @@ function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
 
-function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void }) {
+function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange, aiEstimatesMap }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void; aiEstimatesMap?: Record<number, number> }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [saving, setSaving] = useState(false);
   // confirmDeleteIdx stores group index (not product index)
@@ -802,7 +802,10 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
         const hasGroupPrice = currentGroup.quantity > 1
           ? currentGroup.originalIndices.some(oi => kainaMap[String(oi)] != null)
           : perTankKaina != null;
+        // AI estimate: prefer live in-session map, fall back to persisted value in metadata
         const aiEstimate: number | null = (() => {
+          const fromMap = aiEstimatesMap?.[idx];
+          if (fromMap != null) return fromMap;
           const v = currentGroup.tank.kaina_ai ?? currentGroup.tank.Kaina_ai;
           if (v == null) return null;
           const n = Number(v);
@@ -2161,7 +2164,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
 // Tab: Panašūs
 // ---------------------------------------------------------------------------
 
-function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
+function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; onAiEstimate?: (indices: number[], price: number) => void }) {
   const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
   const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
   const loading = useProcessing(record.id, 'similar');
@@ -2328,9 +2331,18 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated }: { record: N
 
         let respData: any = null;
         try { respData = await resp.json(); } catch { /* no json body */ }
+        // n8n often wraps the response in an array
+        if (Array.isArray(respData)) respData = respData[0] ?? null;
 
-        const estimatedPrice = respData?.estimated_price != null ? Number(respData.estimated_price) : null;
+        // Accept common field names for the price
+        const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? null;
+        const estimatedPrice = rawPrice != null ? Number(rawPrice) : null;
         if (lastReasoning == null && respData?.reasoning) lastReasoning = respData.reasoning;
+
+        // Immediately surface the estimate to TabBendra via shared state (no DB round-trip needed)
+        if (estimatedPrice != null && !isNaN(estimatedPrice)) {
+          onAiEstimate?.(group.originalIndices, estimatedPrice);
+        }
 
         // Write estimated price back into each matching tank in metadata
         if (estimatedPrice != null && !isNaN(estimatedPrice)) {
@@ -2596,6 +2608,15 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
   // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
   const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => resolveKainaMap(record));
+  // AI price estimates keyed by tank index — populated by TabPanasus, displayed in TabBendra
+  const [aiEstimatesMap, setAiEstimatesMap] = useState<Record<number, number>>({});
+  const handleAiEstimate = (indices: number[], price: number) => {
+    setAiEstimatesMap(prev => {
+      const next = { ...prev };
+      for (const i of indices) next[i] = price;
+      return next;
+    });
+  };
 
   // Re-sync when record changes
   useEffect(() => {
@@ -2918,7 +2939,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} />}
+            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} aiEstimatesMap={aiEstimatesMap} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -2932,7 +2953,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               </>
             )}
             {activeTab === 'derva' && <TabDerva record={record} products={products} onRecordUpdated={onRefresh} />}
-            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
+            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} onAiEstimate={handleAiEstimate} />}
           </div>
         </div>
       </div>
