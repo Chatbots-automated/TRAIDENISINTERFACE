@@ -2374,9 +2374,17 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
         if (Array.isArray(respData)) respData = respData[0] ?? null;
         console.log('[PriceEstimate] raw webhook response for group', gi + 1, ':', respData);
 
-        // Accept common field names for the price
-        const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? null;
-        const estimatedPrice = rawPrice != null ? Number(rawPrice) : null;
+        // Accept common field names; also handle n8n plain-text output like "62,000€"
+        const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
+        const estimatedPrice = (() => {
+          if (rawPrice == null) return null;
+          const n = Number(rawPrice);
+          if (!isNaN(n)) return n;
+          // Strip currency symbols and thousands-separator commas, then parse
+          const cleaned = String(rawPrice).replace(/[€$£\s]/g, '').replace(/,(?=\d{3}(\D|$))/g, '');
+          const parsed = parseFloat(cleaned);
+          return isNaN(parsed) ? null : parsed;
+        })();
         console.log('[PriceEstimate] rawPrice:', rawPrice, '→ estimatedPrice:', estimatedPrice);
         if (lastReasoning == null && respData?.reasoning) lastReasoning = respData.reasoning;
 
