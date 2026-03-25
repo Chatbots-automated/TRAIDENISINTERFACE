@@ -288,6 +288,9 @@ const DEDUP_EXCLUDE_KEYS = new Set([
   ...SKIP_DISPLAY_KEYS,
   ...TITLE_KEYS,
   'Pastabos', 'pastabos',
+  // Price fields must not affect grouping — entering a price for one tank
+  // should not split it away from its identical siblings
+  'kaina', 'Kaina', 'kaina_ai', 'kaina_ai_reasoning',
 ]);
 
 /** Recursively sort object keys so JSON.stringify produces a stable result */
@@ -2677,18 +2680,27 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   }, [record.kaina, record.metadata]);
 
   const handleTankKainaChange = async (tankIdx: number, value: number | null) => {
+    // Find all tanks that belong to the same dedup group as tankIdx so the
+    // price is applied uniformly to every identical tank, not just the one
+    // the user happened to edit.
+    const currentProducts = parseProducts(record.metadata);
+    const groups = deduplicateProducts(currentProducts);
+    const group = groups.find(g => g.originalIndices.includes(tankIdx));
+    const groupIndices = new Set(group?.originalIndices ?? [tankIdx]);
+
     const newMap = { ...kainaMap };
-    if (value === null) {
-      delete newMap[String(tankIdx)];
-    } else {
-      newMap[String(tankIdx)] = value;
+    for (const idx of groupIndices) {
+      if (value === null) {
+        delete newMap[String(idx)];
+      } else {
+        newMap[String(idx)] = value;
+      }
     }
     setKainaMap(newMap);
     try {
-      // Embed kaina inside the tank object itself (same pattern as persistProducts)
-      const currentProducts = parseProducts(record.metadata);
+      // Embed kaina inside every tank in the group (same pattern as persistProducts)
       const newProducts = currentProducts.map((p, i) => {
-        if (i !== tankIdx) return p;
+        if (!groupIndices.has(i)) return p;
         if (value === null) {
           const { kaina: _removed, ...rest } = p;
           return rest;
