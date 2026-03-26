@@ -2297,6 +2297,54 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Webhook throttle helpers — prevent OpenAI rate-limit errors when a record
+  // has many tank groups (10, 42, etc.) causing rapid back-to-back n8n calls.
+  // ---------------------------------------------------------------------------
+
+  /** Pause execution for `ms` milliseconds */
+  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+  /**
+   * Fire a single webhook request with automatic retry on rate-limit (429)
+   * or server-busy (503) responses.  Uses exponential backoff.
+   *
+   * @param url        Webhook endpoint
+   * @param body       JSON body to POST
+   * @param maxRetries Maximum number of retry attempts (default 3)
+   * @returns          Fetch Response on success, throws on final failure
+   */
+  const fetchWithRetry = async (
+    url: string,
+    body: object,
+    maxRetries = 3,
+  ): Promise<Response> => {
+    let delay = 2000; // initial backoff: 2 s
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (resp.status === 429 || resp.status === 503) {
+        if (attempt === maxRetries) {
+          // Final attempt — let the caller handle the bad response
+          return resp;
+        }
+        console.warn(`[PriceEstimate] Rate-limited (${resp.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await sleep(delay);
+        delay *= 2; // exponential backoff
+        continue;
+      }
+      return resp;
+    }
+    // TypeScript: unreachable, but needed for type safety
+    throw new Error('fetchWithRetry: exhausted retries');
+  };
+
+  /** Delay between successive group requests to avoid flooding n8n / OpenAI */
+  const INTER_REQUEST_DELAY_MS = 1500;
+
   const handleEstimateAllPrices = async () => {
     if (projects.length === 0) {
       setEstimateError('Pirmiausia reikia rasti panašius projektus');
@@ -2359,11 +2407,11 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
       const group = groups[gi];
       setEstimateProgress({ current: gi + 1, total: groups.length });
 
+      // Throttle: wait between requests (skip before the very first one)
+      if (gi > 0) await sleep(INTER_REQUEST_DELAY_MS);
+
       try {
-        const resp = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const resp = await fetchWithRetry(webhookUrl, {
             record_id: record.id,
             project_name: record.project_name,
             description: record.description,
@@ -2375,7 +2423,6 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
             quantity: group.quantity,
             original_indices: group.originalIndices,
             similar_projects: enrichedSimilar,
-          }),
         });
 
         if (!resp.ok) {
