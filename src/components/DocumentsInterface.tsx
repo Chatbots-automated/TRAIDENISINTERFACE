@@ -707,6 +707,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [talposJsonPreview, setTalposJsonPreview] = useState<{ col: string; value: any } | null>(null);
 
   // Pagination
   const PAGE_SIZE = 50;
@@ -1258,6 +1259,31 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   >
                     {talposCols.map(col => {
                       const val = row[col];
+                      // Detect JSON: already an object/array, or a string that parses as one
+                      let isJson = false;
+                      let jsonValue: any = null;
+                      if (val !== null && val !== undefined) {
+                        if (typeof val === 'object') {
+                          isJson = true;
+                          jsonValue = val;
+                        } else if (typeof val === 'string' && (val.trimStart().startsWith('{') || val.trimStart().startsWith('['))) {
+                          try { jsonValue = JSON.parse(val); isJson = true; } catch { /* not json */ }
+                        }
+                      }
+                      if (isJson) {
+                        return (
+                          <td key={col} className="px-3 py-2.5">
+                            <button
+                              onClick={() => setTalposJsonPreview({ col, value: jsonValue })}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-all hover:brightness-95"
+                              style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
+                            >
+                              <Eye className="w-3 h-3" />
+                              JSON
+                            </button>
+                          </td>
+                        );
+                      }
                       const maxLen = 120;
                       const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
@@ -1690,6 +1716,36 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
+      )}
+
+      {/* Talpos JSON viewer modal */}
+      {talposJsonPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setTalposJsonPreview(null)}>
+          <div
+            className="bg-white rounded-xl shadow-xl flex flex-col w-full max-w-2xl mx-4"
+            style={{ maxHeight: '80vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <span className="text-sm font-semibold" style={{ color: '#3d3935' }}>{talposJsonPreview.col}</span>
+              <button
+                onClick={() => setTalposJsonPreview(null)}
+                className="p-1.5 rounded-md transition-colors hover:bg-gray-100"
+                style={{ color: '#8a857f' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <pre
+                className="text-xs rounded-lg p-4 overflow-auto"
+                style={{ background: '#f8f6f3', color: '#3d3935', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              >
+                {JSON.stringify(talposJsonPreview.value, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* HTML Preview Modal (view-only) */}
