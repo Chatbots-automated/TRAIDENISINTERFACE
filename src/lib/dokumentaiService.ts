@@ -347,3 +347,25 @@ export const deleteNestandartiniaiRecord = async (
     throw error;
   }
 };
+
+/**
+ * Fetch all records from talpos table
+ */
+export const fetchTalpos = async (): Promise<any[]> => {
+  try {
+    const { data, error } = await db
+      .from('talpos')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching talpos:', error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error: any) {
+    console.error('Error in fetchTalpos:', error);
+    throw error;
+  }
+};
