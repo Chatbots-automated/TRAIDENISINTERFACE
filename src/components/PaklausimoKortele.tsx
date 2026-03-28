@@ -607,6 +607,53 @@ function TabTalpos({
     }
   };
 
+  // Similar tanks state (per-idx)
+  const [similarSearching, setSimilarSearching] = useState<Record<number, boolean>>({});
+  const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
+  const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
+
+  // Persisted results from DB (recomputed when current row changes)
+  const persistedSimilar: any[] | null = useMemo(() => {
+    if (!currentTalposRow?.similar_tanks) return null;
+    try {
+      const parsed = typeof currentTalposRow.similar_tanks === 'string'
+        ? JSON.parse(currentTalposRow.similar_tanks)
+        : currentTalposRow.similar_tanks;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
+  }, [currentTalposRow?.similar_tanks, idx]);
+
+  const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
+    ? localSimilarResults[idx]
+    : persistedSimilar;
+
+  const findSimilar = async () => {
+    if (!currentTalposId || !currentTalposRow) return;
+    setSimilarSearching(prev => ({ ...prev, [idx]: true }));
+    setSimilarError(prev => ({ ...prev, [idx]: null }));
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_similar_tanks');
+      const payload = Object.fromEntries(
+        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
+      );
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
+      const arr = Array.isArray(result) ? result : (result?.results ?? result?.data ?? []);
+      const top5 = arr.slice(0, 5);
+      await updateTalposField(currentTalposId, 'similar_tanks', JSON.stringify(top5));
+      setLocalSimilarResults(prev => ({ ...prev, [idx]: top5 }));
+    } catch (e: any) {
+      setSimilarError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
+    } finally {
+      setSimilarSearching(prev => ({ ...prev, [idx]: false }));
+    }
+  };
+
   const goPrev = () => setCurrentIdx(i => (i - 1 + navCount) % navCount);
   const goNext = () => setCurrentIdx(i => (i + 1) % navCount);
 
@@ -769,6 +816,76 @@ function TabTalpos({
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Similar tanks section */}
+              <div className="mt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
+                  <button
+                    onClick={findSimilar}
+                    disabled={!!similarSearching[idx]}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {similarSearching[idx] ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
+                    ) : (
+                      <><RefreshCw className="w-3.5 h-3.5" /> Rasti Panašias</>
+                    )}
+                  </button>
+                </div>
+
+                {similarError[idx] && (
+                  <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-3">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{similarError[idx]}</span>
+                  </div>
+                )}
+
+                {displayedSimilar && displayedSimilar.length > 0 ? (
+                  <div className="space-y-2">
+                    {displayedSimilar.map((item: any, i: number) => {
+                      const name = item.name || item.pavadinimas || item.tank_name || `Talpa ${i + 1}`;
+                      const score = item.similarity_score ?? item.similarity ?? null;
+                      const projectName = item.project_name || item.projekto_pavadinimas || null;
+                      const projectId = item.project_id || item.id_project || null;
+                      const kaina = item.kaina != null ? Number(item.kaina) : null;
+                      return (
+                        <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl border border-base-content/8 bg-base-content/[0.02] hover:bg-base-content/[0.04] transition-colors">
+                          {score !== null && (
+                            <span className="shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                              {Math.round(Number(score) * 100)}%
+                            </span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-base-content/80 truncate">{name}</p>
+                            {projectName && (
+                              projectId ? (
+                                <a
+                                  href={`/paklausimas/${projectId}`}
+                                  className="text-[11px] text-primary/70 hover:text-primary truncate block"
+                                >
+                                  {projectName}
+                                </a>
+                              ) : (
+                                <p className="text-[11px] text-base-content/40 truncate">{projectName}</p>
+                              )
+                            )}
+                          </div>
+                          {kaina !== null && !isNaN(kaina) && (
+                            <span className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
+                              <Euro className="w-2.5 h-2.5" />{kaina.toLocaleString('lt-LT')}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : !similarSearching[idx] && (
+                  <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
+                    <p className="text-xs text-base-content/30 text-center">Nėra rezultatų — paspauskite „Rasti Panašias"</p>
+                  </div>
+                )}
               </div>
             </>
           )}
