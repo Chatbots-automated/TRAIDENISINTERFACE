@@ -744,7 +744,12 @@ function TabTalpos({
                       fontFamily: 'ui-monospace, SFMono-Regular, monospace',
                     }}
                   >
-                    {JSON.stringify(currentTalposRow, null, 2)}
+                    {JSON.stringify(
+                      Object.fromEntries(
+                        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
+                      ),
+                      null, 2
+                    )}
                   </pre>
                 </div>
 
