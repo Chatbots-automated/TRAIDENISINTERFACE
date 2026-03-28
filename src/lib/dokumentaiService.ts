@@ -390,6 +390,35 @@ export const fetchTalposByIds = async (ids: string[]): Promise<any[]> => {
 };
 
 /**
+ * Given a list of talpos UUIDs, return a map of { talposUUID → n8n_vector_store integer id }
+ * by querying n8n_vector_store rows whose `talpos` column contains each UUID.
+ */
+export const fetchProjectIdsByTalposIds = async (talposIds: string[]): Promise<Record<string, number>> => {
+  if (talposIds.length === 0) return {};
+  try {
+    // Fetch in parallel — one ilike query per UUID (max 5 for similar results)
+    const results = await Promise.all(
+      talposIds.map(uuid =>
+        db
+          .from('n8n_vector_store')
+          .select('id,talpos')
+          .ilike('talpos', `%${uuid}%`)
+          .limit(1)
+          .then(({ data }) => ({ uuid, projectId: data?.[0]?.id ?? null }))
+      )
+    );
+    const map: Record<string, number> = {};
+    for (const { uuid, projectId } of results) {
+      if (projectId != null) map[uuid] = projectId;
+    }
+    return map;
+  } catch (error: any) {
+    console.error('Error in fetchProjectIdsByTalposIds:', error);
+    return {};
+  }
+};
+
+/**
  * Update a single field on a talpos row
  */
 export const updateTalposField = async (id: string, field: string, value: any): Promise<void> => {

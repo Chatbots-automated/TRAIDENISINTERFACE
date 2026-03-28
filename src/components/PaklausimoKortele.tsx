@@ -15,6 +15,7 @@ import {
   deleteNestandartiniaiRecord,
   fetchTalposByIds,
   updateTalposField,
+  fetchProjectIdsByTalposIds,
 } from '../lib/dokumentaiService';
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, SimilarProject,
@@ -611,6 +612,8 @@ function TabTalpos({
   const [similarSearching, setSimilarSearching] = useState<Record<number, boolean>>({});
   const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
   const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
+  // Maps talpos UUID → n8n_vector_store integer id (for project links)
+  const [talposToProjectId, setTalposToProjectId] = useState<Record<string, number>>({});
 
   // Persisted results from DB (recomputed when current row changes)
   const persistedSimilar: any[] | null = useMemo(() => {
@@ -622,6 +625,18 @@ function TabTalpos({
       return Array.isArray(parsed) ? parsed : null;
     } catch { return null; }
   }, [currentTalposRow?.similar_talpos, idx]);
+
+  // When persisted results change, resolve any missing project IDs
+  useEffect(() => {
+    if (!persistedSimilar) return;
+    const missing = persistedSimilar
+      .map((item: any) => item.id)
+      .filter((id: string) => id && !(id in talposToProjectId));
+    if (missing.length === 0) return;
+    fetchProjectIdsByTalposIds(missing).then(map => {
+      setTalposToProjectId(prev => ({ ...prev, ...map }));
+    });
+  }, [persistedSimilar]);
 
   const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
     ? localSimilarResults[idx]
@@ -658,6 +673,13 @@ function TabTalpos({
       // Patch local talposRows so persisted display updates without a full reload
       setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, similar_talpos: updatedRow?.similar_talpos } : r)));
       setLocalSimilarResults(prev => ({ ...prev, [idx]: results }));
+      // Resolve project IDs for the new results
+      const talposUuids = results.map((item: any) => item.id).filter(Boolean);
+      if (talposUuids.length > 0) {
+        fetchProjectIdsByTalposIds(talposUuids).then(map => {
+          setTalposToProjectId(prev => ({ ...prev, ...map }));
+        });
+      }
     } catch (e: any) {
       setSimilarError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
     } finally {
@@ -859,7 +881,7 @@ function TabTalpos({
                           const name = item.name || item.pavadinimas || item.tank_name || `Talpa ${i + 1}`;
                           const score = item.similarity_score ?? item.similarity ?? null;
                           const projectName = item.project_name || item.projekto_pavadinimas || null;
-                          const projectId = item.project_id || item.id_project || null;
+                          const projectId = item.project_id || item.id_project || (item.id ? talposToProjectId[item.id] : null) || null;
                           const kaina = item.kaina != null ? Number(item.kaina) : null;
                           return (
                             <div key={i} className="flex items-center gap-2 p-2 rounded-xl border border-base-content/8 bg-base-content/[0.02] hover:bg-base-content/[0.04] transition-colors">
