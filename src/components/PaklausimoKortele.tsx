@@ -614,14 +614,14 @@ function TabTalpos({
 
   // Persisted results from DB (recomputed when current row changes)
   const persistedSimilar: any[] | null = useMemo(() => {
-    if (!currentTalposRow?.similar_tanks) return null;
+    if (!currentTalposRow?.similar_talpos) return null;
     try {
-      const parsed = typeof currentTalposRow.similar_tanks === 'string'
-        ? JSON.parse(currentTalposRow.similar_tanks)
-        : currentTalposRow.similar_tanks;
+      const parsed = typeof currentTalposRow.similar_talpos === 'string'
+        ? JSON.parse(currentTalposRow.similar_talpos)
+        : currentTalposRow.similar_talpos;
       return Array.isArray(parsed) ? parsed : null;
     } catch { return null; }
-  }, [currentTalposRow?.similar_tanks, idx]);
+  }, [currentTalposRow?.similar_talpos, idx]);
 
   const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
     ? localSimilarResults[idx]
@@ -642,11 +642,22 @@ function TabTalpos({
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const result = await res.json();
-      const arr = Array.isArray(result) ? result : (result?.results ?? result?.data ?? []);
-      const top5 = arr.slice(0, 5);
-      await updateTalposField(currentTalposId, 'similar_tanks', JSON.stringify(top5));
-      setLocalSimilarResults(prev => ({ ...prev, [idx]: top5 }));
+      // Webhook returns 200 OK — results are written by n8n to talpos.similar_talpos.
+      // Re-fetch the row from Directus to get the updated column.
+      const updated = await fetchTalposByIds([currentTalposId]);
+      const updatedRow = updated[0] ?? null;
+      let results: any[] = [];
+      if (updatedRow?.similar_talpos) {
+        try {
+          const parsed = typeof updatedRow.similar_talpos === 'string'
+            ? JSON.parse(updatedRow.similar_talpos)
+            : updatedRow.similar_talpos;
+          results = Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+        } catch { /* ignore parse errors */ }
+      }
+      // Patch local talposRows so persisted display updates without a full reload
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, similar_talpos: updatedRow?.similar_talpos } : r)));
+      setLocalSimilarResults(prev => ({ ...prev, [idx]: results }));
     } catch (e: any) {
       setSimilarError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
     } finally {
