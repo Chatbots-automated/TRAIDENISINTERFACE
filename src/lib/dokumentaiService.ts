@@ -153,7 +153,7 @@ export const deleteStandartinisProjektas = async (record: { id: number; docx_fil
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina,talpos';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,6 +206,7 @@ export interface NestandartiniaiRecord {
   similar_projects: SimilarProject[] | string | null;
   status: boolean | null;
   kaina: number | string | null;
+  talpos?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +367,40 @@ export const fetchTalpos = async (): Promise<any[]> => {
     return data || [];
   } catch (error: any) {
     console.error('Error in fetchTalpos:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch specific talpos rows by their UUIDs
+ */
+export const fetchTalposByIds = async (ids: string[]): Promise<any[]> => {
+  if (ids.length === 0) return [];
+  try {
+    const { data, error } = await db
+      .from('talpos')
+      .select('*')
+      .in('id', ids);
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error in fetchTalposByIds:', error);
+    return [];
+  }
+};
+
+/**
+ * Update a single field on a talpos row
+ */
+export const updateTalposField = async (id: string, field: string, value: any): Promise<void> => {
+  try {
+    const { error } = await db
+      .from('talpos')
+      .update({ [field]: value })
+      .eq('id', id);
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error in updateTalposField:', error);
     throw error;
   }
 };

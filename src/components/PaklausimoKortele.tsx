@@ -13,6 +13,8 @@ import {
   updateNestandartiniaiAiConversation,
   updateNestandartiniaiField,
   deleteNestandartiniaiRecord,
+  fetchTalposByIds,
+  updateTalposField,
 } from '../lib/dokumentaiService';
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, SimilarProject,
@@ -184,14 +186,13 @@ function useProcessing(recordId: number, key: ProcessKey) {
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type ModalTab = 'bendra' | 'susirasinejimas' | 'uzduotys' | 'failai' | 'derva' | 'panasus';
+type ModalTab = 'talpos' | 'susirasinejimas' | 'uzduotys' | 'failai' | 'panasus';
 
 const TABS: { id: ModalTab; label: string; icon: React.ElementType }[] = [
-  { id: 'bendra', label: 'Bendra', icon: LayoutList },
+  { id: 'talpos', label: 'Talpos', icon: LayoutList },
   { id: 'susirasinejimas', label: 'Susirašinėjimas', icon: MessageSquare },
   { id: 'uzduotys', label: 'Užduotys', icon: CheckSquare },
   { id: 'failai', label: 'Failai', icon: Paperclip },
-  { id: 'derva', label: 'Derva', icon: Beaker },
   { id: 'panasus', label: 'Panašūs', icon: GitCompareArrows },
 ];
 
@@ -520,7 +521,7 @@ function EditMessageBubble({ message, side, onSave, onCancel }: { message: Atsak
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Bendra
+// Tab: Bendra helpers (kept for TabDerva and TabTalpos)
 // ---------------------------------------------------------------------------
 
 /** Get a display title for a product from its metadata */
@@ -532,6 +533,262 @@ function getProductTitle(meta: Record<string, any>): string {
 function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
+
+// ---------------------------------------------------------------------------
+// Tab: Talpos (replaces Bendra) — data from the 'talpos' Directus table
+// ---------------------------------------------------------------------------
+
+type TalposSubTab = 'parametrai' | 'derva';
+
+function TabTalpos({
+  record, products, readOnly, onRecordUpdated,
+}: {
+  record: NestandartiniaiRecord;
+  products: Record<string, any>[];
+  readOnly?: boolean;
+  onRecordUpdated?: (r: NestandartiniaiRecord) => void;
+}) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [subTab, setSubTab] = useState<TalposSubTab>('parametrai');
+
+  // Parse talpos UUIDs from the record
+  const talposIds = useMemo(() => {
+    const raw = (record as any).talpos;
+    if (!raw || typeof raw !== 'string') return [] as string[];
+    return raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+  }, [(record as any).talpos]);
+
+  // Fetch talpos rows, ordered to match talposIds
+  const [talposRows, setTalposRows] = useState<any[]>([]);
+  const [loadingTalpos, setLoadingTalpos] = useState(false);
+  const talposIdsKey = talposIds.join(',');
+  useEffect(() => {
+    if (talposIds.length === 0) { setTalposRows([]); return; }
+    setLoadingTalpos(true);
+    fetchTalposByIds(talposIds)
+      .then(rows => {
+        const sorted = talposIds
+          .map(id => rows.find((r: any) => String(r.id) === String(id)) ?? null)
+          .filter(Boolean);
+        setTalposRows(sorted);
+      })
+      .finally(() => setLoadingTalpos(false));
+  }, [talposIdsKey]);
+
+  const navCount = talposIds.length > 0 ? talposIds.length : products.length;
+  const idx = Math.min(currentIdx, Math.max(0, navCount - 1));
+  const currentTalposRow = talposRows[idx] ?? null;
+  const currentTalposId = talposIds[idx] ?? null;
+
+  // Kaina editing (writes to talpos table)
+  const [kainaEditing, setKainaEditing] = useState(false);
+  const [kainaInput, setKainaInput] = useState('');
+  const [kainaSaving, setKainaSaving] = useState(false);
+  // localKainaOverrides stores per-idx overrides after a successful save
+  const [localKainaOverrides, setLocalKainaOverrides] = useState<Record<number, number | null>>({});
+
+  const currentKaina: number | null = localKainaOverrides[idx] !== undefined
+    ? localKainaOverrides[idx]
+    : (currentTalposRow?.kaina != null ? Number(currentTalposRow.kaina) : null);
+
+  const saveKaina = async () => {
+    if (!currentTalposId) return;
+    const parsed = kainaInput.trim() === '' ? null : parseFloat(kainaInput.replace(',', '.'));
+    if (kainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
+    setKainaSaving(true);
+    try {
+      await updateTalposField(currentTalposId, 'kaina', parsed);
+      setLocalKainaOverrides(prev => ({ ...prev, [idx]: parsed }));
+      setKainaEditing(false);
+    } catch (e) {
+      console.error('Error saving talpos kaina:', e);
+    } finally {
+      setKainaSaving(false);
+    }
+  };
+
+  const goPrev = () => setCurrentIdx(i => (i - 1 + navCount) % navCount);
+  const goNext = () => setCurrentIdx(i => (i + 1) % navCount);
+
+  const getNavLabel = (i: number): string => {
+    if (talposIds.length > 0) {
+      const row = talposRows[i];
+      return row?.pavadinimas || row?.name || row?.title || `Talpa ${i + 1}`;
+    }
+    return getProductTitle(products[i]) || `Talpa ${i + 1}`;
+  };
+
+  return (
+    <div className="space-y-0">
+      {/* Talpos selection bar */}
+      {navCount > 1 && (
+        <div className="flex items-center gap-1 mb-4">
+          <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+            <ChevronLeft className="w-4 h-4 text-base-content/40" />
+          </button>
+          <select
+            value={idx}
+            onChange={e => { setCurrentIdx(Number(e.target.value)); }}
+            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+          >
+            {Array.from({ length: navCount }, (_, i) => (
+              <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
+            ))}
+          </select>
+          <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+            <ChevronRight className="w-4 h-4 text-base-content/40" />
+          </button>
+        </div>
+      )}
+
+      {/* Parametrai / Derva toggle */}
+      <div className="flex justify-center mb-5">
+        <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+          {(['parametrai', 'derva'] as TalposSubTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setSubTab(t)}
+              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${subTab === t ? 'text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
+              style={subTab === t ? { background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' } : undefined}
+            >
+              {t === 'parametrai' ? 'Parametrai' : 'Derva'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Parametrai sub-tab ── */}
+      {subTab === 'parametrai' && (
+        <div>
+          {loadingTalpos && (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          )}
+
+          {!loadingTalpos && talposIds.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <p className="text-sm font-medium text-base-content/60">Nėra susietų talpų</p>
+              <p className="text-xs text-base-content/30 mt-1">Pridėkite UUID reikšmes į laukelį „talpos"</p>
+            </div>
+          )}
+
+          {!loadingTalpos && talposIds.length > 0 && !currentTalposRow && (
+            <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <p className="text-sm font-medium text-base-content/60">Talpa nerasta</p>
+              <p className="text-xs text-base-content/30 mt-1">UUID: {currentTalposId}</p>
+            </div>
+          )}
+
+          {!loadingTalpos && currentTalposRow && (
+            <>
+              {/* Kaina from talpos table */}
+              <div className="flex items-center gap-2 mb-5">
+                <span className="text-[11px] text-base-content/40 shrink-0">Kaina:</span>
+                {kainaEditing ? (
+                  <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+                    <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+                    <input
+                      type="text"
+                      value={kainaInput}
+                      onChange={e => setKainaInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') saveKaina();
+                        if (e.key === 'Escape') setKainaEditing(false);
+                      }}
+                      className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+                      placeholder="0.00"
+                      autoFocus
+                    />
+                    <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                      {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                    </button>
+                    <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                      <X className="w-3 h-3 text-base-content/40" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      if (!readOnly) {
+                        setKainaInput(currentKaina != null ? String(currentKaina) : '');
+                        setKainaEditing(true);
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+                      currentKaina != null
+                        ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                        : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+                    } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                    title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
+                  >
+                    <Euro className="w-3 h-3" />
+                    {currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nustatyti kainą'}
+                  </button>
+                )}
+              </div>
+
+              {/* Two-column: left = raw JSON, right = description */}
+              <div className="flex gap-4 items-start">
+                {/* Left column: fixed width, raw JSON */}
+                <div className="w-[260px] shrink-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5">JSON</p>
+                  <pre
+                    className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed"
+                    style={{
+                      background: '#f8f6f3',
+                      color: '#5a5550',
+                      maxHeight: '400px',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                    }}
+                  >
+                    {JSON.stringify(currentTalposRow, null, 2)}
+                  </pre>
+                </div>
+
+                {/* Right column: description */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5">Aprašymas</p>
+                  {currentTalposRow?.description ? (
+                    <div
+                      className="overflow-auto rounded-xl p-3 border border-base-content/8 bg-base-content/[0.02]"
+                      style={{ maxHeight: '220px' }}
+                    >
+                      <MarkdownText text={String(currentTalposRow.description)} />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
+                      <p className="text-xs text-base-content/30 text-center">Nėra aprašymo</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Derva sub-tab ── */}
+      {subTab === 'derva' && (
+        <TabDerva
+          record={record}
+          products={products}
+          readOnly={readOnly}
+          onRecordUpdated={onRecordUpdated}
+          externalIdx={idx}
+          hideNavigator
+          aiFirst
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Old TabBendra stub (now replaced by TabTalpos above)
+// ---------------------------------------------------------------------------
 
 function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange, aiEstimatesMap, aiReasoningMap }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void; aiEstimatesMap?: Record<number, number>; aiReasoningMap?: Record<number, string> }) {
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -1825,10 +2082,10 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
-function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
-  const [currentIdx, setCurrentIdx] = useState(0);
+function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean }) {
+  const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
   const hasMultiple = products.length > 1;
-  const idx = Math.min(currentIdx, products.length - 1);
+  const idx = externalIdx !== undefined ? Math.min(externalIdx, products.length - 1) : Math.min(currentIdx, products.length - 1);
   const tankMeta = products[idx] || {};
   const tankKey = String(idx);
 
@@ -1994,10 +2251,183 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
   const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
   const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
 
+  // Inline JSX sections for reuse
+  const dervaMusuSection = (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
+          <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Derva (mūsų)</p>
+        </div>
+        {!readOnly && !dervaMusuEditing && (
+          <button
+            onClick={() => setDervaMusuEditing(true)}
+            className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
+          >
+            <Pencil className="w-3 h-3 inline mr-1" />
+            Redaguoti
+          </button>
+        )}
+      </div>
+      {dervaMusuEditing ? (
+        <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
+          <textarea
+            value={dervaMusu}
+            onChange={e => setDervaMusu(e.target.value)}
+            placeholder="Įveskite dervos reikšmę šiai talpai..."
+            className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
+            rows={Math.max(3, dervaMusu.split('\n').length)}
+            onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
+              className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
+            >
+              Atšaukti
+            </button>
+            <button
+              onClick={() => saveDervaMusu()}
+              disabled={dervaMusuSaving}
+              className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            >
+              {dervaMusuSaving ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Saugoma...</> : 'Išsaugoti'}
+            </button>
+          </div>
+        </div>
+      ) : dervaMusu ? (
+        <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
+          <MarkdownText text={dervaMusu} />
+        </div>
+      ) : (
+        <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
+          <p className="text-xs text-base-content/40">Nenustatyta</p>
+        </div>
+      )}
+      {dervaMusuSaved && (
+        <div className="flex items-center gap-1.5 text-xs mt-2 text-success">
+          <CheckCircle2 className="w-3 h-3" />
+          Išsaugota
+        </div>
+      )}
+    </div>
+  );
+
+  const aiSection = (
+    <div className="mb-6">
+      {/* ── AI Derva selection section (per tank) ── */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1.5">
+          <Beaker className="w-3.5 h-3.5 text-primary" />
+          <p className="text-xs font-medium text-primary">AI rekomendacija</p>
+          {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
+            <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
+              <ArrowUp className="w-3 h-3" />
+              <span>Naudojama</span>
+            </div>
+          )}
+        </div>
+        {!readOnly && (() => {
+          const isApplied = !!(dervaResult && dervaMusu.trim() === dervaResult.trim());
+          return (
+          <div className="flex items-center gap-2">
+            {isApplied ? (
+              <div
+                className="flex items-center justify-center w-9 h-9 rounded-full"
+                style={{ background: 'rgba(52, 199, 89, 0.1)', border: '0.5px solid rgba(52, 199, 89, 0.3)' }}
+                title="Rekomendacija jau naudojama"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+              </div>
+            ) : (
+              <button
+                onClick={() => dervaResult && saveDervaMusu(dervaResult)}
+                disabled={!dervaResult || selecting || dervaMusuSaving}
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                style={{
+                  background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
+                  color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
+                  border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
+                  cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
+                  opacity: !dervaResult || selecting ? 0.5 : 1,
+                }}
+              >
+                {dervaMusuSaving
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
+                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
+                }
+              </button>
+            )}
+            <button
+              onClick={triggerDervaSelect}
+              disabled={selecting}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            >
+              {isCurrentTankSelecting
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
+                : selecting
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
+                  : dervaResult
+                    ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
+                    : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
+              }
+            </button>
+          </div>
+          );
+        })()}
+      </div>
+
+      {/* Loading state */}
+      {isCurrentTankSelecting && (
+        <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
+          <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+          <p className="text-sm font-semibold text-base-content">Vyksta dervos parinkimas...</p>
+          <p className="text-xs text-base-content/50 mt-1">{tankTitle}</p>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {success && !selecting && (
+        <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-success/10 text-success border border-success/15">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          Dervos rekomendacija sėkmingai atnaujinta
+        </div>
+      )}
+
+      {/* Error */}
+      {dervaError && (
+        <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{dervaError}</span>
+        </div>
+      )}
+
+      {/* Recommendation display — hide content when already applied to derva_musu */}
+      {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
+        <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
+          <MarkdownText text={dervaResult} />
+        </div>
+      ) : !isCurrentTankSelecting && !dervaResult && (
+        <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
+            <Beaker className="w-5 h-5 text-primary" />
+          </div>
+          <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
+          <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
       {/* ── Tank navigator ── */}
-      {hasMultiple && (
+      {!hideNavigator && hasMultiple && (
         <div className="flex items-center gap-1 mb-5">
           <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
             <ChevronLeft className="w-4 h-4 text-base-content/40" />
@@ -2026,7 +2456,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
       )}
 
       {/* ── Tank specs summary ── */}
-      {tankSpecs.length > 0 && (
+      {!hideNavigator && tankSpecs.length > 0 && (
         <div className="mb-5 rounded-xl border border-base-content/8 bg-base-content/[0.02] p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-2">Talpos parametrai</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -2040,175 +2470,19 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         </div>
       )}
 
-      {/* ── Derva (mūsų) — team-editable per tank ── */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5">
-            <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-            <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Derva (mūsų)</p>
+      {aiFirst ? (
+        <>
+          {aiSection}
+          {dervaMusuSection}
+        </>
+      ) : (
+        <>
+          {dervaMusuSection}
+          <div className="border-t border-base-content/10 pt-5">
+            {aiSection}
           </div>
-          {!readOnly && !dervaMusuEditing && (
-            <button
-              onClick={() => setDervaMusuEditing(true)}
-              className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
-            >
-              <Pencil className="w-3 h-3 inline mr-1" />
-              Redaguoti
-            </button>
-          )}
-        </div>
-        {dervaMusuEditing ? (
-          <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
-            <textarea
-              value={dervaMusu}
-              onChange={e => setDervaMusu(e.target.value)}
-              placeholder="Įveskite dervos reikšmę šiai talpai..."
-              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
-              rows={Math.max(3, dervaMusu.split('\n').length)}
-              onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
-                className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
-              >
-                Atšaukti
-              </button>
-              <button
-                onClick={() => saveDervaMusu()}
-                disabled={dervaMusuSaving}
-                className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
-                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-              >
-                {dervaMusuSaving ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Saugoma...</> : 'Išsaugoti'}
-              </button>
-            </div>
-          </div>
-        ) : dervaMusu ? (
-          <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
-            <MarkdownText text={dervaMusu} />
-          </div>
-        ) : (
-          <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
-            <p className="text-xs text-base-content/40">Nenustatyta</p>
-          </div>
-        )}
-        {dervaMusuSaved && (
-          <div className="flex items-center gap-1.5 text-xs mt-2 text-success">
-            <CheckCircle2 className="w-3 h-3" />
-            Išsaugota
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-base-content/10 pt-5 mb-6">
-        {/* ── AI Derva selection section (per tank) ── */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5">
-            <Beaker className="w-3.5 h-3.5 text-primary" />
-            <p className="text-xs font-medium text-primary">AI rekomendacija</p>
-            {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
-              <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
-                <ArrowUp className="w-3 h-3" />
-                <span>Naudojama</span>
-              </div>
-            )}
-          </div>
-          {!readOnly && (() => {
-            const isApplied = !!(dervaResult && dervaMusu.trim() === dervaResult.trim());
-            return (
-            <div className="flex items-center gap-2">
-              {isApplied ? (
-                <div
-                  className="flex items-center justify-center w-9 h-9 rounded-full"
-                  style={{ background: 'rgba(52, 199, 89, 0.1)', border: '0.5px solid rgba(52, 199, 89, 0.3)' }}
-                  title="Rekomendacija jau naudojama"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                </div>
-              ) : (
-                <button
-                  onClick={() => dervaResult && saveDervaMusu(dervaResult)}
-                  disabled={!dervaResult || selecting || dervaMusuSaving}
-                  className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
-                  style={{
-                    background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
-                    color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
-                    border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
-                    cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
-                    opacity: !dervaResult || selecting ? 0.5 : 1,
-                  }}
-                >
-                  {dervaMusuSaving
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
-                    : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
-                  }
-                </button>
-              )}
-              <button
-                onClick={triggerDervaSelect}
-                disabled={selecting}
-                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
-                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-              >
-                {isCurrentTankSelecting
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
-                  : selecting
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
-                    : dervaResult
-                      ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
-                      : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
-                }
-              </button>
-            </div>
-            );
-          })()}
-        </div>
-
-        {/* Loading state */}
-        {isCurrentTankSelecting && (
-          <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
-            <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            </div>
-            <p className="text-sm font-semibold text-base-content">Vyksta dervos parinkimas...</p>
-            <p className="text-xs text-base-content/50 mt-1">{tankTitle}</p>
-          </div>
-        )}
-
-        {/* Success toast */}
-        {success && !selecting && (
-          <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-success/10 text-success border border-success/15">
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            Dervos rekomendacija sėkmingai atnaujinta
-          </div>
-        )}
-
-        {/* Error */}
-        {dervaError && (
-          <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>{dervaError}</span>
-          </div>
-        )}
-
-        {/* Recommendation display — hide content when already applied to derva_musu */}
-        {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
-          <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
-            <MarkdownText text={dervaResult} />
-          </div>
-        ) : !isCurrentTankSelecting && !dervaResult && (
-          <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
-            <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
-              <Beaker className="w-5 h-5 text-primary" />
-            </div>
-            <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
-            <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
-          </div>
-        )}
-
-      </div>
+        </>
+      )}
 
     </div>
   );
@@ -2678,7 +2952,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
-  const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
+  const [activeTab, setActiveTab] = useState<ModalTab>('talpos');
   const [updating, setUpdating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState<'save' | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -3051,7 +3325,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} aiEstimatesMap={aiEstimatesMap} aiReasoningMap={aiReasoningMap} />}
+            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -3064,7 +3338,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
-            {activeTab === 'derva' && <TabDerva record={record} products={products} onRecordUpdated={onRefresh} />}
             {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} onAiEstimate={handleAiEstimate} />}
           </div>
         </div>
@@ -3177,7 +3450,7 @@ export default function PaklausimoKortelePage() {
   const [record, setRecord] = useState<NestandartiniaiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
+  const [activeTab, setActiveTab] = useState<ModalTab>('talpos');
 
   useEffect(() => {
     if (!id) return;
@@ -3248,11 +3521,10 @@ export default function PaklausimoKortelePage() {
             })}
           </div>
           <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly kainaMap={kainaMap} onKainaChange={handleTankKainaChange} />}
+            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
-            {activeTab === 'derva' && <TabDerva record={record} products={products} readOnly />}
             {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly />}
           </div>
         </div>
