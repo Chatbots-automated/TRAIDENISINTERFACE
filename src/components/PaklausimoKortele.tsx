@@ -754,9 +754,9 @@ function TabTalpos({
                   <div className="flex items-center justify-between mb-1.5 shrink-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
-                      {currentTalposRow?.quantity && Number(currentTalposRow.quantity) > 1 && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-base-content/8 text-base-content/50">
-                          ×{currentTalposRow.quantity}
+                      {currentTalposRow?.quantity != null && Number(currentTalposRow.quantity) >= 1 && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                          {currentTalposRow.quantity}vnt.
                         </span>
                       )}
                     </div>
