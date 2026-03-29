@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import { getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
@@ -12,7 +12,7 @@ interface DocumentsInterfaceProps {
   projectId: string;
 }
 
-type TableName = 'standartiniai_projektai' | 'n8n_vector_store';
+type TableName = 'standartiniai_projektai' | 'n8n_vector_store' | 'talpos';
 type SortDirection = 'asc' | 'desc';
 
 interface SortConfig {
@@ -696,6 +696,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [loadingNestandartiniai, setLoadingNestandartiniai] = useState(true);
   const [errorStandartiniai, setErrorStandartiniai] = useState<string | null>(null);
   const [errorNestandartiniai, setErrorNestandartiniai] = useState<string | null>(null);
+  const [talposData, setTalposData] = useState<any[]>([]);
+  const [loadingTalpos, setLoadingTalpos] = useState(true);
+  const [errorTalpos, setErrorTalpos] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
@@ -704,12 +707,14 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [talposJsonPreview, setTalposJsonPreview] = useState<{ col: string; value: any } | null>(null);
 
   // Pagination
   const PAGE_SIZE = 50;
   const [currentPage, setCurrentPage] = useState(1);
 
   const isNestandartiniai = selectedTable === 'n8n_vector_store';
+  const isTalpos = selectedTable === 'talpos';
 
   // ── Nestandartiniai column config ──
   const allColsNest = useMemo(() => buildAllColumns(nestandartiniaiData), [nestandartiniaiData]);
@@ -822,7 +827,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   }, [isNestandartiniai, allColsNest, allColsStand]);
 
-  useEffect(() => { loadStandartiniai(); loadNestandartiniai(); }, []);
+  useEffect(() => { loadStandartiniai(); loadNestandartiniai(); loadTalpos(); }, []);
 
   const loadStandartiniai = async () => {
     try { setLoadingStandartiniai(true); setErrorStandartiniai(null); setStandartiniaiData(await fetchStandartiniaiProjektai()); }
@@ -834,6 +839,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     catch (err: any) { setErrorNestandartiniai(err?.message || 'Nepavyko gauti duomenų'); }
     finally { setLoadingNestandartiniai(false); }
   };
+  const loadTalpos = async () => {
+    try { setLoadingTalpos(true); setErrorTalpos(null); setTalposData(await fetchTalpos()); }
+    catch (err: any) { setErrorTalpos(err?.message || 'Nepavyko gauti duomenų'); }
+    finally { setLoadingTalpos(false); }
+  };
+
+  // Dynamically derive columns from talpos data
+  const talposCols = useMemo(() => {
+    if (talposData.length === 0) return [] as string[];
+    const keys = new Set<string>();
+    for (const row of talposData) { Object.keys(row).forEach(k => keys.add(k)); }
+    return Array.from(keys);
+  }, [talposData]);
 
   const filterOptions = useMemo(() => ({
     orientacija: extractUniqueMetaValues(nestandartiniaiData, 'orientacija'),
@@ -842,19 +860,24 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
   }), [nestandartiniaiData]);
 
-  const currentLoading = isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
-  const currentError = isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
-  const currentReload = isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
+  const currentLoading = isTalpos ? loadingTalpos : isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
+  const currentError = isTalpos ? errorTalpos : isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
+  const currentReload = isTalpos ? loadTalpos : isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
 
   // Filtering
   const filteredData = useMemo(() => {
-    let rows: any[] = isNestandartiniai ? nestandartiniaiData : standartiniaiData;
+    let rows: any[] = isTalpos ? talposData : isNestandartiniai ? nestandartiniaiData : standartiniaiData;
 
     if (searchQuery.trim()) {
       // Split into keywords for AND logic — every keyword must match somewhere in the record
       const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
-      if (isNestandartiniai) {
+      if (isTalpos) {
+        rows = rows.filter(row => {
+          const blob = Object.values(row).map(v => String(v ?? '')).join(' ').toLowerCase();
+          return keywords.every(kw => blob.includes(kw));
+        });
+      } else if (isNestandartiniai) {
         rows = rows.filter((row: NestandartiniaiRecord) => {
           // Build a searchable text blob from all record fields
           const parts: string[] = [];
@@ -900,7 +923,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       }
     }
 
-    if (isNestandartiniai) {
+    if (!isTalpos && isNestandartiniai) {
       const { orientacija, derva, talpa_tipas, DN, metadataSearch } = metadataFilters;
       if (orientacija || derva || talpa_tipas || DN || metadataSearch) {
         rows = rows.filter((row: NestandartiniaiRecord) => {
@@ -920,7 +943,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
 
     return rows;
-  }, [isNestandartiniai, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters]);
+  }, [isTalpos, isNestandartiniai, talposData, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters]);
 
   // Sorting
   const sortedData = useMemo(() => {
@@ -1041,7 +1064,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   };
 
-  const totalCount = isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
+  const totalCount = isTalpos ? talposData.length : isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
@@ -1089,6 +1112,18 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             >
               Nestandartiniai
             </button>
+            <button
+              onClick={() => handleTableChange('talpos')}
+              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
+                selectedTable === 'talpos' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
+              }`}
+              style={selectedTable === 'talpos' ? {
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+              } : undefined}
+            >
+              Talpos
+            </button>
           </div>
 
           {/* Search */}
@@ -1106,8 +1141,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             />
           </div>
 
-          {/* Column config button */}
-          {(
+          {/* Column config button — hidden for talpos (all columns shown) */}
+          {!isTalpos && (
             <div className="relative" ref={colConfigRef}>
               <button
                 onClick={() => setShowColConfig(v => !v)}
@@ -1185,6 +1220,107 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               <p className="text-sm" style={{ color: '#8a857f' }}>
                 {searchQuery || Object.values(metadataFilters).some(v => v) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
               </p>
+            </div>
+          </div>
+        ) : isTalpos ? (
+          /* ---- Talpos table (all fields) ---- */
+          <div
+            className="w-full overflow-x-auto rounded-macos-lg bg-white"
+            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+          >
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid #f0ede8' }}>
+                  {talposCols.map(col => (
+                    <th
+                      key={col}
+                      onClick={() => handleSort(col)}
+                      className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col}</span>
+                        <span className="inline-flex flex-col leading-none">
+                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                        </span>
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {pagedData.map((row, i) => (
+                  <tr
+                    key={row.id ?? i}
+                    className="transition-colors"
+                    style={{ borderBottom: '1px solid #f8f6f3' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '')}
+                  >
+                    {talposCols.map(col => {
+                      const val = row[col];
+                      // Detect JSON: already an object/array, or a string that parses as one
+                      let isJson = false;
+                      let jsonValue: any = null;
+                      if (val !== null && val !== undefined) {
+                        if (typeof val === 'object') {
+                          isJson = true;
+                          jsonValue = val;
+                        } else if (typeof val === 'string' && (val.trimStart().startsWith('{') || val.trimStart().startsWith('['))) {
+                          try { jsonValue = JSON.parse(val); isJson = true; } catch { /* not json */ }
+                        }
+                      }
+                      if (isJson) {
+                        return (
+                          <td key={col} className="px-3 py-2.5">
+                            <button
+                              onClick={() => setTalposJsonPreview({ col, value: jsonValue })}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-all hover:brightness-95"
+                              style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
+                            >
+                              <Eye className="w-3 h-3" />
+                              JSON
+                            </button>
+                          </td>
+                        );
+                      }
+                      const maxLen = 120;
+                      const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
+                      return (
+                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: col === 'id' ? '#8a857f' : '#3d3935', fontSize: col === 'id' ? '12px' : '13px' }} title={String(val ?? '')}>
+                          {display}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 text-xs flex items-center justify-between" style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}>
+              <span>
+                {sortedData.length < totalCount
+                  ? `${sortedData.length} iš ${totalCount} įrašų`
+                  : `${sortedData.length} įrašų`}
+                {totalPages > 1 && ` · puslapis ${safeCurrentPage} iš ${totalPages}`}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setCurrentPage(1)} disabled={safeCurrentPage <= 1} className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default">««</button>
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safeCurrentPage <= 1} className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default">«</button>
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let page: number;
+                    if (totalPages <= 5) page = i + 1;
+                    else if (safeCurrentPage <= 3) page = i + 1;
+                    else if (safeCurrentPage >= totalPages - 2) page = totalPages - 4 + i;
+                    else page = safeCurrentPage - 2 + i;
+                    return (
+                      <button key={page} onClick={() => setCurrentPage(page)} className={`px-2 py-0.5 rounded ${page === safeCurrentPage ? 'font-bold' : 'hover:bg-macos-gray-100'}`} style={page === safeCurrentPage ? { color: '#007AFF' } : undefined}>{page}</button>
+                    );
+                  })}
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safeCurrentPage >= totalPages} className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default">»</button>
+                  <button onClick={() => setCurrentPage(totalPages)} disabled={safeCurrentPage >= totalPages} className="px-2 py-0.5 rounded hover:bg-macos-gray-100 disabled:opacity-30 disabled:cursor-default">»»</button>
+                </div>
+              )}
             </div>
           </div>
         ) : isNestandartiniai ? (
@@ -1580,6 +1716,36 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
+      )}
+
+      {/* Talpos JSON viewer modal */}
+      {talposJsonPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setTalposJsonPreview(null)}>
+          <div
+            className="bg-white rounded-xl shadow-xl flex flex-col w-full max-w-2xl mx-4"
+            style={{ maxHeight: '80vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <span className="text-sm font-semibold" style={{ color: '#3d3935' }}>{talposJsonPreview.col}</span>
+              <button
+                onClick={() => setTalposJsonPreview(null)}
+                className="p-1.5 rounded-md transition-colors hover:bg-gray-100"
+                style={{ color: '#8a857f' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <pre
+                className="text-xs rounded-lg p-4 overflow-auto"
+                style={{ background: '#f8f6f3', color: '#3d3935', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              >
+                {JSON.stringify(talposJsonPreview.value, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* HTML Preview Modal (view-only) */}

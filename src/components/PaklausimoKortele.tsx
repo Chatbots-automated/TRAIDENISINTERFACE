@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
-  LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
+  LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
   Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
 } from 'lucide-react';
 import {
@@ -13,9 +13,11 @@ import {
   updateNestandartiniaiAiConversation,
   updateNestandartiniaiField,
   deleteNestandartiniaiRecord,
+  fetchTalposByIds,
+  updateTalposField,
 } from '../lib/dokumentaiService';
 import type {
-  NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, SimilarProject,
+  NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
 
@@ -184,15 +186,13 @@ function useProcessing(recordId: number, key: ProcessKey) {
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type ModalTab = 'bendra' | 'susirasinejimas' | 'uzduotys' | 'failai' | 'derva' | 'panasus';
+type ModalTab = 'talpos' | 'susirasinejimas' | 'uzduotys' | 'failai';
 
 const TABS: { id: ModalTab; label: string; icon: React.ElementType }[] = [
-  { id: 'bendra', label: 'Bendra', icon: LayoutList },
+  { id: 'talpos', label: 'Talpos', icon: LayoutList },
   { id: 'susirasinejimas', label: 'Susirašinėjimas', icon: MessageSquare },
   { id: 'uzduotys', label: 'Užduotys', icon: CheckSquare },
   { id: 'failai', label: 'Failai', icon: Paperclip },
-  { id: 'derva', label: 'Derva', icon: Beaker },
-  { id: 'panasus', label: 'Panašūs', icon: GitCompareArrows },
 ];
 
 // ---------------------------------------------------------------------------
@@ -288,6 +288,9 @@ const DEDUP_EXCLUDE_KEYS = new Set([
   ...SKIP_DISPLAY_KEYS,
   ...TITLE_KEYS,
   'Pastabos', 'pastabos',
+  // Price fields must not affect grouping — entering a price for one tank
+  // should not split it away from its identical siblings
+  'kaina', 'Kaina', 'kaina_ai', 'kaina_ai_reasoning',
 ]);
 
 /** Recursively sort object keys so JSON.stringify produces a stable result */
@@ -517,7 +520,7 @@ function EditMessageBubble({ message, side, onSave, onCancel }: { message: Atsak
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Bendra
+// Tab: Bendra helpers (kept for TabDerva and TabTalpos)
 // ---------------------------------------------------------------------------
 
 /** Get a display title for a product from its metadata */
@@ -529,6 +532,415 @@ function getProductTitle(meta: Record<string, any>): string {
 function isOldFormat(meta: Record<string, any>): boolean {
   return ALL_MAIN_KEYS.has('orientacija') && ('orientacija' in meta || 'DN' in meta || 'talpa_tipas' in meta || 'chemija' in meta || 'derva' in meta);
 }
+
+// ---------------------------------------------------------------------------
+// Tab: Talpos (replaces Bendra) — data from the 'talpos' Directus table
+// ---------------------------------------------------------------------------
+
+type TalposSubTab = 'parametrai' | 'derva';
+
+function TabTalpos({
+  record, products, readOnly, onRecordUpdated, initialTalposId,
+}: {
+  record: NestandartiniaiRecord;
+  products: Record<string, any>[];
+  readOnly?: boolean;
+  onRecordUpdated?: (r: NestandartiniaiRecord) => void;
+  initialTalposId?: string;
+}) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [subTab, setSubTab] = useState<TalposSubTab>('parametrai');
+
+  // Parse talpos UUIDs from the record
+  const talposIds = useMemo(() => {
+    const raw = (record as any).talpos;
+    if (!raw || typeof raw !== 'string') return [] as string[];
+    return raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+  }, [(record as any).talpos]);
+
+  // Fetch talpos rows, ordered to match talposIds
+  const [talposRows, setTalposRows] = useState<any[]>([]);
+  const [loadingTalpos, setLoadingTalpos] = useState(false);
+  const talposIdsKey = talposIds.join(',');
+  useEffect(() => {
+    if (talposIds.length === 0) { setTalposRows([]); return; }
+    setLoadingTalpos(true);
+    fetchTalposByIds(talposIds)
+      .then(rows => {
+        const sorted = talposIds
+          .map(id => rows.find((r: any) => String(r.id) === String(id)) ?? null)
+          .filter(Boolean);
+        setTalposRows(sorted);
+        if (initialTalposId) {
+          const i = talposIds.findIndex(id => id === initialTalposId);
+          if (i >= 0) setCurrentIdx(i);
+        }
+      })
+      .finally(() => setLoadingTalpos(false));
+  }, [talposIdsKey]);
+
+  const navCount = talposIds.length > 0 ? talposIds.length : products.length;
+  const idx = Math.min(currentIdx, Math.max(0, navCount - 1));
+  const currentTalposRow = talposRows[idx] ?? null;
+  const currentTalposId = talposIds[idx] ?? null;
+
+  // Kaina editing (writes to talpos table)
+  const [kainaEditing, setKainaEditing] = useState(false);
+  const [kainaInput, setKainaInput] = useState('');
+  const [kainaSaving, setKainaSaving] = useState(false);
+  // localKainaOverrides stores per-idx overrides after a successful save
+  const [localKainaOverrides, setLocalKainaOverrides] = useState<Record<number, number | null>>({});
+
+  const currentKaina: number | null = localKainaOverrides[idx] !== undefined
+    ? localKainaOverrides[idx]
+    : (currentTalposRow?.kaina != null ? Number(currentTalposRow.kaina) : null);
+
+  const saveKaina = async () => {
+    if (!currentTalposId) return;
+    const parsed = kainaInput.trim() === '' ? null : parseFloat(kainaInput.replace(',', '.'));
+    if (kainaInput.trim() !== '' && (parsed === null || isNaN(parsed))) return;
+    setKainaSaving(true);
+    try {
+      await updateTalposField(currentTalposId, 'kaina', parsed);
+      setLocalKainaOverrides(prev => ({ ...prev, [idx]: parsed }));
+      setKainaEditing(false);
+    } catch (e) {
+      console.error('Error saving talpos kaina:', e);
+    } finally {
+      setKainaSaving(false);
+    }
+  };
+
+  // Similar tanks state (per-idx)
+  const [similarSearching, setSimilarSearching] = useState<Record<number, boolean>>({});
+  const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
+  const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
+
+  // Persisted results from DB (recomputed when current row changes)
+  const persistedSimilar: any[] | null = useMemo(() => {
+    if (!currentTalposRow?.similar_talpos) return null;
+    try {
+      const parsed = typeof currentTalposRow.similar_talpos === 'string'
+        ? JSON.parse(currentTalposRow.similar_talpos)
+        : currentTalposRow.similar_talpos;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
+  }, [currentTalposRow?.similar_talpos, idx]);
+
+  const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
+    ? localSimilarResults[idx]
+    : persistedSimilar;
+
+  const findSimilar = async () => {
+    if (!currentTalposId || !currentTalposRow) return;
+    setSimilarSearching(prev => ({ ...prev, [idx]: true }));
+    setSimilarError(prev => ({ ...prev, [idx]: null }));
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_similar_tanks');
+      const payload = Object.fromEntries(
+        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
+      );
+      const res = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // Webhook returns 200 OK — results are written by n8n to talpos.similar_talpos.
+      // Re-fetch the row from Directus to get the updated column.
+      const updated = await fetchTalposByIds([currentTalposId]);
+      const updatedRow = updated[0] ?? null;
+      let results: any[] = [];
+      if (updatedRow?.similar_talpos) {
+        try {
+          const parsed = typeof updatedRow.similar_talpos === 'string'
+            ? JSON.parse(updatedRow.similar_talpos)
+            : updatedRow.similar_talpos;
+          results = Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+        } catch { /* ignore parse errors */ }
+      }
+      // Patch local talposRows so persisted display updates without a full reload
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, similar_talpos: updatedRow?.similar_talpos } : r)));
+      setLocalSimilarResults(prev => ({ ...prev, [idx]: results }));
+    } catch (e: any) {
+      setSimilarError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
+    } finally {
+      setSimilarSearching(prev => ({ ...prev, [idx]: false }));
+    }
+  };
+
+  const goPrev = () => setCurrentIdx(i => (i - 1 + navCount) % navCount);
+  const goNext = () => setCurrentIdx(i => (i + 1) % navCount);
+
+  const getNavLabel = (i: number): string => {
+    if (talposIds.length > 0) {
+      const row = talposRows[i];
+      const name = row?.pavadinimas || row?.name || row?.title || `Talpa ${i + 1}`;
+      const qty = row?.quantity && Number(row.quantity) > 1 ? ` ×${row.quantity}` : '';
+      return name + qty;
+    }
+    return getProductTitle(products[i]) || `Talpa ${i + 1}`;
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Talpos selection bar */}
+      {navCount > 1 && (
+        <div className="flex items-center gap-1 mb-4 shrink-0">
+          <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+            <ChevronLeft className="w-4 h-4 text-base-content/40" />
+          </button>
+          <select
+            value={idx}
+            onChange={e => { setCurrentIdx(Number(e.target.value)); }}
+            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+          >
+            {Array.from({ length: navCount }, (_, i) => (
+              <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
+            ))}
+          </select>
+          <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+            <ChevronRight className="w-4 h-4 text-base-content/40" />
+          </button>
+        </div>
+      )}
+
+      {/* Parametrai / Derva toggle */}
+      <div className="flex justify-center mb-2 shrink-0">
+        <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+          {(['parametrai', 'derva'] as TalposSubTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setSubTab(t)}
+              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${subTab === t ? 'text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
+              style={subTab === t ? { background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' } : undefined}
+            >
+              {t === 'parametrai' ? 'Parametrai' : 'Derva'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Parametrai sub-tab ── */}
+      {subTab === 'parametrai' && (
+        <div className="flex-1 flex flex-col min-h-0">
+          {loadingTalpos && (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            </div>
+          )}
+
+          {!loadingTalpos && talposIds.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <p className="text-sm font-medium text-base-content/60">Nėra susietų talpų</p>
+              <p className="text-xs text-base-content/30 mt-1">Pridėkite UUID reikšmes į laukelį „talpos"</p>
+            </div>
+          )}
+
+          {!loadingTalpos && talposIds.length > 0 && !currentTalposRow && (
+            <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <p className="text-sm font-medium text-base-content/60">Talpa nerasta</p>
+              <p className="text-xs text-base-content/30 mt-1">UUID: {currentTalposId}</p>
+            </div>
+          )}
+
+          {!loadingTalpos && currentTalposRow && (
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Two-column: left = raw JSON, right = description */}
+              <div className="flex gap-4 flex-1 min-h-0">
+                {/* Left column: fixed width, raw JSON — fills height and scrolls */}
+                <div className="w-[260px] shrink-0 flex flex-col min-h-0">
+                  {/* JSON label + quantity badge + kaina on the same row */}
+                  <div className="flex items-center justify-between mb-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
+                      {currentTalposRow?.quantity && Number(currentTalposRow.quantity) > 1 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-base-content/8 text-base-content/50">
+                          ×{currentTalposRow.quantity}
+                        </span>
+                      )}
+                    </div>
+                    {kainaEditing ? (
+                      <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+                        <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+                        <input
+                          type="text"
+                          value={kainaInput}
+                          onChange={e => setKainaInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveKaina();
+                            if (e.key === 'Escape') setKainaEditing(false);
+                          }}
+                          className="w-16 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+                          placeholder="0.00"
+                          autoFocus
+                        />
+                        <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                          {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                        </button>
+                        <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                          <X className="w-3 h-3 text-base-content/40" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (!readOnly) {
+                            setKainaInput(currentKaina != null ? String(currentKaina) : '');
+                            setKainaEditing(true);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full transition-colors ${
+                          currentKaina != null
+                            ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                            : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+                        } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                        title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
+                      >
+                        <Euro className="w-3 h-3" />
+                        {currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Kaina'}
+                      </button>
+                    )}
+                  </div>
+                  <pre
+                    className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed flex-1 min-h-0"
+                    style={{
+                      background: '#f8f6f3',
+                      color: '#5a5550',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                    }}
+                  >
+                    {JSON.stringify(
+                      Object.fromEntries(
+                        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
+                      ),
+                      null, 2
+                    )}
+                  </pre>
+                </div>
+
+                {/* Right column: description + similar tanks */}
+                <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
+                  <div className="shrink-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5">Aprašymas</p>
+                    {currentTalposRow?.description ? (
+                      <div
+                        className="overflow-auto rounded-xl p-3 border border-base-content/8 bg-base-content/[0.02]"
+                        style={{ maxHeight: '220px' }}
+                      >
+                        <MarkdownText text={String(currentTalposRow.description)} />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
+                        <p className="text-xs text-base-content/30 text-center">Nėra aprašymo</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Similar tanks */}
+                  <div className="flex-1 min-h-0 flex flex-col">
+                    <div className="flex items-center justify-between mb-2 shrink-0">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
+                      <button
+                        onClick={findSimilar}
+                        disabled={!!similarSearching[idx]}
+                        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {similarSearching[idx] ? (
+                          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
+                        ) : (
+                          <><RefreshCw className="w-3.5 h-3.5" /> Rasti Panašias</>
+                        )}
+                      </button>
+                    </div>
+
+                    {similarError[idx] && (
+                      <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{similarError[idx]}</span>
+                      </div>
+                    )}
+
+                    {displayedSimilar && displayedSimilar.length > 0 ? (
+                      <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
+                        {displayedSimilar.map((item: any, i: number) => {
+                          const score = item.similarity_score ?? item.similarity ?? null;
+                          const displayName = item.pavadinimas || item.project_name || null;
+                          const projectId = item.project || item.project_id || null;
+                          const talposUuid = item.id || null;
+                          const kaina = item.kaina != null ? Number(item.kaina) : null;
+                          const href = projectId && talposUuid
+                            ? `/paklausimas/${projectId}?talpa=${talposUuid}`
+                            : projectId ? `/paklausimas/${projectId}` : null;
+                          const inner = (
+                            <div className="flex items-center gap-2 px-2 py-1.5">
+                              {score !== null && (
+                                <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary tabular-nums">
+                                  {Math.round(Number(score) * 100)}%
+                                </span>
+                              )}
+                              <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0">
+                                {displayName || `Talpa ${i + 1}`}
+                              </p>
+                              {kaina !== null && !isNaN(kaina) && (
+                                <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
+                                  <Euro className="w-2.5 h-2.5" />{kaina.toLocaleString('lt-LT')}
+                                </span>
+                              )}
+                              {href && <ExternalLink className="w-3 h-3 shrink-0 text-base-content/25" />}
+                            </div>
+                          );
+                          return href ? (
+                            <a
+                              key={i}
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block rounded-lg border border-base-content/8 bg-base-content/[0.02] hover:bg-primary/5 hover:border-primary/20 transition-colors"
+                            >
+                              {inner}
+                            </a>
+                          ) : (
+                            <div key={i} className="rounded-lg border border-base-content/8 bg-base-content/[0.02]">
+                              {inner}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : !similarSearching[idx] && (
+                      <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
+                        <p className="text-xs text-base-content/30 text-center">Nėra rezultatų</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Derva sub-tab ── */}
+      {subTab === 'derva' && (
+        <TabDerva
+          record={record}
+          products={products}
+          readOnly={readOnly}
+          onRecordUpdated={onRecordUpdated}
+          externalIdx={idx}
+          hideNavigator
+          aiFirst
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Old TabBendra stub (now replaced by TabTalpos above)
+// ---------------------------------------------------------------------------
 
 function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKainaChange, aiEstimatesMap, aiReasoningMap }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; kainaMap: Record<string, number>; onKainaChange: (tankIdx: number, value: number | null) => void; aiEstimatesMap?: Record<number, number>; aiReasoningMap?: Record<number, string> }) {
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -1822,10 +2234,10 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
-function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void }) {
-  const [currentIdx, setCurrentIdx] = useState(0);
+function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean }) {
+  const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
   const hasMultiple = products.length > 1;
-  const idx = Math.min(currentIdx, products.length - 1);
+  const idx = externalIdx !== undefined ? Math.min(externalIdx, products.length - 1) : Math.min(currentIdx, products.length - 1);
   const tankMeta = products[idx] || {};
   const tankKey = String(idx);
 
@@ -1991,10 +2403,183 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
   const goPrev = () => setCurrentIdx(i => (i - 1 + products.length) % products.length);
   const goNext = () => setCurrentIdx(i => (i + 1) % products.length);
 
+  // Inline JSX sections for reuse
+  const dervaMusuSection = (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
+          <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Derva (mūsų)</p>
+        </div>
+        {!readOnly && !dervaMusuEditing && (
+          <button
+            onClick={() => setDervaMusuEditing(true)}
+            className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
+          >
+            <Pencil className="w-3 h-3 inline mr-1" />
+            Redaguoti
+          </button>
+        )}
+      </div>
+      {dervaMusuEditing ? (
+        <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
+          <textarea
+            value={dervaMusu}
+            onChange={e => setDervaMusu(e.target.value)}
+            placeholder="Įveskite dervos reikšmę šiai talpai..."
+            className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
+            rows={Math.max(3, dervaMusu.split('\n').length)}
+            onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
+              className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
+            >
+              Atšaukti
+            </button>
+            <button
+              onClick={() => saveDervaMusu()}
+              disabled={dervaMusuSaving}
+              className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            >
+              {dervaMusuSaving ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Saugoma...</> : 'Išsaugoti'}
+            </button>
+          </div>
+        </div>
+      ) : dervaMusu ? (
+        <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
+          <MarkdownText text={dervaMusu} />
+        </div>
+      ) : (
+        <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
+          <p className="text-xs text-base-content/40">Nenustatyta</p>
+        </div>
+      )}
+      {dervaMusuSaved && (
+        <div className="flex items-center gap-1.5 text-xs mt-2 text-success">
+          <CheckCircle2 className="w-3 h-3" />
+          Išsaugota
+        </div>
+      )}
+    </div>
+  );
+
+  const aiSection = (
+    <div className="mb-6">
+      {/* ── AI Derva selection section (per tank) ── */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-1.5">
+          <Beaker className="w-3.5 h-3.5 text-primary" />
+          <p className="text-xs font-medium text-primary">AI rekomendacija</p>
+          {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
+            <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
+              <ArrowUp className="w-3 h-3" />
+              <span>Naudojama</span>
+            </div>
+          )}
+        </div>
+        {!readOnly && (() => {
+          const isApplied = !!(dervaResult && dervaMusu.trim() === dervaResult.trim());
+          return (
+          <div className="flex items-center gap-2">
+            {isApplied ? (
+              <div
+                className="flex items-center justify-center w-9 h-9 rounded-full"
+                style={{ background: 'rgba(52, 199, 89, 0.1)', border: '0.5px solid rgba(52, 199, 89, 0.3)' }}
+                title="Rekomendacija jau naudojama"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-success" />
+              </div>
+            ) : (
+              <button
+                onClick={() => dervaResult && saveDervaMusu(dervaResult)}
+                disabled={!dervaResult || selecting || dervaMusuSaving}
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                style={{
+                  background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
+                  color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
+                  border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
+                  cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
+                  opacity: !dervaResult || selecting ? 0.5 : 1,
+                }}
+              >
+                {dervaMusuSaving
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
+                  : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
+                }
+              </button>
+            )}
+            <button
+              onClick={triggerDervaSelect}
+              disabled={selecting}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            >
+              {isCurrentTankSelecting
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
+                : selecting
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
+                  : dervaResult
+                    ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
+                    : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
+              }
+            </button>
+          </div>
+          );
+        })()}
+      </div>
+
+      {/* Loading state */}
+      {isCurrentTankSelecting && (
+        <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
+          <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
+            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+          </div>
+          <p className="text-sm font-semibold text-base-content">Vyksta dervos parinkimas...</p>
+          <p className="text-xs text-base-content/50 mt-1">{tankTitle}</p>
+        </div>
+      )}
+
+      {/* Success toast */}
+      {success && !selecting && (
+        <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-success/10 text-success border border-success/15">
+          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+          Dervos rekomendacija sėkmingai atnaujinta
+        </div>
+      )}
+
+      {/* Error */}
+      {dervaError && (
+        <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{dervaError}</span>
+        </div>
+      )}
+
+      {/* Recommendation display — hide content when already applied to derva_musu */}
+      {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
+        <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
+          <MarkdownText text={dervaResult} />
+        </div>
+      ) : !isCurrentTankSelecting && !dervaResult && (
+        <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
+            <Beaker className="w-5 h-5 text-primary" />
+          </div>
+          <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
+          <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div>
       {/* ── Tank navigator ── */}
-      {hasMultiple && (
+      {!hideNavigator && hasMultiple && (
         <div className="flex items-center gap-1 mb-5">
           <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
             <ChevronLeft className="w-4 h-4 text-base-content/40" />
@@ -2023,7 +2608,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
       )}
 
       {/* ── Tank specs summary ── */}
-      {tankSpecs.length > 0 && (
+      {!hideNavigator && tankSpecs.length > 0 && (
         <div className="mb-5 rounded-xl border border-base-content/8 bg-base-content/[0.02] p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-2">Talpos parametrai</p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -2037,586 +2622,20 @@ function TabDerva({ record, products, readOnly, onRecordUpdated }: { record: Nes
         </div>
       )}
 
-      {/* ── Derva (mūsų) — team-editable per tank ── */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-1.5">
-            <Beaker className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-            <p className="text-xs font-medium" style={{ color: '#007AFF' }}>Derva (mūsų)</p>
-          </div>
-          {!readOnly && !dervaMusuEditing && (
-            <button
-              onClick={() => setDervaMusuEditing(true)}
-              className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
-            >
-              <Pencil className="w-3 h-3 inline mr-1" />
-              Redaguoti
-            </button>
-          )}
-        </div>
-        {dervaMusuEditing ? (
-          <div className="rounded-xl p-3 border border-primary/20 bg-primary/[0.02]">
-            <textarea
-              value={dervaMusu}
-              onChange={e => setDervaMusu(e.target.value)}
-              placeholder="Įveskite dervos reikšmę šiai talpai..."
-              className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
-              rows={Math.max(3, dervaMusu.split('\n').length)}
-              onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
-                className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
-              >
-                Atšaukti
-              </button>
-              <button
-                onClick={() => saveDervaMusu()}
-                disabled={dervaMusuSaving}
-                className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
-                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-              >
-                {dervaMusuSaving ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Saugoma...</> : 'Išsaugoti'}
-              </button>
-            </div>
-          </div>
-        ) : dervaMusu ? (
-          <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
-            <MarkdownText text={dervaMusu} />
-          </div>
-        ) : (
-          <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
-            <p className="text-xs text-base-content/40">Nenustatyta</p>
-          </div>
-        )}
-        {dervaMusuSaved && (
-          <div className="flex items-center gap-1.5 text-xs mt-2 text-success">
-            <CheckCircle2 className="w-3 h-3" />
-            Išsaugota
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-base-content/10 pt-5 mb-6">
-        {/* ── AI Derva selection section (per tank) ── */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-1.5">
-            <Beaker className="w-3.5 h-3.5 text-primary" />
-            <p className="text-xs font-medium text-primary">AI rekomendacija</p>
-            {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
-              <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
-                <ArrowUp className="w-3 h-3" />
-                <span>Naudojama</span>
-              </div>
-            )}
-          </div>
-          {!readOnly && (() => {
-            const isApplied = !!(dervaResult && dervaMusu.trim() === dervaResult.trim());
-            return (
-            <div className="flex items-center gap-2">
-              {isApplied ? (
-                <div
-                  className="flex items-center justify-center w-9 h-9 rounded-full"
-                  style={{ background: 'rgba(52, 199, 89, 0.1)', border: '0.5px solid rgba(52, 199, 89, 0.3)' }}
-                  title="Rekomendacija jau naudojama"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                </div>
-              ) : (
-                <button
-                  onClick={() => dervaResult && saveDervaMusu(dervaResult)}
-                  disabled={!dervaResult || selecting || dervaMusuSaving}
-                  className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
-                  style={{
-                    background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
-                    color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
-                    border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
-                    cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
-                    opacity: !dervaResult || selecting ? 0.5 : 1,
-                  }}
-                >
-                  {dervaMusuSaving
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
-                    : <><CheckCircle2 className="w-3.5 h-3.5" /> Naudoti</>
-                  }
-                </button>
-              )}
-              <button
-                onClick={triggerDervaSelect}
-                disabled={selecting}
-                className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
-                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-              >
-                {isCurrentTankSelecting
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
-                  : selecting
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Laukiama...</>
-                    : dervaResult
-                      ? <><RefreshCw className="w-3.5 h-3.5" /> Parinkti iš naujo</>
-                      : <><Beaker className="w-3.5 h-3.5" /> Parinkti dervą</>
-                }
-              </button>
-            </div>
-            );
-          })()}
-        </div>
-
-        {/* Loading state */}
-        {isCurrentTankSelecting && (
-          <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
-            <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
-            </div>
-            <p className="text-sm font-semibold text-base-content">Vyksta dervos parinkimas...</p>
-            <p className="text-xs text-base-content/50 mt-1">{tankTitle}</p>
-          </div>
-        )}
-
-        {/* Success toast */}
-        {success && !selecting && (
-          <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-success/10 text-success border border-success/15">
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            Dervos rekomendacija sėkmingai atnaujinta
-          </div>
-        )}
-
-        {/* Error */}
-        {dervaError && (
-          <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>{dervaError}</span>
-          </div>
-        )}
-
-        {/* Recommendation display — hide content when already applied to derva_musu */}
-        {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
-          <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
-            <MarkdownText text={dervaResult} />
-          </div>
-        ) : !isCurrentTankSelecting && !dervaResult && (
-          <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
-            <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
-              <Beaker className="w-5 h-5 text-primary" />
-            </div>
-            <p className="text-sm font-semibold text-base-content">Derva dar neparinkta</p>
-            <p className="text-xs text-base-content/40 mt-1">{tankTitle}</p>
-          </div>
-        )}
-
-      </div>
-
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tab: Panašūs
-// ---------------------------------------------------------------------------
-
-function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; onAiEstimate?: (indices: number[], price: number, reasoning: string | null) => void }) {
-  const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
-  const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
-  const loading = useProcessing(record.id, 'similar');
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Price estimation state
-  const [estimating, setEstimating] = useState(false);
-  const [estimateStatus, setEstimateStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [estimateError, setEstimateError] = useState<string | null>(null);
-  const [estimateProgress, setEstimateProgress] = useState<{ current: number; total: number } | null>(null);
-  const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
-
-  // Per-record kaina/metadata fetched from DB for each similar project
-  const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any; tasks: any }>>({});
-  const [expandedPrices, setExpandedPrices] = useState<Set<number>>(new Set());
-
-  const PRICES_PREVIEW = 3;
-
-  // Sync with record prop when it refreshes
-  useEffect(() => {
-    const parsed = parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
-    if (parsed.length > 0) setLocalProjects(parsed);
-  }, [record.similar_projects]);
-
-  // Fetch actual kaina+metadata for all similar project IDs
-  useEffect(() => {
-    if (projects.length === 0) return;
-    const ids = projects.map(p => p.id);
-    fetchNestandartiniaiKainaByIds(ids).then(rows => {
-      const map: Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any }> = {};
-      for (const r of rows) map[r.id] = { kaina: r.kaina, metadata: r.metadata, description: r.description, derva: r.derva, klientas: r.klientas, tasks: r.tasks };
-      setSimilarKainaMap(map);
-    }).catch(() => {});
-  }, [projects.map(p => p.id).join(',')]);
-
-  const handleFindSimilar = async () => {
-    setProcessing(record.id, 'similar', true);
-    setStatus('idle');
-    setErrorMsg(null);
-    try {
-      const webhookUrl = await getWebhookUrl('n8n_similar_projects');
-      if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record_id: record.id }),
-      });
-      if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(body || `Klaida: ${resp.status}`);
-      }
-      // Re-fetch record to get updated similar_projects
-      const updated = await fetchNestandartiniaiById(record.id);
-      if (updated) {
-        setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
-        onRecordUpdated?.(updated);
-      }
-      setStatus('success');
-      setTimeout(() => setStatus('idle'), 3000);
-    } catch (err: any) {
-      console.error('Similar projects webhook error:', err);
-      setErrorMsg(err?.message || 'Nepavyko atnaujinti');
-      setStatus('error');
-      // Try fetching anyway — the webhook may have completed server-side
-      try {
-        const updated = await fetchNestandartiniaiById(record.id);
-        if (updated) {
-          setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
-          onRecordUpdated?.(updated);
-        }
-      } catch { /* ignore */ }
-      setTimeout(() => setStatus('idle'), 5000);
-    } finally {
-      setProcessing(record.id, 'similar', false);
-    }
-  };
-
-  const handleEstimateAllPrices = async () => {
-    if (projects.length === 0) {
-      setEstimateError('Pirmiausia reikia rasti panašius projektus');
-      setEstimateStatus('error');
-      setTimeout(() => setEstimateStatus('idle'), 4000);
-      return;
-    }
-
-    setEstimating(true);
-    setEstimateStatus('idle');
-    setEstimateError(null);
-    setEstimateReasoning(null);
-    setEstimateProgress(null);
-
-    let webhookUrl: string | null = null;
-    try {
-      webhookUrl = await getWebhookUrl('n8n_price_estimation');
-      if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
-    } catch (err: any) {
-      setEstimateError(err?.message || 'Nepavyko gauti webhook URL');
-      setEstimateStatus('error');
-      setEstimating(false);
-      setTimeout(() => setEstimateStatus('idle'), 5000);
-      return;
-    }
-
-    // Fetch fresh full records for all similar projects directly from DB
-    let freshRecords: Record<number, any> = {};
-    try {
-      const rows = await fetchNestandartiniaiKainaByIds(projects.map(p => p.id));
-      for (const r of rows) freshRecords[r.id] = r;
-    } catch (fetchErr: any) {
-      console.warn('Could not fetch similar project details from DB, falling back to cached data:', fetchErr?.message);
-    }
-
-    const enrichedSimilar = projects.map(p => {
-      const r = freshRecords[p.id];
-      return {
-        id: p.id,
-        project_name: p.project_name,
-        similarity_score: p.similarity_score,
-        kaina: r?.kaina ?? p.kaina ?? null,
-        metadata: parseJSON(r?.metadata) ?? r?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
-        description: r?.description ?? null,
-        derva: r?.derva ?? null,
-        klientas: r?.klientas ?? null,
-        tasks: parseJSON(r?.tasks) ?? r?.tasks ?? null,
-      };
-    });
-
-    // Deduplicate tanks — process one webhook call per unique spec group
-    const groups = deduplicateProducts(products);
-    setEstimateProgress({ current: 0, total: groups.length });
-
-    let anySuccess = false;
-    let lastReasoning: string | null = null;
-    const groupErrors: string[] = [];
-
-    for (let gi = 0; gi < groups.length; gi++) {
-      const group = groups[gi];
-      setEstimateProgress({ current: gi + 1, total: groups.length });
-
-      try {
-        const resp = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            record_id: record.id,
-            project_name: record.project_name,
-            description: record.description,
-            klientas: record.klientas,
-            derva: record.derva,
-            current_kaina: record.kaina,
-            metadata: parseJSON(record.metadata as any) ?? record.metadata,
-            tank: group.tank,
-            quantity: group.quantity,
-            original_indices: group.originalIndices,
-            similar_projects: enrichedSimilar,
-          }),
-        });
-
-        if (!resp.ok) {
-          const body = await resp.text().catch(() => '');
-          throw new Error(body || `HTTP ${resp.status}`);
-        }
-
-        let respData: any = null;
-        try { respData = await resp.json(); } catch { /* no json body */ }
-        // n8n often wraps the response in an array
-        if (Array.isArray(respData)) respData = respData[0] ?? null;
-        console.log('[PriceEstimate] raw webhook response for group', gi + 1, ':', respData);
-
-        // Accept common field names; also handle n8n plain-text output like "62,000€"
-        const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
-        const estimatedPrice = (() => {
-          if (rawPrice == null) return null;
-          const n = Number(rawPrice);
-          if (!isNaN(n)) return n;
-          // Strip currency symbols and thousands-separator commas, then parse
-          const cleaned = String(rawPrice).replace(/[€$£\s]/g, '').replace(/,(?=\d{3}(\D|$))/g, '');
-          const parsed = parseFloat(cleaned);
-          return isNaN(parsed) ? null : parsed;
-        })();
-        console.log('[PriceEstimate] rawPrice:', rawPrice, '→ estimatedPrice:', estimatedPrice);
-        const groupReasoning: string | null =
-          respData?.reasoning ?? respData?.statement ?? respData?.explanation ??
-          respData?.reason ?? respData?.message ?? respData?.note ?? null;
-        if (lastReasoning == null && groupReasoning) lastReasoning = groupReasoning;
-
-        // Immediately surface estimate + reasoning to TabBendra via shared state
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) {
-          onAiEstimate?.(group.originalIndices, estimatedPrice, groupReasoning);
-        }
-
-        // Write kaina_ai (and reasoning) into each matching tank object in metadata
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) {
-          try {
-            const latest = await fetchNestandartiniaiById(record.id);
-            const base = latest ?? record;
-            console.log('[PriceEstimate] base.metadata type:', typeof base.metadata, 'value:', base.metadata);
-            let updatedMeta = buildUpdatedMeta(base.metadata, 'kaina_ai', estimatedPrice, group.originalIndices);
-            if (groupReasoning) {
-              updatedMeta = buildUpdatedMeta(updatedMeta, 'kaina_ai_reasoning', groupReasoning, group.originalIndices);
-            }
-            console.log('[PriceEstimate] updatedMeta computed, calling PATCH for group', gi + 1, ':', JSON.stringify(updatedMeta).slice(0, 300));
-            await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
-            console.log('[PriceEstimate] PATCH done for group', gi + 1);
-            const refreshed = await fetchNestandartiniaiById(record.id);
-            if (refreshed) onRecordUpdated?.(refreshed);
-          } catch (writeErr: any) {
-            console.error(`[PriceEstimate] Failed to write kaina_ai for group ${gi + 1}:`, writeErr?.message, writeErr);
-          }
-        }
-
-        anySuccess = true;
-      } catch (groupErr: any) {
-        console.error(`Price estimation error for group ${gi + 1}:`, groupErr);
-        groupErrors.push(`Talpa ${group.originalIndices.map(i => i + 1).join('/')}: ${groupErr?.message ?? 'Klaida'}`);
-      }
-    }
-
-    setEstimateProgress(null);
-
-    if (groupErrors.length > 0 && !anySuccess) {
-      setEstimateError(groupErrors.join(' | '));
-      setEstimateStatus('error');
-      setTimeout(() => setEstimateStatus('idle'), 6000);
-    } else {
-      if (groupErrors.length > 0) {
-        setEstimateError(groupErrors.join(' | '));
-      }
-      if (lastReasoning) setEstimateReasoning(lastReasoning);
-      setEstimateStatus('success');
-      setTimeout(() => { setEstimateStatus('idle'); setEstimateError(null); }, 5000);
-    }
-
-    setEstimating(false);
-  };
-
-  return (
-    <div>
-      {/* Trigger button */}
-      <div className="mb-4">
-        <button
-          onClick={handleFindSimilar}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50"
-          style={{
-            background: status === 'success' ? 'rgba(52,199,89,0.08)' : status === 'error' ? 'rgba(255,59,48,0.06)' : 'rgba(0,0,0,0.04)',
-            border: `0.5px solid ${status === 'success' ? 'rgba(52,199,89,0.2)' : status === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(0,0,0,0.08)'}`,
-            color: status === 'success' ? '#34C759' : status === 'error' ? '#FF3B30' : '#5a5550',
-          }}
-        >
-          {loading
-            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
-            : status === 'success'
-              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
-              : status === 'error'
-                ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
-                : <><RefreshCw className="w-3.5 h-3.5" /> Rasti panašius</>
-          }
-        </button>
-        {errorMsg && status === 'error' && (
-          <p className="text-xs mt-1.5" style={{ color: '#FF3B30' }}>{errorMsg}</p>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <Loader2 className="w-6 h-6 animate-spin mb-3" style={{ color: '#007AFF' }} />
-          <p className="text-sm font-medium text-base-content/60">Ieškoma panašių projektų...</p>
-        </div>
-      ) : projects.length > 0 ? (
-        <div className="space-y-1.5">
-          {projects.map((p, i) => {
-            const fetched = similarKainaMap[p.id];
-            const kainaMap = resolveKainaMap(fetched ?? { kaina: p.kaina, metadata: p.metadata });
-            const kainaEntries = Object.entries(kainaMap).sort(([a], [b]) => Number(a) - Number(b));
-            return (
-              <a
-                key={p.id}
-                href={`/paklausimas/${p.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
-                style={{ background: 'rgba(0,0,0,0.02)' }}
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate text-base-content">
-                    {p.project_name || `Projektas #${p.id}`}
-                  </p>
-                  <p className="text-xs mt-0.5 text-base-content/40">
-                    ID: {p.id}
-                  </p>
-                  {kainaEntries.length > 0 && (() => {
-                    const isExpanded = expandedPrices.has(p.id);
-                    const visible = isExpanded ? kainaEntries : kainaEntries.slice(0, PRICES_PREVIEW);
-                    const hidden = kainaEntries.length - PRICES_PREVIEW;
-                    return (
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-                        {visible.map(([idx, price]) => (
-                          <span key={idx} className="text-xs text-base-content/60">
-                            <span className="font-bold text-base-content/40">[{Number(idx) + 1}]</span>
-                            {' '}{price.toLocaleString('en-US')}€
-                          </span>
-                        ))}
-                        {!isExpanded && hidden > 0 && (
-                          <button
-                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => new Set(prev).add(p.id)); }}
-                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
-                          >
-                            | + dar {hidden}
-                          </button>
-                        )}
-                        {isExpanded && kainaEntries.length > PRICES_PREVIEW && (
-                          <button
-                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => { const s = new Set(prev); s.delete(p.id); return s; }); }}
-                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
-                          >
-                            | mažiau
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
-                  {Math.round(p.similarity_score * 100)}%
-                </span>
-              </a>
-            );
-          })}
-        </div>
+      {aiFirst ? (
+        <>
+          {aiSection}
+          {dervaMusuSection}
+        </>
       ) : (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
-            <GitCompareArrows className="w-5 h-5 text-base-content/30" />
+        <>
+          {dervaMusuSection}
+          <div className="border-t border-base-content/10 pt-5">
+            {aiSection}
           </div>
-          <p className="text-sm font-medium mb-1 text-base-content">Panašūs projektai</p>
-          <p className="text-xs max-w-[240px] text-base-content/40" style={{ lineHeight: '1.6' }}>
-            Panašiausi projektai bus rodomi, kai bus sugeneruoti per n8n.
-          </p>
-        </div>
+        </>
       )}
 
-      {/* ── AI Price Estimation ── */}
-      {projects.length > 0 && !readOnly && (
-        <div className="mt-6 pt-5 border-t border-base-content/10">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
-              <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
-            </div>
-            <button
-              onClick={handleEstimateAllPrices}
-              disabled={estimating}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
-              style={{
-                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
-                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
-                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
-              }}
-            >
-              {estimating && estimateProgress
-                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama {estimateProgress.current}/{estimateProgress.total}...</>
-                : estimating
-                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Kraunama...</>
-                  : estimateStatus === 'success'
-                    ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
-                    : estimateStatus === 'error'
-                      ? <><AlertCircle className="w-3 h-3" /> Klaida</>
-                      : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
-              }
-            </button>
-          </div>
-          {estimateError && (
-            <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
-          )}
-          {estimating && (
-            <div className="flex flex-col items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin mb-2" style={{ color: '#AF52DE' }} />
-              <p className="text-xs text-base-content/50">
-                {estimateProgress
-                  ? `Vertinama talpa ${estimateProgress.current} iš ${estimateProgress.total}...`
-                  : 'Ruošiama...'}
-              </p>
-            </div>
-          )}
-          {!estimating && estimateStatus === 'success' && (
-            <div className="rounded-xl px-4 py-3 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
-              <p className="text-xs text-emerald-600 font-medium">Kainos įrašytos į talpų korteles</p>
-              {estimateReasoning && (
-                <p className="text-xs text-base-content/50 mt-1 leading-relaxed">{estimateReasoning}</p>
-              )}
-            </div>
-          )}
-          {!estimating && estimateStatus === 'idle' && (
-            <p className="text-xs text-base-content/35" style={{ lineHeight: '1.6' }}>
-              AI įvertins preliminarią kainą kiekvienai unikaliai talpai ir įrašys ją į talpos kortelę.
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -2628,7 +2647,7 @@ function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
-  const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
+  const [activeTab, setActiveTab] = useState<ModalTab>('talpos');
   const [updating, setUpdating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState<'save' | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -2653,42 +2672,33 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
   // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
   const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => resolveKainaMap(record));
-  // AI price estimates + reasoning keyed by tank index — populated by TabPanasus, displayed in TabBendra
-  const [aiEstimatesMap, setAiEstimatesMap] = useState<Record<number, number>>({});
-  const [aiReasoningMap, setAiReasoningMap] = useState<Record<number, string>>({});
-  const handleAiEstimate = (indices: number[], price: number, reasoning: string | null) => {
-    setAiEstimatesMap(prev => {
-      const next = { ...prev };
-      for (const i of indices) next[i] = price;
-      return next;
-    });
-    if (reasoning) {
-      setAiReasoningMap(prev => {
-        const next = { ...prev };
-        for (const i of indices) next[i] = reasoning;
-        return next;
-      });
-    }
-  };
-
   // Re-sync when record changes
   useEffect(() => {
     setKainaMap(resolveKainaMap(record));
   }, [record.kaina, record.metadata]);
 
   const handleTankKainaChange = async (tankIdx: number, value: number | null) => {
+    // Find all tanks that belong to the same dedup group as tankIdx so the
+    // price is applied uniformly to every identical tank, not just the one
+    // the user happened to edit.
+    const currentProducts = parseProducts(record.metadata);
+    const groups = deduplicateProducts(currentProducts);
+    const group = groups.find(g => g.originalIndices.includes(tankIdx));
+    const groupIndices = new Set(group?.originalIndices ?? [tankIdx]);
+
     const newMap = { ...kainaMap };
-    if (value === null) {
-      delete newMap[String(tankIdx)];
-    } else {
-      newMap[String(tankIdx)] = value;
+    for (const idx of groupIndices) {
+      if (value === null) {
+        delete newMap[String(idx)];
+      } else {
+        newMap[String(idx)] = value;
+      }
     }
     setKainaMap(newMap);
     try {
-      // Embed kaina inside the tank object itself (same pattern as persistProducts)
-      const currentProducts = parseProducts(record.metadata);
+      // Embed kaina inside every tank in the group (same pattern as persistProducts)
       const newProducts = currentProducts.map((p, i) => {
-        if (i !== tankIdx) return p;
+        if (!groupIndices.has(i)) return p;
         if (value === null) {
           const { kaina: _removed, ...rest } = p;
           return rest;
@@ -2991,8 +3001,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} kainaMap={kainaMap} onKainaChange={handleTankKainaChange} aiEstimatesMap={aiEstimatesMap} aiReasoningMap={aiReasoningMap} />}
+          <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
+            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -3005,8 +3015,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
-            {activeTab === 'derva' && <TabDerva record={record} products={products} onRecordUpdated={onRefresh} />}
-            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} onAiEstimate={handleAiEstimate} />}
           </div>
         </div>
       </div>
@@ -3115,10 +3123,12 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
 export default function PaklausimoKortelePage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const initialTalposId = searchParams.get('talpa') ?? undefined;
   const [record, setRecord] = useState<NestandartiniaiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ModalTab>('bendra');
+  const [activeTab, setActiveTab] = useState<ModalTab>('talpos');
 
   useEffect(() => {
     if (!id) return;
@@ -3188,13 +3198,11 @@ export default function PaklausimoKortelePage() {
               );
             })}
           </div>
-          <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'bendra' && <TabBendra record={record} products={products} readOnly kainaMap={kainaMap} onKainaChange={handleTankKainaChange} />}
+          <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
+            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly initialTalposId={initialTalposId} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
-            {activeTab === 'derva' && <TabDerva record={record} products={products} readOnly />}
-            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly />}
           </div>
         </div>
       </div>

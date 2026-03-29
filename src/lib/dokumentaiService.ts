@@ -153,7 +153,7 @@ export const deleteStandartinisProjektas = async (record: { id: number; docx_fil
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina';
+const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina,talpos';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -206,6 +206,7 @@ export interface NestandartiniaiRecord {
   similar_projects: SimilarProject[] | string | null;
   status: boolean | null;
   kaina: number | string | null;
+  talpos?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +345,91 @@ export const deleteNestandartiniaiRecord = async (
 
   if (error) {
     console.error('Error deleting n8n_vector_store record:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch all records from talpos table
+ */
+export const fetchTalpos = async (): Promise<any[]> => {
+  try {
+    const { data, error } = await db
+      .from('talpos')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching talpos:', error);
+      throw error;
+    }
+
+    return data || [];
+  } catch (error: any) {
+    console.error('Error in fetchTalpos:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch specific talpos rows by their UUIDs
+ */
+export const fetchTalposByIds = async (ids: string[]): Promise<any[]> => {
+  if (ids.length === 0) return [];
+  try {
+    const { data, error } = await db
+      .from('talpos')
+      .select('*')
+      .in('id', ids);
+    if (error) throw error;
+    return data || [];
+  } catch (error: any) {
+    console.error('Error in fetchTalposByIds:', error);
+    return [];
+  }
+};
+
+/**
+ * Given a list of talpos UUIDs, return a map of { talposUUID → n8n_vector_store integer id }
+ * by querying n8n_vector_store rows whose `talpos` column contains each UUID.
+ */
+export const fetchProjectIdsByTalposIds = async (talposIds: string[]): Promise<Record<string, number>> => {
+  if (talposIds.length === 0) return {};
+  try {
+    // Fetch in parallel — one ilike query per UUID (max 5 for similar results)
+    const results = await Promise.all(
+      talposIds.map(uuid =>
+        db
+          .from('n8n_vector_store')
+          .select('id,talpos')
+          .ilike('talpos', `%${uuid}%`)
+          .limit(1)
+          .then(({ data }) => ({ uuid, projectId: data?.[0]?.id ?? null }))
+      )
+    );
+    const map: Record<string, number> = {};
+    for (const { uuid, projectId } of results) {
+      if (projectId != null) map[uuid] = projectId;
+    }
+    return map;
+  } catch (error: any) {
+    console.error('Error in fetchProjectIdsByTalposIds:', error);
+    return {};
+  }
+};
+
+/**
+ * Update a single field on a talpos row
+ */
+export const updateTalposField = async (id: string, field: string, value: any): Promise<void> => {
+  try {
+    const { error } = await db
+      .from('talpos')
+      .update({ [field]: value })
+      .eq('id', id);
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error in updateTalposField:', error);
     throw error;
   }
 };
