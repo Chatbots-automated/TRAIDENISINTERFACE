@@ -700,7 +700,7 @@ function TabTalpos({
       )}
 
       {/* Parametrai / Derva toggle */}
-      <div className="flex justify-center mb-5 shrink-0">
+      <div className="flex justify-center mb-2 shrink-0">
         <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
           {(['parametrai', 'derva'] as TalposSubTab[]).map(t => (
             <button
@@ -740,57 +740,55 @@ function TabTalpos({
 
           {!loadingTalpos && currentTalposRow && (
             <div className="flex-1 flex flex-col min-h-0">
-              {/* Kaina from talpos table */}
-              <div className="flex items-center gap-2 mb-4 shrink-0">
-                <span className="text-[11px] text-base-content/40 shrink-0">Kaina:</span>
-                {kainaEditing ? (
-                  <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
-                    <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
-                    <input
-                      type="text"
-                      value={kainaInput}
-                      onChange={e => setKainaInput(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') saveKaina();
-                        if (e.key === 'Escape') setKainaEditing(false);
-                      }}
-                      className="w-20 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
-                      placeholder="0.00"
-                      autoFocus
-                    />
-                    <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
-                      {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
-                    </button>
-                    <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
-                      <X className="w-3 h-3 text-base-content/40" />
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => {
-                      if (!readOnly) {
-                        setKainaInput(currentKaina != null ? String(currentKaina) : '');
-                        setKainaEditing(true);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-                      currentKaina != null
-                        ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
-                        : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
-                    } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
-                    title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
-                  >
-                    <Euro className="w-3 h-3" />
-                    {currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nustatyti kainą'}
-                  </button>
-                )}
-              </div>
-
               {/* Two-column: left = raw JSON, right = description */}
               <div className="flex gap-4 flex-1 min-h-0">
                 {/* Left column: fixed width, raw JSON — fills height and scrolls */}
                 <div className="w-[260px] shrink-0 flex flex-col min-h-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5 shrink-0">JSON</p>
+                  {/* JSON label + kaina on the same row */}
+                  <div className="flex items-center justify-between mb-1.5 shrink-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
+                    {kainaEditing ? (
+                      <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
+                        <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
+                        <input
+                          type="text"
+                          value={kainaInput}
+                          onChange={e => setKainaInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') saveKaina();
+                            if (e.key === 'Escape') setKainaEditing(false);
+                          }}
+                          className="w-16 text-xs bg-transparent outline-none text-base-content placeholder:text-base-content/30"
+                          placeholder="0.00"
+                          autoFocus
+                        />
+                        <button onClick={saveKaina} disabled={kainaSaving} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                          {kainaSaving ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                        </button>
+                        <button onClick={() => setKainaEditing(false)} className="p-1 rounded-full hover:bg-base-content/10 transition-colors">
+                          <X className="w-3 h-3 text-base-content/40" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (!readOnly) {
+                            setKainaInput(currentKaina != null ? String(currentKaina) : '');
+                            setKainaEditing(true);
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full transition-colors ${
+                          currentKaina != null
+                            ? 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15'
+                            : 'bg-base-content/5 text-base-content/35 hover:bg-base-content/10 border border-dashed border-base-content/15'
+                        } ${readOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                        title={readOnly ? 'Kaina' : 'Redaguoti kainą'}
+                      >
+                        <Euro className="w-3 h-3" />
+                        {currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Kaina'}
+                      </button>
+                    )}
+                  </div>
                   <pre
                     className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed flex-1 min-h-0"
                     style={{
