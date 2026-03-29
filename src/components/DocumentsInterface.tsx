@@ -829,6 +829,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
   useEffect(() => { loadStandartiniai(); loadNestandartiniai(); loadTalpos(); }, []);
 
+  useEffect(() => {
+    if (selectedTable === 'talpos') loadTalpos();
+    else if (selectedTable === 'n8n_vector_store') loadNestandartiniai();
+    else if (selectedTable === 'standartiniai_projektai') loadStandartiniai();
+  }, [selectedTable]);
+
   const loadStandartiniai = async () => {
     try { setLoadingStandartiniai(true); setErrorStandartiniai(null); setStandartiniaiData(await fetchStandartiniaiProjektai()); }
     catch (err: any) { setErrorStandartiniai(err?.message || 'Nepavyko gauti duomenų'); }
