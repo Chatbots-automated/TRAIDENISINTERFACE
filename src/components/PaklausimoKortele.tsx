@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
-  LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
+  LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
   Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
 } from 'lucide-react';
 import {
@@ -17,7 +17,7 @@ import {
   updateTalposField,
 } from '../lib/dokumentaiService';
 import type {
-  NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, SimilarProject,
+  NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
 
@@ -186,14 +186,13 @@ function useProcessing(recordId: number, key: ProcessKey) {
 // Tab definitions
 // ---------------------------------------------------------------------------
 
-type ModalTab = 'talpos' | 'susirasinejimas' | 'uzduotys' | 'failai' | 'panasus';
+type ModalTab = 'talpos' | 'susirasinejimas' | 'uzduotys' | 'failai';
 
 const TABS: { id: ModalTab; label: string; icon: React.ElementType }[] = [
   { id: 'talpos', label: 'Talpos', icon: LayoutList },
   { id: 'susirasinejimas', label: 'Susirašinėjimas', icon: MessageSquare },
   { id: 'uzduotys', label: 'Užduotys', icon: CheckSquare },
   { id: 'failai', label: 'Failai', icon: Paperclip },
-  { id: 'panasus', label: 'Panašūs', icon: GitCompareArrows },
 ];
 
 // ---------------------------------------------------------------------------
@@ -2633,463 +2632,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Panašūs
-// ---------------------------------------------------------------------------
-
-function TabPanasus({ record, products, readOnly, onRecordUpdated, onAiEstimate }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; onAiEstimate?: (indices: number[], price: number, reasoning: string | null) => void }) {
-  const [localProjects, setLocalProjects] = useState<SimilarProject[] | null>(null);
-  const projects = localProjects ?? parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
-  const loading = useProcessing(record.id, 'similar');
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Price estimation state
-  const [estimating, setEstimating] = useState(false);
-  const [estimateStatus, setEstimateStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [estimateError, setEstimateError] = useState<string | null>(null);
-  const [estimateProgress, setEstimateProgress] = useState<{ current: number; total: number } | null>(null);
-  const [estimateReasoning, setEstimateReasoning] = useState<string | null>(null);
-
-  // Per-record kaina/metadata fetched from DB for each similar project
-  const [similarKainaMap, setSimilarKainaMap] = useState<Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any; tasks: any }>>({});
-  const [expandedPrices, setExpandedPrices] = useState<Set<number>>(new Set());
-
-  const PRICES_PREVIEW = 3;
-
-  // Sync with record prop when it refreshes
-  useEffect(() => {
-    const parsed = parseJSON<SimilarProject[]>(record.similar_projects) ?? [];
-    if (parsed.length > 0) setLocalProjects(parsed);
-  }, [record.similar_projects]);
-
-  // Fetch actual kaina+metadata for all similar project IDs
-  useEffect(() => {
-    if (projects.length === 0) return;
-    const ids = projects.map(p => p.id);
-    fetchNestandartiniaiKainaByIds(ids).then(rows => {
-      const map: Record<number, { kaina: any; metadata: any; description: any; derva: any; klientas: any }> = {};
-      for (const r of rows) map[r.id] = { kaina: r.kaina, metadata: r.metadata, description: r.description, derva: r.derva, klientas: r.klientas, tasks: r.tasks };
-      setSimilarKainaMap(map);
-    }).catch(() => {});
-  }, [projects.map(p => p.id).join(',')]);
-
-  const handleFindSimilar = async () => {
-    setProcessing(record.id, 'similar', true);
-    setStatus('idle');
-    setErrorMsg(null);
-    try {
-      const webhookUrl = await getWebhookUrl('n8n_similar_projects');
-      if (!webhookUrl) throw new Error('Webhook nesukonfigūruotas');
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ record_id: record.id }),
-      });
-      if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(body || `Klaida: ${resp.status}`);
-      }
-      // Re-fetch record to get updated similar_projects
-      const updated = await fetchNestandartiniaiById(record.id);
-      if (updated) {
-        setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
-        onRecordUpdated?.(updated);
-      }
-      setStatus('success');
-      setTimeout(() => setStatus('idle'), 3000);
-    } catch (err: any) {
-      console.error('Similar projects webhook error:', err);
-      setErrorMsg(err?.message || 'Nepavyko atnaujinti');
-      setStatus('error');
-      // Try fetching anyway — the webhook may have completed server-side
-      try {
-        const updated = await fetchNestandartiniaiById(record.id);
-        if (updated) {
-          setLocalProjects(parseJSON<SimilarProject[]>(updated.similar_projects) ?? []);
-          onRecordUpdated?.(updated);
-        }
-      } catch { /* ignore */ }
-      setTimeout(() => setStatus('idle'), 5000);
-    } finally {
-      setProcessing(record.id, 'similar', false);
-    }
-  };
-
-  // ---------------------------------------------------------------------------
-  // Webhook throttle helpers — prevent OpenAI rate-limit errors when a record
-  // has many tank groups (10, 42, etc.) causing rapid back-to-back n8n calls.
-  // ---------------------------------------------------------------------------
-
-  /** Pause execution for `ms` milliseconds */
-  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-
-  /**
-   * Fire a single webhook request with automatic retry on rate-limit (429)
-   * or server-busy (503) responses.  Uses exponential backoff.
-   *
-   * @param url        Webhook endpoint
-   * @param body       JSON body to POST
-   * @param maxRetries Maximum number of retry attempts (default 3)
-   * @returns          Fetch Response on success, throws on final failure
-   */
-  const fetchWithRetry = async (
-    url: string,
-    body: object,
-    maxRetries = 3,
-  ): Promise<Response> => {
-    let delay = 2000; // initial backoff: 2 s
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (resp.status === 429 || resp.status === 503) {
-        if (attempt === maxRetries) {
-          // Final attempt — let the caller handle the bad response
-          return resp;
-        }
-        console.warn(`[PriceEstimate] Rate-limited (${resp.status}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-        await sleep(delay);
-        delay *= 2; // exponential backoff
-        continue;
-      }
-      return resp;
-    }
-    // TypeScript: unreachable, but needed for type safety
-    throw new Error('fetchWithRetry: exhausted retries');
-  };
-
-  /** Delay between successive group requests to avoid flooding n8n / OpenAI */
-  const INTER_REQUEST_DELAY_MS = 1500;
-
-  const handleEstimateAllPrices = async () => {
-    if (projects.length === 0) {
-      setEstimateError('Pirmiausia reikia rasti panašius projektus');
-      setEstimateStatus('error');
-      setTimeout(() => setEstimateStatus('idle'), 4000);
-      return;
-    }
-
-    setEstimating(true);
-    setEstimateStatus('idle');
-    setEstimateError(null);
-    setEstimateReasoning(null);
-    setEstimateProgress(null);
-
-    let webhookUrl: string | null = null;
-    try {
-      webhookUrl = await getWebhookUrl('n8n_price_estimation');
-      if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
-    } catch (err: any) {
-      setEstimateError(err?.message || 'Nepavyko gauti webhook URL');
-      setEstimateStatus('error');
-      setEstimating(false);
-      setTimeout(() => setEstimateStatus('idle'), 5000);
-      return;
-    }
-
-    // Fetch fresh full records for all similar projects directly from DB
-    let freshRecords: Record<number, any> = {};
-    try {
-      const rows = await fetchNestandartiniaiKainaByIds(projects.map(p => p.id));
-      for (const r of rows) freshRecords[r.id] = r;
-    } catch (fetchErr: any) {
-      console.warn('Could not fetch similar project details from DB, falling back to cached data:', fetchErr?.message);
-    }
-
-    const enrichedSimilar = projects.map(p => {
-      const r = freshRecords[p.id];
-      return {
-        id: p.id,
-        project_name: p.project_name,
-        similarity_score: p.similarity_score,
-        kaina: r?.kaina ?? p.kaina ?? null,
-        metadata: parseJSON(r?.metadata) ?? r?.metadata ?? parseJSON(p.metadata as any) ?? p.metadata ?? null,
-        description: r?.description ?? null,
-        derva: r?.derva ?? null,
-        klientas: r?.klientas ?? null,
-        tasks: parseJSON(r?.tasks) ?? r?.tasks ?? null,
-      };
-    });
-
-    // Deduplicate tanks — process one webhook call per unique spec group
-    const groups = deduplicateProducts(products);
-    setEstimateProgress({ current: 0, total: groups.length });
-
-    let anySuccess = false;
-    let lastReasoning: string | null = null;
-    const groupErrors: string[] = [];
-
-    for (let gi = 0; gi < groups.length; gi++) {
-      const group = groups[gi];
-      setEstimateProgress({ current: gi + 1, total: groups.length });
-
-      // Throttle: wait between requests (skip before the very first one)
-      if (gi > 0) await sleep(INTER_REQUEST_DELAY_MS);
-
-      try {
-        const resp = await fetchWithRetry(webhookUrl, {
-            record_id: record.id,
-            project_name: record.project_name,
-            description: record.description,
-            klientas: record.klientas,
-            derva: record.derva,
-            current_kaina: record.kaina,
-            metadata: parseJSON(record.metadata as any) ?? record.metadata,
-            tank: group.tank,
-            quantity: group.quantity,
-            original_indices: group.originalIndices,
-            similar_projects: enrichedSimilar,
-        });
-
-        if (!resp.ok) {
-          const body = await resp.text().catch(() => '');
-          throw new Error(body || `HTTP ${resp.status}`);
-        }
-
-        let respData: any = null;
-        try { respData = await resp.json(); } catch { /* no json body */ }
-        // n8n often wraps the response in an array
-        if (Array.isArray(respData)) respData = respData[0] ?? null;
-        console.log('[PriceEstimate] raw webhook response for group', gi + 1, ':', respData);
-
-        // Accept common field names; also handle n8n plain-text output like "62,000€"
-        const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
-        const estimatedPrice = (() => {
-          if (rawPrice == null) return null;
-          const n = Number(rawPrice);
-          if (!isNaN(n)) return n;
-          // Strip currency symbols and thousands-separator commas, then parse
-          const cleaned = String(rawPrice).replace(/[€$£\s]/g, '').replace(/,(?=\d{3}(\D|$))/g, '');
-          const parsed = parseFloat(cleaned);
-          return isNaN(parsed) ? null : parsed;
-        })();
-        console.log('[PriceEstimate] rawPrice:', rawPrice, '→ estimatedPrice:', estimatedPrice);
-        const groupReasoning: string | null =
-          respData?.reasoning ?? respData?.statement ?? respData?.explanation ??
-          respData?.reason ?? respData?.message ?? respData?.note ?? null;
-        if (lastReasoning == null && groupReasoning) lastReasoning = groupReasoning;
-
-        // Immediately surface estimate + reasoning to TabBendra via shared state
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) {
-          onAiEstimate?.(group.originalIndices, estimatedPrice, groupReasoning);
-        }
-
-        // Write kaina_ai (and reasoning) into each matching tank object in metadata
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) {
-          try {
-            const latest = await fetchNestandartiniaiById(record.id);
-            const base = latest ?? record;
-            console.log('[PriceEstimate] base.metadata type:', typeof base.metadata, 'value:', base.metadata);
-            let updatedMeta = buildUpdatedMeta(base.metadata, 'kaina_ai', estimatedPrice, group.originalIndices);
-            if (groupReasoning) {
-              updatedMeta = buildUpdatedMeta(updatedMeta, 'kaina_ai_reasoning', groupReasoning, group.originalIndices);
-            }
-            console.log('[PriceEstimate] updatedMeta computed, calling PATCH for group', gi + 1, ':', JSON.stringify(updatedMeta).slice(0, 300));
-            await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
-            console.log('[PriceEstimate] PATCH done for group', gi + 1);
-            const refreshed = await fetchNestandartiniaiById(record.id);
-            if (refreshed) onRecordUpdated?.(refreshed);
-          } catch (writeErr: any) {
-            console.error(`[PriceEstimate] Failed to write kaina_ai for group ${gi + 1}:`, writeErr?.message, writeErr);
-          }
-        }
-
-        anySuccess = true;
-      } catch (groupErr: any) {
-        console.error(`Price estimation error for group ${gi + 1}:`, groupErr);
-        groupErrors.push(`Talpa ${group.originalIndices.map(i => i + 1).join('/')}: ${groupErr?.message ?? 'Klaida'}`);
-      }
-    }
-
-    setEstimateProgress(null);
-
-    if (groupErrors.length > 0 && !anySuccess) {
-      setEstimateError(groupErrors.join(' | '));
-      setEstimateStatus('error');
-      setTimeout(() => setEstimateStatus('idle'), 6000);
-    } else {
-      if (groupErrors.length > 0) {
-        setEstimateError(groupErrors.join(' | '));
-      }
-      if (lastReasoning) setEstimateReasoning(lastReasoning);
-      setEstimateStatus('success');
-      setTimeout(() => { setEstimateStatus('idle'); setEstimateError(null); }, 5000);
-    }
-
-    setEstimating(false);
-  };
-
-  return (
-    <div>
-      {/* Trigger button */}
-      <div className="mb-4">
-        <button
-          onClick={handleFindSimilar}
-          disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50"
-          style={{
-            background: status === 'success' ? 'rgba(52,199,89,0.08)' : status === 'error' ? 'rgba(255,59,48,0.06)' : 'rgba(0,0,0,0.04)',
-            border: `0.5px solid ${status === 'success' ? 'rgba(52,199,89,0.2)' : status === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(0,0,0,0.08)'}`,
-            color: status === 'success' ? '#34C759' : status === 'error' ? '#FF3B30' : '#5a5550',
-          }}
-        >
-          {loading
-            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
-            : status === 'success'
-              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Atnaujinta</>
-              : status === 'error'
-                ? <><AlertCircle className="w-3.5 h-3.5" /> Klaida</>
-                : <><RefreshCw className="w-3.5 h-3.5" /> Rasti panašius</>
-          }
-        </button>
-        {errorMsg && status === 'error' && (
-          <p className="text-xs mt-1.5" style={{ color: '#FF3B30' }}>{errorMsg}</p>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <Loader2 className="w-6 h-6 animate-spin mb-3" style={{ color: '#007AFF' }} />
-          <p className="text-sm font-medium text-base-content/60">Ieškoma panašių projektų...</p>
-        </div>
-      ) : projects.length > 0 ? (
-        <div className="space-y-1.5">
-          {projects.map((p, i) => {
-            const fetched = similarKainaMap[p.id];
-            const kainaMap = resolveKainaMap(fetched ?? { kaina: p.kaina, metadata: p.metadata });
-            const kainaEntries = Object.entries(kainaMap).sort(([a], [b]) => Number(a) - Number(b));
-            return (
-              <a
-                key={p.id}
-                href={`/paklausimas/${p.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-150 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10"
-                style={{ background: 'rgba(0,0,0,0.02)' }}
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate text-base-content">
-                    {p.project_name || `Projektas #${p.id}`}
-                  </p>
-                  <p className="text-xs mt-0.5 text-base-content/40">
-                    ID: {p.id}
-                  </p>
-                  {kainaEntries.length > 0 && (() => {
-                    const isExpanded = expandedPrices.has(p.id);
-                    const visible = isExpanded ? kainaEntries : kainaEntries.slice(0, PRICES_PREVIEW);
-                    const hidden = kainaEntries.length - PRICES_PREVIEW;
-                    return (
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1">
-                        {visible.map(([idx, price]) => (
-                          <span key={idx} className="text-xs text-base-content/60">
-                            <span className="font-bold text-base-content/40">[{Number(idx) + 1}]</span>
-                            {' '}{price.toLocaleString('en-US')}€
-                          </span>
-                        ))}
-                        {!isExpanded && hidden > 0 && (
-                          <button
-                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => new Set(prev).add(p.id)); }}
-                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
-                          >
-                            | + dar {hidden}
-                          </button>
-                        )}
-                        {isExpanded && kainaEntries.length > PRICES_PREVIEW && (
-                          <button
-                            onClick={e => { e.preventDefault(); setExpandedPrices(prev => { const s = new Set(prev); s.delete(p.id); return s; }); }}
-                            className="text-xs text-base-content/35 hover:text-base-content/60 transition-colors"
-                          >
-                            | mažiau
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ml-3 bg-success/10 text-success">
-                  {Math.round(p.similarity_score * 100)}%
-                </span>
-              </a>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-base-content/[0.06]">
-            <GitCompareArrows className="w-5 h-5 text-base-content/30" />
-          </div>
-          <p className="text-sm font-medium mb-1 text-base-content">Panašūs projektai</p>
-          <p className="text-xs max-w-[240px] text-base-content/40" style={{ lineHeight: '1.6' }}>
-            Panašiausi projektai bus rodomi, kai bus sugeneruoti per n8n.
-          </p>
-        </div>
-      )}
-
-      {/* ── AI Price Estimation ── */}
-      {projects.length > 0 && !readOnly && (
-        <div className="mt-6 pt-5 border-t border-base-content/10">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: '#AF52DE' }} />
-              <p className="text-xs font-medium" style={{ color: '#AF52DE' }}>Kainos įvertinimas</p>
-            </div>
-            <button
-              onClick={handleEstimateAllPrices}
-              disabled={estimating}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all disabled:opacity-50"
-              style={{
-                background: estimateStatus === 'success' ? 'rgba(52,199,89,0.08)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.06)' : 'linear-gradient(180deg, rgba(175,82,222,0.08) 0%, rgba(175,82,222,0.12) 100%)',
-                border: `0.5px solid ${estimateStatus === 'success' ? 'rgba(52,199,89,0.2)' : estimateStatus === 'error' ? 'rgba(255,59,48,0.15)' : 'rgba(175,82,222,0.2)'}`,
-                color: estimateStatus === 'success' ? '#34C759' : estimateStatus === 'error' ? '#FF3B30' : '#AF52DE',
-              }}
-            >
-              {estimating && estimateProgress
-                ? <><Loader2 className="w-3 h-3 animate-spin" /> Vertinama {estimateProgress.current}/{estimateProgress.total}...</>
-                : estimating
-                  ? <><Loader2 className="w-3 h-3 animate-spin" /> Kraunama...</>
-                  : estimateStatus === 'success'
-                    ? <><CheckCircle2 className="w-3 h-3" /> Įvertinta</>
-                    : estimateStatus === 'error'
-                      ? <><AlertCircle className="w-3 h-3" /> Klaida</>
-                      : <><Sparkles className="w-3 h-3" /> Įvertinti kainą</>
-              }
-            </button>
-          </div>
-          {estimateError && (
-            <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{estimateError}</p>
-          )}
-          {estimating && (
-            <div className="flex flex-col items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin mb-2" style={{ color: '#AF52DE' }} />
-              <p className="text-xs text-base-content/50">
-                {estimateProgress
-                  ? `Vertinama talpa ${estimateProgress.current} iš ${estimateProgress.total}...`
-                  : 'Ruošiama...'}
-              </p>
-            </div>
-          )}
-          {!estimating && estimateStatus === 'success' && (
-            <div className="rounded-xl px-4 py-3 border border-emerald-500/15" style={{ background: 'rgba(16,185,129,0.04)' }}>
-              <p className="text-xs text-emerald-600 font-medium">Kainos įrašytos į talpų korteles</p>
-              {estimateReasoning && (
-                <p className="text-xs text-base-content/50 mt-1 leading-relaxed">{estimateReasoning}</p>
-              )}
-            </div>
-          )}
-          {!estimating && estimateStatus === 'idle' && (
-            <p className="text-xs text-base-content/35" style={{ lineHeight: '1.6' }}>
-              AI įvertins preliminarią kainą kiekvienai unikaliai talpai ir įrašys ją į talpos kortelę.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Modal (editable, used from within the app)
 // ---------------------------------------------------------------------------
 
@@ -3121,24 +2663,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
   // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
   const [kainaMap, setKainaMap] = useState<Record<string, number>>(() => resolveKainaMap(record));
-  // AI price estimates + reasoning keyed by tank index — populated by TabPanasus, displayed in TabBendra
-  const [aiEstimatesMap, setAiEstimatesMap] = useState<Record<number, number>>({});
-  const [aiReasoningMap, setAiReasoningMap] = useState<Record<number, string>>({});
-  const handleAiEstimate = (indices: number[], price: number, reasoning: string | null) => {
-    setAiEstimatesMap(prev => {
-      const next = { ...prev };
-      for (const i of indices) next[i] = price;
-      return next;
-    });
-    if (reasoning) {
-      setAiReasoningMap(prev => {
-        const next = { ...prev };
-        for (const i of indices) next[i] = reasoning;
-        return next;
-      });
-    }
-  };
-
   // Re-sync when record changes
   useEffect(() => {
     setKainaMap(resolveKainaMap(record));
@@ -3482,7 +3006,6 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
               </>
             )}
-            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} onAiEstimate={handleAiEstimate} />}
           </div>
         </div>
       </div>
@@ -3671,7 +3194,6 @@ export default function PaklausimoKortelePage() {
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
-            {activeTab === 'panasus' && <TabPanasus record={record} products={products} readOnly />}
           </div>
         </div>
       </div>
