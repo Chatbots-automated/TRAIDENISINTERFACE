@@ -314,9 +314,9 @@ export const updateNestandartiniaiAiConversation = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Delete a nestandartiniai record and all its associated Directus files.
- * 1. Parse file UUIDs from the `files` column
- * 2. Delete each file from Directus storage
+ * Delete a nestandartiniai record, its associated Directus files, and linked talpos rows.
+ * 1. Parse file UUIDs from the `files` column and delete from Directus storage
+ * 2. Delete linked talpos rows (UUIDs from the `talpos` column)
  * 3. Delete the DB row from n8n_vector_store
  */
 export const deleteNestandartiniaiRecord = async (
@@ -337,7 +337,17 @@ export const deleteNestandartiniaiRecord = async (
     }
   }
 
-  // 2. Delete the DB row
+  // 2. Delete linked talpos rows
+  const talposField = (record as any).talpos;
+  if (talposField && typeof talposField === 'string') {
+    const talposIds = talposField.split(',').map((s: string) => s.trim()).filter(Boolean);
+    if (talposIds.length > 0) {
+      const { error: talposError } = await db.from('talpos').delete().in('id', talposIds);
+      if (talposError) console.warn('Error deleting talpos rows:', talposError);
+    }
+  }
+
+  // 3. Delete the DB row
   const { error } = await db
     .from('n8n_vector_store')
     .delete()
