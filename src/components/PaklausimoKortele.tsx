@@ -675,7 +675,9 @@ function TabTalpos({
   const getNavLabel = (i: number): string => {
     if (talposIds.length > 0) {
       const row = talposRows[i];
-      return row?.pavadinimas || row?.name || row?.title || `Talpa ${i + 1}`;
+      const name = row?.pavadinimas || row?.name || row?.title || `Talpa ${i + 1}`;
+      const qty = row?.quantity && Number(row.quantity) > 1 ? ` ×${row.quantity}` : '';
+      return name + qty;
     }
     return getProductTitle(products[i]) || `Talpa ${i + 1}`;
   };
@@ -748,9 +750,16 @@ function TabTalpos({
               <div className="flex gap-4 flex-1 min-h-0">
                 {/* Left column: fixed width, raw JSON — fills height and scrolls */}
                 <div className="w-[260px] shrink-0 flex flex-col min-h-0">
-                  {/* JSON label + kaina on the same row */}
+                  {/* JSON label + quantity badge + kaina on the same row */}
                   <div className="flex items-center justify-between mb-1.5 shrink-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
+                      {currentTalposRow?.quantity && Number(currentTalposRow.quantity) > 1 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-base-content/8 text-base-content/50">
+                          ×{currentTalposRow.quantity}
+                        </span>
+                      )}
+                    </div>
                     {kainaEditing ? (
                       <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
                         <Euro className="w-3 h-3 text-base-content/40 shrink-0" />
