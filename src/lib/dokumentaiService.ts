@@ -342,8 +342,16 @@ export const deleteNestandartiniaiRecord = async (
   if (talposField && typeof talposField === 'string') {
     const talposIds = talposField.split(',').map((s: string) => s.trim()).filter(Boolean);
     if (talposIds.length > 0) {
-      const { error: talposError } = await db.from('talpos').delete().in('id', talposIds);
-      if (talposError) console.warn('Error deleting talpos rows:', talposError);
+      try {
+        const res = await fetch(`${DIRECTUS_URL}/items/talpos`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${DIRECTUS_TOKEN}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(talposIds),
+        });
+        if (!res.ok) console.warn('Error deleting talpos rows:', await res.text());
+      } catch (err) {
+        console.warn('Error deleting talpos rows:', err);
+      }
     }
   }
 
