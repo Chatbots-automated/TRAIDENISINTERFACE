@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, GitCompareArrows, Paperclip,
@@ -541,12 +541,13 @@ function isOldFormat(meta: Record<string, any>): boolean {
 type TalposSubTab = 'parametrai' | 'derva';
 
 function TabTalpos({
-  record, products, readOnly, onRecordUpdated,
+  record, products, readOnly, onRecordUpdated, initialTalposId,
 }: {
   record: NestandartiniaiRecord;
   products: Record<string, any>[];
   readOnly?: boolean;
   onRecordUpdated?: (r: NestandartiniaiRecord) => void;
+  initialTalposId?: string;
 }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [subTab, setSubTab] = useState<TalposSubTab>('parametrai');
@@ -571,6 +572,10 @@ function TabTalpos({
           .map(id => rows.find((r: any) => String(r.id) === String(id)) ?? null)
           .filter(Boolean);
         setTalposRows(sorted);
+        if (initialTalposId) {
+          const i = talposIds.findIndex(id => id === initialTalposId);
+          if (i >= 0) setCurrentIdx(i);
+        }
       })
       .finally(() => setLoadingTalpos(false));
   }, [talposIdsKey]);
@@ -851,37 +856,47 @@ function TabTalpos({
                     )}
 
                     {displayedSimilar && displayedSimilar.length > 0 ? (
-                      <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0">
+                      <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
                         {displayedSimilar.map((item: any, i: number) => {
-                          const name = item.name || item.pavadinimas || item.tank_name || `Talpa ${i + 1}`;
                           const score = item.similarity_score ?? item.similarity ?? null;
-                          const projectName = item.project_name || item.projekto_pavadinimas || null;
+                          const projectName = item.project_name || null;
                           const projectId = item.project || item.project_id || null;
+                          const talposUuid = item.id || null;
                           const kaina = item.kaina != null ? Number(item.kaina) : null;
-                          return (
-                            <div key={i} className="flex items-center gap-2 p-2 rounded-xl border border-base-content/8 bg-base-content/[0.02] hover:bg-base-content/[0.04] transition-colors">
+                          const href = projectId && talposUuid
+                            ? `/paklausimas/${projectId}?talpa=${talposUuid}`
+                            : projectId ? `/paklausimas/${projectId}` : null;
+                          const inner = (
+                            <div className="flex items-center gap-2 px-2 py-1.5">
                               {score !== null && (
-                                <span className="shrink-0 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
+                                <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary tabular-nums">
                                   {Math.round(Number(score) * 100)}%
                                 </span>
                               )}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium text-base-content/80 truncate">{name}</p>
-                                {projectName && (
-                                  projectId ? (
-                                    <a href={`/paklausimas/${projectId}`} className="text-[11px] text-primary/70 hover:text-primary truncate block">
-                                      {projectName}
-                                    </a>
-                                  ) : (
-                                    <p className="text-[11px] text-base-content/40 truncate">{projectName}</p>
-                                  )
-                                )}
-                              </div>
+                              <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0">
+                                {projectName || `Talpa ${i + 1}`}
+                              </p>
                               {kaina !== null && !isNaN(kaina) && (
-                                <span className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
+                                <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
                                   <Euro className="w-2.5 h-2.5" />{kaina.toLocaleString('lt-LT')}
                                 </span>
                               )}
+                              {href && <ExternalLink className="w-3 h-3 shrink-0 text-base-content/25" />}
+                            </div>
+                          );
+                          return href ? (
+                            <a
+                              key={i}
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block rounded-lg border border-base-content/8 bg-base-content/[0.02] hover:bg-primary/5 hover:border-primary/20 transition-colors"
+                            >
+                              {inner}
+                            </a>
+                          ) : (
+                            <div key={i} className="rounded-lg border border-base-content/8 bg-base-content/[0.02]">
+                              {inner}
                             </div>
                           );
                         })}
@@ -3576,6 +3591,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
 export default function PaklausimoKortelePage() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const initialTalposId = searchParams.get('talpa') ?? undefined;
   const [record, setRecord] = useState<NestandartiniaiRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -3649,8 +3666,8 @@ export default function PaklausimoKortelePage() {
               );
             })}
           </div>
-          <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
-            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly />}
+          <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
+            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly initialTalposId={initialTalposId} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={record} readOnly />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly />}
             {activeTab === 'failai' && <TabFailai record={record} readOnly />}
