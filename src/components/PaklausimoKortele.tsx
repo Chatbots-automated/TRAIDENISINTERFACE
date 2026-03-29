@@ -677,10 +677,10 @@ function TabTalpos({
   };
 
   return (
-    <div className="space-y-0">
+    <div className="h-full flex flex-col">
       {/* Talpos selection bar */}
       {navCount > 1 && (
-        <div className="flex items-center gap-1 mb-4">
+        <div className="flex items-center gap-1 mb-4 shrink-0">
           <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
             <ChevronLeft className="w-4 h-4 text-base-content/40" />
           </button>
@@ -700,7 +700,7 @@ function TabTalpos({
       )}
 
       {/* Parametrai / Derva toggle */}
-      <div className="flex justify-center mb-5">
+      <div className="flex justify-center mb-5 shrink-0">
         <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
           {(['parametrai', 'derva'] as TalposSubTab[]).map(t => (
             <button
@@ -717,7 +717,7 @@ function TabTalpos({
 
       {/* ── Parametrai sub-tab ── */}
       {subTab === 'parametrai' && (
-        <div>
+        <div className="flex-1 flex flex-col min-h-0">
           {loadingTalpos && (
             <div className="flex items-center justify-center py-10">
               <Loader2 className="w-5 h-5 animate-spin text-primary" />
@@ -739,9 +739,9 @@ function TabTalpos({
           )}
 
           {!loadingTalpos && currentTalposRow && (
-            <>
+            <div className="flex-1 flex flex-col min-h-0">
               {/* Kaina from talpos table */}
-              <div className="flex items-center gap-2 mb-5">
+              <div className="flex items-center gap-2 mb-4 shrink-0">
                 <span className="text-[11px] text-base-content/40 shrink-0">Kaina:</span>
                 {kainaEditing ? (
                   <div className="flex items-center gap-1 bg-base-200/60 rounded-full border border-base-content/10 pl-2 pr-1 py-0.5">
@@ -787,16 +787,15 @@ function TabTalpos({
               </div>
 
               {/* Two-column: left = raw JSON, right = description */}
-              <div className="flex gap-4 items-start">
-                {/* Left column: fixed width, raw JSON */}
-                <div className="w-[260px] shrink-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5">JSON</p>
+              <div className="flex gap-4 flex-1 min-h-0">
+                {/* Left column: fixed width, raw JSON — fills height and scrolls */}
+                <div className="w-[260px] shrink-0 flex flex-col min-h-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5 shrink-0">JSON</p>
                   <pre
-                    className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed"
+                    className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed flex-1 min-h-0"
                     style={{
                       background: '#f8f6f3',
                       color: '#5a5550',
-                      maxHeight: '400px',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
                       fontFamily: 'ui-monospace, SFMono-Regular, monospace',
@@ -812,8 +811,8 @@ function TabTalpos({
                 </div>
 
                 {/* Right column: description + similar tanks */}
-                <div className="flex-1 min-w-0 space-y-4">
-                  <div>
+                <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
+                  <div className="shrink-0">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1.5">Aprašymas</p>
                     {currentTalposRow?.description ? (
                       <div
@@ -830,8 +829,8 @@ function TabTalpos({
                   </div>
 
                   {/* Similar tanks */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
+                  <div className="flex-1 min-h-0 flex flex-col">
+                    <div className="flex items-center justify-between mb-2 shrink-0">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
                       <button
                         onClick={findSimilar}
@@ -854,7 +853,7 @@ function TabTalpos({
                     )}
 
                     {displayedSimilar && displayedSimilar.length > 0 ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 overflow-y-auto flex-1 min-h-0">
                         {displayedSimilar.map((item: any, i: number) => {
                           const name = item.name || item.pavadinimas || item.tank_name || `Talpa ${i + 1}`;
                           const score = item.similarity_score ?? item.similarity ?? null;
@@ -897,7 +896,7 @@ function TabTalpos({
                   </div>
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -3456,7 +3455,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-y-auto p-6 min-h-0 bg-base-100">
+          <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
             {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
