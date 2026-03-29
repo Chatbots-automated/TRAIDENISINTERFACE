@@ -858,7 +858,7 @@ function TabTalpos({
                       <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
                         {displayedSimilar.map((item: any, i: number) => {
                           const score = item.similarity_score ?? item.similarity ?? null;
-                          const projectName = item.project_name || null;
+                          const displayName = item.pavadinimas || item.project_name || null;
                           const projectId = item.project || item.project_id || null;
                           const talposUuid = item.id || null;
                           const kaina = item.kaina != null ? Number(item.kaina) : null;
@@ -873,7 +873,7 @@ function TabTalpos({
                                 </span>
                               )}
                               <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0">
-                                {projectName || `Talpa ${i + 1}`}
+                                {displayName || `Talpa ${i + 1}`}
                               </p>
                               {kaina !== null && !isNaN(kaina) && (
                                 <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
