@@ -658,6 +658,11 @@ function TabTalpos({
   const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
   const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
 
+  // Price estimation state (per-idx)
+  const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
+  const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
+  const [localKainaAi, setLocalKainaAi] = useState<Record<number, number | null>>({});
+
   // KV panel editing state
   const [editingKvKey, setEditingKvKey] = useState<string | null>(null);
   const [editingKvValue, setEditingKvValue] = useState('');
@@ -834,6 +839,75 @@ function TabTalpos({
       setSimilarError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
     } finally {
       setSimilarSearching(prev => ({ ...prev, [idx]: false }));
+    }
+  };
+
+  const estimatePrice = async () => {
+    if (!currentTalposId || !currentTalposRow) return;
+    setPriceEstimating(prev => ({ ...prev, [idx]: true }));
+    setPriceEstimateError(prev => ({ ...prev, [idx]: null }));
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_price_estimation');
+      if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
+      const payload = Object.fromEntries(
+        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
+      );
+      const resp = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: record.id,
+          project_name: record.project_name,
+          description: record.description,
+          klientas: record.klientas,
+          talpos_id: currentTalposId,
+          product_metadata: payload,
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const respData = await resp.json().catch(() => null);
+      const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
+      const estimatedPrice = (() => {
+        if (rawPrice == null) return null;
+        if (typeof rawPrice === 'number') return rawPrice;
+        let s = String(rawPrice).replace(/[€$£\s]/g, '').trim();
+        // Determine decimal vs thousands separator
+        if (s.includes('.') && s.includes(',')) {
+          const lastDot = s.lastIndexOf('.');
+          const lastComma = s.lastIndexOf(',');
+          if (lastDot > lastComma) {
+            s = s.replace(/,/g, ''); // dot is decimal, commas are thousands
+          } else {
+            s = s.replace(/\./g, '').replace(',', '.'); // comma is decimal, dots are thousands
+          }
+        } else if (s.includes(',')) {
+          const parts = s.split(',');
+          // If exactly 3 digits after the comma → thousands separator (e.g. 70,000)
+          if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[1])) {
+            s = s.replace(',', '');
+          } else {
+            s = s.replace(',', '.'); // decimal separator
+          }
+        }
+        s = s.replace(/[^\d.]/g, '');
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      })();
+      if (estimatedPrice != null && !isNaN(estimatedPrice)) {
+        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+        const newJsonObj = { ...currentJsonObj, kaina_ai: estimatedPrice };
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+        ));
+        setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
+      } else {
+        throw new Error('Negauta kaina iš atsakymo');
+      }
+    } catch (e: any) {
+      setPriceEstimateError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
+    } finally {
+      setPriceEstimating(prev => ({ ...prev, [idx]: false }));
     }
   };
 
@@ -1140,19 +1214,58 @@ function TabTalpos({
                   {/* Similar tanks */}
                   <div className="flex-1 min-h-0 flex flex-col">
                     <div className="flex items-center justify-between mb-2 shrink-0">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
-                      <button
-                        onClick={findSimilar}
-                        disabled={!!similarSearching[idx]}
-                        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {similarSearching[idx] ? (
-                          <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
-                        ) : (
-                          <><RefreshCw className="w-3.5 h-3.5" /> Rasti Panašias</>
-                        )}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
+                        {(() => {
+                          const kainaAi = localKainaAi[idx] !== undefined
+                            ? localKainaAi[idx]
+                            : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai; return v != null ? Number(v) : null; })();
+                          return kainaAi != null && !isNaN(kainaAi) ? (
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+                              style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
+                              title="AI preliminari kaina"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              {kainaAi.toLocaleString('lt-LT')} €
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={estimatePrice}
+                          disabled={!!priceEstimating[idx]}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
+                          title="AI kainos įvertinimas"
+                        >
+                          {priceEstimating[idx] ? (
+                            <><Loader2 className="w-3 h-3 animate-spin" /> Skaičiuojama...</>
+                          ) : (
+                            <><Sparkles className="w-3 h-3" /> Kainos parinkimas</>
+                          )}
+                        </button>
+                        <button
+                          onClick={findSimilar}
+                          disabled={!!similarSearching[idx]}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {similarSearching[idx] ? (
+                            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
+                          ) : (
+                            <><RefreshCw className="w-3.5 h-3.5" /> Rasti Panašias</>
+                          )}
+                        </button>
+                      </div>
                     </div>
+
+                    {priceEstimateError[idx] && (
+                      <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span>{priceEstimateError[idx]}</span>
+                      </div>
+                    )}
 
                     {similarError[idx] && (
                       <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
@@ -1230,6 +1343,11 @@ function TabTalpos({
           externalIdx={idx}
           hideNavigator
           aiFirst
+          currentTalposId={currentTalposId}
+          currentTalposJson={currentTalposRow?.json}
+          onTalposJsonSaved={(id, newJson) => {
+            setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, json: newJson } : r));
+          }}
         />
       )}
     </div>
@@ -2532,7 +2650,7 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
-function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean }) {
+function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposJson, onTalposJsonSaved }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void }) {
   const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
   const hasMultiple = products.length > 1;
   const idx = externalIdx !== undefined ? Math.min(externalIdx, products.length - 1) : Math.min(currentIdx, products.length - 1);
@@ -2549,54 +2667,73 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   const [success, setSuccess] = useState(false);
 
   // Per-tank derva_musu
+  // When currentTalposId is provided, read/write from talpos.json per-row.
+  // Otherwise fall back to legacy record.metadata storage.
+  const getTalposMusu = (json: any): string => {
+    const parsed = json && typeof json === 'object' ? json : tryParseJsonObject(json);
+    return parsed?.derva_musu || '';
+  };
   const [dervaMusuPerTank, setDervaMusuPerTank] = useState<Record<string, string>>(() => parseDervaMusuPerTank(record.metadata));
-  const currentDervaMusu = dervaMusuPerTank[tankKey] || '';
-  const [dervaMusu, setDervaMusu] = useState<string>(currentDervaMusu);
+  const [dervaMusu, setDervaMusu] = useState<string>(() =>
+    currentTalposId ? getTalposMusu(currentTalposJson) : (dervaMusuPerTank[tankKey] || '')
+  );
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
   const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
 
-  // Sync dervaMusu input when switching tanks
+  // Sync dervaMusu input when switching tanks (idx reflects externalIdx or internal currentIdx)
   useEffect(() => {
-    setDervaMusu(dervaMusuPerTank[String(Math.min(currentIdx, products.length - 1))] || '');
+    if (currentTalposId) {
+      setDervaMusu(getTalposMusu(currentTalposJson));
+    } else {
+      setDervaMusu(dervaMusuPerTank[String(idx)] || '');
+    }
     setDervaMusuEditing(false);
     setDervaError(null);
     setSuccess(false);
-  }, [currentIdx, products.length, dervaMusuPerTank]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, currentTalposId, currentTalposJson]);
 
-  // Sync with record prop changes
+  // Sync with record prop changes (legacy path)
   useEffect(() => {
     setDervaPerTank(parseDervaPerTank(record.derva));
   }, [record.derva]);
   useEffect(() => {
-    setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
-  }, [record.metadata]);
+    if (!currentTalposId) {
+      setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
+    }
+  }, [record.metadata, currentTalposId]);
 
   const saveDervaMusu = async (overrideValue?: string) => {
     const valueToSave = overrideValue !== undefined ? overrideValue : dervaMusu;
     setDervaMusuSaving(true);
     try {
-      // Apply to all tanks with the same fingerprint as the current one
-      const fp = getTankFingerprint(products[idx]);
-      const indicesToUpdate = products.map((p, i) => ({ i, match: getTankFingerprint(p) === fp }))
-        .filter(x => x.match).map(x => x.i);
-
-      const updatedMeta = buildUpdatedMeta(record.metadata, 'derva_musu', valueToSave.trim() || null, indicesToUpdate);
-      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
-
-      // Update local state for all affected indices
-      const updatedMusuPerTank = { ...dervaMusuPerTank };
-      for (const i of indicesToUpdate) {
-        if (valueToSave.trim()) updatedMusuPerTank[String(i)] = valueToSave.trim();
-        else delete updatedMusuPerTank[String(i)];
+      if (currentTalposId) {
+        // New path: write derva_musu to this talpos row's json column
+        const currentJsonObj = getTalposMusu(currentTalposJson) !== undefined
+          ? (currentTalposJson && typeof currentTalposJson === 'object' ? currentTalposJson : (tryParseJsonObject(currentTalposJson) || {}))
+          : {};
+        const newJsonObj = valueToSave.trim()
+          ? { ...currentJsonObj, derva_musu: valueToSave.trim() }
+          : (() => { const { derva_musu: _r, ...rest } = currentJsonObj as any; return rest; })();
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        onTalposJsonSaved?.(currentTalposId, newJsonObj);
+        if (overrideValue !== undefined) setDervaMusu(valueToSave);
+      } else {
+        // Legacy path: write to record.metadata per-product index
+        const updatedMeta = buildUpdatedMeta(record.metadata, 'derva_musu', valueToSave.trim() || null, [idx]);
+        await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+        const updatedMusuPerTank = { ...dervaMusuPerTank };
+        if (valueToSave.trim()) updatedMusuPerTank[tankKey] = valueToSave.trim();
+        else delete updatedMusuPerTank[tankKey];
+        setDervaMusuPerTank(updatedMusuPerTank);
+        if (overrideValue !== undefined) setDervaMusu(valueToSave);
+        const updated = await fetchNestandartiniaiById(record.id);
+        if (updated) onRecordUpdated?.(updated);
       }
-      setDervaMusuPerTank(updatedMusuPerTank);
-      if (overrideValue !== undefined) setDervaMusu(valueToSave);
       setDervaMusuSaved(true);
       setDervaMusuEditing(false);
       setTimeout(() => setDervaMusuSaved(false), 3000);
-      const updated = await fetchNestandartiniaiById(record.id);
-      if (updated) onRecordUpdated?.(updated);
     } catch (e: any) {
       console.error('Error saving derva_musu:', e);
     } finally {
@@ -2626,7 +2763,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         cleanTankMeta[k] = v;
       }
 
-      const currentDervaMusuValue = dervaMusuPerTank[tankKey] || 'neparinkta';
+      const currentDervaMusuValue = dervaMusu || 'neparinkta';
 
       // Send only this tank's metadata + product_index
       const resp = await fetch(webhookUrl, {
