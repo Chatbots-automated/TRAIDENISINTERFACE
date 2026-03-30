@@ -276,6 +276,9 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
 /** Keys to skip in the flexible metadata display (internal/navigation keys) */
 const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'procurement_package', 'position']);
 
+/** Keys excluded from the talpos key-value panel (shown elsewhere or internal) */
+const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at']);
+
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
 
@@ -616,6 +619,15 @@ function TabTalpos({
   const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
   const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
 
+  // KV panel editing state
+  const [editingKvKey, setEditingKvKey] = useState<string | null>(null);
+  const [editingKvValue, setEditingKvValue] = useState('');
+  const [savingKvKey, setSavingKvKey] = useState<string | null>(null);
+  const [showAddKv, setShowAddKv] = useState(false);
+  const [newKvKey, setNewKvKey] = useState('');
+  const [newKvValue, setNewKvValue] = useState('');
+  const [addingKv, setAddingKv] = useState(false);
+
   // Persisted results from DB (recomputed when current row changes)
   const persistedSimilar: any[] | null = useMemo(() => {
     if (!currentTalposRow?.similar_talpos) return null;
@@ -630,6 +642,58 @@ function TabTalpos({
   const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
     ? localSimilarResults[idx]
     : persistedSimilar;
+
+  // Flat key-value entries for the parametrai panel (excludes fields shown elsewhere)
+  const kvEntries = useMemo((): [string, string][] => {
+    if (!currentTalposRow) return [];
+    return Object.entries(currentTalposRow)
+      .filter(([k]) => !SKIP_TALPOS_KV_KEYS.has(k))
+      .map(([k, v]): [string, string] => [
+        k,
+        v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v),
+      ]);
+  }, [currentTalposRow, idx]);
+
+  // Reset KV edit state when the active tank changes
+  useEffect(() => {
+    setEditingKvKey(null);
+    setShowAddKv(false);
+  }, [idx]);
+
+  const saveKvField = async (key: string, value: string) => {
+    if (!currentTalposId) return;
+    setSavingKvKey(key);
+    try {
+      await updateTalposField(currentTalposId, key, value);
+      setTalposRows(prev => prev.map(r =>
+        String(r.id) === String(currentTalposId) ? { ...r, [key]: value } : r
+      ));
+      setEditingKvKey(null);
+    } catch (e) {
+      console.error('Error saving talpos field:', e);
+    } finally {
+      setSavingKvKey(null);
+    }
+  };
+
+  const addKvPair = async () => {
+    const k = newKvKey.trim();
+    if (!currentTalposId || !k) return;
+    setAddingKv(true);
+    try {
+      await updateTalposField(currentTalposId, k, newKvValue);
+      setTalposRows(prev => prev.map(r =>
+        String(r.id) === String(currentTalposId) ? { ...r, [k]: newKvValue } : r
+      ));
+      setNewKvKey('');
+      setNewKvValue('');
+      setShowAddKv(false);
+    } catch (e) {
+      console.error('Error adding talpos field:', e);
+    } finally {
+      setAddingKv(false);
+    }
+  };
 
   const findSimilar = async () => {
     if (!currentTalposId || !currentTalposRow) return;
@@ -746,14 +810,14 @@ function TabTalpos({
 
           {!loadingTalpos && currentTalposRow && (
             <div className="flex-1 flex flex-col min-h-0">
-              {/* Two-column: left = raw JSON, right = description */}
+              {/* Two-column: left = KV fields, right = description */}
               <div className="flex gap-4 flex-1 min-h-0">
-                {/* Left column: fixed width, raw JSON — fills height and scrolls */}
+                {/* Left column: fixed width, editable key-value list */}
                 <div className="w-[260px] shrink-0 flex flex-col min-h-0">
-                  {/* JSON label + quantity badge + kaina on the same row */}
+                  {/* Parametrai label + quantity badge + kaina on the same row */}
                   <div className="flex items-center justify-between mb-1.5 shrink-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Parametrai</p>
                       {currentTalposRow?.quantity != null && Number(currentTalposRow.quantity) >= 1 && (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                           {currentTalposRow.quantity}vnt.
@@ -802,23 +866,107 @@ function TabTalpos({
                       </button>
                     )}
                   </div>
-                  <pre
-                    className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed flex-1 min-h-0"
-                    style={{
-                      background: '#f8f6f3',
-                      color: '#5a5550',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                    }}
-                  >
-                    {JSON.stringify(
-                      Object.fromEntries(
-                        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
-                      ),
-                      null, 2
-                    )}
-                  </pre>
+                  {/* Scrollable KV list */}
+                  <div className="flex-1 overflow-y-auto rounded-xl min-h-0" style={{ background: '#f8f6f3' }}>
+                    <div className="p-1.5 flex flex-col gap-0.5">
+                      {kvEntries.map(([k, v]) => (
+                        <div key={k} className="group flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                          <span
+                            className="text-[10px] text-base-content/40 shrink-0 font-medium truncate"
+                            style={{ width: '88px' }}
+                            title={formatMetaLabel(k)}
+                          >
+                            {formatMetaLabel(k)}
+                          </span>
+                          {editingKvKey === k ? (
+                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingKvValue}
+                                onChange={e => setEditingKvValue(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') saveKvField(k, editingKvValue);
+                                  if (e.key === 'Escape') setEditingKvKey(null);
+                                }}
+                                className="flex-1 min-w-0 text-[11px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                              />
+                              <button
+                                onClick={() => saveKvField(k, editingKvValue)}
+                                disabled={savingKvKey === k}
+                                className="p-0.5 rounded hover:bg-base-content/10 shrink-0"
+                              >
+                                {savingKvKey === k
+                                  ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" />
+                                  : <CheckCircle2 className="w-3 h-3 text-success" />}
+                              </button>
+                              <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                <X className="w-3 h-3 text-base-content/40" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
+                              className={`text-[11px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                              title={v || undefined}
+                            >
+                              {v || <span className="text-base-content/25">—</span>}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add new key-value pair */}
+                      {!readOnly && (
+                        showAddKv ? (
+                          <div className="flex flex-col gap-1 mt-1 px-2 py-1.5 rounded-lg border border-base-content/8" style={{ background: 'rgba(255,255,255,0.6)' }}>
+                            <input
+                              autoFocus
+                              type="text"
+                              placeholder="Lauko pavadinimas"
+                              value={newKvKey}
+                              onChange={e => setNewKvKey(e.target.value)}
+                              className="w-full text-[11px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Reikšmė"
+                              value={newKvValue}
+                              onChange={e => setNewKvValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') addKvPair();
+                                if (e.key === 'Escape') setShowAddKv(false);
+                              }}
+                              className="w-full text-[11px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
+                            />
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => { setShowAddKv(false); setNewKvKey(''); setNewKvValue(''); }}
+                                className="text-[10px] px-2 py-0.5 rounded text-base-content/40 hover:bg-base-content/5"
+                              >
+                                Atšaukti
+                              </button>
+                              <button
+                                onClick={addKvPair}
+                                disabled={!newKvKey.trim() || addingKv}
+                                className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/15 disabled:opacity-40 font-medium"
+                              >
+                                {addingKv ? 'Saugoma...' : 'Pridėti'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setShowAddKv(true)}
+                            className="flex items-center gap-1 mt-0.5 px-2 py-1 rounded-lg text-[10px] text-base-content/35 hover:text-primary hover:bg-primary/5 transition-colors w-full"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Pridėti lauką
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Right column: description + similar tanks */}
