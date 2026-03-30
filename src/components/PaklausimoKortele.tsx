@@ -664,6 +664,7 @@ function TabTalpos({
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAi, setLocalKainaAi] = useState<Record<number, number | null>>({});
+  const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
 
   // Add / delete tank state
   const [addingTank, setAddingTank] = useState(false);
@@ -933,6 +934,32 @@ function TabTalpos({
       const payload = Object.fromEntries(
         Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
       );
+
+      // Fetch kaina fresh from talpos table for all similar tanks right now,
+      // so the payload always contains up-to-date prices regardless of render timing.
+      const rawSimilarItems = displayedSimilarEnriched ?? [];
+      const similarUuids = rawSimilarItems
+        .map((item: any) => item.id)
+        .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
+      let freshKainaMap: Record<string, number | null> = {};
+      if (similarUuids.length > 0) {
+        try {
+          const rows = await fetchTalposByIds(similarUuids);
+          for (const row of rows) {
+            freshKainaMap[String(row.id)] = row.kaina != null ? Number(row.kaina) : null;
+          }
+        } catch { /* fall back to whatever is already in the item */ }
+      }
+      const similarTanksPayload = rawSimilarItems.map((item: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { embedding, similar_talpos, ...rest } = item;
+        const id = rest.id && typeof rest.id === 'string' && rest.id.length >= 32 ? rest.id : null;
+        return {
+          ...rest,
+          kaina: id && id in freshKainaMap ? freshKainaMap[id] : (rest.kaina ?? null),
+        };
+      });
+
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -943,50 +970,65 @@ function TabTalpos({
           klientas: record.klientas,
           talpos_id: currentTalposId,
           product_metadata: payload,
-          similar_tanks: (displayedSimilarEnriched ?? []).map((item: any) => {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { embedding, similar_talpos, ...rest } = item;
-            return rest;
-          }),
+          similar_tanks: similarTanksPayload,
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const respData = await resp.json().catch(() => null);
-      const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
+      // Read as text first — the webhook may return a plain string (price + reasoning)
+      const respText = await resp.text().catch(() => '');
+      let respData: any = null;
+      try { respData = JSON.parse(respText); } catch { /* plain string response */ }
+
+      // Full response text for display: prefer known text fields, fall back to raw body
+      const fullResponseText: string | null = (() => {
+        if (typeof respData === 'string' && respData.trim()) return respData.trim();
+        for (const k of ['text', 'output', 'result', 'reasoning', 'message']) {
+          if (respData?.[k] && typeof respData[k] === 'string') return respData[k];
+        }
+        return respText.trim() || null;
+      })();
+
+      // Numeric price: try structured JSON fields, then parse from text
+      const rawPrice = respData != null && typeof respData === 'object'
+        ? (respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? fullResponseText)
+        : fullResponseText;
       const estimatedPrice = (() => {
         if (rawPrice == null) return null;
         if (typeof rawPrice === 'number') return rawPrice;
         let s = String(rawPrice).replace(/[€$£\s]/g, '').trim();
-        // Determine decimal vs thousands separator
         if (s.includes('.') && s.includes(',')) {
           const lastDot = s.lastIndexOf('.');
           const lastComma = s.lastIndexOf(',');
           if (lastDot > lastComma) {
-            s = s.replace(/,/g, ''); // dot is decimal, commas are thousands
+            s = s.replace(/,/g, '');
           } else {
-            s = s.replace(/\./g, '').replace(',', '.'); // comma is decimal, dots are thousands
+            s = s.replace(/\./g, '').replace(',', '.');
           }
         } else if (s.includes(',')) {
           const parts = s.split(',');
-          // If exactly 3 digits after the comma → thousands separator (e.g. 70,000)
           if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[1])) {
             s = s.replace(',', '');
           } else {
-            s = s.replace(',', '.'); // decimal separator
+            s = s.replace(',', '.');
           }
         }
         s = s.replace(/[^\d.]/g, '');
         const n = parseFloat(s);
         return isNaN(n) ? null : n;
       })();
-      if (estimatedPrice != null && !isNaN(estimatedPrice)) {
+
+      if (fullResponseText || (estimatedPrice != null && !isNaN(estimatedPrice))) {
         const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
-        const newJsonObj = { ...currentJsonObj, kaina_ai: estimatedPrice };
+        const updates: Record<string, any> = {};
+        if (estimatedPrice != null && !isNaN(estimatedPrice)) updates.kaina_ai = estimatedPrice;
+        if (fullResponseText) updates.kaina_ai_text = fullResponseText;
+        const newJsonObj = { ...currentJsonObj, ...updates };
         await updateTalposField(currentTalposId, 'json', newJsonObj);
         setTalposRows(prev => prev.map(r =>
           String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
         ));
-        setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
+        if (estimatedPrice != null && !isNaN(estimatedPrice)) setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
+        if (fullResponseText) setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
       } else {
         throw new Error('Negauta kaina iš atsakymo');
       }
@@ -1406,6 +1448,22 @@ function TabTalpos({
                         <span>{priceEstimateError[idx]}</span>
                       </div>
                     )}
+
+                    {/* AI price estimation full response text */}
+                    {(() => {
+                      const aiText = localKainaAiText[idx] !== undefined
+                        ? localKainaAiText[idx]
+                        : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
+                      return aiText ? (
+                        <div className="mb-2 px-3 py-2.5 rounded-xl border border-base-content/8 bg-base-content/[0.02] shrink-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/35 mb-1.5 flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5" style={{ color: '#AF52DE' }} />
+                            <span style={{ color: '#AF52DE' }}>AI įvertinimas</span>
+                          </p>
+                          <p className="text-xs text-base-content/70 leading-relaxed whitespace-pre-wrap">{aiText}</p>
+                        </div>
+                      ) : null;
+                    })()}
 
                     {similarError[idx] && (
                       <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
