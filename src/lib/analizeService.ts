@@ -74,7 +74,8 @@ export async function fetchParsedDocuments(userId: string): Promise<ParsedDocume
     .from('parsed_documents')
     .select('id, user_id, file_name, file_type, file_size, tier, job_id, status, page_count, user_prompt, created_at')
     .eq('user_id', userId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(-1);
 
   if (error) {
     console.error('Error fetching parsed documents:', error);

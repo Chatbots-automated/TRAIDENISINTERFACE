@@ -21,7 +21,8 @@ export const getAllUsersData = async (): Promise<AppUserData[]> => {
     const { data, error } = await db
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(-1);
 
     if (error) {
       console.error('[UserService] Error getting all users:', error);
@@ -44,7 +45,8 @@ export const getEconomists = async (): Promise<AppUserData[]> => {
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .ilike('role', 'ekonomistas')
-      .order('full_name', { ascending: true });
+      .order('full_name', { ascending: true })
+      .limit(-1);
 
     if (error) {
       console.error('[UserService] Error getting economists:', error);
@@ -66,7 +68,8 @@ export const getManagers = async (): Promise<AppUserData[]> => {
     const { data, error } = await db
       .from('vadybininkai')
       .select('id, created_at, kodas, full_name, role')
-      .order('full_name', { ascending: true });
+      .order('full_name', { ascending: true })
+      .limit(-1);
 
     if (error) {
       console.error('[UserService] Error getting managers:', error);
@@ -112,7 +115,8 @@ export const getShareableUsers = async (excludeUserId: string): Promise<AppUserD
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .neq('id', excludeUserId)
-      .order('full_name', { ascending: true });
+      .order('full_name', { ascending: true })
+      .limit(-1);
 
     if (error) {
       console.error('[UserService] Error getting shareable users:', error);
