@@ -643,15 +643,33 @@ function TabTalpos({
     ? localSimilarResults[idx]
     : persistedSimilar;
 
-  // Flat key-value entries for the parametrai panel (excludes fields shown elsewhere)
-  const kvEntries = useMemo((): [string, string][] => {
+  // Structured entries for the parametrai panel — scalar values stay flat,
+  // object values (or strings that parse to objects) are expanded as nested groups.
+  type KvEntry =
+    | { type: 'scalar'; key: string; value: string }
+    | { type: 'nested'; key: string; obj: Record<string, any> };
+
+  const kvEntries = useMemo((): KvEntry[] => {
     if (!currentTalposRow) return [];
-    return Object.entries(currentTalposRow)
-      .filter(([k]) => !SKIP_TALPOS_KV_KEYS.has(k))
-      .map(([k, v]): [string, string] => [
-        k,
-        v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v),
-      ]);
+    const result: KvEntry[] = [];
+    for (const [k, v] of Object.entries(currentTalposRow)) {
+      if (SKIP_TALPOS_KV_KEYS.has(k)) continue;
+      if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
+        result.push({ type: 'nested', key: k, obj: v });
+        continue;
+      }
+      if (typeof v === 'string' && v.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(v);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            result.push({ type: 'nested', key: k, obj: parsed });
+            continue;
+          }
+        } catch { /* not valid JSON — fall through to scalar */ }
+      }
+      result.push({ type: 'scalar', key: k, value: v === null || v === undefined ? '' : String(v) });
+    }
+    return result;
   }, [currentTalposRow, idx]);
 
   // Reset KV edit state when the active tank changes
@@ -671,6 +689,24 @@ function TabTalpos({
       setEditingKvKey(null);
     } catch (e) {
       console.error('Error saving talpos field:', e);
+    } finally {
+      setSavingKvKey(null);
+    }
+  };
+
+  const saveNestedKvField = async (parentKey: string, childKey: string, childValue: string, currentObj: Record<string, any>) => {
+    if (!currentTalposId) return;
+    const editKey = `${parentKey}::${childKey}`;
+    setSavingKvKey(editKey);
+    try {
+      const newObj = { ...currentObj, [childKey]: childValue };
+      await updateTalposField(currentTalposId, parentKey, newObj);
+      setTalposRows(prev => prev.map(r =>
+        String(r.id) === String(currentTalposId) ? { ...r, [parentKey]: newObj } : r
+      ));
+      setEditingKvKey(null);
+    } catch (e) {
+      console.error('Error saving nested talpos field:', e);
     } finally {
       setSavingKvKey(null);
     }
@@ -867,54 +903,99 @@ function TabTalpos({
                     )}
                   </div>
                   {/* Scrollable KV list */}
-                  <div className="flex-1 overflow-y-auto rounded-xl min-h-0" style={{ background: '#f8f6f3' }}>
-                    <div className="p-1.5 flex flex-col gap-0.5">
-                      {kvEntries.map(([k, v]) => (
-                        <div key={k} className="group flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
-                          <span
-                            className="text-[10px] text-base-content/40 shrink-0 font-medium truncate"
-                            style={{ width: '88px' }}
-                            title={formatMetaLabel(k)}
-                          >
-                            {formatMetaLabel(k)}
-                          </span>
-                          {editingKvKey === k ? (
-                            <div className="flex items-center gap-1 flex-1 min-w-0">
-                              <input
-                                autoFocus
-                                type="text"
-                                value={editingKvValue}
-                                onChange={e => setEditingKvValue(e.target.value)}
-                                onKeyDown={e => {
-                                  if (e.key === 'Enter') saveKvField(k, editingKvValue);
-                                  if (e.key === 'Escape') setEditingKvKey(null);
-                                }}
-                                className="flex-1 min-w-0 text-[11px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
-                              />
-                              <button
-                                onClick={() => saveKvField(k, editingKvValue)}
-                                disabled={savingKvKey === k}
-                                className="p-0.5 rounded hover:bg-base-content/10 shrink-0"
-                              >
-                                {savingKvKey === k
-                                  ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" />
-                                  : <CheckCircle2 className="w-3 h-3 text-success" />}
-                              </button>
-                              <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
-                                <X className="w-3 h-3 text-base-content/40" />
-                              </button>
+                  <div className="flex-1 overflow-y-auto rounded-xl min-h-0">
+                    <div className="py-0.5 flex flex-col gap-0.5">
+                      {kvEntries.map(entry => {
+                        if (entry.type === 'nested') {
+                          return (
+                            <div key={entry.key}>
+                              <div className="px-2 pt-2 pb-0.5">
+                                <span className="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide">
+                                  {formatMetaLabel(entry.key)}
+                                </span>
+                              </div>
+                              {Object.entries(entry.obj).map(([ck, cv]) => {
+                                const editKey = `${entry.key}::${ck}`;
+                                const displayVal = cv === null || cv === undefined ? '' : typeof cv === 'object' ? JSON.stringify(cv) : String(cv);
+                                return (
+                                  <div key={editKey} className="group flex items-center gap-2 pl-4 pr-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                                    <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '84px' }} title={formatMetaLabel(ck)}>
+                                      {formatMetaLabel(ck)}
+                                    </span>
+                                    {editingKvKey === editKey ? (
+                                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                                        <input
+                                          autoFocus
+                                          type="text"
+                                          value={editingKvValue}
+                                          onChange={e => setEditingKvValue(e.target.value)}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj);
+                                            if (e.key === 'Escape') setEditingKvKey(null);
+                                          }}
+                                          className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                        />
+                                        <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                          {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                                        </button>
+                                        <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                          <X className="w-3 h-3 text-base-content/40" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span
+                                        onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
+                                        className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                        title={displayVal || undefined}
+                                      >
+                                        {displayVal || <span className="text-base-content/25">—</span>}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
-                          ) : (
-                            <span
-                              onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
-                              className={`text-[11px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
-                              title={v || undefined}
-                            >
-                              {v || <span className="text-base-content/25">—</span>}
+                          );
+                        }
+                        // scalar entry
+                        const { key: k, value: v } = entry;
+                        return (
+                          <div key={k} className="group flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '88px' }} title={formatMetaLabel(k)}>
+                              {formatMetaLabel(k)}
                             </span>
-                          )}
-                        </div>
-                      ))}
+                            {editingKvKey === k ? (
+                              <div className="flex items-center gap-1 flex-1 min-w-0">
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  value={editingKvValue}
+                                  onChange={e => setEditingKvValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveKvField(k, editingKvValue);
+                                    if (e.key === 'Escape') setEditingKvKey(null);
+                                  }}
+                                  className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                />
+                                <button onClick={() => saveKvField(k, editingKvValue)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                  {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                                </button>
+                                <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                  <X className="w-3 h-3 text-base-content/40" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span
+                                onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
+                                className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                title={v || undefined}
+                              >
+                                {v || <span className="text-base-content/25">—</span>}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
 
                       {/* Add new key-value pair */}
                       {!readOnly && (
@@ -926,7 +1007,7 @@ function TabTalpos({
                               placeholder="Lauko pavadinimas"
                               value={newKvKey}
                               onChange={e => setNewKvKey(e.target.value)}
-                              className="w-full text-[11px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
+                              className="w-full text-[12px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
                             />
                             <input
                               type="text"
@@ -937,7 +1018,7 @@ function TabTalpos({
                                 if (e.key === 'Enter') addKvPair();
                                 if (e.key === 'Escape') setShowAddKv(false);
                               }}
-                              className="w-full text-[11px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
+                              className="w-full text-[12px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
                             />
                             <div className="flex gap-1 justify-end">
                               <button
@@ -958,7 +1039,7 @@ function TabTalpos({
                         ) : (
                           <button
                             onClick={() => setShowAddKv(true)}
-                            className="flex items-center gap-1 mt-0.5 px-2 py-1 rounded-lg text-[10px] text-base-content/35 hover:text-primary hover:bg-primary/5 transition-colors w-full"
+                            className="flex items-center gap-1 mt-0.5 px-2 py-1 rounded-lg text-[11px] text-base-content/35 hover:text-primary hover:bg-primary/5 transition-colors w-full"
                           >
                             <Plus className="w-3 h-3" />
                             Pridėti lauką
