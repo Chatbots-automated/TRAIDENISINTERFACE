@@ -105,30 +105,40 @@ function parseProducts(raw: string | Record<string, any> | any[] | null | undefi
 
 /**
  * Try to coerce any value into a plain (non-array) object for KV display.
- * Handles four cases:
- *   1. Already an object              → return as-is
- *   2. JSON string starting with '{'  → parse once
- *   3. Double-encoded JSON string      → strip outer quotes via JSON.parse,
- *                                        then parse the resulting '{…}' string
- *   4. Anything else                  → return null (render as scalar)
+ *   1. Already a plain object            → return as-is
+ *   2. Array                             → return first plain-object element
+ *   3. JSON string starting with '{'     → JSON.parse once
+ *   4. JSON string starting with '['     → JSON.parse, then take first object
+ *   5. Double-encoded string (starts '"') → decode once, then retry 3/4
+ *   6. Anything else                     → return null (render as scalar)
  */
 function tryParseJsonObject(v: any): Record<string, any> | null {
   if (v === null || v === undefined) return null;
-  if (typeof v === 'object' && !Array.isArray(v)) return v as Record<string, any>;
+  if (typeof v === 'object') {
+    if (!Array.isArray(v)) return v as Record<string, any>;
+    const first = (v as any[]).find(item => item && typeof item === 'object' && !Array.isArray(item));
+    return first ?? null;
+  }
   if (typeof v !== 'string') return null;
   let s = v.trim();
-  // Double-encoded: outer string wraps another JSON value
+  // Double-encoded: outer quotes wrapping a JSON string
   if (s.startsWith('"')) {
     try {
       const decoded = JSON.parse(s);
       if (typeof decoded === 'string') s = decoded.trim();
-    } catch { /* not decodable — try as-is */ }
+      else return tryParseJsonObject(decoded); // decoded is already object/array
+    } catch { /* try as-is */ }
   }
-  if (!s.startsWith('{')) return null;
-  try {
-    const parsed = JSON.parse(s);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-  } catch { /* malformed JSON */ }
+  if (s.startsWith('{') || s.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(s);
+      if (parsed && typeof parsed === 'object') {
+        if (!Array.isArray(parsed)) return parsed;
+        const first = (parsed as any[]).find(item => item && typeof item === 'object' && !Array.isArray(item));
+        return first ?? null;
+      }
+    } catch { /* malformed */ }
+  }
   return null;
 }
 
@@ -306,7 +316,7 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
 const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'procurement_package', 'position']);
 
 /** Keys excluded from the talpos key-value panel (shown elsewhere or internal) */
-const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at']);
+const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json']);
 
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
@@ -674,13 +684,29 @@ function TabTalpos({
 
   // Structured entries for the parametrai panel — scalar values stay flat,
   // object values (or strings that parse to objects) are expanded as nested groups.
+  // fromJson=true means the entry lives inside the `json` column object, not a direct column.
   type KvEntry =
-    | { type: 'scalar'; key: string; value: string }
-    | { type: 'nested'; key: string; obj: Record<string, any> };
+    | { type: 'scalar'; key: string; value: string; fromJson?: boolean }
+    | { type: 'nested'; key: string; obj: Record<string, any>; fromJson?: boolean };
 
   const kvEntries = useMemo((): KvEntry[] => {
     if (!currentTalposRow) return [];
     const result: KvEntry[] = [];
+
+    // First: flatten the contents of the `json` column directly into the list
+    const jsonColObj = tryParseJsonObject(currentTalposRow.json);
+    if (jsonColObj) {
+      for (const [k, v] of Object.entries(jsonColObj)) {
+        const nested = tryParseJsonObject(v);
+        if (nested) {
+          result.push({ type: 'nested', key: k, obj: nested, fromJson: true });
+        } else {
+          result.push({ type: 'scalar', key: k, value: v === null || v === undefined ? '' : String(v), fromJson: true });
+        }
+      }
+    }
+
+    // Then: add other non-skipped direct columns
     for (const [k, v] of Object.entries(currentTalposRow)) {
       if (SKIP_TALPOS_KV_KEYS.has(k)) continue;
       const obj = tryParseJsonObject(v);
@@ -699,14 +725,23 @@ function TabTalpos({
     setShowAddKv(false);
   }, [idx]);
 
-  const saveKvField = async (key: string, value: string) => {
+  const saveKvField = async (key: string, value: string, fromJson?: boolean) => {
     if (!currentTalposId) return;
     setSavingKvKey(key);
     try {
-      await updateTalposField(currentTalposId, key, value);
-      setTalposRows(prev => prev.map(r =>
-        String(r.id) === String(currentTalposId) ? { ...r, [key]: value } : r
-      ));
+      if (fromJson) {
+        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+        const newJsonObj = { ...currentJsonObj, [key]: value };
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+        ));
+      } else {
+        await updateTalposField(currentTalposId, key, value);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, [key]: value } : r
+        ));
+      }
       setEditingKvKey(null);
     } catch (e) {
       console.error('Error saving talpos field:', e);
@@ -715,16 +750,25 @@ function TabTalpos({
     }
   };
 
-  const saveNestedKvField = async (parentKey: string, childKey: string, childValue: string, currentObj: Record<string, any>) => {
+  const saveNestedKvField = async (parentKey: string, childKey: string, childValue: string, currentObj: Record<string, any>, fromJson?: boolean) => {
     if (!currentTalposId) return;
     const editKey = `${parentKey}::${childKey}`;
     setSavingKvKey(editKey);
     try {
       const newObj = { ...currentObj, [childKey]: childValue };
-      await updateTalposField(currentTalposId, parentKey, newObj);
-      setTalposRows(prev => prev.map(r =>
-        String(r.id) === String(currentTalposId) ? { ...r, [parentKey]: newObj } : r
-      ));
+      if (fromJson) {
+        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+        const newJsonObj = { ...currentJsonObj, [parentKey]: newObj };
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+        ));
+      } else {
+        await updateTalposField(currentTalposId, parentKey, newObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, [parentKey]: newObj } : r
+        ));
+      }
       setEditingKvKey(null);
     } catch (e) {
       console.error('Error saving nested talpos field:', e);
@@ -738,9 +782,12 @@ function TabTalpos({
     if (!currentTalposId || !k) return;
     setAddingKv(true);
     try {
-      await updateTalposField(currentTalposId, k, newKvValue);
+      // New pairs always go into the `json` column object
+      const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+      const newJsonObj = { ...currentJsonObj, [k]: newKvValue };
+      await updateTalposField(currentTalposId, 'json', newJsonObj);
       setTalposRows(prev => prev.map(r =>
-        String(r.id) === String(currentTalposId) ? { ...r, [k]: newKvValue } : r
+        String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
       ));
       setNewKvKey('');
       setNewKvValue('');
@@ -952,12 +999,12 @@ function TabTalpos({
                                           value={editingKvValue}
                                           onChange={e => setEditingKvValue(e.target.value)}
                                           onKeyDown={e => {
-                                            if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj);
+                                            if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson);
                                             if (e.key === 'Escape') setEditingKvKey(null);
                                           }}
                                           className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
                                         />
-                                        <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                        <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                           {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
                                         </button>
                                         <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
@@ -994,12 +1041,12 @@ function TabTalpos({
                                   value={editingKvValue}
                                   onChange={e => setEditingKvValue(e.target.value)}
                                   onKeyDown={e => {
-                                    if (e.key === 'Enter') saveKvField(k, editingKvValue);
+                                    if (e.key === 'Enter') saveKvField(k, editingKvValue, entry.fromJson);
                                     if (e.key === 'Escape') setEditingKvKey(null);
                                   }}
                                   className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
                                 />
-                                <button onClick={() => saveKvField(k, editingKvValue)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                <button onClick={() => saveKvField(k, editingKvValue, entry.fromJson)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                   {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
                                 </button>
                                 <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
