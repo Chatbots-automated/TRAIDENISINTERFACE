@@ -454,3 +454,37 @@ export const updateTalposField = async (id: string, field: string, value: any): 
     throw error;
   }
 };
+
+/**
+ * Create a new talpos row. Returns the created row (including its generated UUID).
+ */
+export const createTalpa = async (data: Record<string, any>): Promise<any> => {
+  try {
+    const { data: result, error } = await db
+      .from('talpos')
+      .insert([data])
+      .select()
+      .single();
+    if (error) throw error;
+    return result;
+  } catch (error: any) {
+    console.error('Error in createTalpa:', error);
+    throw error;
+  }
+};
+
+/**
+ * Hard-delete a single talpos row by its UUID.
+ */
+export const deleteTalpa = async (id: string): Promise<void> => {
+  try {
+    const { error } = await db
+      .from('talpos')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  } catch (error: any) {
+    console.error('Error in deleteTalpa:', error);
+    throw error;
+  }
+};

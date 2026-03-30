@@ -15,6 +15,8 @@ import {
   deleteNestandartiniaiRecord,
   fetchTalposByIds,
   updateTalposField,
+  createTalpa,
+  deleteTalpa,
 } from '../lib/dokumentaiService';
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
@@ -662,6 +664,49 @@ function TabTalpos({
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAi, setLocalKainaAi] = useState<Record<number, number | null>>({});
+  const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
+
+  // Add / delete tank state
+  const [addingTank, setAddingTank] = useState(false);
+  const [deletingTank, setDeletingTank] = useState(false);
+  const [confirmDeleteTalposId, setConfirmDeleteTalposId] = useState<string | null>(null);
+
+  const addTank = async () => {
+    if (!record.id) return;
+    setAddingTank(true);
+    try {
+      const newTalpa = await createTalpa({
+        pavadinimas: `Nauja talpa ${talposIds.length + 1}`,
+        project: record.id,
+      });
+      const newIds = [...talposIds, String(newTalpa.id)];
+      await updateNestandartiniaiField(record.id, 'talpos', newIds.join(','));
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+      setCurrentIdx(newIds.length - 1);
+    } catch (e) {
+      console.error('Error adding tank:', e);
+    } finally {
+      setAddingTank(false);
+    }
+  };
+
+  const deleteTank = async (talposId: string) => {
+    setDeletingTank(true);
+    try {
+      await deleteTalpa(talposId);
+      const newIds = talposIds.filter(id => id !== talposId);
+      await updateNestandartiniaiField(record.id, 'talpos', newIds.length > 0 ? newIds.join(',') : null);
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+      setCurrentIdx(i => Math.min(i, Math.max(0, newIds.length - 1)));
+      setConfirmDeleteTalposId(null);
+    } catch (e) {
+      console.error('Error deleting tank:', e);
+    } finally {
+      setDeletingTank(false);
+    }
+  };
 
   // KV panel editing state
   const [editingKvKey, setEditingKvKey] = useState<string | null>(null);
@@ -686,6 +731,43 @@ function TabTalpos({
   const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
     ? localSimilarResults[idx]
     : persistedSimilar;
+
+  // Fetch kaina from talpos table for each similar-tank UUID that doesn't already have one
+  const [similarKainaMap, setSimilarKainaMap] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    if (!displayedSimilar?.length) return;
+    // Only use items with a real UUID (>= 32 chars to exclude undefined/empty/short strings)
+    const uuids = displayedSimilar
+      .map((r: any) => r.id)
+      .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
+    if (uuids.length === 0) return;
+    const missing = uuids.filter((id: string) => !(id in similarKainaMap));
+    if (missing.length === 0) return;
+    fetchTalposByIds(missing).then(rows => {
+      const entries: Record<string, number | null> = {};
+      for (const id of missing) entries[id] = null;
+      for (const row of rows) {
+        entries[String(row.id)] = row.kaina != null ? Number(row.kaina) : null;
+      }
+      setSimilarKainaMap(prev => ({ ...prev, ...entries }));
+    }).catch(() => {});
+  }, [displayedSimilar]);
+
+  // Merge talpos.kaina into display items — only where we have a confirmed UUID lookup
+  const displayedSimilarEnriched: any[] | null = useMemo(() => {
+    if (!displayedSimilar) return null;
+    return displayedSimilar.map((item: any) => {
+      const id = item.id && typeof item.id === 'string' && item.id.length >= 32
+        ? item.id : null;
+      const lookedUpKaina = id !== null && id in similarKainaMap
+        ? similarKainaMap[id]
+        : undefined;
+      return {
+        ...item,
+        kaina: lookedUpKaina !== undefined ? lookedUpKaina : (item.kaina ?? null),
+      };
+    });
+  }, [displayedSimilar, similarKainaMap]);
 
   // Structured entries for the parametrai panel — scalar values stay flat,
   // object values (or strings that parse to objects) are expanded as nested groups.
@@ -829,7 +911,7 @@ function TabTalpos({
           const parsed = typeof updatedRow.similar_talpos === 'string'
             ? JSON.parse(updatedRow.similar_talpos)
             : updatedRow.similar_talpos;
-          results = Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+          results = Array.isArray(parsed) ? parsed : [];
         } catch { /* ignore parse errors */ }
       }
       // Patch local talposRows so persisted display updates without a full reload
@@ -852,6 +934,32 @@ function TabTalpos({
       const payload = Object.fromEntries(
         Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
       );
+
+      // Fetch kaina fresh from talpos table for all similar tanks right now,
+      // so the payload always contains up-to-date prices regardless of render timing.
+      const rawSimilarItems = displayedSimilarEnriched ?? [];
+      const similarUuids = rawSimilarItems
+        .map((item: any) => item.id)
+        .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
+      let freshKainaMap: Record<string, number | null> = {};
+      if (similarUuids.length > 0) {
+        try {
+          const rows = await fetchTalposByIds(similarUuids);
+          for (const row of rows) {
+            freshKainaMap[String(row.id)] = row.kaina != null ? Number(row.kaina) : null;
+          }
+        } catch { /* fall back to whatever is already in the item */ }
+      }
+      const similarTanksPayload = rawSimilarItems.map((item: any) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { embedding, similar_talpos, ...rest } = item;
+        const id = rest.id && typeof rest.id === 'string' && rest.id.length >= 32 ? rest.id : null;
+        return {
+          ...rest,
+          kaina: id && id in freshKainaMap ? freshKainaMap[id] : (rest.kaina ?? null),
+        };
+      });
+
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -862,45 +970,65 @@ function TabTalpos({
           klientas: record.klientas,
           talpos_id: currentTalposId,
           product_metadata: payload,
+          similar_tanks: similarTanksPayload,
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const respData = await resp.json().catch(() => null);
-      const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
+      // Read as text first — the webhook may return a plain string (price + reasoning)
+      const respText = await resp.text().catch(() => '');
+      let respData: any = null;
+      try { respData = JSON.parse(respText); } catch { /* plain string response */ }
+
+      // Full response text for display: prefer known text fields, fall back to raw body
+      const fullResponseText: string | null = (() => {
+        if (typeof respData === 'string' && respData.trim()) return respData.trim();
+        for (const k of ['text', 'output', 'result', 'reasoning', 'message']) {
+          if (respData?.[k] && typeof respData[k] === 'string') return respData[k];
+        }
+        return respText.trim() || null;
+      })();
+
+      // Numeric price: try structured JSON fields, then parse from text
+      const rawPrice = respData != null && typeof respData === 'object'
+        ? (respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? fullResponseText)
+        : fullResponseText;
       const estimatedPrice = (() => {
         if (rawPrice == null) return null;
         if (typeof rawPrice === 'number') return rawPrice;
         let s = String(rawPrice).replace(/[€$£\s]/g, '').trim();
-        // Determine decimal vs thousands separator
         if (s.includes('.') && s.includes(',')) {
           const lastDot = s.lastIndexOf('.');
           const lastComma = s.lastIndexOf(',');
           if (lastDot > lastComma) {
-            s = s.replace(/,/g, ''); // dot is decimal, commas are thousands
+            s = s.replace(/,/g, '');
           } else {
-            s = s.replace(/\./g, '').replace(',', '.'); // comma is decimal, dots are thousands
+            s = s.replace(/\./g, '').replace(',', '.');
           }
         } else if (s.includes(',')) {
           const parts = s.split(',');
-          // If exactly 3 digits after the comma → thousands separator (e.g. 70,000)
           if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[1])) {
             s = s.replace(',', '');
           } else {
-            s = s.replace(',', '.'); // decimal separator
+            s = s.replace(',', '.');
           }
         }
         s = s.replace(/[^\d.]/g, '');
         const n = parseFloat(s);
         return isNaN(n) ? null : n;
       })();
-      if (estimatedPrice != null && !isNaN(estimatedPrice)) {
+
+      if (fullResponseText || (estimatedPrice != null && !isNaN(estimatedPrice))) {
         const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
-        const newJsonObj = { ...currentJsonObj, kaina_ai: estimatedPrice };
+        const updates: Record<string, any> = {};
+        if (estimatedPrice != null && !isNaN(estimatedPrice)) updates.kaina_ai = estimatedPrice;
+        if (fullResponseText) updates.kaina_ai_text = fullResponseText;
+        const newJsonObj = { ...currentJsonObj, ...updates };
         await updateTalposField(currentTalposId, 'json', newJsonObj);
         setTalposRows(prev => prev.map(r =>
           String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
         ));
-        setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
+        if (estimatedPrice != null && !isNaN(estimatedPrice)) setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
+        if (fullResponseText) setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
       } else {
         throw new Error('Negauta kaina iš atsakymo');
       }
@@ -926,24 +1054,76 @@ function TabTalpos({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Talpos selection bar */}
-      {navCount > 1 && (
+      {/* Delete tank confirmation banner */}
+      {confirmDeleteTalposId && (
+        <div className="mb-3 px-3 py-2.5 rounded-xl border border-error/20 bg-error/5 shrink-0">
+          <p className="text-xs text-base-content/70 mb-2">
+            Ištrinti talpą <strong>{getNavLabel(idx)}</strong>? Šis veiksmas negrįžtamas.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => deleteTank(confirmDeleteTalposId)}
+              disabled={deletingTank}
+              className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              {deletingTank ? <><Loader2 className="w-3 h-3 animate-spin" /> Trinama...</> : 'Taip, ištrinti'}
+            </button>
+            <button
+              onClick={() => setConfirmDeleteTalposId(null)}
+              className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5"
+            >
+              Atšaukti
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Talpos selection bar — always visible when editable or more than one tank */}
+      {(navCount > 1 || !readOnly) && (
         <div className="flex items-center gap-1 mb-4 shrink-0">
-          <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
-            <ChevronLeft className="w-4 h-4 text-base-content/40" />
-          </button>
+          {navCount > 1 && (
+            <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+              <ChevronLeft className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
           <select
             value={idx}
             onChange={e => { setCurrentIdx(Number(e.target.value)); }}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
           >
-            {Array.from({ length: navCount }, (_, i) => (
+            {navCount === 0 ? (
+              <option value={0}>Nėra talpų</option>
+            ) : Array.from({ length: navCount }, (_, i) => (
               <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
             ))}
           </select>
-          <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
-            <ChevronRight className="w-4 h-4 text-base-content/40" />
-          </button>
+          {navCount > 1 && (
+            <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+              <ChevronRight className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
+          {!readOnly && (
+            <>
+              <button
+                onClick={addTank}
+                disabled={addingTank}
+                className="p-1.5 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-40"
+                title="Pridėti talpą"
+              >
+                {addingTank ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <Plus className="w-4 h-4 text-primary/60 hover:text-primary" />}
+              </button>
+              {currentTalposId && (
+                <button
+                  onClick={() => setConfirmDeleteTalposId(currentTalposId)}
+                  disabled={deletingTank || !!confirmDeleteTalposId}
+                  className="p-1.5 rounded-md hover:bg-error/10 transition-colors disabled:opacity-40"
+                  title="Ištrinti šią talpą"
+                >
+                  <Trash2 className="w-4 h-4 text-error/40 hover:text-error" />
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -1050,19 +1230,21 @@ function TabTalpos({
                       {kvEntries.map(entry => {
                         if (entry.type === 'nested') {
                           return (
-                            <div key={entry.key}>
+                            <div key={entry.key} className="mt-1.5">
+                              {/* Group header */}
                               <div className="px-2 pt-2 pb-0.5">
-                                <span className="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide">
+                                <span className="text-[11px] font-semibold text-base-content/45 uppercase tracking-wider">
                                   {formatMetaLabel(entry.key)}
                                 </span>
                               </div>
+                              {/* Group rows */}
                               {Object.entries(entry.obj).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
                                 const childObj = tryParseJsonObject(cv);
                                 const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
                                 return (
-                                  <div key={editKey} className="group flex items-center gap-2 pl-4 pr-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
-                                    <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '84px' }} title={formatMetaLabel(ck)}>
+                                  <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors">
+                                    <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '72px', maxWidth: '100px' }} title={formatMetaLabel(ck)}>
                                       {formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
@@ -1076,7 +1258,7 @@ function TabTalpos({
                                             if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson);
                                             if (e.key === 'Escape') setEditingKvKey(null);
                                           }}
-                                          className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                          className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
                                         />
                                         <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                           {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
@@ -1088,7 +1270,7 @@ function TabTalpos({
                                     ) : (
                                       <span
                                         onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
-                                        className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                        className={`text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
                                         title={displayVal || undefined}
                                       >
                                         {displayVal || <span className="text-base-content/25">—</span>}
@@ -1103,8 +1285,8 @@ function TabTalpos({
                         // scalar entry
                         const { key: k, value: v } = entry;
                         return (
-                          <div key={k} className="group flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
-                            <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '88px' }} title={formatMetaLabel(k)}>
+                          <div key={k} className="group flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '76px', maxWidth: '110px' }} title={formatMetaLabel(k)}>
                               {formatMetaLabel(k)}
                             </span>
                             {editingKvKey === k ? (
@@ -1118,7 +1300,7 @@ function TabTalpos({
                                     if (e.key === 'Enter') saveKvField(k, editingKvValue, entry.fromJson);
                                     if (e.key === 'Escape') setEditingKvKey(null);
                                   }}
-                                  className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                  className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
                                 />
                                 <button onClick={() => saveKvField(k, editingKvValue, entry.fromJson)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                   {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
@@ -1130,7 +1312,7 @@ function TabTalpos({
                             ) : (
                               <span
                                 onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
-                                className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                className={`text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
                                 title={v || undefined}
                               >
                                 {v || <span className="text-base-content/25">—</span>}
@@ -1216,21 +1398,6 @@ function TabTalpos({
                     <div className="flex items-center justify-between mb-2 shrink-0">
                       <div className="flex items-center gap-2">
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
-                        {(() => {
-                          const kainaAi = localKainaAi[idx] !== undefined
-                            ? localKainaAi[idx]
-                            : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai; return v != null ? Number(v) : null; })();
-                          return kainaAi != null && !isNaN(kainaAi) ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
-                              style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
-                              title="AI preliminari kaina"
-                            >
-                              <Sparkles className="w-2.5 h-2.5" />
-                              {kainaAi.toLocaleString('lt-LT')} €
-                            </span>
-                          ) : null;
-                        })()}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -1267,6 +1434,22 @@ function TabTalpos({
                       </div>
                     )}
 
+                    {/* AI price estimation full response text */}
+                    {(() => {
+                      const aiText = localKainaAiText[idx] !== undefined
+                        ? localKainaAiText[idx]
+                        : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
+                      return aiText ? (
+                        <div className="mb-2 px-3 py-2.5 rounded-xl border border-base-content/8 bg-base-content/[0.02] shrink-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/35 mb-1.5 flex items-center gap-1">
+                            <Sparkles className="w-2.5 h-2.5" style={{ color: '#AF52DE' }} />
+                            <span style={{ color: '#AF52DE' }}>AI įvertinimas</span>
+                          </p>
+                          <p className="text-xs text-base-content/70 leading-relaxed whitespace-pre-wrap">{aiText}</p>
+                        </div>
+                      ) : null;
+                    })()}
+
                     {similarError[idx] && (
                       <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -1274,9 +1457,9 @@ function TabTalpos({
                       </div>
                     )}
 
-                    {displayedSimilar && displayedSimilar.length > 0 ? (
+                    {displayedSimilarEnriched && displayedSimilarEnriched.length > 0 ? (
                       <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
-                        {displayedSimilar.map((item: any, i: number) => {
+                        {displayedSimilarEnriched.map((item: any, i: number) => {
                           const score = item.similarity_score ?? item.similarity ?? null;
                           const displayName = item.pavadinimas || item.project_name || null;
                           const projectId = item.project || item.project_id || null;
@@ -1320,7 +1503,7 @@ function TabTalpos({
                           );
                         })}
                       </div>
-                    ) : !similarSearching[idx] && (
+                    ) : !similarSearching[idx] && !displayedSimilarEnriched?.length && (
                       <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
                         <p className="text-xs text-base-content/30 text-center">Nėra rezultatų</p>
                       </div>
