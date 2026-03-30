@@ -735,9 +735,12 @@ function TabTalpos({
   const [similarKainaMap, setSimilarKainaMap] = useState<Record<string, number | null>>({});
   useEffect(() => {
     if (!displayedSimilar?.length) return;
-    const uuids = displayedSimilar.map((r: any) => String(r.id)).filter(Boolean);
+    // Only use items with a real UUID (>= 32 chars to exclude undefined/empty/short strings)
+    const uuids = displayedSimilar
+      .map((r: any) => r.id)
+      .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
     if (uuids.length === 0) return;
-    const missing = uuids.filter(id => !(id in similarKainaMap));
+    const missing = uuids.filter((id: string) => !(id in similarKainaMap));
     if (missing.length === 0) return;
     fetchTalposByIds(missing).then(rows => {
       const entries: Record<string, number | null> = {};
@@ -749,15 +752,20 @@ function TabTalpos({
     }).catch(() => {});
   }, [displayedSimilar]);
 
-  // Merge fetched kaina into display items
+  // Merge talpos.kaina into display items — only where we have a confirmed UUID lookup
   const displayedSimilarEnriched: any[] | null = useMemo(() => {
     if (!displayedSimilar) return null;
-    return displayedSimilar.map((item: any) => ({
-      ...item,
-      kaina: similarKainaMap[String(item.id)] !== undefined
-        ? similarKainaMap[String(item.id)]
-        : (item.kaina ?? null),
-    }));
+    return displayedSimilar.map((item: any) => {
+      const id = item.id && typeof item.id === 'string' && item.id.length >= 32
+        ? item.id : null;
+      const lookedUpKaina = id !== null && id in similarKainaMap
+        ? similarKainaMap[id]
+        : undefined;
+      return {
+        ...item,
+        kaina: lookedUpKaina !== undefined ? lookedUpKaina : (item.kaina ?? null),
+      };
+    });
   }, [displayedSimilar, similarKainaMap]);
 
   // Structured entries for the parametrai panel — scalar values stay flat,
@@ -1180,10 +1188,10 @@ function TabTalpos({
                       {kvEntries.map(entry => {
                         if (entry.type === 'nested') {
                           return (
-                            <div key={entry.key} className="mt-1.5 rounded-lg overflow-hidden border border-base-content/[0.06]">
+                            <div key={entry.key} className="mt-1.5">
                               {/* Group header */}
-                              <div className="px-2.5 py-1.5 bg-base-content/[0.03] border-b border-base-content/[0.06]">
-                                <span className="text-[11px] font-semibold text-base-content/55 uppercase tracking-wider">
+                              <div className="px-2 pt-2 pb-0.5">
+                                <span className="text-[11px] font-semibold text-base-content/45 uppercase tracking-wider">
                                   {formatMetaLabel(entry.key)}
                                 </span>
                               </div>
@@ -1193,7 +1201,7 @@ function TabTalpos({
                                 const childObj = tryParseJsonObject(cv);
                                 const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
                                 return (
-                                  <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors border-b border-base-content/[0.04] last:border-b-0">
+                                  <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors">
                                     <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '72px', maxWidth: '100px' }} title={formatMetaLabel(ck)}>
                                       {formatMetaLabel(ck)}
                                     </span>
