@@ -15,6 +15,8 @@ import {
   deleteNestandartiniaiRecord,
   fetchTalposByIds,
   updateTalposField,
+  createTalpa,
+  deleteTalpa,
 } from '../lib/dokumentaiService';
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
@@ -663,6 +665,48 @@ function TabTalpos({
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAi, setLocalKainaAi] = useState<Record<number, number | null>>({});
 
+  // Add / delete tank state
+  const [addingTank, setAddingTank] = useState(false);
+  const [deletingTank, setDeletingTank] = useState(false);
+  const [confirmDeleteTalposId, setConfirmDeleteTalposId] = useState<string | null>(null);
+
+  const addTank = async () => {
+    if (!record.id) return;
+    setAddingTank(true);
+    try {
+      const newTalpa = await createTalpa({
+        pavadinimas: `Nauja talpa ${talposIds.length + 1}`,
+        project: record.id,
+      });
+      const newIds = [...talposIds, String(newTalpa.id)];
+      await updateNestandartiniaiField(record.id, 'talpos', newIds.join(','));
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+      setCurrentIdx(newIds.length - 1);
+    } catch (e) {
+      console.error('Error adding tank:', e);
+    } finally {
+      setAddingTank(false);
+    }
+  };
+
+  const deleteTank = async (talposId: string) => {
+    setDeletingTank(true);
+    try {
+      await deleteTalpa(talposId);
+      const newIds = talposIds.filter(id => id !== talposId);
+      await updateNestandartiniaiField(record.id, 'talpos', newIds.length > 0 ? newIds.join(',') : null);
+      const updated = await fetchNestandartiniaiById(record.id);
+      if (updated) onRecordUpdated?.(updated);
+      setCurrentIdx(i => Math.min(i, Math.max(0, newIds.length - 1)));
+      setConfirmDeleteTalposId(null);
+    } catch (e) {
+      console.error('Error deleting tank:', e);
+    } finally {
+      setDeletingTank(false);
+    }
+  };
+
   // KV panel editing state
   const [editingKvKey, setEditingKvKey] = useState<string | null>(null);
   const [editingKvValue, setEditingKvValue] = useState('');
@@ -926,24 +970,76 @@ function TabTalpos({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Talpos selection bar */}
-      {navCount > 1 && (
+      {/* Delete tank confirmation banner */}
+      {confirmDeleteTalposId && (
+        <div className="mb-3 px-3 py-2.5 rounded-xl border border-error/20 bg-error/5 shrink-0">
+          <p className="text-xs text-base-content/70 mb-2">
+            Ištrinti talpą <strong>{getNavLabel(idx)}</strong>? Šis veiksmas negrįžtamas.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => deleteTank(confirmDeleteTalposId)}
+              disabled={deletingTank}
+              className="text-xs px-3 py-1 rounded-lg bg-error text-white hover:bg-error/90 disabled:opacity-40 flex items-center gap-1.5"
+            >
+              {deletingTank ? <><Loader2 className="w-3 h-3 animate-spin" /> Trinama...</> : 'Taip, ištrinti'}
+            </button>
+            <button
+              onClick={() => setConfirmDeleteTalposId(null)}
+              className="text-xs px-3 py-1 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5"
+            >
+              Atšaukti
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Talpos selection bar — always visible when editable or more than one tank */}
+      {(navCount > 1 || !readOnly) && (
         <div className="flex items-center gap-1 mb-4 shrink-0">
-          <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
-            <ChevronLeft className="w-4 h-4 text-base-content/40" />
-          </button>
+          {navCount > 1 && (
+            <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+              <ChevronLeft className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
           <select
             value={idx}
             onChange={e => { setCurrentIdx(Number(e.target.value)); }}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
           >
-            {Array.from({ length: navCount }, (_, i) => (
+            {navCount === 0 ? (
+              <option value={0}>Nėra talpų</option>
+            ) : Array.from({ length: navCount }, (_, i) => (
               <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
             ))}
           </select>
-          <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
-            <ChevronRight className="w-4 h-4 text-base-content/40" />
-          </button>
+          {navCount > 1 && (
+            <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+              <ChevronRight className="w-4 h-4 text-base-content/40" />
+            </button>
+          )}
+          {!readOnly && (
+            <>
+              <button
+                onClick={addTank}
+                disabled={addingTank}
+                className="p-1.5 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-40"
+                title="Pridėti talpą"
+              >
+                {addingTank ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <Plus className="w-4 h-4 text-primary/60 hover:text-primary" />}
+              </button>
+              {currentTalposId && (
+                <button
+                  onClick={() => setConfirmDeleteTalposId(currentTalposId)}
+                  disabled={deletingTank || !!confirmDeleteTalposId}
+                  className="p-1.5 rounded-md hover:bg-error/10 transition-colors disabled:opacity-40"
+                  title="Ištrinti šią talpą"
+                >
+                  <Trash2 className="w-4 h-4 text-error/40 hover:text-error" />
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -1050,19 +1146,21 @@ function TabTalpos({
                       {kvEntries.map(entry => {
                         if (entry.type === 'nested') {
                           return (
-                            <div key={entry.key}>
-                              <div className="px-2 pt-2 pb-0.5">
-                                <span className="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide">
+                            <div key={entry.key} className="mt-1.5 rounded-lg overflow-hidden border border-base-content/[0.06]">
+                              {/* Group header */}
+                              <div className="px-2.5 py-1.5 bg-base-content/[0.03] border-b border-base-content/[0.06]">
+                                <span className="text-[11px] font-semibold text-base-content/55 uppercase tracking-wider">
                                   {formatMetaLabel(entry.key)}
                                 </span>
                               </div>
+                              {/* Group rows */}
                               {Object.entries(entry.obj).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
                                 const childObj = tryParseJsonObject(cv);
                                 const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
                                 return (
-                                  <div key={editKey} className="group flex items-center gap-2 pl-4 pr-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
-                                    <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '84px' }} title={formatMetaLabel(ck)}>
+                                  <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors border-b border-base-content/[0.04] last:border-b-0">
+                                    <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '72px', maxWidth: '100px' }} title={formatMetaLabel(ck)}>
                                       {formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
@@ -1076,7 +1174,7 @@ function TabTalpos({
                                             if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson);
                                             if (e.key === 'Escape') setEditingKvKey(null);
                                           }}
-                                          className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                          className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
                                         />
                                         <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                           {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
@@ -1088,7 +1186,7 @@ function TabTalpos({
                                     ) : (
                                       <span
                                         onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
-                                        className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                        className={`text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
                                         title={displayVal || undefined}
                                       >
                                         {displayVal || <span className="text-base-content/25">—</span>}
@@ -1103,8 +1201,8 @@ function TabTalpos({
                         // scalar entry
                         const { key: k, value: v } = entry;
                         return (
-                          <div key={k} className="group flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
-                            <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '88px' }} title={formatMetaLabel(k)}>
+                          <div key={k} className="group flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '76px', maxWidth: '110px' }} title={formatMetaLabel(k)}>
                               {formatMetaLabel(k)}
                             </span>
                             {editingKvKey === k ? (
@@ -1118,7 +1216,7 @@ function TabTalpos({
                                     if (e.key === 'Enter') saveKvField(k, editingKvValue, entry.fromJson);
                                     if (e.key === 'Escape') setEditingKvKey(null);
                                   }}
-                                  className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                  className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
                                 />
                                 <button onClick={() => saveKvField(k, editingKvValue, entry.fromJson)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                   {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
@@ -1130,7 +1228,7 @@ function TabTalpos({
                             ) : (
                               <span
                                 onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
-                                className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                className={`text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
                                 title={v || undefined}
                               >
                                 {v || <span className="text-base-content/25">—</span>}
