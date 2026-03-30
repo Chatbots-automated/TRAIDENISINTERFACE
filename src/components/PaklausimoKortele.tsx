@@ -867,7 +867,32 @@ function TabTalpos({
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const respData = await resp.json().catch(() => null);
       const rawPrice = respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? null;
-      const estimatedPrice = rawPrice != null ? (typeof rawPrice === 'string' ? parseFloat(rawPrice.replace(/[^\d.,]/g, '').replace(',', '.')) : Number(rawPrice)) : null;
+      const estimatedPrice = (() => {
+        if (rawPrice == null) return null;
+        if (typeof rawPrice === 'number') return rawPrice;
+        let s = String(rawPrice).replace(/[€$£\s]/g, '').trim();
+        // Determine decimal vs thousands separator
+        if (s.includes('.') && s.includes(',')) {
+          const lastDot = s.lastIndexOf('.');
+          const lastComma = s.lastIndexOf(',');
+          if (lastDot > lastComma) {
+            s = s.replace(/,/g, ''); // dot is decimal, commas are thousands
+          } else {
+            s = s.replace(/\./g, '').replace(',', '.'); // comma is decimal, dots are thousands
+          }
+        } else if (s.includes(',')) {
+          const parts = s.split(',');
+          // If exactly 3 digits after the comma → thousands separator (e.g. 70,000)
+          if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[1])) {
+            s = s.replace(',', '');
+          } else {
+            s = s.replace(',', '.'); // decimal separator
+          }
+        }
+        s = s.replace(/[^\d.]/g, '');
+        const n = parseFloat(s);
+        return isNaN(n) ? null : n;
+      })();
       if (estimatedPrice != null && !isNaN(estimatedPrice)) {
         const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
         const newJsonObj = { ...currentJsonObj, kaina_ai: estimatedPrice };
