@@ -210,6 +210,7 @@ function unwrapFirstProduct(obj: Record<string, any>): Record<string, string> {
 /** Cache for parseMetadata — avoids redundant JSON.parse across thousands of cell renders */
 const _metadataCache = new WeakMap<object, Record<string, string> | null>();
 const _metadataStringCache = new Map<string, Record<string, string> | null>();
+const _METADATA_STRING_CACHE_MAX = 500;
 
 function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> | null {
   if (!raw) return null;
@@ -240,6 +241,7 @@ function parseMetadata(raw: string | Record<string, string> | any[] | null | und
       result = unwrapFirstProduct(parsed);
     }
   } catch { /* invalid JSON */ }
+  if (_metadataStringCache.size >= _METADATA_STRING_CACHE_MAX) _metadataStringCache.clear();
   _metadataStringCache.set(raw, result);
   return result;
 }
@@ -827,8 +829,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
   }, [isNestandartiniai, allColsNest, allColsStand]);
 
-  useEffect(() => { loadStandartiniai(); loadNestandartiniai(); loadTalpos(); }, []);
-
+  // Load only the active table on mount and on every tab switch (lazy — avoids
+  // pre-fetching tables the user may never visit and eliminates the double-fetch
+  // of the default table that the previous two-effect pattern caused).
   useEffect(() => {
     if (selectedTable === 'talpos') loadTalpos();
     else if (selectedTable === 'n8n_vector_store') loadNestandartiniai();

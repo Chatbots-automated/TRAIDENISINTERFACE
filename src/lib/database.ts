@@ -242,6 +242,7 @@ export const getAllUsers = async () => {
       .from('app_users')
       .select('id, email, display_name, is_admin, created_at, phone, kodas, full_name, role')
       .order('created_at', { ascending: false })
+      .limit(-1)
       ;
 
     if (error) {
@@ -362,7 +363,8 @@ export const getVadybininkai = async () => {
     const { data, error } = await db
       .from('vadybininkai')
       .select('id, created_at, kodas, full_name, role')
-      .order('full_name', { ascending: true });
+      .order('full_name', { ascending: true })
+      .limit(-1);
 
     if (error) {
       console.error('Error getting vadybininkai:', error);
@@ -550,6 +552,7 @@ export const getChatThreads = async (projectId: string) => {
       .eq('project_id', projectId)
       .is('deleted_at', null)
       .order('last_message_at', { ascending: false })
+      .limit(-1)
       ;
 
     if (error) {
@@ -727,6 +730,7 @@ export const getDocuments = async () => {
     const { data, error } = await db
       .from('documents')
       .select('*')
+      .limit(-1)
       ;
 
     if (error) {

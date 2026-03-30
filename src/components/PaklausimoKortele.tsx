@@ -103,6 +103,45 @@ function parseProducts(raw: string | Record<string, any> | any[] | null | undefi
   return [obj as Record<string, any>];
 }
 
+/**
+ * Try to coerce any value into a plain (non-array) object for KV display.
+ *   1. Already a plain object            → return as-is
+ *   2. Array                             → return first plain-object element
+ *   3. JSON string starting with '{'     → JSON.parse once
+ *   4. JSON string starting with '['     → JSON.parse, then take first object
+ *   5. Double-encoded string (starts '"') → decode once, then retry 3/4
+ *   6. Anything else                     → return null (render as scalar)
+ */
+function tryParseJsonObject(v: any): Record<string, any> | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'object') {
+    if (!Array.isArray(v)) return v as Record<string, any>;
+    const first = (v as any[]).find(item => item && typeof item === 'object' && !Array.isArray(item));
+    return first ?? null;
+  }
+  if (typeof v !== 'string') return null;
+  let s = v.trim();
+  // Double-encoded: outer quotes wrapping a JSON string
+  if (s.startsWith('"')) {
+    try {
+      const decoded = JSON.parse(s);
+      if (typeof decoded === 'string') s = decoded.trim();
+      else return tryParseJsonObject(decoded); // decoded is already object/array
+    } catch { /* try as-is */ }
+  }
+  if (s.startsWith('{') || s.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(s);
+      if (parsed && typeof parsed === 'object') {
+        if (!Array.isArray(parsed)) return parsed;
+        const first = (parsed as any[]).find(item => item && typeof item === 'object' && !Array.isArray(item));
+        return first ?? null;
+      }
+    } catch { /* malformed */ }
+  }
+  return null;
+}
+
 function parseJSON<T>(raw: T | string | null): T | null {
   if (!raw) return null;
   if (typeof raw !== 'string') return raw;
@@ -275,6 +314,9 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
 
 /** Keys to skip in the flexible metadata display (internal/navigation keys) */
 const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'procurement_package', 'position']);
+
+/** Keys excluded from the talpos key-value panel (shown elsewhere or internal) */
+const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json']);
 
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
@@ -616,6 +658,15 @@ function TabTalpos({
   const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
   const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
 
+  // KV panel editing state
+  const [editingKvKey, setEditingKvKey] = useState<string | null>(null);
+  const [editingKvValue, setEditingKvValue] = useState('');
+  const [savingKvKey, setSavingKvKey] = useState<string | null>(null);
+  const [showAddKv, setShowAddKv] = useState(false);
+  const [newKvKey, setNewKvKey] = useState('');
+  const [newKvValue, setNewKvValue] = useState('');
+  const [addingKv, setAddingKv] = useState(false);
+
   // Persisted results from DB (recomputed when current row changes)
   const persistedSimilar: any[] | null = useMemo(() => {
     if (!currentTalposRow?.similar_talpos) return null;
@@ -630,6 +681,123 @@ function TabTalpos({
   const displayedSimilar: any[] | null = localSimilarResults[idx] !== undefined
     ? localSimilarResults[idx]
     : persistedSimilar;
+
+  // Structured entries for the parametrai panel — scalar values stay flat,
+  // object values (or strings that parse to objects) are expanded as nested groups.
+  // fromJson=true means the entry lives inside the `json` column object, not a direct column.
+  type KvEntry =
+    | { type: 'scalar'; key: string; value: string; fromJson?: boolean }
+    | { type: 'nested'; key: string; obj: Record<string, any>; fromJson?: boolean };
+
+  const kvEntries = useMemo((): KvEntry[] => {
+    if (!currentTalposRow) return [];
+    const result: KvEntry[] = [];
+
+    // First: flatten the contents of the `json` column directly into the list
+    const jsonColObj = tryParseJsonObject(currentTalposRow.json);
+    if (jsonColObj) {
+      for (const [k, v] of Object.entries(jsonColObj)) {
+        const nested = tryParseJsonObject(v);
+        if (nested) {
+          result.push({ type: 'nested', key: k, obj: nested, fromJson: true });
+        } else {
+          result.push({ type: 'scalar', key: k, value: v === null || v === undefined ? '' : String(v), fromJson: true });
+        }
+      }
+    }
+
+    // Then: add other non-skipped direct columns
+    for (const [k, v] of Object.entries(currentTalposRow)) {
+      if (SKIP_TALPOS_KV_KEYS.has(k)) continue;
+      const obj = tryParseJsonObject(v);
+      if (obj) {
+        result.push({ type: 'nested', key: k, obj });
+      } else {
+        result.push({ type: 'scalar', key: k, value: v === null || v === undefined ? '' : String(v) });
+      }
+    }
+    return result;
+  }, [currentTalposRow, idx]);
+
+  // Reset KV edit state when the active tank changes
+  useEffect(() => {
+    setEditingKvKey(null);
+    setShowAddKv(false);
+  }, [idx]);
+
+  const saveKvField = async (key: string, value: string, fromJson?: boolean) => {
+    if (!currentTalposId) return;
+    setSavingKvKey(key);
+    try {
+      if (fromJson) {
+        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+        const newJsonObj = { ...currentJsonObj, [key]: value };
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+        ));
+      } else {
+        await updateTalposField(currentTalposId, key, value);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, [key]: value } : r
+        ));
+      }
+      setEditingKvKey(null);
+    } catch (e) {
+      console.error('Error saving talpos field:', e);
+    } finally {
+      setSavingKvKey(null);
+    }
+  };
+
+  const saveNestedKvField = async (parentKey: string, childKey: string, childValue: string, currentObj: Record<string, any>, fromJson?: boolean) => {
+    if (!currentTalposId) return;
+    const editKey = `${parentKey}::${childKey}`;
+    setSavingKvKey(editKey);
+    try {
+      const newObj = { ...currentObj, [childKey]: childValue };
+      if (fromJson) {
+        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+        const newJsonObj = { ...currentJsonObj, [parentKey]: newObj };
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+        ));
+      } else {
+        await updateTalposField(currentTalposId, parentKey, newObj);
+        setTalposRows(prev => prev.map(r =>
+          String(r.id) === String(currentTalposId) ? { ...r, [parentKey]: newObj } : r
+        ));
+      }
+      setEditingKvKey(null);
+    } catch (e) {
+      console.error('Error saving nested talpos field:', e);
+    } finally {
+      setSavingKvKey(null);
+    }
+  };
+
+  const addKvPair = async () => {
+    const k = newKvKey.trim();
+    if (!currentTalposId || !k) return;
+    setAddingKv(true);
+    try {
+      // New pairs always go into the `json` column object
+      const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
+      const newJsonObj = { ...currentJsonObj, [k]: newKvValue };
+      await updateTalposField(currentTalposId, 'json', newJsonObj);
+      setTalposRows(prev => prev.map(r =>
+        String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+      ));
+      setNewKvKey('');
+      setNewKvValue('');
+      setShowAddKv(false);
+    } catch (e) {
+      console.error('Error adding talpos field:', e);
+    } finally {
+      setAddingKv(false);
+    }
+  };
 
   const findSimilar = async () => {
     if (!currentTalposId || !currentTalposRow) return;
@@ -746,14 +914,14 @@ function TabTalpos({
 
           {!loadingTalpos && currentTalposRow && (
             <div className="flex-1 flex flex-col min-h-0">
-              {/* Two-column: left = raw JSON, right = description */}
+              {/* Two-column: left = KV fields, right = description */}
               <div className="flex gap-4 flex-1 min-h-0">
-                {/* Left column: fixed width, raw JSON — fills height and scrolls */}
+                {/* Left column: fixed width, editable key-value list */}
                 <div className="w-[260px] shrink-0 flex flex-col min-h-0">
-                  {/* JSON label + quantity badge + kaina on the same row */}
+                  {/* Parametrai label + quantity badge + kaina on the same row */}
                   <div className="flex items-center justify-between mb-1.5 shrink-0">
                     <div className="flex items-center gap-1.5">
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">JSON</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Parametrai</p>
                       {currentTalposRow?.quantity != null && Number(currentTalposRow.quantity) >= 1 && (
                         <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">
                           {currentTalposRow.quantity}vnt.
@@ -802,23 +970,153 @@ function TabTalpos({
                       </button>
                     )}
                   </div>
-                  <pre
-                    className="text-[11px] rounded-xl p-3 overflow-auto leading-relaxed flex-1 min-h-0"
-                    style={{
-                      background: '#f8f6f3',
-                      color: '#5a5550',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-word',
-                      fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                    }}
-                  >
-                    {JSON.stringify(
-                      Object.fromEntries(
-                        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
-                      ),
-                      null, 2
-                    )}
-                  </pre>
+                  {/* Scrollable KV list */}
+                  <div className="flex-1 overflow-y-auto rounded-xl min-h-0">
+                    <div className="py-0.5 flex flex-col gap-0.5">
+                      {kvEntries.map(entry => {
+                        if (entry.type === 'nested') {
+                          return (
+                            <div key={entry.key}>
+                              <div className="px-2 pt-2 pb-0.5">
+                                <span className="text-[11px] font-semibold text-base-content/40 uppercase tracking-wide">
+                                  {formatMetaLabel(entry.key)}
+                                </span>
+                              </div>
+                              {Object.entries(entry.obj).map(([ck, cv]) => {
+                                const editKey = `${entry.key}::${ck}`;
+                                const childObj = tryParseJsonObject(cv);
+                                const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
+                                return (
+                                  <div key={editKey} className="group flex items-center gap-2 pl-4 pr-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                                    <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '84px' }} title={formatMetaLabel(ck)}>
+                                      {formatMetaLabel(ck)}
+                                    </span>
+                                    {editingKvKey === editKey ? (
+                                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                                        <input
+                                          autoFocus
+                                          type="text"
+                                          value={editingKvValue}
+                                          onChange={e => setEditingKvValue(e.target.value)}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson);
+                                            if (e.key === 'Escape') setEditingKvKey(null);
+                                          }}
+                                          className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                        />
+                                        <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                          {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                                        </button>
+                                        <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                          <X className="w-3 h-3 text-base-content/40" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <span
+                                        onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
+                                        className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                        title={displayVal || undefined}
+                                      >
+                                        {displayVal || <span className="text-base-content/25">—</span>}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+                        // scalar entry
+                        const { key: k, value: v } = entry;
+                        return (
+                          <div key={k} className="group flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '88px' }} title={formatMetaLabel(k)}>
+                              {formatMetaLabel(k)}
+                            </span>
+                            {editingKvKey === k ? (
+                              <div className="flex items-center gap-1 flex-1 min-w-0">
+                                <input
+                                  autoFocus
+                                  type="text"
+                                  value={editingKvValue}
+                                  onChange={e => setEditingKvValue(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveKvField(k, editingKvValue, entry.fromJson);
+                                    if (e.key === 'Escape') setEditingKvKey(null);
+                                  }}
+                                  className="flex-1 min-w-0 text-[12px] bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                />
+                                <button onClick={() => saveKvField(k, editingKvValue, entry.fromJson)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                  {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
+                                </button>
+                                <button onClick={() => setEditingKvKey(null)} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
+                                  <X className="w-3 h-3 text-base-content/40" />
+                                </button>
+                              </div>
+                            ) : (
+                              <span
+                                onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
+                                className={`text-[12px] text-base-content font-medium flex-1 min-w-0 truncate text-right ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                title={v || undefined}
+                              >
+                                {v || <span className="text-base-content/25">—</span>}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Add new key-value pair */}
+                      {!readOnly && (
+                        showAddKv ? (
+                          <div className="flex flex-col gap-1 mt-1 px-2 py-1.5 rounded-lg border border-base-content/8" style={{ background: 'rgba(255,255,255,0.6)' }}>
+                            <input
+                              autoFocus
+                              type="text"
+                              placeholder="Lauko pavadinimas"
+                              value={newKvKey}
+                              onChange={e => setNewKvKey(e.target.value)}
+                              className="w-full text-[12px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Reikšmė"
+                              value={newKvValue}
+                              onChange={e => setNewKvValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') addKvPair();
+                                if (e.key === 'Escape') setShowAddKv(false);
+                              }}
+                              className="w-full text-[12px] bg-white rounded px-1.5 py-0.5 border border-base-content/10 outline-none focus:border-primary/30 text-base-content placeholder:text-base-content/30"
+                            />
+                            <div className="flex gap-1 justify-end">
+                              <button
+                                onClick={() => { setShowAddKv(false); setNewKvKey(''); setNewKvValue(''); }}
+                                className="text-[10px] px-2 py-0.5 rounded text-base-content/40 hover:bg-base-content/5"
+                              >
+                                Atšaukti
+                              </button>
+                              <button
+                                onClick={addKvPair}
+                                disabled={!newKvKey.trim() || addingKv}
+                                className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/15 disabled:opacity-40 font-medium"
+                              >
+                                {addingKv ? 'Saugoma...' : 'Pridėti'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setShowAddKv(true)}
+                            className="flex items-center gap-1 mt-0.5 px-2 py-1 rounded-lg text-[11px] text-base-content/35 hover:text-primary hover:bg-primary/5 transition-colors w-full"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Pridėti lauką
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Right column: description + similar tanks */}

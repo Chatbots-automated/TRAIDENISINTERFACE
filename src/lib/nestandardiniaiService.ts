@@ -36,7 +36,8 @@ export const fetchProjects = async (): Promise<VectorStoreProject[]> => {
       .from('n8n_vector_store')
       .select(VECTOR_STORE_SELECT)
       .not('project_name', 'is', null)
-      .order('pateikimo_data', { ascending: false });
+      .order('pateikimo_data', { ascending: false })
+      .limit(-1);
 
     if (error) {
       console.error('Error fetching projects:', error);

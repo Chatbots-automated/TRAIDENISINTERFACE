@@ -12,7 +12,8 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
     const { data, error } = await db
       .from('standartiniai_projektai')
       .select('*')
-      .order('id', { ascending: false });
+      .order('id', { ascending: false })
+      .limit(-1);
 
     if (error) {
       console.error('Error fetching standartiniai_projektai:', error);
@@ -218,7 +219,8 @@ export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiR
     const { data, error } = await db
       .from('n8n_vector_store')
       .select(NESTANDARTINIAI_FIELDS)
-      .order('id', { ascending: false });
+      .order('id', { ascending: false })
+      .limit(-1);
 
     if (error) {
       console.error('Error fetching n8n_vector_store:', error);
@@ -375,7 +377,8 @@ export const fetchTalpos = async (): Promise<any[]> => {
     const { data, error } = await db
       .from('talpos')
       .select('*')
-      .order('id', { ascending: false });
+      .order('id', { ascending: false })
+      .limit(-1);
 
     if (error) {
       console.error('Error fetching talpos:', error);
