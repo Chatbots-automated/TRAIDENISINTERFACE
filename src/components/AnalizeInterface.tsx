@@ -433,14 +433,15 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
 
   const handleDeleteDoc = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (selectedDoc?.id === id) {
-      setSelectedDoc(null);
-    }
+    const wasSelected = selectedDoc?.id === id;
+    if (wasSelected) setSelectedDoc(null);
     try {
       await deleteParsedDocument(id);
       setDocuments(prev => prev.filter(d => d.id !== id));
     } catch (err) {
       console.error('Delete failed:', err);
+      if (wasSelected) setSelectedDoc(documents.find(d => d.id === id) ?? null);
+      setDocsError('Nepavyko ištrinti dokumento');
     }
   };
 
