@@ -1318,6 +1318,11 @@ function TabTalpos({
           externalIdx={idx}
           hideNavigator
           aiFirst
+          currentTalposId={currentTalposId}
+          currentTalposJson={currentTalposRow?.json}
+          onTalposJsonSaved={(id, newJson) => {
+            setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, json: newJson } : r));
+          }}
         />
       )}
     </div>
@@ -2620,7 +2625,7 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
-function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean }) {
+function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposJson, onTalposJsonSaved }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void }) {
   const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
   const hasMultiple = products.length > 1;
   const idx = externalIdx !== undefined ? Math.min(externalIdx, products.length - 1) : Math.min(currentIdx, products.length - 1);
@@ -2637,52 +2642,73 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   const [success, setSuccess] = useState(false);
 
   // Per-tank derva_musu
+  // When currentTalposId is provided, read/write from talpos.json per-row.
+  // Otherwise fall back to legacy record.metadata storage.
+  const getTalposMusu = (json: any): string => {
+    const parsed = json && typeof json === 'object' ? json : tryParseJsonObject(json);
+    return parsed?.derva_musu || '';
+  };
   const [dervaMusuPerTank, setDervaMusuPerTank] = useState<Record<string, string>>(() => parseDervaMusuPerTank(record.metadata));
-  const currentDervaMusu = dervaMusuPerTank[tankKey] || '';
-  const [dervaMusu, setDervaMusu] = useState<string>(currentDervaMusu);
+  const [dervaMusu, setDervaMusu] = useState<string>(() =>
+    currentTalposId ? getTalposMusu(currentTalposJson) : (dervaMusuPerTank[tankKey] || '')
+  );
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
   const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
 
-  // Sync dervaMusu input when switching tanks
+  // Sync dervaMusu input when switching tanks (idx reflects externalIdx or internal currentIdx)
   useEffect(() => {
-    setDervaMusu(dervaMusuPerTank[String(Math.min(currentIdx, products.length - 1))] || '');
+    if (currentTalposId) {
+      setDervaMusu(getTalposMusu(currentTalposJson));
+    } else {
+      setDervaMusu(dervaMusuPerTank[String(idx)] || '');
+    }
     setDervaMusuEditing(false);
     setDervaError(null);
     setSuccess(false);
-  }, [currentIdx, products.length, dervaMusuPerTank]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, currentTalposId, currentTalposJson]);
 
-  // Sync with record prop changes
+  // Sync with record prop changes (legacy path)
   useEffect(() => {
     setDervaPerTank(parseDervaPerTank(record.derva));
   }, [record.derva]);
   useEffect(() => {
-    setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
-  }, [record.metadata]);
+    if (!currentTalposId) {
+      setDervaMusuPerTank(parseDervaMusuPerTank(record.metadata));
+    }
+  }, [record.metadata, currentTalposId]);
 
   const saveDervaMusu = async (overrideValue?: string) => {
     const valueToSave = overrideValue !== undefined ? overrideValue : dervaMusu;
     setDervaMusuSaving(true);
     try {
-      // Only update this specific tank — each tank card has its own independent derva_musu
-      const indicesToUpdate = [idx];
-
-      const updatedMeta = buildUpdatedMeta(record.metadata, 'derva_musu', valueToSave.trim() || null, indicesToUpdate);
-      await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
-
-      // Update local state for the affected index only
-      const updatedMusuPerTank = { ...dervaMusuPerTank };
-      for (const i of indicesToUpdate) {
-        if (valueToSave.trim()) updatedMusuPerTank[String(i)] = valueToSave.trim();
-        else delete updatedMusuPerTank[String(i)];
+      if (currentTalposId) {
+        // New path: write derva_musu to this talpos row's json column
+        const currentJsonObj = getTalposMusu(currentTalposJson) !== undefined
+          ? (currentTalposJson && typeof currentTalposJson === 'object' ? currentTalposJson : (tryParseJsonObject(currentTalposJson) || {}))
+          : {};
+        const newJsonObj = valueToSave.trim()
+          ? { ...currentJsonObj, derva_musu: valueToSave.trim() }
+          : (() => { const { derva_musu: _r, ...rest } = currentJsonObj as any; return rest; })();
+        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        onTalposJsonSaved?.(currentTalposId, newJsonObj);
+        if (overrideValue !== undefined) setDervaMusu(valueToSave);
+      } else {
+        // Legacy path: write to record.metadata per-product index
+        const updatedMeta = buildUpdatedMeta(record.metadata, 'derva_musu', valueToSave.trim() || null, [idx]);
+        await updateNestandartiniaiField(record.id, 'metadata', updatedMeta);
+        const updatedMusuPerTank = { ...dervaMusuPerTank };
+        if (valueToSave.trim()) updatedMusuPerTank[tankKey] = valueToSave.trim();
+        else delete updatedMusuPerTank[tankKey];
+        setDervaMusuPerTank(updatedMusuPerTank);
+        if (overrideValue !== undefined) setDervaMusu(valueToSave);
+        const updated = await fetchNestandartiniaiById(record.id);
+        if (updated) onRecordUpdated?.(updated);
       }
-      setDervaMusuPerTank(updatedMusuPerTank);
-      if (overrideValue !== undefined) setDervaMusu(valueToSave);
       setDervaMusuSaved(true);
       setDervaMusuEditing(false);
       setTimeout(() => setDervaMusuSaved(false), 3000);
-      const updated = await fetchNestandartiniaiById(record.id);
-      if (updated) onRecordUpdated?.(updated);
     } catch (e: any) {
       console.error('Error saving derva_musu:', e);
     } finally {
@@ -2712,7 +2738,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         cleanTankMeta[k] = v;
       }
 
-      const currentDervaMusuValue = dervaMusuPerTank[tankKey] || 'neparinkta';
+      const currentDervaMusuValue = dervaMusu || 'neparinkta';
 
       // Send only this tank's metadata + product_index
       const resp = await fetch(webhookUrl, {
