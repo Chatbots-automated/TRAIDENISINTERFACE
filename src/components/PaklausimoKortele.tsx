@@ -1398,21 +1398,6 @@ function TabTalpos({
                     <div className="flex items-center justify-between mb-2 shrink-0">
                       <div className="flex items-center gap-2">
                         <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Panašios talpos</p>
-                        {(() => {
-                          const kainaAi = localKainaAi[idx] !== undefined
-                            ? localKainaAi[idx]
-                            : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai; return v != null ? Number(v) : null; })();
-                          return kainaAi != null && !isNaN(kainaAi) ? (
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
-                              style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
-                              title="AI preliminari kaina"
-                            >
-                              <Sparkles className="w-2.5 h-2.5" />
-                              {kainaAi.toLocaleString('lt-LT')} €
-                            </span>
-                          ) : null;
-                        })()}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
