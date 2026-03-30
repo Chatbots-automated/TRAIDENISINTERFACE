@@ -103,6 +103,35 @@ function parseProducts(raw: string | Record<string, any> | any[] | null | undefi
   return [obj as Record<string, any>];
 }
 
+/**
+ * Try to coerce any value into a plain (non-array) object for KV display.
+ * Handles four cases:
+ *   1. Already an object              → return as-is
+ *   2. JSON string starting with '{'  → parse once
+ *   3. Double-encoded JSON string      → strip outer quotes via JSON.parse,
+ *                                        then parse the resulting '{…}' string
+ *   4. Anything else                  → return null (render as scalar)
+ */
+function tryParseJsonObject(v: any): Record<string, any> | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'object' && !Array.isArray(v)) return v as Record<string, any>;
+  if (typeof v !== 'string') return null;
+  let s = v.trim();
+  // Double-encoded: outer string wraps another JSON value
+  if (s.startsWith('"')) {
+    try {
+      const decoded = JSON.parse(s);
+      if (typeof decoded === 'string') s = decoded.trim();
+    } catch { /* not decodable — try as-is */ }
+  }
+  if (!s.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch { /* malformed JSON */ }
+  return null;
+}
+
 function parseJSON<T>(raw: T | string | null): T | null {
   if (!raw) return null;
   if (typeof raw !== 'string') return raw;
@@ -654,20 +683,12 @@ function TabTalpos({
     const result: KvEntry[] = [];
     for (const [k, v] of Object.entries(currentTalposRow)) {
       if (SKIP_TALPOS_KV_KEYS.has(k)) continue;
-      if (v !== null && v !== undefined && typeof v === 'object' && !Array.isArray(v)) {
-        result.push({ type: 'nested', key: k, obj: v });
-        continue;
+      const obj = tryParseJsonObject(v);
+      if (obj) {
+        result.push({ type: 'nested', key: k, obj });
+      } else {
+        result.push({ type: 'scalar', key: k, value: v === null || v === undefined ? '' : String(v) });
       }
-      if (typeof v === 'string' && v.trim().startsWith('{')) {
-        try {
-          const parsed = JSON.parse(v);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            result.push({ type: 'nested', key: k, obj: parsed });
-            continue;
-          }
-        } catch { /* not valid JSON — fall through to scalar */ }
-      }
-      result.push({ type: 'scalar', key: k, value: v === null || v === undefined ? '' : String(v) });
     }
     return result;
   }, [currentTalposRow, idx]);
@@ -916,7 +937,8 @@ function TabTalpos({
                               </div>
                               {Object.entries(entry.obj).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
-                                const displayVal = cv === null || cv === undefined ? '' : typeof cv === 'object' ? JSON.stringify(cv) : String(cv);
+                                const childObj = tryParseJsonObject(cv);
+                                const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
                                 return (
                                   <div key={editKey} className="group flex items-center gap-2 pl-4 pr-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
                                     <span className="text-[11px] text-base-content/40 shrink-0 font-medium truncate" style={{ width: '84px' }} title={formatMetaLabel(ck)}>
