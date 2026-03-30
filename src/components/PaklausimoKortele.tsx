@@ -731,6 +731,35 @@ function TabTalpos({
     ? localSimilarResults[idx]
     : persistedSimilar;
 
+  // Fetch kaina from talpos table for each similar-tank UUID that doesn't already have one
+  const [similarKainaMap, setSimilarKainaMap] = useState<Record<string, number | null>>({});
+  useEffect(() => {
+    if (!displayedSimilar?.length) return;
+    const uuids = displayedSimilar.map((r: any) => String(r.id)).filter(Boolean);
+    if (uuids.length === 0) return;
+    const missing = uuids.filter(id => !(id in similarKainaMap));
+    if (missing.length === 0) return;
+    fetchTalposByIds(missing).then(rows => {
+      const entries: Record<string, number | null> = {};
+      for (const id of missing) entries[id] = null;
+      for (const row of rows) {
+        entries[String(row.id)] = row.kaina != null ? Number(row.kaina) : null;
+      }
+      setSimilarKainaMap(prev => ({ ...prev, ...entries }));
+    }).catch(() => {});
+  }, [displayedSimilar]);
+
+  // Merge fetched kaina into display items
+  const displayedSimilarEnriched: any[] | null = useMemo(() => {
+    if (!displayedSimilar) return null;
+    return displayedSimilar.map((item: any) => ({
+      ...item,
+      kaina: similarKainaMap[String(item.id)] !== undefined
+        ? similarKainaMap[String(item.id)]
+        : (item.kaina ?? null),
+    }));
+  }, [displayedSimilar, similarKainaMap]);
+
   // Structured entries for the parametrai panel — scalar values stay flat,
   // object values (or strings that parse to objects) are expanded as nested groups.
   // fromJson=true means the entry lives inside the `json` column object, not a direct column.
@@ -873,7 +902,7 @@ function TabTalpos({
           const parsed = typeof updatedRow.similar_talpos === 'string'
             ? JSON.parse(updatedRow.similar_talpos)
             : updatedRow.similar_talpos;
-          results = Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+          results = Array.isArray(parsed) ? parsed : [];
         } catch { /* ignore parse errors */ }
       }
       // Patch local talposRows so persisted display updates without a full reload
@@ -906,6 +935,11 @@ function TabTalpos({
           klientas: record.klientas,
           talpos_id: currentTalposId,
           product_metadata: payload,
+          similar_tanks: (displayedSimilarEnriched ?? []).map((item: any) => {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { embedding, similar_talpos, ...rest } = item;
+            return rest;
+          }),
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1372,9 +1406,9 @@ function TabTalpos({
                       </div>
                     )}
 
-                    {displayedSimilar && displayedSimilar.length > 0 ? (
+                    {displayedSimilarEnriched && displayedSimilarEnriched.length > 0 ? (
                       <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
-                        {displayedSimilar.map((item: any, i: number) => {
+                        {displayedSimilarEnriched.map((item: any, i: number) => {
                           const score = item.similarity_score ?? item.similarity ?? null;
                           const displayName = item.pavadinimas || item.project_name || null;
                           const projectId = item.project || item.project_id || null;
@@ -1418,7 +1452,7 @@ function TabTalpos({
                           );
                         })}
                       </div>
-                    ) : !similarSearching[idx] && (
+                    ) : !similarSearching[idx] && !displayedSimilarEnriched?.length && (
                       <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
                         <p className="text-xs text-base-content/30 text-center">Nėra rezultatų</p>
                       </div>
