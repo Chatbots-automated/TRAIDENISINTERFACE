@@ -205,16 +205,6 @@ export default function Layout({
                   {!sidebarCollapsed && <span className="whitespace-nowrap">Žaliavų Kainos</span>}
                 </button>
               </li>
-              <li>
-                <button
-                  onClick={() => onViewModeChange?.('kainos')}
-                  className={viewMode === 'kainos' ? 'active' : ''}
-                  title={sidebarCollapsed ? 'Žaliavų Kainos' : undefined}
-                >
-                  <TrendingUp className="w-4 h-4" />
-                  {!sidebarCollapsed && <span className="truncate">Žaliavų Kainos</span>}
-                </button>
-              </li>
               {user.is_admin && (
                 <li>
                   <button
