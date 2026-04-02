@@ -154,6 +154,60 @@ export async function deleteIrašas(id: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// AI analytics storage  (table: kainu_analytics)
+// Fields: id, content, geoevents, sukurta_at
+// ---------------------------------------------------------------------------
+
+export interface KainuAnalitika {
+  id: number;
+  content: string;   // markdown – main price-trend analysis
+  geoevents: string; // markdown – geopolitical events bullets
+  sukurta_at: string;
+}
+
+const ANALITIKA_FIELDS = 'id,content,geoevents,sukurta_at';
+
+/** Fetch the single most-recent analytics record, or null if none. */
+export async function fetchLatestAnalitika(): Promise<KainuAnalitika | null> {
+  const { data, error } = await db
+    .from('kainu_analytics')
+    .select(ANALITIKA_FIELDS)
+    .order('sukurta_at', { ascending: false })
+    .limit(1);
+
+  if (error) throw error;
+  return (data && data.length > 0) ? data[0] : null;
+}
+
+/** Insert a new analytics record (keeps full history). */
+export async function saveAnalitika(
+  content: string,
+  geoevents: string,
+): Promise<KainuAnalitika> {
+  const { data, error } = await db
+    .from('kainu_analytics')
+    .insert({ content, geoevents })
+    .select(ANALITIKA_FIELDS)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Returns true when the stored analytics are stale:
+ * – never generated, OR
+ * – it is now past 07:00 today and the last run was before today's 07:00.
+ */
+export function analyticsNeedRefresh(lastRun: string | null | undefined): boolean {
+  if (!lastRun) return true;
+  const now = new Date();
+  const todayAt7 = new Date(now);
+  todayAt7.setHours(7, 0, 0, 0);
+  return now >= todayAt7 && new Date(lastRun) < todayAt7;
+}
+
+// ---------------------------------------------------------------------------
 // Analytics helper – used by toolExecutors to enrich get_prices webhook calls
 // ---------------------------------------------------------------------------
 

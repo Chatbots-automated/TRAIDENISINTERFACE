@@ -7,13 +7,14 @@ import AdminUsersInterface from './components/AdminUsersInterface';
 import InstructionsInterface from './components/InstructionsInterface';
 import NestandardiniaiInterface from './components/NestandardiniaiInterface';
 import DervaInterface from './components/DervaInterface';
+import KainosInterface from './components/KainosInterface';
 import AnalizeInterface from './components/AnalizeInterface';
 import SDKInterface from './components/SDKInterfaceNew';
 import PaklausimoKortelePage from './components/PaklausimoKortele';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
 
-type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize';
+type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos';
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
@@ -29,6 +30,7 @@ const routeToViewMode: Record<string, ViewMode> = {
   '/nestandartiniai': 'nestandartiniai',
   '/analize': 'analize',
   '/derva': 'derva',
+  '/kainos': 'kainos',
   '/sdk': 'sdk',
 };
 
@@ -46,6 +48,8 @@ function AppContent() {
     ? 'sdk'
     : location.pathname.startsWith('/analize')
     ? 'analize'
+    : location.pathname.startsWith('/kainos')
+    ? 'kainos'
     : routeToViewMode[location.pathname] || 'sdk';
 
   // Naujokas (newbie) mode - shows helpful tooltips and guides
@@ -218,6 +222,10 @@ function AppContent() {
         <Route
           path="/sdk/:conversationId?"
           element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} onRequestMainSidebarCollapse={setForceMainSidebarCollapsed} />}
+        />
+        <Route
+          path="/kainos"
+          element={<KainosInterface user={user} />}
         />
         {/* Catch-all redirect to sdk */}
         <Route path="*" element={<Navigate to="/sdk" replace />} />
