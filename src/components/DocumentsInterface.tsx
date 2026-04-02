@@ -211,7 +211,6 @@ function getProjectNameFromMetadata(row: any): string | undefined {
   if (projName) return projName;
   return undefined;
 }
-}
 
 // ---------------------------------------------------------------------------
 // Column config for standartiniai – same ColumnDef pattern as nestandartiniai
