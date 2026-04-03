@@ -27,6 +27,14 @@ import { getWebhookUrl } from '../lib/webhooksService';
 // Helpers
 // ---------------------------------------------------------------------------
 
+function getSantraukaFromMetadata(raw: any): string {
+  if (!raw) return '';
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { return ''; } }
+  if (Array.isArray(obj) && obj.length > 0) obj = obj[0];
+  return obj?.santrauka || obj?.Santrauka || '';
+}
+
 function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> {
   if (!raw) return {};
   // If it's an array (multi-product), return the first item as flat metadata
@@ -3551,9 +3559,9 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 {products.length > 1 && ` · ${products.length} talpos`}
               </p>
               {/* Pastabos (project-level notes) */}
-              {(record as any).description && (
+              {getSantraukaFromMetadata(record.metadata) && (
                 <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
-                  {(record as any).description}
+                  {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
             </div>
@@ -3806,9 +3814,9 @@ export default function PaklausimoKortelePage() {
                 Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
                 {products.length > 1 && ` · ${products.length} talpos`}
               </p>
-              {(record as any).description && (
+              {getSantraukaFromMetadata(record.metadata) && (
                 <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
-                  {(record as any).description}
+                  {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
             </div>

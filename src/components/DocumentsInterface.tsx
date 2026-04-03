@@ -640,7 +640,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           if (row.project_name) parts.push(row.project_name);
           if (row.klientas) parts.push(row.klientas);
           if (row.pateikimo_data) parts.push(row.pateikimo_data);
-          if (row.description) parts.push(row.description);
+          // description column removed from DB; santrauka is inside metadata
           if (row.derva) parts.push(row.derva);
           // All metadata values (includes derva_musu)
           const meta = parseMetadata(row.metadata);
@@ -1124,7 +1124,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                   </th>
                   <th className="w-10 px-2 py-3"></th>
                   {(['id', 'status', 'project_name', 'talpu_kiekis', 'klientas', 'pateikimo_data', 'description', 'talpa_m3'] as const).map(key => {
-                    const label = key === 'id' ? 'ID' : key === 'status' ? 'Statusas' : key === 'project_name' ? 'Projektas' : key === 'talpu_kiekis' ? 'Talpų Kiekis' : key === 'klientas' ? 'Klientas' : key === 'pateikimo_data' ? 'Data' : key === 'description' ? 'Pastabos' : 'Talpa m3';
+                    const label = key === 'id' ? 'ID' : key === 'status' ? 'Statusas' : key === 'project_name' ? 'Projektas' : key === 'talpu_kiekis' ? 'Talpų Kiekis' : key === 'klientas' ? 'Klientas' : key === 'pateikimo_data' ? 'Data' : key === 'description' ? 'Santrauka' : 'Talpa m3';
                     return (
                       <th
                         key={key}
@@ -1145,10 +1145,19 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               </thead>
               <tbody>
                 {pagedData.map((row, i) => {
-                  const talposIds = (row.talpos || '').split(',').map((s: string) => s.trim()).filter(Boolean);
-                  const talpaValues = talposIds.map((id: string) => talposById.get(id)?.talpa).filter((v: any) => v != null && v !== '');
+                  // Parse metadata JSON (handles string, object, or array wrapper)
+                  let _meta: any = row.metadata;
+                  if (typeof _meta === 'string') { try { _meta = JSON.parse(_meta); } catch { _meta = null; } }
+                  if (Array.isArray(_meta) && _meta.length > 0) _meta = _meta[0];
+                  // Santrauka from metadata root
+                  const santrauka: string = _meta?.santrauka || _meta?.Santrauka || '';
+                  // Talpa m3 from metadata.talpos[].Talpa_m3
+                  const metaTalpos: any[] = Array.isArray(_meta?.talpos) ? _meta.talpos : [];
+                  const talpaValues = metaTalpos.map((t: any) => t?.Talpa_m3 ?? t?.talpa_m3 ?? t?.talpa).filter((v: any) => v != null && v !== '');
                   const talpaM3 = talpaValues.length > 0 ? talpaValues.join(', ') : '—';
-                  const talpaKiekis = talposIds.length > 0 ? String(talposIds.length) : '—';
+                  // Talpų Kiekis: use UUID field count, fall back to metadata array length
+                  const uuidIds = (row.talpos || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+                  const talpaKiekis = uuidIds.length > 0 ? String(uuidIds.length) : (metaTalpos.length > 0 ? String(metaTalpos.length) : '—');
                   return (
                     <tr
                       key={row.id ?? i}
@@ -1214,10 +1223,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       <td className="px-3 py-2.5 w-28">
                         <span style={{ color: '#3d3935', fontSize: '13px' }}>{row.pateikimo_data || '—'}</span>
                       </td>
-                      {/* Pastabos */}
+                      {/* Santrauka */}
                       <td className="px-3 py-2.5">
-                        <span className="block truncate max-w-[200px]" style={{ color: '#3d3935', fontSize: '13px' }} title={row.description || ''}>
-                          {row.description || '—'}
+                        <span className="block truncate max-w-[200px]" style={{ color: '#3d3935', fontSize: '13px' }} title={santrauka}>
+                          {santrauka || '—'}
                         </span>
                       </td>
                       {/* Talpa m3 */}
