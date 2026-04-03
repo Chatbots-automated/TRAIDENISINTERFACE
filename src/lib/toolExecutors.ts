@@ -13,6 +13,7 @@
  */
 
 import { getWebhookUrl } from './webhooksService';
+import { fetchLatestMaterialPrices, fetchLatestAnalitika } from './kainosService';
 
 // Map tool names to webhook keys in the database
 const TOOL_WEBHOOK_KEYS: Record<string, string> = {
@@ -83,13 +84,27 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
     console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
     console.log('[Tool: get_prices] Calling webhook:', webhookUrl);
 
+    // Fetch latest material prices and analytics summary to enrich the request.
+    // n8n can use this data alongside tank specs for more accurate price estimates.
+    const [materialPrices, latestAnalytics] = await Promise.allSettled([
+      fetchLatestMaterialPrices(),
+      fetchLatestAnalitika(),
+    ]);
+
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        id: input.id
+        id: input.id,
+        material_prices: materialPrices.status === 'fulfilled' ? materialPrices.value : [],
+        price_analytics_summary: latestAnalytics.status === 'fulfilled' && latestAnalytics.value
+          ? latestAnalytics.value.content
+          : null,
+        geo_events_summary: latestAnalytics.status === 'fulfilled' && latestAnalytics.value
+          ? latestAnalytics.value.geoevents
+          : null,
       })
     });
 

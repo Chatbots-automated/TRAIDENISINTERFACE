@@ -27,6 +27,14 @@ import { getWebhookUrl } from '../lib/webhooksService';
 // Helpers
 // ---------------------------------------------------------------------------
 
+function getSantraukaFromMetadata(raw: any): string {
+  if (!raw) return '';
+  let obj = raw;
+  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { return ''; } }
+  if (Array.isArray(obj) && obj.length > 0) obj = obj[0];
+  return obj?.santrauka || obj?.Santrauka || '';
+}
+
 function parseMetadata(raw: string | Record<string, string> | any[] | null | undefined): Record<string, string> {
   if (!raw) return {};
   // If it's an array (multi-product), return the first item as flat metadata
@@ -3525,28 +3533,39 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         {/* Header */}
         <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
-                {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
-              </h2>
-              {(meta.pritaikymas || products[0]?.pritaikymas) ? (
-                <p className="text-sm mt-0.5 truncate text-base-content/50">
-                  {meta.pritaikymas || products[0]?.pritaikymas}
-                  {products.length > 1 && <span className="text-base-content/30"> · {products.length} gaminiai</span>}
-                </p>
-              ) : (
-                <p className="text-sm mt-0.5 text-base-content/40">
-                  Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
-                  {products.length > 1 && <span> · {products.length} gaminiai</span>}
+            <div className="min-w-0 flex-1">
+              {/* Project-level title row */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
+                  {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
+                </h2>
+                {record.klientas && (
+                  <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+                    {record.klientas}
+                  </span>
+                )}
+                <span
+                  className="text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0"
+                  style={record.status
+                    ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
+                    : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
+                >
+                  {record.status ? 'Aktyvus' : 'Neaktyvus'}
+                </span>
+              </div>
+              {/* Project-level meta row */}
+              <p className="text-sm mt-1 text-base-content/40">
+                Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
+                {products.length > 1 && ` · ${products.length} talpos`}
+              </p>
+              {/* Pastabos (project-level notes) */}
+              {getSantraukaFromMetadata(record.metadata) && (
+                <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
+                  {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {record.klientas && (
-                <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">
-                  {record.klientas}
-                </span>
-              )}
+            <div className="flex items-center gap-1.5 shrink-0">
               <button onClick={refreshRecord} disabled={refreshing} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atnaujinti duomenis">
                 <RefreshCw className={`w-4 h-4 text-base-content/40 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
@@ -3776,23 +3795,29 @@ export default function PaklausimoKortelePage() {
         {/* Header */}
         <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
-              {(meta.pritaikymas || products[0]?.pritaikymas) ? (
-                <p className="text-sm mt-0.5 truncate text-base-content/50">
-                  {meta.pritaikymas || products[0]?.pritaikymas}
-                  {products.length > 1 && <span className="text-base-content/30"> · {products.length} gaminiai</span>}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
+                {record.klientas && (
+                  <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">{record.klientas}</span>
+                )}
+                <span
+                  className="text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0"
+                  style={record.status
+                    ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
+                    : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
+                >
+                  {record.status ? 'Aktyvus' : 'Neaktyvus'}
+                </span>
+              </div>
+              <p className="text-sm mt-1 text-base-content/40">
+                Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
+                {products.length > 1 && ` · ${products.length} talpos`}
+              </p>
+              {getSantraukaFromMetadata(record.metadata) && (
+                <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
+                  {getSantraukaFromMetadata(record.metadata)}
                 </p>
-              ) : (
-                <p className="text-sm mt-0.5 text-base-content/40">
-                  Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
-                  {products.length > 1 && <span> · {products.length} gaminiai</span>}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {record.klientas && (
-                <span className="text-xs font-medium px-3 py-1 rounded-full bg-primary/10 text-primary">{record.klientas}</span>
               )}
             </div>
           </div>

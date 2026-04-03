@@ -154,7 +154,7 @@ export const deleteStandartinisProjektas = async (record: { id: number; docx_fil
 };
 
 /** Columns we display for nestandartiniai */
-const NESTANDARTINIAI_FIELDS = 'id,description,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina,talpos';
+const NESTANDARTINIAI_FIELDS = 'id,metadata,project_name,pateikimo_data,klientas,atsakymas,derva,tasks,files,ai_conversation,similar_projects,status,kaina,talpos';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -194,7 +194,7 @@ export interface SimilarProject {
 
 export interface NestandartiniaiRecord {
   id: number;
-  description: string | null;
+  description?: string | null;
   metadata: string | Record<string, string> | null;
   project_name: string | null;
   pateikimo_data: string | null;
@@ -234,15 +234,15 @@ export const fetchNestandartiniaiDokumentai = async (): Promise<NestandartiniaiR
   }
 };
 
-export const fetchNestandartiniaiKainaByIds = async (ids: number[]): Promise<Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'description' | 'derva' | 'klientas' | 'tasks'>[]> => {
+export const fetchNestandartiniaiKainaByIds = async (ids: number[]): Promise<Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'derva' | 'klientas' | 'tasks'>[]> => {
   if (ids.length === 0) return [];
   try {
     const { data, error } = await db
       .from('n8n_vector_store')
-      .select('id,kaina,metadata,description,derva,klientas,tasks')
+      .select('id,kaina,metadata,derva,klientas,tasks')
       .in('id', ids);
     if (error) throw error;
-    return (data ?? []) as Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'description' | 'derva' | 'klientas' | 'tasks'>[];
+    return (data ?? []) as Pick<NestandartiniaiRecord, 'id' | 'kaina' | 'metadata' | 'derva' | 'klientas' | 'tasks'>[];
   } catch (error: any) {
     console.error('Error in fetchNestandartiniaiKainaByIds:', error);
     return [];

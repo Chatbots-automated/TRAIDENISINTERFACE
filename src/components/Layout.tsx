@@ -14,7 +14,8 @@ import {
   ChevronsRight,
   FlaskConical,
   Beaker,
-  FileSearch
+  FileSearch,
+  TrendingUp
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
@@ -25,8 +26,8 @@ interface LayoutProps {
   children: React.ReactNode;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize';
-  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize') => void;
+  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
   forceCollapsed?: boolean;
   sdkUnreadCount?: number;
@@ -192,6 +193,16 @@ export default function Layout({
                 >
                   <FlaskConical className="w-4 h-4" />
                   {!sidebarCollapsed && <span className="truncate">Nestandartiniai Projektai</span>}
+                </button>
+              </li>
+              <li>
+                <button
+                  onClick={() => onViewModeChange?.('kainos')}
+                  className={viewMode === 'kainos' ? 'active' : ''}
+                  title={sidebarCollapsed ? 'Žaliavų Kainos' : undefined}
+                >
+                  <TrendingUp className="w-4 h-4" />
+                  {!sidebarCollapsed && <span className="whitespace-nowrap">Žaliavų Kainos</span>}
                 </button>
               </li>
               {user.is_admin && (

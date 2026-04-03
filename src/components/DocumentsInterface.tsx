@@ -37,69 +37,15 @@ const EMPTY_FILTERS: MetadataFilters = {
 };
 
 // ---------------------------------------------------------------------------
-// Column config for nestandartiniai – metadata fields shown as own columns
+// Column config interface (shared by standartiniai)
 // ---------------------------------------------------------------------------
 
 interface ColumnDef {
   key: string;
   label: string;
-  /** If set, value comes from metadata[metaKey] instead of row[key] */
-  metaKey?: string;
   width?: string;
   badge?: boolean;
   toggle?: boolean;
-}
-
-/** Default columns shown in the nestandartiniai table. */
-const DEFAULT_NESTANDARTINIAI_COLS: ColumnDef[] = [
-  { key: 'id', label: 'ID', width: 'w-16' },
-  { key: 'status', label: 'Statusas', width: 'w-20', toggle: true },
-  { key: 'project_name', label: 'Projektas' },
-  { key: 'talpu_kiekis', label: 'Talpu kiekis', width: 'w-24' },
-  { key: 'klientas', label: 'Klientas', badge: true },
-  { key: 'meta_orientacija', label: 'Orientacija', metaKey: 'orientacija' },
-  { key: 'meta_talpa_tipas', label: 'Talpos tipas', metaKey: 'talpa_tipas' },
-  { key: 'meta_DN', label: 'DN', metaKey: 'DN', width: 'w-20' },
-  { key: 'meta_derva_org', label: 'Derva (org)' },
-  { key: 'meta_derva_musu', label: 'Derva (mūsų)', metaKey: 'derva_musu' },
-  { key: 'kaina', label: 'Kaina' },
-  { key: 'derva', label: 'Derva (AI)' },
-  { key: 'pateikimo_data', label: 'Data', width: 'w-28' },
-];
-
-/** Keys of default-visible columns */
-const DEFAULT_VISIBLE_KEYS = new Set(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-
-/** DB-level fields that are not useful as columns */
-const HIDDEN_DB_FIELDS = new Set(['metadata', 'atsakymas', 'ai_conversation', 'similar_projects', 'tasks', 'files', 'description']);
-
-const COL_ORDER_KEY = 'traidenis_col_order_nestandartiniai';
-const COL_HIDDEN_KEY = 'traidenis_col_hidden_nestandartiniai';
-
-function loadColumnOrder(): string[] | null {
-  try {
-    const raw = localStorage.getItem(COL_ORDER_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
-  } catch { return null; }
-}
-
-function saveColumnOrder(keys: string[]) {
-  try { localStorage.setItem(COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
-}
-
-function loadHiddenCols(): Set<string> {
-  try {
-    const raw = localStorage.getItem(COL_HIDDEN_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch { return new Set(); }
-}
-
-function saveHiddenCols(hidden: Set<string>) {
-  try { localStorage.setItem(COL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ }
 }
 
 function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): ColumnDef[] {
@@ -110,84 +56,8 @@ function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): Colu
     const col = byKey.get(key);
     if (col) { ordered.push(col); byKey.delete(key); }
   }
-  // Append any new columns not in saved order
   for (const col of byKey.values()) ordered.push(col);
   return ordered;
-}
-
-/** Lithuanian labels for common metadata keys */
-const META_KEY_LABELS: Record<string, string> = {
-  orientacija: 'Orientacija',
-  talpa_tipas: 'Talpos tipas',
-  DN: 'DN',
-  derva: 'Derva (orig. meta)',
-  derva_musu: 'Derva (mūsų, meta)',
-  derva_cheminis_sluoksnis_mm: 'Cheminis sluoksnis (mm)',
-  chemija: 'Chemija',
-  koncentracija: 'Koncentracija',
-  pritaikymas: 'Pritaikymas',
-  talpa: 'Talpa',
-  termoizoliacija: 'Termoizoliacija',
-  sildymas: 'Šildymas',
-  maisytuvas: 'Maišytuvas',
-  dangtelis: 'Dangtelis',
-  stovas: 'Stovas',
-  padavimas: 'Padavimas',
-  issiurbimas: 'Išsiurbimas',
-  perlajas: 'Perlajas',
-  sluoksniu_sk: 'Sluoksnių sk.',
-};
-
-function formatMetaKeyLabel(key: string): string {
-  if (META_KEY_LABELS[key]) return META_KEY_LABELS[key];
-  return key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
-}
-
-/** Collect all unique scalar metadata keys across all records */
-function collectAllMetaKeys(records: NestandartiniaiRecord[]): string[] {
-  const keys = new Set<string>();
-  for (const r of records) {
-    const products = parseAllProducts(r.metadata);
-    for (const p of products) {
-      for (const [k, v] of Object.entries(p)) {
-        if (v === null || v === undefined || v === '') continue;
-        if (typeof v === 'object' && !Array.isArray(v)) continue;
-        keys.add(k);
-      }
-    }
-  }
-  return [...keys].sort();
-}
-
-/** Build the full available column definitions from DB fields + metadata keys */
-function buildAllColumns(records: NestandartiniaiRecord[]): ColumnDef[] {
-  // Start with the hardcoded defaults (preserves order/width/badge/toggle config)
-  const byKey = new Map(DEFAULT_NESTANDARTINIAI_COLS.map(c => [c.key, c]));
-  const result = [...DEFAULT_NESTANDARTINIAI_COLS];
-
-  // Add DB-level fields not yet in defaults
-  const dbFields = ['id', 'project_name', 'klientas', 'pateikimo_data', 'status', 'kaina', 'derva'];
-  for (const f of dbFields) {
-    if (!byKey.has(f) && !HIDDEN_DB_FIELDS.has(f)) {
-      const col: ColumnDef = { key: f, label: formatMetaKeyLabel(f) };
-      result.push(col);
-      byKey.set(f, col);
-    }
-  }
-
-  // Add metadata-derived columns
-  const metaKeys = collectAllMetaKeys(records);
-  for (const mk of metaKeys) {
-    const colKey = `meta_${mk}`;
-    if (byKey.has(colKey)) continue;
-    // Skip keys already covered by computed columns (derva_org is computed from derva + cheminis)
-    if (mk === 'derva' || mk === 'derva_musu') continue;
-    const col: ColumnDef = { key: colKey, label: formatMetaKeyLabel(mk), metaKey: mk };
-    result.push(col);
-    byKey.set(colKey, col);
-  }
-
-  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,105 +218,10 @@ function formatDervaMusu(raw: any, maxLen = 30): string {
 function getProjectNameFromMetadata(row: any): string | undefined {
   const meta = parseMetadata(row.metadata);
   if (!meta) return undefined;
-  // Top-level "projektas" field in metadata
   if (meta.projektas) return String(meta.projektas);
-  // Check inside first product's projekto_kontekstas_Projekto_pavadinimas
   const projName = getMetaValue(meta, 'projekto_kontekstas_Projekto_pavadinimas');
   if (projName) return projName;
   return undefined;
-}
-
-/** Count the number of tanks/products in the metadata JSON */
-function countTanksFromMetadata(raw: any): number {
-  if (!raw) return 0;
-  let obj = raw;
-  if (typeof raw === 'string') {
-    try { obj = JSON.parse(raw); } catch { return 0; }
-  }
-  // Direct array of products: [{...}, {...}]
-  if (Array.isArray(obj)) {
-    // If it's a wrapper array like [{ talpos: [...] }], check inside first element
-    if (obj.length === 1 && obj[0] && typeof obj[0] === 'object') {
-      for (const key of PRODUCT_WRAPPER_KEYS) {
-        if (Array.isArray(obj[0][key]) && obj[0][key].length > 0) {
-          return obj[0][key].length;
-        }
-      }
-    }
-    const items = obj.filter((item: any) => item && typeof item === 'object' && !Array.isArray(item));
-    return items.length;
-  }
-  if (obj && typeof obj === 'object') {
-    for (const key of PRODUCT_WRAPPER_KEYS) {
-      if (Array.isArray(obj[key]) && obj[key].length > 0) {
-        return obj[key].length;
-      }
-    }
-  }
-  // Single product (flat object)
-  return 1;
-}
-
-function getCellValue(row: any, col: ColumnDef): string {
-  if (col.key === 'meta_derva_org') {
-    return formatDervaOrg(row.metadata);
-  }
-  if (col.key === 'meta_derva_musu') {
-    return formatDervaMusu(row.metadata);
-  }
-  if (col.metaKey) {
-    const products = parseAllProducts(row.metadata);
-    if (products.length === 0) {
-      const meta = parseMetadata(row.metadata);
-      return getMetaValue(meta, col.metaKey) || '—';
-    }
-    const values: string[] = [];
-    for (const p of products) {
-      const v = getMetaValue(p, col.metaKey);
-      if (v && !values.includes(v)) values.push(v);
-    }
-    return truncateList(values, 60);
-  }
-  // Fallback: if project_name is empty, try extracting from metadata
-  if (col.key === 'project_name') {
-    const val = row[col.key];
-    if (val === null || val === undefined || val === '') {
-      return getProjectNameFromMetadata(row) || '—';
-    }
-    const str = String(val);
-    return str.length > 120 ? str.slice(0, 120) + '…' : str;
-  }
-  // Tank count from metadata
-  if (col.key === 'talpu_kiekis') {
-    const count = countTanksFromMetadata(row.metadata);
-    return count > 0 ? String(count) : '—';
-  }
-  // Kaina formatting — read kaina from each product object in metadata
-  if (col.key === 'kaina') {
-    const products = parseAllProducts(row.metadata);
-    const entries: [number, number][] = [];
-    for (let i = 0; i < products.length; i++) {
-      const k = products[i].kaina ?? products[i].Kaina;
-      if (k !== undefined && k !== null && k !== '') {
-        const n = Number(k);
-        if (!isNaN(n)) entries.push([i, n]);
-      }
-    }
-    if (entries.length > 0) {
-      if (entries.length === 1) return `€${entries[0][1].toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      return entries.map(([i, p]) => `T${i + 1}: €${p.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`).join(', ');
-    }
-    // Fallback: kaina column (real) — total or legacy single price
-    const v = row.kaina;
-    if (v === null || v === undefined || v === '') return '—';
-    const n = Number(v);
-    if (!isNaN(n)) return `€${n.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    return '—';
-  }
-  const val = row[col.key];
-  if (val === null || val === undefined) return '—';
-  const str = String(val);
-  return str.length > 120 ? str.slice(0, 120) + '…' : str;
 }
 
 // ---------------------------------------------------------------------------
@@ -718,17 +493,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const isTalpos = selectedTable === 'talpos';
 
-  // ── Nestandartiniai column config ──
-  const allColsNest = useMemo(() => buildAllColumns(nestandartiniaiData), [nestandartiniaiData]);
-  const [hiddenColsNest, setHiddenColsNest] = useState<Set<string>>(() => {
-    const saved = loadHiddenCols();
-    if (saved.size === 0 && localStorage.getItem(COL_HIDDEN_KEY) === null) return new Set();
-    return saved;
-  });
-  const [colOrderNest, setColOrderNest] = useState<string[]>(() => loadColumnOrder() || DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-  const visibleColsNest = useMemo(() => allColsNest.filter(c => !hiddenColsNest.has(c.key)), [allColsNest, hiddenColsNest]);
-  const orderedColsNest = useMemo(() => getOrderedCols(visibleColsNest, colOrderNest), [visibleColsNest, colOrderNest]);
-
   // ── Standartiniai column config ──
   const allColsStand = useMemo(() => buildAllStandartiniaiColumns(standartiniaiData), [standartiniaiData]);
   const [hiddenColsStand, setHiddenColsStand] = useState<Set<string>>(() => {
@@ -740,9 +504,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const visibleColsStand = useMemo(() => allColsStand.filter(c => !hiddenColsStand.has(c.key)), [allColsStand, hiddenColsStand]);
   const orderedColsStand = useMemo(() => getOrderedCols(visibleColsStand, colOrderStand), [visibleColsStand, colOrderStand]);
 
-  // ── Unified column config (switches by active table) ──
-  const allCols = isNestandartiniai ? allColsNest : allColsStand;
-  const orderedCols = isNestandartiniai ? orderedColsNest : orderedColsStand;
+  // ── Unified column config (standartiniai only — nestandartiniai uses fixed columns) ──
+  const allCols = allColsStand;
+  const orderedCols = orderedColsStand;
 
   const [showColConfig, setShowColConfig] = useState(false);
   const colConfigRef = useRef<HTMLDivElement>(null);
@@ -758,7 +522,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     return () => document.removeEventListener('mousedown', handler);
   }, [showColConfig]);
 
-  const hiddenCols = isNestandartiniai ? hiddenColsNest : hiddenColsStand;
+  const hiddenCols = hiddenColsStand;
 
   const handleColDragStart = useCallback((key: string) => { dragColRef.current = key; }, []);
   const handleColDragOver = useCallback((e: React.DragEvent, key: string) => { e.preventDefault(); dragOverColRef.current = key; }, []);
@@ -766,76 +530,48 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     const from = dragColRef.current;
     const to = dragOverColRef.current;
     if (!from || !to || from === to) return;
-    if (isNestandartiniai) {
-      setColOrderNest(prev => {
-        const next = [...prev];
-        const fromIdx = next.indexOf(from);
-        const toIdx = next.indexOf(to);
-        if (fromIdx === -1 || toIdx === -1) return prev;
-        next.splice(fromIdx, 1);
-        next.splice(toIdx, 0, from);
-        saveColumnOrder(next);
-        return next;
-      });
-    } else {
-      setColOrderStand(prev => {
-        const next = [...prev];
-        const fromIdx = next.indexOf(from);
-        const toIdx = next.indexOf(to);
-        if (fromIdx === -1 || toIdx === -1) return prev;
-        next.splice(fromIdx, 1);
-        next.splice(toIdx, 0, from);
-        saveStandartiniaiColOrder(next);
-        return next;
-      });
-    }
+    setColOrderStand(prev => {
+      const next = [...prev];
+      const fromIdx = next.indexOf(from);
+      const toIdx = next.indexOf(to);
+      if (fromIdx === -1 || toIdx === -1) return prev;
+      next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, from);
+      saveStandartiniaiColOrder(next);
+      return next;
+    });
     dragColRef.current = null;
     dragOverColRef.current = null;
-  }, [isNestandartiniai]);
+  }, []);
 
   const toggleColumnVisibility = useCallback((key: string) => {
-    if (isNestandartiniai) {
-      setHiddenColsNest(prev => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        saveHiddenCols(next);
-        return next;
-      });
-    } else {
-      setHiddenColsStand(prev => {
-        const next = new Set(prev);
-        if (next.has(key)) next.delete(key); else next.add(key);
-        saveStandartiniaiHiddenCols(next);
-        return next;
-      });
-    }
-  }, [isNestandartiniai]);
+    setHiddenColsStand(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      saveStandartiniaiHiddenCols(next);
+      return next;
+    });
+  }, []);
 
   const resetColumnsToDefault = useCallback(() => {
-    if (isNestandartiniai) {
-      const allKeys = allColsNest.map(c => c.key);
-      const hidden = new Set(allKeys.filter(k => !DEFAULT_VISIBLE_KEYS.has(k)));
-      setHiddenColsNest(hidden);
-      saveHiddenCols(hidden);
-      setColOrderNest(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-      saveColumnOrder(DEFAULT_NESTANDARTINIAI_COLS.map(c => c.key));
-    } else {
-      const allKeys = allColsStand.map(c => c.key);
-      const hidden = new Set(allKeys.filter(k => !DEFAULT_STANDARTINIAI_VISIBLE_KEYS.has(k)));
-      setHiddenColsStand(hidden);
-      saveStandartiniaiHiddenCols(hidden);
-      setColOrderStand(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
-      saveStandartiniaiColOrder(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
-    }
-  }, [isNestandartiniai, allColsNest, allColsStand]);
+    const allKeys = allColsStand.map(c => c.key);
+    const hidden = new Set(allKeys.filter(k => !DEFAULT_STANDARTINIAI_VISIBLE_KEYS.has(k)));
+    setHiddenColsStand(hidden);
+    saveStandartiniaiHiddenCols(hidden);
+    setColOrderStand(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+    saveStandartiniaiColOrder(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+  }, [allColsStand]);
 
   // Load only the active table on mount and on every tab switch (lazy — avoids
   // pre-fetching tables the user may never visit and eliminates the double-fetch
   // of the default table that the previous two-effect pattern caused).
+  // Nestandartiniai also needs talpos data to show "Talpa m3" per row.
   useEffect(() => {
     if (selectedTable === 'talpos') loadTalpos();
-    else if (selectedTable === 'n8n_vector_store') loadNestandartiniai();
-    else if (selectedTable === 'standartiniai_projektai') loadStandartiniai();
+    else if (selectedTable === 'n8n_vector_store') {
+      loadNestandartiniai();
+      if (talposData.length === 0) loadTalpos();
+    } else if (selectedTable === 'standartiniai_projektai') loadStandartiniai();
   }, [selectedTable]);
 
   const loadStandartiniai = async () => {
@@ -860,6 +596,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     const keys = new Set<string>();
     for (const row of talposData) { Object.keys(row).forEach(k => keys.add(k)); }
     return Array.from(keys);
+  }, [talposData]);
+
+  // Lookup map: talpos id (string) → row — used by nestandartiniai table to show Talpa m3
+  const talposById = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const row of talposData) {
+      if (row.id != null) map.set(String(row.id), row);
+    }
+    return map;
   }, [talposData]);
 
   const filterOptions = useMemo(() => ({
@@ -895,7 +640,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           if (row.project_name) parts.push(row.project_name);
           if (row.klientas) parts.push(row.klientas);
           if (row.pateikimo_data) parts.push(row.pateikimo_data);
-          if (row.description) parts.push(row.description);
+          // description column removed from DB; santrauka is inside metadata
           if (row.derva) parts.push(row.derva);
           // All metadata values (includes derva_musu)
           const meta = parseMetadata(row.metadata);
@@ -1150,8 +895,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             />
           </div>
 
-          {/* Column config button — hidden for talpos (all columns shown) */}
-          {!isTalpos && (
+          {/* Column config button — only for standartiniai */}
+          {!isTalpos && !isNestandartiniai && (
             <div className="relative" ref={colConfigRef}>
               <button
                 onClick={() => setShowColConfig(v => !v)}
@@ -1333,7 +1078,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
             </div>
           </div>
         ) : isNestandartiniai ? (
-          /* ---- Nestandartiniai table (custom columns from metadata) ---- */
+          /* ---- Nestandartiniai table (fixed columns) ---- */
           <div
             className="w-full overflow-x-auto rounded-macos-lg bg-white"
             style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
@@ -1378,103 +1123,121 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     />
                   </th>
                   <th className="w-10 px-2 py-3"></th>
-                  {orderedCols.map(col => (
-                    <th
-                      key={col.key}
-                      draggable
-                      onDragStart={() => handleColDragStart(col.key)}
-                      onDragOver={e => handleColDragOver(e, col.key)}
-                      onDrop={handleColDrop}
-                      onClick={() => handleSort(col.key)}
-                      className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
-                    >
-                      <div className="flex items-center gap-1">
-                        <GripVertical className="w-3 h-3 text-base-content/20 shrink-0 cursor-grab active:cursor-grabbing" />
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
-                        <span className="inline-flex flex-col leading-none">
-                          <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
-                          <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col.key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
-                        </span>
-                      </div>
-                    </th>
-                  ))}
+                  {(['id', 'status', 'project_name', 'talpu_kiekis', 'klientas', 'pateikimo_data', 'description', 'talpa_m3'] as const).map(key => {
+                    const label = key === 'id' ? 'ID' : key === 'status' ? 'Statusas' : key === 'project_name' ? 'Projektas' : key === 'talpu_kiekis' ? 'Talpų Kiekis' : key === 'klientas' ? 'Klientas' : key === 'pateikimo_data' ? 'Data' : key === 'description' ? 'Santrauka' : 'Talpa m3';
+                    return (
+                      <th
+                        key={key}
+                        onClick={() => handleSort(key)}
+                        className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
+                      >
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{label}</span>
+                          <span className="inline-flex flex-col leading-none">
+                            <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                            <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === key && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
+                          </span>
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {pagedData.map((row, i) => (
-                  <tr
-                    key={row.id ?? i}
-                    className="transition-colors"
-                    onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
-                    style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
-                  >
-                    <td className="w-10 px-2 py-2.5">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(row.id as number)}
-                        onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
-                        onClick={e => e.stopPropagation()}
-                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-                      />
-                    </td>
-                    <td className="w-10 px-2 py-2.5">
-                      <button
-                        className="p-1.5 rounded-md transition-colors"
-                        style={{ color: '#8a857f' }}
-                        onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
-                        onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
-                        title="Atidaryti kortelę"
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                    </td>
-                    {orderedCols.map(col => {
-                      if (col.toggle) {
-                        const checked = !!row[col.key];
-                        return (
-                          <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
-                            <button
-                              onClick={e => { e.stopPropagation(); handleToggleStatus(row.id, checked); }}
-                              className={`macos-toggle ${checked ? 'active' : ''}`}
-                              style={{ width: 36, height: 20, borderRadius: 10 }}
-                            >
-                              <span
-                                className="macos-toggle-thumb"
-                                style={{ width: 16, height: 16, top: 2, left: 2, borderRadius: 8 }}
-                              />
-                            </button>
-                          </td>
-                        );
-                      }
-                      const val = getCellValue(row, col);
-                      const fullVal = (col.key === 'meta_derva_org') ? formatDervaOrg(row.metadata, 500)
-                        : (col.key === 'meta_derva_musu') ? formatDervaMusu(row.metadata, 500)
-                        : val;
-                      return (
-                        <td key={col.key} className={`px-3 py-2.5 ${col.width || ''}`}>
-                          {col.badge && val !== '—' ? (
-                            <span
-                              className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full truncate max-w-[140px]"
-                              style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
-                            >
-                              {val}
-                            </span>
-                          ) : (
-                            <span
-                              className="block truncate max-w-[200px]"
-                              style={{ color: col.key === 'id' ? '#8a857f' : '#3d3935', fontSize: col.key === 'id' ? '12px' : '13px' }}
-                              title={fullVal}
-                            >
-                              {val}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {pagedData.map((row, i) => {
+                  // Parse metadata JSON (handles string, object, or array wrapper)
+                  let _meta: any = row.metadata;
+                  if (typeof _meta === 'string') { try { _meta = JSON.parse(_meta); } catch { _meta = null; } }
+                  if (Array.isArray(_meta) && _meta.length > 0) _meta = _meta[0];
+                  // Santrauka from metadata root
+                  const santrauka: string = _meta?.santrauka || _meta?.Santrauka || '';
+                  // Talpa m3 from metadata.talpos[].Talpa_m3
+                  const metaTalpos: any[] = Array.isArray(_meta?.talpos) ? _meta.talpos : [];
+                  const talpaValues = metaTalpos.map((t: any) => t?.Talpa_m3 ?? t?.talpa_m3 ?? t?.talpa).filter((v: any) => v != null && v !== '');
+                  const talpaM3 = talpaValues.length > 0 ? talpaValues.join(', ') : '—';
+                  // Talpų Kiekis: use UUID field count, fall back to metadata array length
+                  const uuidIds = (row.talpos || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+                  const talpaKiekis = uuidIds.length > 0 ? String(uuidIds.length) : (metaTalpos.length > 0 ? String(metaTalpos.length) : '—');
+                  return (
+                    <tr
+                      key={row.id ?? i}
+                      className="transition-colors"
+                      onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
+                      style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
+                    >
+                      <td className="w-10 px-2 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(row.id as number)}
+                          onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
+                          onClick={e => e.stopPropagation()}
+                          className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                        />
+                      </td>
+                      <td className="w-10 px-2 py-2.5">
+                        <button
+                          className="p-1.5 rounded-md transition-colors"
+                          style={{ color: '#8a857f' }}
+                          onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
+                          onClick={() => setSelectedCard(row as NestandartiniaiRecord)}
+                          title="Atidaryti kortelę"
+                        >
+                          <FileText className="w-4 h-4" />
+                        </button>
+                      </td>
+                      {/* ID */}
+                      <td className="px-3 py-2.5 w-16">
+                        <span style={{ color: '#8a857f', fontSize: '12px' }}>{row.id ?? '—'}</span>
+                      </td>
+                      {/* Statusas */}
+                      <td className="px-3 py-2.5 w-20">
+                        <button
+                          onClick={e => { e.stopPropagation(); handleToggleStatus(row.id, !!row.status); }}
+                          className={`macos-toggle ${row.status ? 'active' : ''}`}
+                          style={{ width: 36, height: 20, borderRadius: 10 }}
+                        >
+                          <span className="macos-toggle-thumb" style={{ width: 16, height: 16, top: 2, left: 2, borderRadius: 8 }} />
+                        </button>
+                      </td>
+                      {/* Projektas */}
+                      <td className="px-3 py-2.5">
+                        <span className="block truncate max-w-[180px]" style={{ color: '#3d3935', fontSize: '13px' }} title={row.project_name || getProjectNameFromMetadata(row) || ''}>
+                          {row.project_name || getProjectNameFromMetadata(row) || '—'}
+                        </span>
+                      </td>
+                      {/* Talpų Kiekis */}
+                      <td className="px-3 py-2.5 w-24">
+                        <span style={{ color: '#3d3935', fontSize: '13px' }}>{talpaKiekis}</span>
+                      </td>
+                      {/* Klientas */}
+                      <td className="px-3 py-2.5">
+                        {row.klientas ? (
+                          <span className="inline-block text-xs font-medium px-2.5 py-0.5 rounded-full truncate max-w-[140px]" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+                            {row.klientas}
+                          </span>
+                        ) : <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>}
+                      </td>
+                      {/* Data */}
+                      <td className="px-3 py-2.5 w-28">
+                        <span style={{ color: '#3d3935', fontSize: '13px' }}>{row.pateikimo_data || '—'}</span>
+                      </td>
+                      {/* Santrauka */}
+                      <td className="px-3 py-2.5">
+                        <span className="block truncate max-w-[200px]" style={{ color: '#3d3935', fontSize: '13px' }} title={santrauka}>
+                          {santrauka || '—'}
+                        </span>
+                      </td>
+                      {/* Talpa m3 */}
+                      <td className="px-3 py-2.5">
+                        <span className="block truncate max-w-[150px]" style={{ color: '#3d3935', fontSize: '13px' }} title={talpaM3}>
+                          {talpaM3}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
