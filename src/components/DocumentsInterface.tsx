@@ -48,6 +48,18 @@ interface ColumnDef {
   toggle?: boolean;
 }
 
+function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): ColumnDef[] {
+  if (!savedOrder) return allCols;
+  const byKey = new Map(allCols.map(c => [c.key, c]));
+  const ordered: ColumnDef[] = [];
+  for (const key of savedOrder) {
+    const col = byKey.get(key);
+    if (col) { ordered.push(col); byKey.delete(key); }
+  }
+  for (const col of byKey.values()) ordered.push(col);
+  return ordered;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
