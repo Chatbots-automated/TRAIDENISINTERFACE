@@ -289,7 +289,7 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
       // Build chart points from actual data
       const points: ChartPoint[] = entries.map(e => ({
         date: e.data,
-        label: e.data.slice(5), // MM-DD
+        label: e.data, // full YYYY-MM-DD for axis
         kaina: e.kaina_min,
         predicted: undefined,
       }));
@@ -300,13 +300,13 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
         const lastPoint = points[points.length - 1];
         points.push({
           date: lastPoint.date,
-          label: lastPoint.date.slice(5),
+          label: lastPoint.date,
           kaina: lastPoint.kaina,
           predicted: lastPoint.kaina!,
         });
         points.push({
           date: prediction.data,
-          label: prediction.data.slice(5),
+          label: prediction.data,
           kaina: null,
           predicted: (prediction.kaina_min + prediction.kaina_max) / 2,
         });
@@ -412,7 +412,16 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
                 <XAxis
                   dataKey="label"
-                  tick={{ fontSize: 10, fill: '#8a857f' }}
+                  tick={({ x, y, payload }: any) => {
+                    const [yr, md] = (payload.value || '').split(/-(.+)/);
+                    return (
+                      <g transform={`translate(${x},${y})`}>
+                        <text x={0} y={0} dy={10} textAnchor="middle" fontSize={8} fill="#b0aba4">{yr}</text>
+                        <text x={0} y={0} dy={21} textAnchor="middle" fontSize={10} fill="#8a857f">{md}</text>
+                      </g>
+                    );
+                  }}
+                  height={35}
                   tickLine={false}
                   axisLine={{ stroke: '#f0ede8' }}
                 />
