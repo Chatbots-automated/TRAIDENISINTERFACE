@@ -279,7 +279,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const fetchAiPredictions = useCallback(async () => {
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
-    setAiError(null);
     try {
       const client = new Anthropic({
         apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
@@ -532,7 +531,7 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
           </div>
           {/* Chart */}
           <div className="px-2 py-3" style={{ height: 180 }}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} debounce={50}>
               <LineChart data={points} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
                 <XAxis
