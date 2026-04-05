@@ -576,8 +576,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   };
 
   // ---- helpers ----
-  const fmtDate = (d: string) =>
-    new Date(d + 'T00:00:00').toLocaleDateString('lt-LT', { year: '2-digit', month: '2-digit', day: '2-digit' });
+  const fmtDate = (d: string) => {
+    // "YYYY\nMM-DD" — year on top, month-day below
+    const [y, m, dd] = d.split('-');
+    return <span className="flex flex-col items-center leading-tight"><span className="text-[10px]" style={{ color: '#b0aba4' }}>{y}</span><span>{m}-{dd}</span></span>;
+  };
 
   const renderMd = (text: string) =>
     text.split('\n').map((line, i) => {
