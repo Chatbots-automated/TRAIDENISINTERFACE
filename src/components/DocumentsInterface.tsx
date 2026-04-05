@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos, migrateDervaMusuToColumn } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import { getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
@@ -584,20 +584,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     catch (err: any) { setErrorNestandartiniai(err?.message || 'Nepavyko gauti duomenų'); }
     finally { setLoadingNestandartiniai(false); }
   };
-  const dervaMusuMigrated = useRef(false);
   const loadTalpos = async () => {
-    try {
-      setLoadingTalpos(true); setErrorTalpos(null);
-      const rows = await fetchTalpos();
-      setTalposData(rows);
-      // One-time migration: move derva_musu from json to dedicated column
-      if (!dervaMusuMigrated.current) {
-        dervaMusuMigrated.current = true;
-        migrateDervaMusuToColumn().then(n => {
-          if (n > 0) fetchTalpos().then(setTalposData).catch(() => {});
-        });
-      }
-    }
+    try { setLoadingTalpos(true); setErrorTalpos(null); setTalposData(await fetchTalpos()); }
     catch (err: any) { setErrorTalpos(err?.message || 'Nepavyko gauti duomenų'); }
     finally { setLoadingTalpos(false); }
   };

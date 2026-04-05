@@ -2967,27 +2967,39 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         return;
       }
 
-      // Build clean tank metadata — only scalar fields relevant to this specific tank
-      const cleanTankMeta: Record<string, any> = {};
-      for (const [k, v] of Object.entries(tankMeta)) {
-        if (k.startsWith('_')) continue; // skip internal fields
-        if (v === null || v === undefined || v === '') continue;
-        if (typeof v === 'object' && !Array.isArray(v)) continue; // skip nested objects
-        cleanTankMeta[k] = v;
+      // Build tank data — prefer actual talpos row over legacy metadata
+      let tankData: Record<string, any>;
+      if (talposRow) {
+        tankData = {};
+        for (const [k, v] of Object.entries(talposRow)) {
+          if (k === 'embedding' || k === 'similar_talpos') continue;
+          if (v === null || v === undefined || v === '') continue;
+          tankData[k] = v;
+        }
+      } else {
+        // Fallback: legacy metadata
+        tankData = {};
+        for (const [k, v] of Object.entries(tankMeta)) {
+          if (k.startsWith('_')) continue;
+          if (v === null || v === undefined || v === '') continue;
+          if (typeof v === 'object' && !Array.isArray(v)) continue;
+          tankData[k] = v;
+        }
       }
 
       const currentDervaMusuValue = dervaMusu || 'neparinkta';
 
-      // Send only this tank's metadata + product_index
+      // Send tank data with the specific tank ID
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           record_id: record.id,
+          talpos_id: currentTalposId || null,
           product_index: idx,
           product_count: products.length,
           product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
-          product_metadata: cleanTankMeta,
+          product_metadata: tankData,
           derva_org: formatDervaOrg(tankMeta),
           derva_musu: currentDervaMusuValue,
           project_name: record.project_name,
