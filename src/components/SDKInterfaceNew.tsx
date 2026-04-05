@@ -2179,6 +2179,32 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Directus file ID of the saved .docx — enables download button
   const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
+  // Temporary preview file ID — auto-generated when preview tab is shown
+  const [previewDocxFileId, setPreviewDocxFileId] = useState<string | null>(null);
+  const [previewDocxLoading, setPreviewDocxLoading] = useState(false);
+
+  // Auto-generate a filled preview when the preview tab is shown but no saved file exists
+  useEffect(() => {
+    if (artifactTab !== 'preview' || savedDocxFileId || !globalDocxFileId || previewDocxFileId || previewDocxLoading) return;
+    if (!currentConversation?.artifact) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setPreviewDocxLoading(true);
+        const vars = mergeAllVariables();
+        const blob = await buildDocxBlob(vars);
+        if (cancelled) return;
+        const tempId = await uploadDocxBlobToDirectus(blob, 'preview-temp.docx', previewDocxFileId);
+        if (!cancelled) setPreviewDocxFileId(tempId);
+      } catch (err) {
+        console.error('Preview generation error:', err);
+      } finally {
+        if (!cancelled) setPreviewDocxLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artifactTab, savedDocxFileId, globalDocxFileId, currentConversation?.artifact?.content]);
 
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
@@ -2219,6 +2245,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
 
       setSavedDocxFileId(newFileId);
+      setPreviewDocxFileId(null); // Clear temp preview — saved file takes over
       addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
@@ -3319,11 +3346,11 @@ Vartotojo instrukcija: ${instruction}`;
             {/* Content area — either Data or Preview */}
             {artifactTab === 'preview' && !isStreamingArtifact ? (
               <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
-                {(savedDocxFileId || globalDocxFileId) ? (
+                {(savedDocxFileId || previewDocxFileId || globalDocxFileId) ? (
                   <>
-                    {!savedDocxFileId && globalDocxFileId && (
+                    {!savedDocxFileId && (
                       <div className="px-4 py-2 text-xs text-base-content/50 bg-base-content/3 flex items-center justify-between border-b border-base-content/5">
-                        <span>Rodomas DOCX šablonas. Spauskite „Išsaugoti", kad sugeneruotumėte dokumentą su kintamaisiais.</span>
+                        <span>{previewDocxFileId ? 'Peržiūra su kintamaisiais. Spauskite „Išsaugoti" galutiniam dokumentui.' : 'Generuojama peržiūra...'}</span>
                         <button
                           onClick={handleSaveToStandartiniai}
                           disabled={isSavingToStandartiniai}
@@ -3334,11 +3361,18 @@ Vartotojo instrukcija: ${instruction}`;
                         </button>
                       </div>
                     )}
-                    <iframe
-                      src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId || globalDocxFileId!))}&embedded=true`}
-                      className="flex-1 w-full border-0"
-                      title="DOCX peržiūra"
-                    />
+                    {previewDocxLoading && !savedDocxFileId && !previewDocxFileId && (
+                      <div className="flex-1 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      </div>
+                    )}
+                    {(savedDocxFileId || previewDocxFileId) && (
+                      <iframe
+                        src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId || previewDocxFileId!))}&embedded=true`}
+                        className="flex-1 w-full border-0"
+                        title="DOCX peržiūra"
+                      />
+                    )}
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-center px-6">
