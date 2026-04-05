@@ -258,13 +258,12 @@ interface AiPrediction {
   reasoning: string;
 }
 
-function GrafaTab({ medziagas, istorija, analytics }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analytics: PrognozėInternetas | null }) {
+function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analytics: PrognozėInternetas | null; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
   const [aiToggle, setAiToggle] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   // Close on outside click
   useEffect(() => {
@@ -337,7 +336,7 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
       setAiPredictions(parsed);
     } catch (err: any) {
       console.error('AI prediction error:', err);
-      setAiError(err.message || 'Nepavyko gauti AI prognozės');
+      onError?.(err.message || 'Nepavyko gauti DI prognozės');
       setAiToggle(false);
     } finally {
       setAiLoading(false);
@@ -467,71 +466,37 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
         }
       `}</style>
 
-      {/* Controls row — AI toggle + info button */}
-      <div className="flex items-center justify-between">
-        {/* AI prediction toggle */}
+      {/* Controls row — centered toggle + info */}
+      <div className="flex items-center justify-center gap-2 relative" ref={infoRef}>
         <button
           onClick={() => { if (!aiLoading) setAiToggle(!aiToggle); }}
           disabled={aiLoading}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-60"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-60"
           style={{
             background: aiToggle ? 'linear-gradient(135deg,#7c3aed 0%,#a855f7 100%)' : 'rgba(0,0,0,0.04)',
             color: aiToggle ? 'white' : '#5a5550',
             border: `0.5px solid ${aiToggle ? 'transparent' : 'rgba(0,0,0,0.08)'}`,
           }}>
           {aiLoading ? (
-            <><Loader2 className="w-3 h-3 animate-spin" />AI prognozė generuojama...</>
-          ) : (
-            <><Sparkles className="w-3 h-3" />AI prognozė {aiToggle ? 'ON' : 'OFF'}</>
-          )}
+            <><Loader2 className="w-3 h-3 animate-spin" />Generuojama...</>
+          ) : aiToggle ? 'Su DI' : 'Be DI'}
         </button>
-
-        <div className="flex items-center gap-2 relative" ref={infoRef}>
-          {aiError && (
-            <span className="text-[10px] text-error">{aiError}</span>
+        <div
+          className="relative cursor-help"
+          onMouseEnter={() => setShowInfo(true)}
+          onMouseLeave={() => setShowInfo(false)}
+        >
+          <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#b0aba4' }} />
+          {showInfo && (
+            <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 w-80 bg-white rounded-xl overflow-hidden"
+              style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0ede8' }}>
+              <div className="px-4 py-3 space-y-2 text-xs leading-relaxed" style={{ color: '#5a5550' }}>
+                <p><strong style={{ color: '#3d3935' }}>Be DI</strong> — grafikai rodo tik matematinę prognozę (svertinė tiesinė regresija pagal istorinius duomenis).</p>
+                <p><strong style={{ color: '#7c3aed' }}>Su DI</strong> — papildomai rodoma DI prognozė (violetinė linija), kuri atsižvelgia į naftos kainas, geopolitinius įvykius, styreno rinką ir dabartines tiekimo sąlygas iš interneto.</p>
+                <p style={{ color: '#b0aba4', fontSize: 10 }}>DI prognozei reikia sugeneruotos analizės (Analizė tab).</p>
+              </div>
+            </div>
           )}
-          <button onClick={() => setShowInfo(!showInfo)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-            style={{ background: showInfo ? '#007AFF' : 'rgba(0,0,0,0.04)', color: showInfo ? 'white' : '#5a5550',
-                     border: '0.5px solid rgba(0,0,0,0.08)' }}>
-            <AlertTriangle className="w-3 h-3" />Kaip skaičiuojama prognozė?
-          </button>
-        {showInfo && (
-          <div className="absolute top-8 right-0 z-30 w-96 bg-white rounded-xl overflow-hidden"
-            style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0ede8' }}>
-            <div className="px-4 py-3" style={{ borderBottom: '1px solid #f0ede8', background: '#faf9f7' }}>
-              <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>Kaip veikia kainų prognozė</span>
-            </div>
-            <div className="px-4 py-3 space-y-2 text-xs leading-relaxed" style={{ color: '#5a5550' }}>
-              <p>
-                Sistema analizuoja <strong style={{ color: '#3d3935' }}>visus istorinius kainos įrašus</strong> kiekvienai medžiagai
-                ir nustato kainų tendenciją naudodama <strong style={{ color: '#3d3935' }}>svertinę tiesinę regresiją</strong>.
-              </p>
-              <p>
-                <strong style={{ color: '#3d3935' }}>Naujesni duomenys turi didesnę įtaką</strong> nei seni — kaina prieš
-                mėnesį yra svarbesnė nei kaina prieš 2 metus. Svoriai mažėja eksponentiškai: kas 6 mėnesius
-                seno įrašo svoris sumažėja perpus.
-              </p>
-              <p>
-                <strong style={{ color: '#3d3935' }}>Prognozės data priklauso nuo duomenų šviežumo:</strong>
-              </p>
-              <ul className="list-disc ml-4 space-y-1">
-                <li>Jei naujausia kaina įvesta <strong style={{ color: '#3d3935' }}>per paskutines 30 d.</strong> — prognozuojama
-                  <strong style={{ color: '#007AFF' }}> 1 mėn. į priekį</strong> nuo šiandien.</li>
-                <li>Jei naujausia kaina <strong style={{ color: '#3d3935' }}>senesnė nei 30 d.</strong> — prognozuojama
-                  <strong style={{ color: '#007AFF' }}> šiandienos kaina</strong>, nes trūksta aktualių duomenų.</li>
-              </ul>
-              <p>
-                <strong style={{ color: '#3d3935' }}>Patikimumo procentas</strong> apskaičiuojamas pagal:
-                duomenų taškų kiekį, istorijos laikotarpio plotį ir atstumą nuo paskutinio žinomo taško
-                iki prognozės datos. Kuo daugiau duomenų ir kuo arčiau prognozė — tuo patikimiau.
-              </p>
-              <p className="pt-1" style={{ color: '#b0aba4', fontSize: 10 }}>
-                Reikia bent 2 kainos įrašų su skaitinėmis reikšmėmis, kad prognozė būtų galima.
-              </p>
-            </div>
-          </div>
-        )}
         </div>
       </div>
 
@@ -1107,24 +1072,26 @@ Pateikite lietuvių kalba:
       <div className="px-6 pt-6 pb-0 shrink-0">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Žaliavų Kainos</h2>
-          <div className="flex items-center gap-2">
-            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelFile} />
-            <button onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
-              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
-              <Upload className="w-3.5 h-3.5" />Importuoti Excel
-            </button>
-            <button onClick={() => setShowPriceMod({})}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
-              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
-              <Plus className="w-3.5 h-3.5" />Nauja kaina
-            </button>
-            <button onClick={() => setShowAddMat(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95"
-              style={{ background: '#007AFF' }}>
-              <Plus className="w-3.5 h-3.5" />Nauja medžiaga
-            </button>
-          </div>
+          {activeTab === 'lentele' && (
+            <div className="flex items-center gap-2">
+              <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelFile} />
+              <button onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
+                style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
+                <Upload className="w-3.5 h-3.5" />Importuoti Excel
+              </button>
+              <button onClick={() => setShowPriceMod({})}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
+                style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
+                <Plus className="w-3.5 h-3.5" />Nauja kaina
+              </button>
+              <button onClick={() => setShowAddMat(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95"
+                style={{ background: '#007AFF' }}>
+                <Plus className="w-3.5 h-3.5" />Nauja medžiaga
+              </button>
+            </div>
+          )}
         </div>
         {/* Tabs */}
         <div className="flex" style={{ borderBottom: '1px solid #f0ede8' }}>
@@ -1138,7 +1105,7 @@ Pateikite lietuvių kalba:
                 ? <span className="flex items-center gap-1.5"><BarChart2 className="w-3.5 h-3.5" />Kainų lentelė</span>
                 : tab === 'grafa'
                 ? <span className="flex items-center gap-1.5"><LineChartIcon className="w-3.5 h-3.5" />Grafa</span>
-                : <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Analizė</span>}
+                : <span className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" />Analizė</span>}
             </button>
           ))}
         </div>
@@ -1252,7 +1219,7 @@ Pateikite lietuvių kalba:
           )
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
-          <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} />
+          <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="space-y-4 max-w-3xl">
