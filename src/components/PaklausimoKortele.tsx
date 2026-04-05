@@ -22,6 +22,7 @@ import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
+import { fetchLatestMaterialPrices } from '../lib/kainosService';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -968,6 +969,10 @@ function TabTalpos({
         };
       });
 
+      // Fetch material prices (actual or predicted) for context
+      let materialPrices: any[] = [];
+      try { materialPrices = await fetchLatestMaterialPrices(); } catch { /* non-fatal */ }
+
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -979,6 +984,7 @@ function TabTalpos({
           talpos_id: currentTalposId,
           product_metadata: payload,
           similar_tanks: similarTanksPayload,
+          material_prices: materialPrices,
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);

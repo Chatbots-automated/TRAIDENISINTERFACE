@@ -1,7 +1,9 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
 // Tables used:
-//   kainu_medziagas  – materials catalogue (id, pavadinimas, vienetas, sukurta_at)
-//   kainu_istorija   – price history      (id, medziagas_id, data, kaina_min, kaina_max, pastabos, sukurta_at)
+//   medziagos                    – materials catalogue (artikulas PK, pavadinimas, vienetas, sukurta_at)
+//   medziagos_kainu_istorija     – price history       (id PK auto, artikulas, data, kaina_min, kaina_max, pastabos, sukurta_at)
+//   medziagos_prognoze_internetas – AI web analysis    (artikulas PK, content, geoevents, atnaujinta)
+//   medziagos_kainu_prognozes    – AI price predictions (id PK auto, artikulas, data, kaina_min, kaina_max, pasitikejimas, sukurta_at)
 
 import { db } from './database';
 
@@ -9,8 +11,8 @@ import { db } from './database';
 // Types
 // ---------------------------------------------------------------------------
 
-export interface KainuMedžiaga {
-  id: number;
+export interface Medžiaga {
+  artikulas: string;     // PK – user-entered code from external ERP
   pavadinimas: string;   // material name
   vienetas: string;      // unit, e.g. "Eur/kg"
   sukurta_at: string;    // ISO timestamp
@@ -18,47 +20,68 @@ export interface KainuMedžiaga {
 
 export interface KainuIrašas {
   id: number;
-  medziagas_id: number;
+  artikulas: string;      // FK → medziagos.artikulas
   data: string;           // YYYY-MM-DD
   kaina_min: number | null;
-  kaina_max: number | null; // null = exact price (same as min), non-null = range
-  pastabos: string | null;  // notes like "???"
+  kaina_max: number | null;
+  pastabos: string | null;
   sukurta_at: string;
 }
 
-// A convenient shape returned from fetchLatestMaterialPrices for tool integration
+export interface KainuPrognozė {
+  id: number;
+  artikulas: string;        // FK → medziagos.artikulas
+  data: string;             // predicted-for date YYYY-MM-DD
+  kaina_min: number | null;
+  kaina_max: number | null;
+  pasitikejimas: number;    // 0.0–1.0 confidence
+  sukurta_at: string;
+}
+
+export interface PrognozėInternetas {
+  artikulas: string;   // PK – one row per material (Option A – overwrite)
+  content: string;     // markdown analysis
+  geoevents: string;   // geopolitical events
+  atnaujinta: string;  // ISO timestamp
+}
+
+// Returned from fetchLatestMaterialPrices for tool/webhook integration
 export interface LatestMaterialPrice {
+  artikulas: string;
   pavadinimas: string;
   vienetas: string;
   data: string;
   kaina_min: number | null;
   kaina_max: number | null;
   pastabos: string | null;
+  tipas: 'faktas' | 'prognoze';
+  pasitikejimas?: number;
 }
 
 // ---------------------------------------------------------------------------
 // Materials CRUD
 // ---------------------------------------------------------------------------
 
-const MEDZIAGAS_FIELDS = 'id,pavadinimas,vienetas,sukurta_at';
+const MEDZIAGAS_FIELDS = 'artikulas,pavadinimas,vienetas,sukurta_at';
 
-export async function fetchMedziagas(): Promise<KainuMedžiaga[]> {
+export async function fetchMedziagas(): Promise<Medžiaga[]> {
   const { data, error } = await db
-    .from('kainu_medziagas')
+    .from('medziagos')
     .select(MEDZIAGAS_FIELDS)
-    .order('id', { ascending: true });
+    .order('pavadinimas', { ascending: true });
 
   if (error) throw error;
   return data || [];
 }
 
 export async function insertMedžiaga(
+  artikulas: string,
   pavadinimas: string,
   vienetas: string,
-): Promise<KainuMedžiaga> {
+): Promise<Medžiaga> {
   const { data, error } = await db
-    .from('kainu_medziagas')
-    .insert({ pavadinimas, vienetas })
+    .from('medziagos')
+    .insert({ artikulas, pavadinimas, vienetas })
     .select(MEDZIAGAS_FIELDS)
     .single();
 
@@ -67,31 +90,33 @@ export async function insertMedžiaga(
 }
 
 export async function updateMedžiaga(
-  id: number,
+  artikulas: string,
   pavadinimas: string,
   vienetas: string,
 ): Promise<void> {
   const { error } = await db
-    .from('kainu_medziagas')
+    .from('medziagos')
     .update({ pavadinimas, vienetas })
-    .eq('id', id);
+    .eq('artikulas', artikulas);
 
   if (error) throw error;
 }
 
-export async function deleteMedžiaga(id: number): Promise<void> {
-  // Delete all price entries first, then the material
-  const { error: histError } = await db
-    .from('kainu_istorija')
-    .delete()
-    .eq('medziagas_id', id);
-
-  if (histError) throw histError;
+export async function deleteMedžiaga(artikulas: string): Promise<void> {
+  // Delete price history, predictions, web analysis first
+  const [h, p, w] = await Promise.allSettled([
+    db.from('medziagos_kainu_istorija').delete().eq('artikulas', artikulas),
+    db.from('medziagos_kainu_prognozes').delete().eq('artikulas', artikulas),
+    db.from('medziagos_prognoze_internetas').delete().eq('artikulas', artikulas),
+  ]);
+  for (const r of [h, p, w]) {
+    if (r.status === 'rejected') console.warn('Cascade delete warning:', r.reason);
+  }
 
   const { error } = await db
-    .from('kainu_medziagas')
+    .from('medziagos')
     .delete()
-    .eq('id', id);
+    .eq('artikulas', artikulas);
 
   if (error) throw error;
 }
@@ -100,11 +125,11 @@ export async function deleteMedžiaga(id: number): Promise<void> {
 // Price history CRUD
 // ---------------------------------------------------------------------------
 
-const ISTORIJA_FIELDS = 'id,medziagas_id,data,kaina_min,kaina_max,pastabos,sukurta_at';
+const ISTORIJA_FIELDS = 'id,artikulas,data,kaina_min,kaina_max,pastabos,sukurta_at';
 
 export async function fetchIstorija(): Promise<KainuIrašas[]> {
   const { data, error } = await db
-    .from('kainu_istorija')
+    .from('medziagos_kainu_istorija')
     .select(ISTORIJA_FIELDS)
     .order('data', { ascending: true });
 
@@ -113,15 +138,15 @@ export async function fetchIstorija(): Promise<KainuIrašas[]> {
 }
 
 export async function insertIrašas(
-  medziagas_id: number,
+  artikulas: string,
   data: string,
   kaina_min: number | null,
   kaina_max: number | null,
   pastabos: string | null,
 ): Promise<KainuIrašas> {
   const { data: row, error } = await db
-    .from('kainu_istorija')
-    .insert({ medziagas_id, data, kaina_min, kaina_max, pastabos })
+    .from('medziagos_kainu_istorija')
+    .insert({ artikulas, data, kaina_min, kaina_max, pastabos })
     .select(ISTORIJA_FIELDS)
     .single();
 
@@ -137,7 +162,7 @@ export async function updateIrašas(
   pastabos: string | null,
 ): Promise<void> {
   const { error } = await db
-    .from('kainu_istorija')
+    .from('medziagos_kainu_istorija')
     .update({ data, kaina_min, kaina_max, pastabos })
     .eq('id', id);
 
@@ -146,107 +171,248 @@ export async function updateIrašas(
 
 export async function deleteIrašas(id: number): Promise<void> {
   const { error } = await db
-    .from('kainu_istorija')
+    .from('medziagos_kainu_istorija')
     .delete()
     .eq('id', id);
 
   if (error) throw error;
 }
 
-// ---------------------------------------------------------------------------
-// AI analytics storage  (table: kainu_analytics)
-// Fields: id, content, geoevents, sukurta_at
-// ---------------------------------------------------------------------------
-
-export interface KainuAnalitika {
-  id: number;
-  content: string;   // markdown – main price-trend analysis
-  geoevents: string; // markdown – geopolitical events bullets
-  sukurta_at: string;
+// Bulk insert for Excel import — skips duplicates
+export async function bulkInsertIstorija(
+  rows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pastabos: string | null }[],
+): Promise<number> {
+  let inserted = 0;
+  for (const row of rows) {
+    try {
+      await db
+        .from('medziagos_kainu_istorija')
+        .insert(row)
+        .select('id')
+        .single();
+      inserted++;
+    } catch {
+      // Skip duplicates / errors silently (log to console)
+      console.warn('[bulkInsertIstorija] Skipped row:', row.artikulas, row.data);
+    }
+  }
+  return inserted;
 }
 
-const ANALITIKA_FIELDS = 'id,content,geoevents,sukurta_at';
+// Bulk insert materials — skips if artikulas already exists
+export async function bulkInsertMedziagas(
+  rows: { artikulas: string; pavadinimas: string; vienetas: string }[],
+): Promise<number> {
+  let inserted = 0;
+  for (const row of rows) {
+    try {
+      await db
+        .from('medziagos')
+        .insert(row)
+        .select('artikulas')
+        .single();
+      inserted++;
+    } catch {
+      // Already exists — skip
+      console.warn('[bulkInsertMedziagas] Skipped existing:', row.artikulas);
+    }
+  }
+  return inserted;
+}
 
-/** Fetch the single most-recent analytics record, or null if none. */
-export async function fetchLatestAnalitika(): Promise<KainuAnalitika | null> {
+// ---------------------------------------------------------------------------
+// AI predictions CRUD  (table: medziagos_kainu_prognozes)
+// ---------------------------------------------------------------------------
+
+const PROGNOZE_FIELDS = 'id,artikulas,data,kaina_min,kaina_max,pasitikejimas,sukurta_at';
+
+export async function fetchPrognozes(): Promise<KainuPrognozė[]> {
   const { data, error } = await db
-    .from('kainu_analytics')
-    .select(ANALITIKA_FIELDS)
-    .order('sukurta_at', { ascending: false })
+    .from('medziagos_kainu_prognozes')
+    .select(PROGNOZE_FIELDS)
+    .order('sukurta_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+/** Delete old predictions and save fresh ones (full replace per generation). */
+export async function replacePrognozes(
+  rows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pasitikejimas: number }[],
+): Promise<void> {
+  // Delete all existing predictions
+  await db.from('medziagos_kainu_prognozes').delete().neq('id', 0); // delete all
+  // Insert fresh
+  for (const row of rows) {
+    await db
+      .from('medziagos_kainu_prognozes')
+      .insert(row);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Web analysis storage  (table: medziagos_prognoze_internetas)
+// Option A: one row per material, overwrite on each generation
+// ---------------------------------------------------------------------------
+
+const INTERNETAS_FIELDS = 'artikulas,content,geoevents,atnaujinta';
+
+/** Fetch all web analysis rows (one per material that has been analysed). */
+export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]> {
+  const { data, error } = await db
+    .from('medziagos_prognoze_internetas')
+    .select(INTERNETAS_FIELDS)
+    .order('atnaujinta', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+/** Fetch the most recently updated web analysis row (for "last updated" display). */
+export async function fetchLatestPrognozėInternetas(): Promise<PrognozėInternetas | null> {
+  const { data, error } = await db
+    .from('medziagos_prognoze_internetas')
+    .select(INTERNETAS_FIELDS)
+    .order('atnaujinta', { ascending: false })
     .limit(1);
 
   if (error) throw error;
   return (data && data.length > 0) ? data[0] : null;
 }
 
-/** Insert a new analytics record (keeps full history). */
-export async function saveAnalitika(
+/** Upsert web analysis for a material (overwrites existing row). */
+export async function upsertPrognozėInternetas(
+  artikulas: string,
   content: string,
   geoevents: string,
-): Promise<KainuAnalitika> {
+): Promise<void> {
+  // Try update first, then insert if not found
+  const { data: existing } = await db
+    .from('medziagos_prognoze_internetas')
+    .select('artikulas')
+    .eq('artikulas', artikulas)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    const { error } = await db
+      .from('medziagos_prognoze_internetas')
+      .update({ content, geoevents, atnaujinta: new Date().toISOString() })
+      .eq('artikulas', artikulas);
+    if (error) throw error;
+  } else {
+    const { error } = await db
+      .from('medziagos_prognoze_internetas')
+      .insert({ artikulas, content, geoevents, atnaujinta: new Date().toISOString() });
+    if (error) throw error;
+  }
+}
+
+/** Save a single general analysis row (artikulas = '__general__'). */
+export async function saveGeneralAnalysis(
+  content: string,
+  geoevents: string,
+): Promise<void> {
+  await upsertPrognozėInternetas('__general__', content, geoevents);
+}
+
+/** Fetch the general analysis row. */
+export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null> {
   const { data, error } = await db
-    .from('kainu_analytics')
-    .insert({ content, geoevents })
-    .select(ANALITIKA_FIELDS)
-    .single();
+    .from('medziagos_prognoze_internetas')
+    .select(INTERNETAS_FIELDS)
+    .eq('artikulas', '__general__')
+    .limit(1);
 
   if (error) throw error;
-  return data;
-}
-
-/**
- * Returns true when the stored analytics are stale:
- * – never generated, OR
- * – it is now past 07:00 today and the last run was before today's 07:00.
- */
-export function analyticsNeedRefresh(lastRun: string | null | undefined): boolean {
-  if (!lastRun) return true;
-  const now = new Date();
-  const todayAt7 = new Date(now);
-  todayAt7.setHours(7, 0, 0, 0);
-  return now >= todayAt7 && new Date(lastRun) < todayAt7;
+  return (data && data.length > 0) ? data[0] : null;
 }
 
 // ---------------------------------------------------------------------------
-// Analytics helper – used by toolExecutors to enrich get_prices webhook calls
+// Analytics helper – enriched material prices for PaklausimasModal
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the most recent price entry for every material.
- * Used to inject current market prices into the n8n kainos nustatymas webhook.
+ * Returns the best available price for every material:
+ * - If a recent (<30 days) historical price exists → tipas='faktas'
+ * - Otherwise falls back to the latest AI prediction → tipas='prognoze'
  */
 export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]> {
   try {
-    const [medziagas, istorija] = await Promise.all([
+    const [medziagas, istorija, prognozes] = await Promise.all([
       fetchMedziagas(),
       fetchIstorija(),
+      fetchPrognozes(),
     ]);
 
-    // Build a map: medziagas_id → latest entry (by date)
-    const latestByMaterial = new Map<number, KainuIrašas>();
-    for (const entry of istorija) {
-      const existing = latestByMaterial.get(entry.medziagas_id);
-      if (!existing || entry.data > existing.data) {
-        latestByMaterial.set(entry.medziagas_id, entry);
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+
+    // Build map: artikulas → latest historical entry
+    const latestHistByArt = new Map<string, KainuIrašas>();
+    for (const e of istorija) {
+      const existing = latestHistByArt.get(e.artikulas);
+      if (!existing || e.data > existing.data) {
+        latestHistByArt.set(e.artikulas, e);
+      }
+    }
+
+    // Build map: artikulas → latest prediction
+    const latestPredByArt = new Map<string, KainuPrognozė>();
+    for (const p of prognozes) {
+      const existing = latestPredByArt.get(p.artikulas);
+      if (!existing || p.data > existing.data) {
+        latestPredByArt.set(p.artikulas, p);
       }
     }
 
     return medziagas
       .map(m => {
-        const latest = latestByMaterial.get(m.id);
-        if (!latest) return null;
-        return {
-          pavadinimas: m.pavadinimas,
-          vienetas: m.vienetas,
-          data: latest.data,
-          kaina_min: latest.kaina_min,
-          kaina_max: latest.kaina_max,
-          pastabos: latest.pastabos,
-        } satisfies LatestMaterialPrice;
+        const hist = latestHistByArt.get(m.artikulas);
+        // Use historical price if it's recent enough
+        if (hist && hist.data >= thirtyDaysAgo) {
+          return {
+            artikulas: m.artikulas,
+            pavadinimas: m.pavadinimas,
+            vienetas: m.vienetas,
+            data: hist.data,
+            kaina_min: hist.kaina_min,
+            kaina_max: hist.kaina_max,
+            pastabos: hist.pastabos,
+            tipas: 'faktas' as const,
+          };
+        }
+        // Fall back to prediction
+        const pred = latestPredByArt.get(m.artikulas);
+        if (pred) {
+          return {
+            artikulas: m.artikulas,
+            pavadinimas: m.pavadinimas,
+            vienetas: m.vienetas,
+            data: pred.data,
+            kaina_min: pred.kaina_min,
+            kaina_max: pred.kaina_max,
+            pastabos: null,
+            tipas: 'prognoze' as const,
+            pasitikejimas: pred.pasitikejimas,
+          };
+        }
+        // Fall back to oldest historical price if nothing else
+        if (hist) {
+          return {
+            artikulas: m.artikulas,
+            pavadinimas: m.pavadinimas,
+            vienetas: m.vienetas,
+            data: hist.data,
+            kaina_min: hist.kaina_min,
+            kaina_max: hist.kaina_max,
+            pastabos: hist.pastabos,
+            tipas: 'faktas' as const,
+          };
+        }
+        return null;
       })
       .filter((x): x is LatestMaterialPrice => x !== null);
   } catch {
-    // Non-fatal: if the table doesn't exist yet, return empty array
     return [];
   }
 }
@@ -265,4 +431,20 @@ export function formatPrice(entry: Pick<KainuIrašas, 'kaina_min' | 'kaina_max' 
     return `${entry.kaina_min.toFixed(2)}–${entry.kaina_max.toFixed(2)}`;
   }
   return entry.kaina_min.toFixed(2);
+}
+
+/** Relative time in Lithuanian: "ką tik", "prieš 6 val.", "vakar", "prieš 3 d." */
+export function relativeTime(iso: string | null | undefined): string {
+  if (!iso) return 'niekada';
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 0) return 'ką tik';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'ką tik';
+  if (mins < 60) return `prieš ${mins} min.`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `prieš ${hrs} val.`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return 'vakar';
+  if (days < 7) return `prieš ${days} d.`;
+  return new Date(iso).toLocaleDateString('lt-LT');
 }

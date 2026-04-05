@@ -1,32 +1,35 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  Plus, Trash2, Pencil, RefreshCw, Loader2, X,
+  Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
   Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check,
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
+import * as XLSX from 'xlsx';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import {
   fetchMedziagas, fetchIstorija,
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
-  fetchLatestAnalitika, saveAnalitika, analyticsNeedRefresh,
-  formatPrice,
+  fetchGeneralAnalysis, saveGeneralAnalysis,
+  replacePrognozes, fetchPrognozes,
+  bulkInsertMedziagas, bulkInsertIstorija,
+  formatPrice, relativeTime,
 } from '../lib/kainosService';
-import type { KainuMedžiaga, KainuIrašas, KainuAnalitika } from '../lib/kainosService';
+import type { Medžiaga, KainuIrašas, KainuPrognozė, PrognozėInternetas } from '../lib/kainosService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
 const MODEL = 'claude-opus-4-6';
 
-function formatPriceDataForPrompt(meds: KainuMedžiaga[], hist: KainuIrašas[]): string {
+function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   const lines: string[] = [];
   for (const m of meds) {
-    const entries = hist.filter(e => e.medziagas_id === m.id).sort((a, b) => a.data.localeCompare(b.data));
+    const entries = hist.filter(e => e.artikulas === m.artikulas).sort((a, b) => a.data.localeCompare(b.data));
     if (!entries.length) continue;
     const row = entries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ');
-    lines.push(`${m.pavadinimas} (${m.vienetas}): ${row}`);
+    lines.push(`${m.pavadinimas} [${m.artikulas}] (${m.vienetas}): ${row}`);
   }
   return lines.join('\n');
 }
@@ -35,21 +38,22 @@ function formatPriceDataForPrompt(meds: KainuMedžiaga[], hist: KainuIrašas[]):
 // ---------------------------------------------------------------------------
 
 interface AddMaterialModalProps {
-  initial?: KainuMedžiaga;
-  onSave: (pavadinimas: string, vienetas: string) => Promise<void>;
+  initial?: Medžiaga;
+  onSave: (artikulas: string, pavadinimas: string, vienetas: string) => Promise<void>;
   onClose: () => void;
 }
 
 function AddMaterialModal({ initial, onSave, onClose }: AddMaterialModalProps) {
+  const [artikulas, setArtikulas] = useState(initial?.artikulas ?? '');
   const [pavadinimas, setPavadinimas] = useState(initial?.pavadinimas ?? '');
   const [vienetas, setVienetas] = useState(initial?.vienetas ?? 'Eur/kg');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pavadinimas.trim()) return;
+    if (!artikulas.trim() || !pavadinimas.trim()) return;
     setSaving(true);
-    try { await onSave(pavadinimas.trim(), vienetas.trim() || 'Eur/kg'); onClose(); }
+    try { await onSave(artikulas.trim(), pavadinimas.trim(), vienetas.trim() || 'Eur/kg'); onClose(); }
     finally { setSaving(false); }
   };
 
@@ -71,8 +75,15 @@ function AddMaterialModal({ initial, onSave, onClose }: AddMaterialModalProps) {
         </div>
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
           <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Artikulas (ID)</label>
+            <input autoFocus={!initial} value={artikulas} onChange={e => setArtikulas(e.target.value)}
+              disabled={!!initial} placeholder="pvz. DER-001"
+              className="w-full px-3 py-2 text-sm rounded-lg outline-none disabled:opacity-60"
+              style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }} />
+          </div>
+          <div>
             <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Pavadinimas</label>
-            <input autoFocus value={pavadinimas} onChange={e => setPavadinimas(e.target.value)}
+            <input autoFocus={!!initial} value={pavadinimas} onChange={e => setPavadinimas(e.target.value)}
               placeholder="pvz. derva rankiniam f." className="w-full px-3 py-2 text-sm rounded-lg outline-none"
               style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }} />
           </div>
@@ -85,7 +96,7 @@ function AddMaterialModal({ initial, onSave, onClose }: AddMaterialModalProps) {
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="px-4 py-1.5 text-xs rounded-lg"
               style={{ color: '#5a5550', background: 'rgba(0,0,0,0.04)' }}>Atšaukti</button>
-            <button type="submit" disabled={saving || !pavadinimas.trim()}
+            <button type="submit" disabled={saving || !artikulas.trim() || !pavadinimas.trim()}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-lg text-white disabled:opacity-60"
               style={{ background: '#007AFF' }}>
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
@@ -103,16 +114,16 @@ function AddMaterialModal({ initial, onSave, onClose }: AddMaterialModalProps) {
 // ---------------------------------------------------------------------------
 
 interface PriceModalProps {
-  medziagas: KainuMedžiaga[];
+  medziagas: Medžiaga[];
   initial?: KainuIrašas;
-  defaultMedzaigaId?: number;
-  onSave: (mid: number, data: string, min: number | null, max: number | null, notes: string | null) => Promise<void>;
+  defaultArtikulas?: string;
+  onSave: (artikulas: string, data: string, min: number | null, max: number | null, notes: string | null) => Promise<void>;
   onClose: () => void;
 }
 
-function PriceModal({ medziagas, initial, defaultMedzaigaId, onSave, onClose }: PriceModalProps) {
-  const [mid, setMid] = useState<number>(
-    initial?.medziagas_id ?? defaultMedzaigaId ?? (medziagas[0]?.id ?? 0)
+function PriceModal({ medziagas, initial, defaultArtikulas, onSave, onClose }: PriceModalProps) {
+  const [art, setArt] = useState<string>(
+    initial?.artikulas ?? defaultArtikulas ?? (medziagas[0]?.artikulas ?? '')
   );
   const [data, setData] = useState(initial?.data ?? new Date().toISOString().split('T')[0]);
   const [isRange, setIsRange] = useState(
@@ -125,11 +136,11 @@ function PriceModal({ medziagas, initial, defaultMedzaigaId, onSave, onClose }: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!mid || !data) return;
+    if (!art || !data) return;
     const min = kMin ? parseFloat(kMin) : null;
     const max = isRange && kMax ? parseFloat(kMax) : null;
     setSaving(true);
-    try { await onSave(mid, data, min, max, notes.trim() || null); onClose(); }
+    try { await onSave(art, data, min, max, notes.trim() || null); onClose(); }
     finally { setSaving(false); }
   };
 
@@ -149,10 +160,10 @@ function PriceModal({ medziagas, initial, defaultMedzaigaId, onSave, onClose }: 
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
           <div>
             <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Medžiaga</label>
-            <select value={mid} onChange={e => setMid(Number(e.target.value))}
+            <select value={art} onChange={e => setArt(e.target.value)}
               className="w-full px-3 py-2 text-sm rounded-lg outline-none"
               style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }}>
-              {medziagas.map(m => <option key={m.id} value={m.id}>{m.pavadinimas}</option>)}
+              {medziagas.map(m => <option key={m.artikulas} value={m.artikulas}>{m.pavadinimas} ({m.artikulas})</option>)}
             </select>
           </div>
           <div>
@@ -198,7 +209,7 @@ function PriceModal({ medziagas, initial, defaultMedzaigaId, onSave, onClose }: 
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="px-4 py-1.5 text-xs rounded-lg"
               style={{ color: '#5a5550', background: 'rgba(0,0,0,0.04)' }}>Atšaukti</button>
-            <button type="submit" disabled={saving || !mid || !data}
+            <button type="submit" disabled={saving || !art || !data}
               className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-lg text-white disabled:opacity-60"
               style={{ background: '#007AFF' }}>
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
@@ -217,18 +228,24 @@ function PriceModal({ medziagas, initial, defaultMedzaigaId, onSave, onClose }: 
 
 export default function KainosInterface({ user }: KainosInterfaceProps) {
   // ---- data state ----
-  const [medziagas, setMedziagas] = useState<KainuMedžiaga[]>([]);
+  const [medziagas, setMedziagas] = useState<Medžiaga[]>([]);
   const [istorija, setIstorija] = useState<KainuIrašas[]>([]);
-  const [analytics, setAnalytics] = useState<KainuAnalitika | null>(null);
+  const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
+  const [prognozes, setPrognozes] = useState<KainuPrognozė[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'lentele' | 'analize'>('lentele');
 
+  // ---- Excel import state ----
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [excelPreview, setExcelPreview] = useState<{ mats: { artikulas: string; pavadinimas: string; vienetas: string }[]; prices: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pastabos: string | null }[] } | null>(null);
+  const [importing, setImporting] = useState(false);
+
   // ---- modal state ----
   const [showAddMat, setShowAddMat] = useState(false);
-  const [editingMat, setEditingMat] = useState<KainuMedžiaga | null>(null);
-  const [showPriceMod, setShowPriceMod] = useState<{ defId?: number } | null>(null);
+  const [editingMat, setEditingMat] = useState<Medžiaga | null>(null);
+  const [showPriceMod, setShowPriceMod] = useState<{ defArt?: string } | null>(null);
   const [editingIras, setEditingIras] = useState<KainuIrašas | null>(null);
-  const [delMatId, setDelMatId] = useState<number | null>(null);
+  const [delMatArt, setDelMatArt] = useState<string | null>(null);
   const [delIrasId, setDelIrasId] = useState<number | null>(null);
 
   // ---- analytics gen state ----
@@ -253,7 +270,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const priceMatrix = useMemo(() => {
     const map = new Map<string, KainuIrašas>();
-    for (const e of istorija) map.set(`${e.medziagas_id}-${e.data}`, e);
+    for (const e of istorija) map.set(`${e.artikulas}-${e.data}`, e);
     return map;
   }, [istorija]);
 
@@ -261,8 +278,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [med, ist, ana] = await Promise.all([fetchMedziagas(), fetchIstorija(), fetchLatestAnalitika()]);
-      setMedziagas(med); setIstorija(ist); setAnalytics(ana);
+      const [med, ist, ana, prog] = await Promise.all([
+        fetchMedziagas(), fetchIstorija(), fetchGeneralAnalysis(), fetchPrognozes(),
+      ]);
+      setMedziagas(med); setIstorija(ist); setAnalytics(ana); setPrognozes(prog);
       return { med, ist, ana };
     } catch (err: any) {
       addNotif('error', 'Klaida', err.message || 'Nepavyko įkelti duomenų');
@@ -272,7 +291,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // ---- analytics generation (streams, uses web_search) ----
   const generateAnalyticsFromData = useCallback(async (
-    meds: KainuMedžiaga[], hist: KainuIrašas[]
+    meds: Medžiaga[], hist: KainuIrašas[]
   ) => {
     if (genLoading) return;
     setGenLoading(true);
@@ -327,8 +346,33 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           msgs.push({ role: 'assistant', content: msg.content as any });
         }
       }
-      const saved = await saveAnalitika(analysisText, geoText);
-      setAnalytics(saved);
+      await saveGeneralAnalysis(analysisText, geoText);
+      const freshAnalysis = await fetchGeneralAnalysis();
+      setAnalytics(freshAnalysis);
+
+      // Parse structured predictions from the analysis text and save them
+      try {
+        const predRows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pasitikejimas: number }[] = [];
+        const predDate = new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0]; // ~3 months out
+        for (const m of meds) {
+          // Try to find a predicted price mention for this material in the analysis
+          const regex = new RegExp(`${m.pavadinimas.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\d]*(\\d+[.,]\\d+)`, 'i');
+          const match = analysisText.match(regex);
+          if (match) {
+            const price = parseFloat(match[1].replace(',', '.'));
+            if (!isNaN(price)) {
+              predRows.push({ artikulas: m.artikulas, data: predDate, kaina_min: price * 0.95, kaina_max: price * 1.05, pasitikejimas: 0.6 });
+            }
+          }
+        }
+        if (predRows.length > 0) {
+          await replacePrognozes(predRows);
+          setPrognozes(await fetchPrognozes());
+        }
+      } catch (predErr) {
+        console.warn('Could not parse predictions from analysis:', predErr);
+      }
+
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
       console.error('Analytics error:', err);
@@ -339,38 +383,34 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
 
-  // ---- cron: auto-refresh at 07:00 daily ----
-  useEffect(() => {
-    loadData().then(({ med, ist, ana }) => {
-      if (analyticsNeedRefresh(ana?.sukurta_at)) generateAnalyticsFromData(med, ist);
-    });
-  }, []);
+  // ---- load data on mount (no auto-generation — manual button only) ----
+  useEffect(() => { loadData(); }, []);
 
   // ---- CRUD handlers ----
-  const handleAddMat = async (pav: string, vnt: string) => {
-    await insertMedžiaga(pav, vnt);
+  const handleAddMat = async (art: string, pav: string, vnt: string) => {
+    await insertMedžiaga(art, pav, vnt);
     await loadData();
-    addNotif('success', 'Pridėta', `Medžiaga "\${pav}" pridėta`);
+    addNotif('success', 'Pridėta', `Medžiaga "${pav}" pridėta`);
   };
-  const handleUpdateMat = async (pav: string, vnt: string) => {
+  const handleUpdateMat = async (_art: string, pav: string, vnt: string) => {
     if (!editingMat) return;
-    await updateMedžiaga(editingMat.id, pav, vnt);
+    await updateMedžiaga(editingMat.artikulas, pav, vnt);
     await loadData();
     addNotif('success', 'Atnaujinta', 'Medžiaga atnaujinta');
   };
-  const handleDeleteMat = async (m: KainuMedžiaga) => {
-    if (!confirm(`Ištrinti "\${m.pavadinimas}" ir visus jos kainų įrašus?`)) return;
-    setDelMatId(m.id);
-    try { await deleteMedžiaga(m.id); await loadData(); addNotif('info', 'Ištrinta', `"\${m.pavadinimas}" pašalinta`); }
+  const handleDeleteMat = async (m: Medžiaga) => {
+    if (!confirm(`Ištrinti "${m.pavadinimas}" ir visus jos kainų įrašus?`)) return;
+    setDelMatArt(m.artikulas);
+    try { await deleteMedžiaga(m.artikulas); await loadData(); addNotif('info', 'Ištrinta', `"${m.pavadinimas}" pašalinta`); }
     catch (err: any) { addNotif('error', 'Klaida', err.message); }
-    finally { setDelMatId(null); }
+    finally { setDelMatArt(null); }
   };
-  const handleAddPrice = async (mid: number, data: string, min: number|null, max: number|null, notes: string|null) => {
-    await insertIrašas(mid, data, min, max, notes);
+  const handleAddPrice = async (art: string, data: string, min: number|null, max: number|null, notes: string|null) => {
+    await insertIrašas(art, data, min, max, notes);
     await loadData();
     addNotif('success', 'Pridėta', 'Kaina pridėta');
   };
-  const handleUpdatePrice = async (mid: number, data: string, min: number|null, max: number|null, notes: string|null) => {
+  const handleUpdatePrice = async (_art: string, data: string, min: number|null, max: number|null, notes: string|null) => {
     if (!editingIras) return;
     await updateIrašas(editingIras.id, data, min, max, notes);
     await loadData();
@@ -381,6 +421,102 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     try { await deleteIrašas(id); await loadData(); }
     catch (err: any) { addNotif('error', 'Klaida', err.message); }
     finally { setDelIrasId(null); }
+  };
+
+  // ---- Excel import handler ----
+  const handleExcelFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target?.result, { type: 'binary', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (!rows.length) { addNotif('error', 'Klaida', 'Excel failas tuščias'); return; }
+
+        // Detect column names (flexible matching)
+        const colMap = (row: any) => {
+          const keys = Object.keys(row);
+          const find = (patterns: string[]) => keys.find(k => patterns.some(p => k.toLowerCase().includes(p))) || null;
+          return {
+            artikulas: find(['artikul', 'article', 'id', 'kodas', 'code']),
+            pavadinimas: find(['pavadinim', 'name', 'material', 'medžiag', 'medziag']),
+            vienetas: find(['vienet', 'unit', 'eur/']),
+            data: find(['dat', 'date']),
+            kaina: find(['kain', 'price', 'eur']),
+            kaina_min: find(['min']),
+            kaina_max: find(['max']),
+            pastabos: find(['pastab', 'note', 'comment']),
+          };
+        };
+        const cols = colMap(rows[0]);
+
+        // Build materials and price rows
+        const matsMap = new Map<string, { artikulas: string; pavadinimas: string; vienetas: string }>();
+        const priceRows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pastabos: string | null }[] = [];
+
+        for (const row of rows) {
+          const art = String(cols.artikulas ? row[cols.artikulas] : '').trim();
+          if (!art) continue;
+
+          const pav = String(cols.pavadinimas ? row[cols.pavadinimas] : art).trim();
+          const vnt = String(cols.vienetas ? row[cols.vienetas] : 'Eur/kg').trim();
+          if (!matsMap.has(art)) matsMap.set(art, { artikulas: art, pavadinimas: pav, vienetas: vnt });
+
+          // Parse date
+          let dateStr = '';
+          const rawDate = cols.data ? row[cols.data] : null;
+          if (rawDate instanceof Date) {
+            dateStr = rawDate.toISOString().split('T')[0];
+          } else if (rawDate) {
+            const d = new Date(String(rawDate));
+            dateStr = isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
+          }
+
+          // Parse price
+          let kMin: number | null = null;
+          let kMax: number | null = null;
+          if (cols.kaina_min && row[cols.kaina_min] !== '') {
+            kMin = parseFloat(String(row[cols.kaina_min]).replace(',', '.'));
+          } else if (cols.kaina && row[cols.kaina] !== '') {
+            kMin = parseFloat(String(row[cols.kaina]).replace(',', '.'));
+          }
+          if (cols.kaina_max && row[cols.kaina_max] !== '') {
+            kMax = parseFloat(String(row[cols.kaina_max]).replace(',', '.'));
+          }
+          if (kMin !== null && isNaN(kMin)) kMin = null;
+          if (kMax !== null && isNaN(kMax)) kMax = null;
+
+          const pastabos = cols.pastabos ? (String(row[cols.pastabos]).trim() || null) : null;
+
+          if (dateStr && (kMin !== null || pastabos)) {
+            priceRows.push({ artikulas: art, data: dateStr, kaina_min: kMin, kaina_max: kMax, pastabos });
+          }
+        }
+
+        setExcelPreview({ mats: Array.from(matsMap.values()), prices: priceRows });
+      } catch (err: any) {
+        addNotif('error', 'Excel klaida', err.message || 'Nepavyko nuskaityti failo');
+      }
+    };
+    reader.readAsBinaryString(file);
+    // Reset input so same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleExcelImport = async () => {
+    if (!excelPreview) return;
+    setImporting(true);
+    try {
+      const matCount = await bulkInsertMedziagas(excelPreview.mats);
+      const priceCount = await bulkInsertIstorija(excelPreview.prices);
+      await loadData();
+      setExcelPreview(null);
+      addNotif('success', 'Importuota', `${matCount} medžiagos, ${priceCount} kainų įrašai`);
+    } catch (err: any) {
+      addNotif('error', 'Importo klaida', err.message);
+    } finally { setImporting(false); }
   };
 
   // ---- helpers ----
@@ -402,6 +538,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const geoDisplay = genLoading ? streamGeo : (analytics?.geoevents ?? '');
   const analysisDisplay = genStep === 'analysis' ? streamAnalysis : (!genLoading ? (analytics?.content ?? '') : '');
+  const lastUpdated = analytics?.atnaujinta ?? null;
 
   // ---- render ----
   return (
@@ -412,6 +549,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Žaliavų Kainos</h2>
           <div className="flex items-center gap-2">
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelFile} />
+            <button onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
+              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
+              <Upload className="w-3.5 h-3.5" />Importuoti Excel
+            </button>
             <button onClick={() => setShowPriceMod({})}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
               style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
@@ -482,15 +625,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </thead>
                 <tbody>
                   {medziagas.map(m => (
-                    <tr key={m.id} className="group" style={{ borderBottom: '1px solid #f8f6f3' }}>
+                    <tr key={m.artikulas} className="group" style={{ borderBottom: '1px solid #f8f6f3' }}>
                       <td className="px-4 py-2.5 sticky left-0 z-10 bg-white group-hover:bg-[#fdfcfb]" style={{ minWidth: 220 }}>
-                        <span className="text-xs font-medium" style={{ color: '#3d3935' }}>{m.pavadinimas}</span>
+                        <div>
+                          <span className="text-xs font-medium" style={{ color: '#3d3935' }}>{m.pavadinimas}</span>
+                          <span className="text-[10px] ml-1.5" style={{ color: '#b0aba4' }}>{m.artikulas}</span>
+                        </div>
                       </td>
                       <td className="px-3 py-2.5" style={{ minWidth: 70 }}>
                         <span className="text-xs" style={{ color: '#8a857f' }}>{m.vienetas}</span>
                       </td>
                       {dates.map(d => {
-                        const e = priceMatrix.get(`${m.id}-${d}`);
+                        const e = priceMatrix.get(`${m.artikulas}-${d}`);
                         return (
                           <td key={d} className="px-2 py-1.5 text-center" style={{ minWidth: 90 }}>
                             {e ? (
@@ -508,7 +654,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => setShowPriceMod({ defId: m.id })}
+                              <button onClick={() => setShowPriceMod({ defArt: m.artikulas })}
                                 className="px-2 py-1 rounded text-xs text-gray-300 hover:text-blue-400 hover:bg-blue-50 transition-colors" title="Pridėti kainą">
                                 +
                               </button>
@@ -522,9 +668,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                             className="p-1.5 rounded-md hover:bg-black/5 transition-colors" title="Redaguoti">
                             <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
                           </button>
-                          <button onClick={() => handleDeleteMat(m)} disabled={delMatId === m.id}
+                          <button onClick={() => handleDeleteMat(m)} disabled={delMatArt === m.artikulas}
                             className="p-1.5 rounded-md hover:bg-red-50 transition-colors" title="Ištrinti">
-                            {delMatId === m.id
+                            {delMatArt === m.artikulas
                               ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
                               : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />}
                           </button>
@@ -549,18 +695,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             {/* Controls row */}
             <div className="flex items-center justify-between">
               <div>
-                {analytics?.sukurta_at && (
-                  <span className="text-xs" style={{ color: '#8a857f' }}>
-                    Atnaujinta: {new Date(analytics.sukurta_at).toLocaleString('lt-LT')}
-                  </span>
-                )}
+                <span className="text-xs" style={{ color: '#8a857f' }}>
+                  {lastUpdated ? `Atnaujinta: ${relativeTime(lastUpdated)}` : 'Analizė dar nesugeneruota'}
+                </span>
               </div>
               <button onClick={generateAnalytics} disabled={genLoading}
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
                 style={{ background: '#007AFF' }}>
                 {genLoading
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{genStep === 'geo' ? 'Ieško įvykių...' : 'Analizuoja...'}</>
-                  : <><RefreshCw className="w-3.5 h-3.5" />Regeneruoti</>}
+                  : <><RefreshCw className="w-3.5 h-3.5" />Generuoti analizę</>}
               </button>
             </div>
 
@@ -625,6 +769,103 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         )}
       </div>
 
+      {/* Excel Import Preview Modal */}
+      {excelPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setExcelPreview(null)}>
+          <div className="w-full max-w-2xl mx-4 bg-white rounded-2xl overflow-hidden max-h-[80vh] flex flex-col"
+            style={{ boxShadow: '0 25px 50px rgba(0,0,0,0.2)' }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 shrink-0"
+              style={{ borderBottom: '1px solid #f0ede8' }}>
+              <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
+                Excel peržiūra
+              </h3>
+              <button onClick={() => setExcelPreview(null)} className="p-1.5 rounded-md hover:bg-black/5">
+                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
+              </button>
+            </div>
+            <div className="overflow-auto flex-1 px-5 py-4 space-y-3">
+              <div className="text-xs" style={{ color: '#5a5550' }}>
+                <strong>{excelPreview.mats.length}</strong> medžiagos, <strong>{excelPreview.prices.length}</strong> kainų įrašai
+              </div>
+              {excelPreview.mats.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold mb-1" style={{ color: '#3d3935' }}>Medžiagos</div>
+                  <div className="overflow-auto max-h-32 rounded-lg" style={{ border: '1px solid #f0ede8' }}>
+                    <table className="w-full text-xs">
+                      <thead><tr style={{ background: '#faf9f7' }}>
+                        <th className="px-2 py-1.5 text-left font-medium" style={{ color: '#8a857f' }}>Artikulas</th>
+                        <th className="px-2 py-1.5 text-left font-medium" style={{ color: '#8a857f' }}>Pavadinimas</th>
+                        <th className="px-2 py-1.5 text-left font-medium" style={{ color: '#8a857f' }}>Vienetas</th>
+                      </tr></thead>
+                      <tbody>
+                        {excelPreview.mats.slice(0, 20).map((m, i) => (
+                          <tr key={i} style={{ borderTop: '1px solid #f0ede8' }}>
+                            <td className="px-2 py-1" style={{ color: '#3d3935' }}>{m.artikulas}</td>
+                            <td className="px-2 py-1" style={{ color: '#3d3935' }}>{m.pavadinimas}</td>
+                            <td className="px-2 py-1" style={{ color: '#8a857f' }}>{m.vienetas}</td>
+                          </tr>
+                        ))}
+                        {excelPreview.mats.length > 20 && (
+                          <tr><td colSpan={3} className="px-2 py-1 text-center" style={{ color: '#8a857f' }}>
+                            ...ir dar {excelPreview.mats.length - 20}
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {excelPreview.prices.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold mb-1" style={{ color: '#3d3935' }}>Kainos</div>
+                  <div className="overflow-auto max-h-40 rounded-lg" style={{ border: '1px solid #f0ede8' }}>
+                    <table className="w-full text-xs">
+                      <thead><tr style={{ background: '#faf9f7' }}>
+                        <th className="px-2 py-1.5 text-left font-medium" style={{ color: '#8a857f' }}>Artikulas</th>
+                        <th className="px-2 py-1.5 text-left font-medium" style={{ color: '#8a857f' }}>Data</th>
+                        <th className="px-2 py-1.5 text-right font-medium" style={{ color: '#8a857f' }}>Kaina</th>
+                        <th className="px-2 py-1.5 text-left font-medium" style={{ color: '#8a857f' }}>Pastabos</th>
+                      </tr></thead>
+                      <tbody>
+                        {excelPreview.prices.slice(0, 30).map((p, i) => (
+                          <tr key={i} style={{ borderTop: '1px solid #f0ede8' }}>
+                            <td className="px-2 py-1" style={{ color: '#3d3935' }}>{p.artikulas}</td>
+                            <td className="px-2 py-1" style={{ color: '#3d3935' }}>{p.data}</td>
+                            <td className="px-2 py-1 text-right font-mono" style={{ color: '#3d3935' }}>
+                              {p.kaina_min != null ? p.kaina_min.toFixed(2) : '—'}
+                              {p.kaina_max != null ? `–${p.kaina_max.toFixed(2)}` : ''}
+                            </td>
+                            <td className="px-2 py-1" style={{ color: '#8a857f' }}>{p.pastabos || ''}</td>
+                          </tr>
+                        ))}
+                        {excelPreview.prices.length > 30 && (
+                          <tr><td colSpan={4} className="px-2 py-1 text-center" style={{ color: '#8a857f' }}>
+                            ...ir dar {excelPreview.prices.length - 30}
+                          </td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 shrink-0" style={{ borderTop: '1px solid #f0ede8' }}>
+              <button onClick={() => setExcelPreview(null)} className="px-4 py-1.5 text-xs rounded-lg"
+                style={{ color: '#5a5550', background: 'rgba(0,0,0,0.04)' }}>Atšaukti</button>
+              <button onClick={handleExcelImport} disabled={importing}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded-lg text-white disabled:opacity-60"
+                style={{ background: '#007AFF' }}>
+                {importing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                Importuoti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modals */}
       {showAddMat && (
         <AddMaterialModal onSave={handleAddMat} onClose={() => setShowAddMat(false)} />
@@ -633,7 +874,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         <AddMaterialModal initial={editingMat} onSave={handleUpdateMat} onClose={() => setEditingMat(null)} />
       )}
       {showPriceMod && (
-        <PriceModal medziagas={medziagas} defaultMedzaigaId={showPriceMod.defId}
+        <PriceModal medziagas={medziagas} defaultArtikulas={showPriceMod.defArt}
           onSave={handleAddPrice} onClose={() => setShowPriceMod(null)} />
       )}
       {editingIras && (
