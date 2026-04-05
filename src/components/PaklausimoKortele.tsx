@@ -2867,7 +2867,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
   // Per-tank derva results
   const [dervaPerTank, setDervaPerTank] = useState<Record<string, string>>(() => parseDervaPerTank(record.derva));
-  const dervaResult = dervaPerTank[tankKey] || null;
+  // Prefer derva_ai from talpos row when available, fall back to legacy project-level derva
+  const dervaResult = (currentTalposId && talposRow?.derva_ai) ? String(talposRow.derva_ai) : (dervaPerTank[tankKey] || null);
 
   const selecting = useProcessing(record.id, 'derva');
   const [selectingTankIdx, setSelectingTankIdx] = useState<number | null>(null);
@@ -3019,9 +3020,11 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         const freshDerva = updated.derva || '';
         // Check if webhook wrote a per-tank JSON or a plain string
         const parsed = parseDervaPerTank(freshDerva);
+        let resultText: string | null = null;
         if (Object.keys(parsed).length > 0 && parsed[tankKey]) {
           // Webhook already wrote per-tank format — use as-is
           setDervaPerTank(parsed);
+          resultText = parsed[tankKey];
         } else {
           // Webhook wrote a plain string — merge it into our per-tank structure
           const plainResult = freshDerva || '';
@@ -3030,7 +3033,13 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             setDervaPerTank(merged);
             // Save merged per-tank structure back to the derva column
             await updateNestandartiniaiField(record.id, 'derva', JSON.stringify(merged));
+            resultText = plainResult;
           }
+        }
+        // Save AI result to talpos.derva_ai column
+        if (resultText && currentTalposId) {
+          await updateTalposField(currentTalposId, 'derva_ai', resultText);
+          onTalposRowUpdated?.(currentTalposId, 'derva_ai', resultText);
         }
         onRecordUpdated?.(await fetchNestandartiniaiById(record.id) || updated);
       }
