@@ -627,10 +627,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
       if (isTalpos) {
-        rows = rows.filter(row => {
-          const blob = Object.values(row).map(v => String(v ?? '')).join(' ').toLowerCase();
-          return keywords.every(kw => blob.includes(kw));
-        });
+        // Exact ID match: if the query matches a row id exactly, return only that row
+        const trimmedQuery = searchQuery.trim();
+        const exactIdMatch = rows.find(row => String(row.id) === trimmedQuery);
+        if (exactIdMatch) {
+          rows = [exactIdMatch];
+        } else {
+          rows = rows.filter(row => {
+            const blob = Object.values(row).map(v => String(v ?? '')).join(' ').toLowerCase();
+            return keywords.every(kw => blob.includes(kw));
+          });
+        }
       } else if (isNestandartiniai) {
         rows = rows.filter((row: NestandartiniaiRecord) => {
           // Build a searchable text blob from all record fields

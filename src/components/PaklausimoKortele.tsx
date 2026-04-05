@@ -1548,9 +1548,13 @@ function TabTalpos({
           hideNavigator
           aiFirst
           currentTalposId={currentTalposId}
+          currentTalposRow={currentTalposRow}
           currentTalposJson={currentTalposRow?.json}
           onTalposJsonSaved={(id, newJson) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, json: newJson } : r));
+          }}
+          onTalposRowUpdated={(id, field, value) => {
+            setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
           }}
         />
       )}
@@ -2854,7 +2858,7 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
-function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposJson, onTalposJsonSaved }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void }) {
+function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposRow: talposRow, currentTalposJson, onTalposJsonSaved, onTalposRowUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposRow?: any; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void; onTalposRowUpdated?: (id: string, field: string, value: any) => void }) {
   const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
   const hasMultiple = products.length > 1;
   const idx = externalIdx !== undefined ? Math.min(externalIdx, products.length - 1) : Math.min(currentIdx, products.length - 1);
@@ -2873,13 +2877,16 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   // Per-tank derva_musu
   // When currentTalposId is provided, read/write from talpos.json per-row.
   // Otherwise fall back to legacy record.metadata storage.
-  const getTalposMusu = (json: any): string => {
-    const parsed = json && typeof json === 'object' ? json : tryParseJsonObject(json);
+  const getTalposMusu = (_json: any, row?: any): string => {
+    // Read from dedicated talpos.derva_musu column
+    if (row?.derva_musu) return String(row.derva_musu);
+    // Fallback: read from json column (legacy storage)
+    const parsed = _json && typeof _json === 'object' ? _json : tryParseJsonObject(_json);
     return parsed?.derva_musu || '';
   };
   const [dervaMusuPerTank, setDervaMusuPerTank] = useState<Record<string, string>>(() => parseDervaMusuPerTank(record.metadata));
   const [dervaMusu, setDervaMusu] = useState<string>(() =>
-    currentTalposId ? getTalposMusu(currentTalposJson) : (dervaMusuPerTank[tankKey] || '')
+    currentTalposId ? getTalposMusu(currentTalposJson, talposRow) : (dervaMusuPerTank[tankKey] || '')
   );
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
@@ -2888,7 +2895,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   // Sync dervaMusu input when switching tanks (idx reflects externalIdx or internal currentIdx)
   useEffect(() => {
     if (currentTalposId) {
-      setDervaMusu(getTalposMusu(currentTalposJson));
+      setDervaMusu(getTalposMusu(currentTalposJson, talposRow));
     } else {
       setDervaMusu(dervaMusuPerTank[String(idx)] || '');
     }
@@ -2913,15 +2920,17 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
     setDervaMusuSaving(true);
     try {
       if (currentTalposId) {
-        // New path: write derva_musu to this talpos row's json column
-        const currentJsonObj = getTalposMusu(currentTalposJson) !== undefined
-          ? (currentTalposJson && typeof currentTalposJson === 'object' ? currentTalposJson : (tryParseJsonObject(currentTalposJson) || {}))
-          : {};
-        const newJsonObj = valueToSave.trim()
-          ? { ...currentJsonObj, derva_musu: valueToSave.trim() }
-          : (() => { const { derva_musu: _r, ...rest } = currentJsonObj as any; return rest; })();
-        await updateTalposField(currentTalposId, 'json', newJsonObj);
-        onTalposJsonSaved?.(currentTalposId, newJsonObj);
+        // Write derva_musu to dedicated talpos.derva_musu column
+        await updateTalposField(currentTalposId, 'derva_musu', valueToSave.trim() || null);
+        onTalposRowUpdated?.(currentTalposId, 'derva_musu', valueToSave.trim() || null);
+        // Clean legacy: remove derva_musu from json column if present
+        const currentJsonObj = currentTalposJson && typeof currentTalposJson === 'object'
+          ? currentTalposJson : (tryParseJsonObject(currentTalposJson) || {});
+        if ('derva_musu' in currentJsonObj) {
+          const { derva_musu: _r, ...cleanJson } = currentJsonObj as any;
+          await updateTalposField(currentTalposId, 'json', cleanJson);
+          onTalposJsonSaved?.(currentTalposId, cleanJson);
+        }
         if (overrideValue !== undefined) setDervaMusu(valueToSave);
       } else {
         // Legacy path: write to record.metadata per-product index
