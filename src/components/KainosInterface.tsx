@@ -435,73 +435,128 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const rows: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' });
         if (!rows.length) { addNotif('error', 'Klaida', 'Excel failas tuščias'); return; }
 
-        // Detect column names (flexible matching)
-        const colMap = (row: any) => {
-          const keys = Object.keys(row);
-          const find = (patterns: string[]) => keys.find(k => patterns.some(p => k.toLowerCase().includes(p))) || null;
-          return {
-            artikulas: find(['artikul', 'article', 'id', 'kodas', 'code']),
-            pavadinimas: find(['pavadinim', 'name', 'material', 'medžiag', 'medziag']),
-            vienetas: find(['vienet', 'unit', 'eur/']),
-            data: find(['dat', 'date']),
-            kaina: find(['kain', 'price', 'eur']),
-            kaina_min: find(['min']),
-            kaina_max: find(['max']),
-            pastabos: find(['pastab', 'note', 'comment']),
-          };
-        };
-        const cols = colMap(rows[0]);
+        const keys = Object.keys(rows[0]);
+        const find = (patterns: string[]) => keys.find(k => patterns.some(p => k.toLowerCase().includes(p))) || null;
 
-        // Build materials and price rows
+        const artCol = find(['artikul', 'article', 'id', 'kodas', 'code']);
+        const pavCol = find(['pavadinim', 'name', 'material', 'medžiag', 'medziag']);
+        const vntCol = find(['vienet', 'unit']);
+        const dataCol = find(['dat', 'date']);
+        const kainaCol = find(['kain', 'price']);
+        const minCol = find(['min']);
+        const maxCol = find(['max']);
+        const pastCol = find(['pastab', 'note', 'comment']);
+
+        // Detect date columns (pivot format): columns that look like dates (YYYY-MM-DD, DD.MM.YYYY, etc.)
+        const isDateLike = (s: string): string | null => {
+          // YYYY-MM-DD
+          if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+          // DD.MM.YYYY or DD/MM/YYYY
+          const m1 = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})$/);
+          if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`;
+          // Try parsing as date
+          const d = new Date(s);
+          if (!isNaN(d.getTime()) && s.length >= 8) return d.toISOString().split('T')[0];
+          return null;
+        };
+
+        // Find all columns that are dates (pivot format)
+        const dateColumns: { col: string; dateStr: string }[] = [];
+        for (const k of keys) {
+          // Skip known non-date columns
+          if (k === artCol || k === pavCol || k === vntCol || k === dataCol || k === kainaCol || k === minCol || k === maxCol || k === pastCol) continue;
+          const parsed = isDateLike(k);
+          if (parsed) dateColumns.push({ col: k, dateStr: parsed });
+        }
+
+        const isPivotFormat = dateColumns.length > 0;
+
         const matsMap = new Map<string, { artikulas: string; pavadinimas: string; vienetas: string }>();
         const priceRows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pastabos: string | null }[] = [];
 
         for (const row of rows) {
-          const art = String(cols.artikulas ? row[cols.artikulas] : '').trim();
+          const art = String(artCol ? row[artCol] : '').trim();
           if (!art) continue;
 
-          const pav = String(cols.pavadinimas ? row[cols.pavadinimas] : art).trim();
-          const vnt = String(cols.vienetas ? row[cols.vienetas] : 'Eur/kg').trim();
+          const pav = String(pavCol ? row[pavCol] : art).trim();
+          const vnt = String(vntCol ? row[vntCol] : 'Eur/kg').trim();
           if (!matsMap.has(art)) matsMap.set(art, { artikulas: art, pavadinimas: pav, vienetas: vnt });
 
-          // Parse date
-          let dateStr = '';
-          const rawDate = cols.data ? row[cols.data] : null;
-          if (rawDate instanceof Date) {
-            dateStr = rawDate.toISOString().split('T')[0];
-          } else if (rawDate) {
-            const d = new Date(String(rawDate));
-            dateStr = isNaN(d.getTime()) ? '' : d.toISOString().split('T')[0];
-          }
+          if (isPivotFormat) {
+            // Pivot format: each date column contains a price value for this material
+            for (const dc of dateColumns) {
+              const raw = row[dc.col];
+              if (raw === '' || raw === null || raw === undefined) continue;
+              const rawStr = String(raw).trim();
+              if (!rawStr) continue;
 
-          // Parse price
-          let kMin: number | null = null;
-          let kMax: number | null = null;
-          if (cols.kaina_min && row[cols.kaina_min] !== '') {
-            kMin = parseFloat(String(row[cols.kaina_min]).replace(',', '.'));
-          } else if (cols.kaina && row[cols.kaina] !== '') {
-            kMin = parseFloat(String(row[cols.kaina]).replace(',', '.'));
-          }
-          if (cols.kaina_max && row[cols.kaina_max] !== '') {
-            kMax = parseFloat(String(row[cols.kaina_max]).replace(',', '.'));
-          }
-          if (kMin !== null && isNaN(kMin)) kMin = null;
-          if (kMax !== null && isNaN(kMax)) kMax = null;
+              // Check if it's a note (non-numeric like "???")
+              let kMin: number | null = null;
+              let kMax: number | null = null;
+              let note: string | null = null;
 
-          const pastabos = cols.pastabos ? (String(row[cols.pastabos]).trim() || null) : null;
+              // Try to parse as range: "2.50-2.80" or "2,50–2,80"
+              const rangeMatch = rawStr.match(/^(\d+[.,]?\d*)\s*[-–]\s*(\d+[.,]?\d*)$/);
+              if (rangeMatch) {
+                kMin = parseFloat(rangeMatch[1].replace(',', '.'));
+                kMax = parseFloat(rangeMatch[2].replace(',', '.'));
+              } else {
+                const num = parseFloat(rawStr.replace(',', '.'));
+                if (!isNaN(num)) {
+                  kMin = num;
+                } else {
+                  // Non-numeric value — treat as note (e.g. "???")
+                  note = rawStr;
+                }
+              }
+              if (kMin !== null && isNaN(kMin)) kMin = null;
+              if (kMax !== null && isNaN(kMax)) kMax = null;
 
-          if (dateStr && (kMin !== null || pastabos)) {
-            priceRows.push({ artikulas: art, data: dateStr, kaina_min: kMin, kaina_max: kMax, pastabos });
+              if (kMin !== null || note) {
+                priceRows.push({ artikulas: art, data: dc.dateStr, kaina_min: kMin, kaina_max: kMax, pastabos: note });
+              }
+            }
+          } else {
+            // Flat format: one row per price entry with a "data" column
+            let dateStr = '';
+            const rawDate = dataCol ? row[dataCol] : null;
+            if (rawDate instanceof Date) {
+              dateStr = rawDate.toISOString().split('T')[0];
+            } else if (rawDate) {
+              const parsed = isDateLike(String(rawDate));
+              dateStr = parsed || '';
+            }
+
+            let kMin: number | null = null;
+            let kMax: number | null = null;
+            if (minCol && row[minCol] !== '') {
+              kMin = parseFloat(String(row[minCol]).replace(',', '.'));
+            } else if (kainaCol && row[kainaCol] !== '') {
+              kMin = parseFloat(String(row[kainaCol]).replace(',', '.'));
+            }
+            if (maxCol && row[maxCol] !== '') {
+              kMax = parseFloat(String(row[maxCol]).replace(',', '.'));
+            }
+            if (kMin !== null && isNaN(kMin)) kMin = null;
+            if (kMax !== null && isNaN(kMax)) kMax = null;
+
+            const pastabos = pastCol ? (String(row[pastCol]).trim() || null) : null;
+
+            if (dateStr && (kMin !== null || pastabos)) {
+              priceRows.push({ artikulas: art, data: dateStr, kaina_min: kMin, kaina_max: kMax, pastabos });
+            }
           }
         }
 
         setExcelPreview({ mats: Array.from(matsMap.values()), prices: priceRows });
+        if (isPivotFormat) {
+          addNotif('info', 'Pivot formatas', `Aptikta ${dateColumns.length} datų stulpelių`);
+        }
       } catch (err: any) {
         addNotif('error', 'Excel klaida', err.message || 'Nepavyko nuskaityti failo');
       }
     };
     reader.readAsBinaryString(file);
-    // Reset input so same file can be re-selected
     e.target.value = '';
   };
 
