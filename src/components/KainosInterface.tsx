@@ -674,15 +674,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               </button>
             </div>
           ) : (
-            <div className="w-full overflow-x-auto rounded-xl bg-white"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div className="w-full overflow-auto rounded-xl bg-white"
+              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', maxHeight: 'calc(100vh - 220px)' }}>
               <table className="text-sm border-collapse" style={{ minWidth: '100%' }}>
-                <thead>
+                <thead className="sticky top-0 z-20 bg-white">
                   <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                    <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-10 bg-white" style={{ minWidth: 220 }}>
+                    <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-30 bg-white" style={{ minWidth: 220 }}>
                       <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Medžiaga</span>
                     </th>
-                    <th className="px-3 py-3 text-left whitespace-nowrap sticky z-10 bg-white" style={{ minWidth: 70, left: 220 }}>
+                    <th className="px-3 py-3 text-left whitespace-nowrap sticky z-30 bg-white" style={{ minWidth: 70, left: 220 }}>
                       <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vnt.</span>
                     </th>
                     {dates.map(d => (

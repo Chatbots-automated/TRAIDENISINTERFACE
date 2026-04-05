@@ -50,12 +50,8 @@ export interface LatestMaterialPrice {
   artikulas: string;
   pavadinimas: string;
   vienetas: string;
-  data: string;
-  kaina_min: number | null;
-  kaina_max: number | null;
-  pastabos: string | null;
-  tipas: 'faktas' | 'prognoze';
-  pasitikejimas?: number;
+  kainos: { data: string; kaina_min: number | null; kaina_max: number | null; pastabos: string | null }[];
+  prognoze?: { data: string; kaina_min: number | null; kaina_max: number | null; pasitikejimas: number };
 }
 
 // ---------------------------------------------------------------------------
@@ -336,9 +332,9 @@ export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null
 // ---------------------------------------------------------------------------
 
 /**
- * Returns the best available price for every material:
- * - If a recent (<30 days) historical price exists → tipas='faktas'
- * - Otherwise falls back to the latest AI prediction → tipas='prognoze'
+ * Returns every material with its 3 most recent historical prices
+ * and optionally the latest AI prediction. The LLM in n8n uses
+ * the price history to understand trends and pick relevant materials.
  */
 export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]> {
   try {
@@ -348,16 +344,17 @@ export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]
       fetchPrognozes(),
     ]);
 
-    const today = new Date().toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-
-    // Build map: artikulas → latest historical entry
-    const latestHistByArt = new Map<string, KainuIrašas>();
+    // Build map: artikulas → all entries sorted newest first
+    const histByArt = new Map<string, KainuIrašas[]>();
     for (const e of istorija) {
-      const existing = latestHistByArt.get(e.artikulas);
-      if (!existing || e.data > existing.data) {
-        latestHistByArt.set(e.artikulas, e);
-      }
+      const arr = histByArt.get(e.artikulas) || [];
+      arr.push(e);
+      histByArt.set(e.artikulas, arr);
+    }
+    // Sort each array newest first and keep top 3
+    for (const [art, arr] of histByArt) {
+      arr.sort((a, b) => b.data.localeCompare(a.data));
+      histByArt.set(art, arr.slice(0, 3));
     }
 
     // Build map: artikulas → latest prediction
@@ -371,49 +368,25 @@ export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]
 
     return medziagas
       .map(m => {
-        const hist = latestHistByArt.get(m.artikulas);
-        // Use historical price if it's recent enough
-        if (hist && hist.data >= thirtyDaysAgo) {
-          return {
-            artikulas: m.artikulas,
-            pavadinimas: m.pavadinimas,
-            vienetas: m.vienetas,
-            data: hist.data,
-            kaina_min: hist.kaina_min,
-            kaina_max: hist.kaina_max,
-            pastabos: hist.pastabos,
-            tipas: 'faktas' as const,
-          };
-        }
-        // Fall back to prediction
+        const prices = histByArt.get(m.artikulas) || [];
         const pred = latestPredByArt.get(m.artikulas);
+        if (prices.length === 0 && !pred) return null;
+
+        const result: LatestMaterialPrice = {
+          artikulas: m.artikulas,
+          pavadinimas: m.pavadinimas,
+          vienetas: m.vienetas,
+          kainos: prices.map(e => ({
+            data: e.data, kaina_min: e.kaina_min, kaina_max: e.kaina_max, pastabos: e.pastabos,
+          })),
+        };
         if (pred) {
-          return {
-            artikulas: m.artikulas,
-            pavadinimas: m.pavadinimas,
-            vienetas: m.vienetas,
-            data: pred.data,
-            kaina_min: pred.kaina_min,
-            kaina_max: pred.kaina_max,
-            pastabos: null,
-            tipas: 'prognoze' as const,
+          result.prognoze = {
+            data: pred.data, kaina_min: pred.kaina_min, kaina_max: pred.kaina_max,
             pasitikejimas: pred.pasitikejimas,
           };
         }
-        // Fall back to oldest historical price if nothing else
-        if (hist) {
-          return {
-            artikulas: m.artikulas,
-            pavadinimas: m.pavadinimas,
-            vienetas: m.vienetas,
-            data: hist.data,
-            kaina_min: hist.kaina_min,
-            kaina_max: hist.kaina_max,
-            pastabos: hist.pastabos,
-            tipas: 'faktas' as const,
-          };
-        }
-        return null;
+        return result;
       })
       .filter((x): x is LatestMaterialPrice => x !== null);
   } catch {
