@@ -944,30 +944,37 @@ function TabTalpos({
         Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
       );
 
-      // Fetch kaina fresh from talpos table for all similar tanks right now,
-      // so the payload always contains up-to-date prices regardless of render timing.
+      // Fetch full tank records from talpos table for all similar tanks,
+      // so n8n receives complete specs (not just similarity score & name).
       const rawSimilarItems = displayedSimilarEnriched ?? [];
       const similarUuids = rawSimilarItems
         .map((item: any) => item.id)
         .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
-      let freshKainaMap: Record<string, number | null> = {};
+      let similarTanksPayload: any[] = [];
       if (similarUuids.length > 0) {
         try {
-          const rows = await fetchTalposByIds(similarUuids);
-          for (const row of rows) {
-            freshKainaMap[String(row.id)] = row.kaina != null ? Number(row.kaina) : null;
-          }
-        } catch { /* fall back to whatever is already in the item */ }
+          const fullRows = await fetchTalposByIds(similarUuids);
+          const fullRowMap = new Map(fullRows.map((r: any) => [String(r.id), r]));
+          similarTanksPayload = rawSimilarItems.map((item: any) => {
+            const id = item.id && typeof item.id === 'string' && item.id.length >= 32 ? item.id : null;
+            const fullRow = id ? fullRowMap.get(id) : null;
+            if (fullRow) {
+              // Use the full DB record, strip embedding/similar_talpos, keep similarity_score from original
+              const { embedding, similar_talpos, ...fullData } = fullRow;
+              return { ...fullData, similarity_score: item.similarity_score ?? null };
+            }
+            // Fallback: use whatever we already have, minus heavy fields
+            const { embedding, similar_talpos, ...rest } = item;
+            return rest;
+          });
+        } catch {
+          // Fallback to slim data if fetch fails
+          similarTanksPayload = rawSimilarItems.map((item: any) => {
+            const { embedding, similar_talpos, ...rest } = item;
+            return rest;
+          });
+        }
       }
-      const similarTanksPayload = rawSimilarItems.map((item: any) => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { embedding, similar_talpos, ...rest } = item;
-        const id = rest.id && typeof rest.id === 'string' && rest.id.length >= 32 ? rest.id : null;
-        return {
-          ...rest,
-          kaina: id && id in freshKainaMap ? freshKainaMap[id] : (rest.kaina ?? null),
-        };
-      });
 
       // Fetch material prices (actual or predicted) for context
       let materialPrices: any[] = [];

@@ -536,7 +536,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [istorija, setIstorija] = useState<KainuIrašas[]>([]);
   const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'lentele' | 'grafa' | 'analize'>('lentele');
+  const [activeTab, setActiveTab] = useState<'lentele' | 'grafa' | 'analize'>(() => {
+    const hash = window.location.hash.replace('#', '') as 'lentele' | 'grafa' | 'analize';
+    return ['lentele', 'grafa', 'analize'].includes(hash) ? hash : 'lentele';
+  });
+
+  // Persist active tab in URL hash
+  useEffect(() => {
+    window.location.hash = activeTab;
+  }, [activeTab]);
 
   // ---- Excel import state ----
   const fileInputRef = useRef<HTMLInputElement>(null);
