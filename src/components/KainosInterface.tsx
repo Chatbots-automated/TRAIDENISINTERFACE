@@ -135,6 +135,10 @@ function PriceModal({ medziagas, initial, defaultArtikulas, defaultDate, onSave,
   const [notes, setNotes] = useState(initial?.pastabos ?? '');
   const [saving, setSaving] = useState(false);
 
+  // Quick mode: both material and date are already known (clicked "+" in a specific cell)
+  const quickMode = !!(defaultArtikulas && defaultDate && !initial);
+  const matName = medziagas.find(m => m.artikulas === art)?.pavadinimas;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!art || !data) return;
@@ -148,31 +152,40 @@ function PriceModal({ medziagas, initial, defaultArtikulas, defaultDate, onSave,
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div className="w-full max-w-md mx-4 bg-white rounded-2xl overflow-hidden"
+      <div className={`w-full mx-4 bg-white rounded-2xl overflow-hidden ${quickMode ? 'max-w-sm' : 'max-w-md'}`}
         style={{ boxShadow: '0 25px 50px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid #f0ede8' }}>
-          <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
-            {initial ? 'Redaguoti kainą' : 'Nauja kaina'}
-          </h3>
+          <div>
+            <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
+              {initial ? 'Redaguoti kainą' : quickMode ? 'Pridėti kainą' : 'Nauja kaina'}
+            </h3>
+            {quickMode && matName && (
+              <p className="text-xs mt-0.5" style={{ color: '#8a857f' }}>{matName} · {data}</p>
+            )}
+          </div>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-black/5">
             <X className="w-4 h-4" style={{ color: '#8a857f' }} />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
-          <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Medžiaga</label>
-            <select value={art} onChange={e => setArt(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg outline-none"
-              style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }}>
-              {medziagas.map(m => <option key={m.artikulas} value={m.artikulas}>{m.pavadinimas} ({m.artikulas})</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Data</label>
-            <input type="date" value={data} onChange={e => setData(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded-lg outline-none"
-              style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }} />
-          </div>
+          {!quickMode && (
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Medžiaga</label>
+              <select value={art} onChange={e => setArt(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg outline-none"
+                style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }}>
+                {medziagas.map(m => <option key={m.artikulas} value={m.artikulas}>{m.pavadinimas} ({m.artikulas})</option>)}
+              </select>
+            </div>
+          )}
+          {!quickMode && (
+            <div>
+              <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Data</label>
+              <input type="date" value={data} onChange={e => setData(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-lg outline-none"
+                style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }} />
+            </div>
+          )}
           <div className="flex gap-2">
             {(['exact', 'range'] as const).map(t => (
               <button key={t} type="button" onClick={() => setIsRange(t === 'range')}
