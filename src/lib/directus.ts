@@ -430,20 +430,22 @@ class DirectusUpdateBuilder<T = any> {
 
   private async execute(): Promise<DirectusResponse<T[] | T>> {
     try {
-      // If filtering by 'id' with _eq, use direct item endpoint: PATCH /items/collection/id
-      const idFilter = this.filters.find(f => f.field === 'id' && f.operator === '_eq');
+      // If filtering by a single _eq field, use direct item endpoint: PATCH /items/collection/<pk>
+      // This handles both .eq('id', val) and .eq('artikulas', val) for custom-PK tables.
+      const singlePkFilter = this.filters.length === 1 && this.filters[0].operator === '_eq'
+        ? this.filters[0] : null;
 
       let url: string;
       let method = 'PATCH';
 
-      if (idFilter) {
-        // Direct item update by ID
+      if (singlePkFilter) {
+        // Direct item update by primary key
         const params: string[] = [];
         if (this.selectFields) {
           params.push(`fields=${encodeURIComponent(this.selectFields)}`);
         }
         const queryString = params.length > 0 ? `?${params.join('&')}` : '';
-        url = `${this.baseUrl}/items/${this.collection}/${idFilter.value}${queryString}`;
+        url = `${this.baseUrl}/items/${this.collection}/${encodeURIComponent(singlePkFilter.value)}${queryString}`;
       } else {
         // Bulk update with filters - need to first find items, then update them
         // Directus doesn't support filter-based bulk PATCH directly
@@ -489,12 +491,12 @@ class DirectusUpdateBuilder<T = any> {
    */
   private async executeFilteredUpdate(): Promise<DirectusResponse<T[] | T>> {
     try {
-      // Step 1: Find matching item IDs
+      // Step 1: Find matching items (fetch all fields to detect PK)
       const filterParts: string[] = [];
       for (const f of this.filters) {
         filterParts.push(`filter[${f.field}][${f.operator}]=${encodeURIComponent(f.value)}`);
       }
-      const findUrl = `${this.baseUrl}/items/${this.collection}?fields=id&${filterParts.join('&')}`;
+      const findUrl = `${this.baseUrl}/items/${this.collection}?fields=*&${filterParts.join('&')}`;
 
       console.log('[Directus] Finding items for filtered update:', findUrl);
 
@@ -509,7 +511,14 @@ class DirectusUpdateBuilder<T = any> {
       }
 
       const findJson: DirectusAPIResponse<any[]> = await findResponse.json();
-      const ids = findJson.data?.map((item: any) => item.id) || [];
+      const items = findJson.data || [];
+      // Detect PK: prefer 'id', fall back to first filter field
+      const ids = items.map((item: any) => {
+        if ('id' in item) return item.id;
+        if (this.filters.length > 0 && this.filters[0].field in item) return item[this.filters[0].field];
+        const keys = Object.keys(item);
+        return keys.length > 0 ? item[keys[0]] : null;
+      }).filter((v: any) => v != null);
 
       if (ids.length === 0) {
         return { data: null, error: { message: 'No items found matching filter' } };
@@ -588,11 +597,15 @@ class DirectusDeleteBuilder<T = any> {
 
   private async execute(): Promise<DirectusResponse<null>> {
     try {
-      const idFilter = this.filters.find(f => f.field === 'id' && f.operator === '_eq');
+      // Check for a single _eq filter — treat it as a direct delete by primary key.
+      // This handles both .eq('id', val) and .eq('artikulas', val) for tables
+      // whose primary key is not named "id".
+      const singlePkFilter = this.filters.length === 1 && this.filters[0].operator === '_eq'
+        ? this.filters[0] : null;
 
-      if (idFilter) {
-        // Direct delete by ID
-        const url = `${this.baseUrl}/items/${this.collection}/${idFilter.value}`;
+      if (singlePkFilter) {
+        // Direct delete by primary key value
+        const url = `${this.baseUrl}/items/${this.collection}/${encodeURIComponent(singlePkFilter.value)}`;
         console.log('[Directus] DELETE', url);
 
         const response = await fetch(url, {
@@ -612,12 +625,14 @@ class DirectusDeleteBuilder<T = any> {
         return { data: null, error: null };
       }
 
-      // Filtered delete: find items first, then delete by IDs
+      // Multi-filter delete: find items first, then delete by IDs
+      // First, try to discover the primary key field by fetching one item
       const filterParts: string[] = [];
       for (const f of this.filters) {
         filterParts.push(`filter[${f.field}][${f.operator}]=${encodeURIComponent(f.value)}`);
       }
-      const findUrl = `${this.baseUrl}/items/${this.collection}?fields=id&${filterParts.join('&')}`;
+      // Request all fields so we can detect the PK (some tables use 'id', others use custom PKs)
+      const findUrl = `${this.baseUrl}/items/${this.collection}?fields=*&${filterParts.join('&')}`;
 
       const findResponse = await fetch(findUrl, {
         method: 'GET',
@@ -630,7 +645,21 @@ class DirectusDeleteBuilder<T = any> {
       }
 
       const findJson: DirectusAPIResponse<any[]> = await findResponse.json();
-      const ids = findJson.data?.map((item: any) => item.id) || [];
+      const items = findJson.data || [];
+
+      if (items.length === 0) {
+        return { data: null, error: null };
+      }
+
+      // Detect PK field: prefer 'id', fall back to first field of the filter, or first field of the item
+      const ids = items.map((item: any) => {
+        if ('id' in item) return item.id;
+        // Use the first filter field as the PK
+        if (this.filters.length > 0 && this.filters[0].field in item) return item[this.filters[0].field];
+        // Last resort: first key
+        const keys = Object.keys(item);
+        return keys.length > 0 ? item[keys[0]] : null;
+      }).filter((v: any) => v != null);
 
       if (ids.length === 0) {
         return { data: null, error: null };

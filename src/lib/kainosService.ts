@@ -68,7 +68,8 @@ export async function fetchMedziagas(): Promise<Medžiaga[]> {
   const { data, error } = await db
     .from('medziagos')
     .select(MEDZIAGAS_FIELDS)
-    .order('pavadinimas', { ascending: true });
+    .order('pavadinimas', { ascending: true })
+    .limit(-1);
 
   if (error) throw error;
   return data || [];
@@ -131,7 +132,8 @@ export async function fetchIstorija(): Promise<KainuIrašas[]> {
   const { data, error } = await db
     .from('medziagos_kainu_istorija')
     .select(ISTORIJA_FIELDS)
-    .order('data', { ascending: true });
+    .order('data', { ascending: true })
+    .limit(-1);
 
   if (error) throw error;
   return data || [];
@@ -230,7 +232,8 @@ export async function fetchPrognozes(): Promise<KainuPrognozė[]> {
   const { data, error } = await db
     .from('medziagos_kainu_prognozes')
     .select(PROGNOZE_FIELDS)
-    .order('sukurta_at', { ascending: false });
+    .order('sukurta_at', { ascending: false })
+    .limit(-1);
 
   if (error) throw error;
   return data || [];
@@ -262,7 +265,8 @@ export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]>
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
     .select(INTERNETAS_FIELDS)
-    .order('atnaujinta', { ascending: false });
+    .order('atnaujinta', { ascending: false })
+    .limit(-1);
 
   if (error) throw error;
   return data || [];

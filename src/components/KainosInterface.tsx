@@ -117,15 +117,16 @@ interface PriceModalProps {
   medziagas: Medžiaga[];
   initial?: KainuIrašas;
   defaultArtikulas?: string;
+  defaultDate?: string;
   onSave: (artikulas: string, data: string, min: number | null, max: number | null, notes: string | null) => Promise<void>;
   onClose: () => void;
 }
 
-function PriceModal({ medziagas, initial, defaultArtikulas, onSave, onClose }: PriceModalProps) {
+function PriceModal({ medziagas, initial, defaultArtikulas, defaultDate, onSave, onClose }: PriceModalProps) {
   const [art, setArt] = useState<string>(
     initial?.artikulas ?? defaultArtikulas ?? (medziagas[0]?.artikulas ?? '')
   );
-  const [data, setData] = useState(initial?.data ?? new Date().toISOString().split('T')[0]);
+  const [data, setData] = useState(initial?.data ?? defaultDate ?? new Date().toISOString().split('T')[0]);
   const [isRange, setIsRange] = useState(
     !!(initial && initial.kaina_max !== null && initial.kaina_max !== initial.kaina_min)
   );
@@ -243,7 +244,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   // ---- modal state ----
   const [showAddMat, setShowAddMat] = useState(false);
   const [editingMat, setEditingMat] = useState<Medžiaga | null>(null);
-  const [showPriceMod, setShowPriceMod] = useState<{ defArt?: string } | null>(null);
+  const [showPriceMod, setShowPriceMod] = useState<{ defArt?: string; defDate?: string } | null>(null);
   const [editingIras, setEditingIras] = useState<KainuIrašas | null>(null);
   const [delMatArt, setDelMatArt] = useState<string | null>(null);
   const [delIrasId, setDelIrasId] = useState<number | null>(null);
@@ -665,7 +666,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-10 bg-white" style={{ minWidth: 220 }}>
                       <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Medžiaga</span>
                     </th>
-                    <th className="px-3 py-3 text-left whitespace-nowrap" style={{ minWidth: 70 }}>
+                    <th className="px-3 py-3 text-left whitespace-nowrap sticky z-10 bg-white" style={{ minWidth: 70, left: 220 }}>
                       <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Vnt.</span>
                     </th>
                     {dates.map(d => (
@@ -687,7 +688,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           <span className="text-[10px] ml-1.5" style={{ color: '#b0aba4' }}>{m.artikulas}</span>
                         </div>
                       </td>
-                      <td className="px-3 py-2.5" style={{ minWidth: 70 }}>
+                      <td className="px-3 py-2.5 sticky z-10 bg-white group-hover:bg-[#fdfcfb]" style={{ minWidth: 70, left: 220 }}>
                         <span className="text-xs" style={{ color: '#8a857f' }}>{m.vienetas}</span>
                       </td>
                       {dates.map(d => {
@@ -709,7 +710,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                                 </button>
                               </div>
                             ) : (
-                              <button onClick={() => setShowPriceMod({ defArt: m.artikulas })}
+                              <button onClick={() => setShowPriceMod({ defArt: m.artikulas, defDate: d })}
                                 className="px-2 py-1 rounded text-xs text-gray-300 hover:text-blue-400 hover:bg-blue-50 transition-colors" title="Pridėti kainą">
                                 +
                               </button>
@@ -929,7 +930,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         <AddMaterialModal initial={editingMat} onSave={handleUpdateMat} onClose={() => setEditingMat(null)} />
       )}
       {showPriceMod && (
-        <PriceModal medziagas={medziagas} defaultArtikulas={showPriceMod.defArt}
+        <PriceModal medziagas={medziagas} defaultArtikulas={showPriceMod.defArt} defaultDate={showPriceMod.defDate}
           onSave={handleAddPrice} onClose={() => setShowPriceMod(null)} />
       )}
       {editingIras && (
