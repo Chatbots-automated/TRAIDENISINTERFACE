@@ -2179,32 +2179,45 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Directus file ID of the saved .docx — enables download button
   const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
-  // Temporary preview file ID — auto-generated when preview tab is shown
-  const [previewDocxFileId, setPreviewDocxFileId] = useState<string | null>(null);
-  const [previewDocxLoading, setPreviewDocxLoading] = useState(false);
-
-  // Auto-generate a filled preview when the preview tab is shown but no saved file exists
+  // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
+  const [autoSaving, setAutoSaving] = useState(false);
   useEffect(() => {
-    if (artifactTab !== 'preview' || savedDocxFileId || !globalDocxFileId || previewDocxFileId || previewDocxLoading) return;
+    if (savedDocxFileId || !globalDocxFileId || autoSaving) return;
     if (!currentConversation?.artifact) return;
     let cancelled = false;
     (async () => {
       try {
-        setPreviewDocxLoading(true);
+        setAutoSaving(true);
         const vars = mergeAllVariables();
-        const blob = await buildDocxBlob(vars);
+        const docxBlob = await buildDocxBlob(vars);
         if (cancelled) return;
-        const tempId = await uploadDocxBlobToDirectus(blob, 'preview-temp.docx', previewDocxFileId);
-        if (!cancelled) setPreviewDocxFileId(tempId);
+        const projektoKodas = vars['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+        const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, null);
+        if (cancelled) return;
+        const yamlContent = currentConversation!.artifact!.content || '';
+        const hnv = vars['economy_HNV'] || '';
+        if (standartiniaiRecordId) {
+          await updateStandartinisProjektas(standartiniaiRecordId, {
+            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, docx_file_id: newFileId,
+          });
+        } else {
+          const created = await createStandartinisProjektas({
+            conversation_id: currentConversation!.id,
+            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, docx_file_id: newFileId,
+          });
+          if (!cancelled) setStandartiniaiRecordId(created.id);
+        }
+        if (!cancelled) setSavedDocxFileId(newFileId);
       } catch (err) {
-        console.error('Preview generation error:', err);
+        console.error('Auto-save DOCX error:', err);
       } finally {
-        if (!cancelled) setPreviewDocxLoading(false);
+        if (!cancelled) setAutoSaving(false);
       }
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [artifactTab, savedDocxFileId, globalDocxFileId, currentConversation?.artifact?.content]);
+  }, [savedDocxFileId, globalDocxFileId, currentConversation?.artifact?.content]);
 
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
@@ -2245,7 +2258,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
 
       setSavedDocxFileId(newFileId);
-      setPreviewDocxFileId(null); // Clear temp preview — saved file takes over
       addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
@@ -3281,22 +3293,10 @@ Vartotojo instrukcija: ${instruction}`;
                                 Atsisiųsti .docx
                               </a>
                             ) : (
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
-                                onClick={async () => {
-                                  setShowDownloadMenu(false);
-                                  try {
-                                    const { saveAs } = await import('file-saver');
-                                    const blob = await buildDocxBlob(mergeAllVariables());
-                                    saveAs(blob, 'komercinis-pasiulymas.docx');
-                                  } catch (err) {
-                                    addNotification('error', 'Klaida', `Nepavyko sugeneruoti DOCX: ${err instanceof Error ? err.message : err}`);
-                                  }
-                                }}
-                              >
-                                <FileText className="w-4 h-4 text-blue-500" />
-                                Generuoti ir atsisiųsti .docx
-                              </button>
+                              <span className="px-3 py-2 text-sm text-base-content/40 flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                Dokumentas generuojamas...
+                              </span>
                             )}
                           </div>
                         </>
@@ -3317,7 +3317,7 @@ Vartotojo instrukcija: ${instruction}`;
                       title="Išsaugoti DOCX į Directus"
                     >
                       {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                      Išsaugoti
+                      {savedDocxFileId ? 'Atnaujinti' : 'Išsaugoti'}
                     </button>
                     {savedDocxFileId && (
                       <a
@@ -3343,56 +3343,29 @@ Vartotojo instrukcija: ${instruction}`;
             {/* Separator */}
             <div className="h-px bg-base-content/8" />
 
-            {/* Content area — either Data or Preview */}
-            {artifactTab === 'preview' && !isStreamingArtifact ? (
-              <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col">
-                {(savedDocxFileId || previewDocxFileId || globalDocxFileId) ? (
-                  <>
-                    {!savedDocxFileId && (
-                      <div className="px-4 py-2 text-xs text-base-content/50 bg-base-content/3 flex items-center justify-between border-b border-base-content/5">
-                        <span>{previewDocxFileId ? 'Peržiūra su kintamaisiais. Spauskite „Išsaugoti" galutiniam dokumentui.' : 'Generuojama peržiūra...'}</span>
-                        <button
-                          onClick={handleSaveToStandartiniai}
-                          disabled={isSavingToStandartiniai}
-                          className="btn btn-xs btn-primary gap-1 ml-2"
-                        >
-                          {isSavingToStandartiniai ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                          Išsaugoti
-                        </button>
-                      </div>
-                    )}
-                    {previewDocxLoading && !savedDocxFileId && !previewDocxFileId && (
-                      <div className="flex-1 flex items-center justify-center">
-                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                      </div>
-                    )}
-                    {(savedDocxFileId || previewDocxFileId) && (
-                      <iframe
-                        src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId || previewDocxFileId!))}&embedded=true`}
-                        className="flex-1 w-full border-0"
-                        title="DOCX peržiūra"
-                      />
-                    )}
-                  </>
-                ) : (
-                  <div className="flex-1 flex items-center justify-center text-center px-6">
-                    <div>
-                      <FileText className="w-10 h-10 mx-auto mb-3 text-base-content/20" />
-                      <p className="text-sm font-medium text-base-content/60 mb-1">DOCX šablonas neįkeltas</p>
-                      <p className="text-xs text-base-content/40 mb-4">Įkelkite DOCX šabloną per šablono redaktorių arba spauskite „Išsaugoti"</p>
-                      <button
-                        onClick={handleSaveToStandartiniai}
-                        disabled={isSavingToStandartiniai}
-                        className="btn btn-sm btn-primary gap-1.5"
-                      >
-                        {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        Išsaugoti
-                      </button>
-                    </div>
+            {/* Content area — Preview (always mounted for iframe persistence) + Data */}
+            <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
+              {savedDocxFileId ? (
+                <iframe
+                  src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId))}&embedded=true`}
+                  className="flex-1 w-full border-0"
+                  title="DOCX peržiūra"
+                />
+              ) : autoSaving ? (
+                <div className="flex-1 flex items-center justify-center gap-2">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <span className="text-sm text-base-content/50">Generuojamas dokumentas...</span>
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-center px-6">
+                  <div>
+                    <FileText className="w-10 h-10 mx-auto mb-3 text-base-content/20" />
+                    <p className="text-sm font-medium text-base-content/60 mb-1">DOCX šablonas neįkeltas</p>
+                    <p className="text-xs text-base-content/40">Įkelkite DOCX šabloną per šablono redaktorių</p>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Variable editing and citation popups removed — preview is now Google Docs Viewer */}
                 {false && editingVariable && (() => {
                   const cat = categorizeVariable(editingVariable.key);
                   const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
@@ -3508,6 +3481,467 @@ Vartotojo instrukcija: ${instruction}`;
 
                             {cat === 'economist' && (
                               <div className="flex flex-col gap-0.5">
+                                {economists.length === 0 ? (
+                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
+                                ) : (
+                                  economists.map((econ) => {
+                                    const isSelected = selectedEconomist?.id === econ.id;
+                                    return (
+                                      <button
+                                        key={econ.id}
+                                        onClick={() => {
+                                          setSelectedEconomist(econ);
+                                          setEditingVariable(null);
+                                          documentPreviewRef.current?.clearActiveVariable();
+                                        }}
+                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
+                                        style={{
+                                          background: isSelected ? '#eff6ff' : 'transparent',
+                                          color: '#3d3935',
+                                        }}
+                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
+                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                      >
+                                        <span className={isSelected ? 'font-medium' : ''}>{econ.full_name || econ.email}</span>
+                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'manager' && (
+                              <div className="flex flex-col gap-0.5">
+                                {managers.length === 0 ? (
+                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
+                                ) : (
+                                  managers.map((mgr) => {
+                                    const isSelected = selectedManager?.id === mgr.id;
+                                    return (
+                                      <button
+                                        key={mgr.id}
+                                        onClick={() => {
+                                          setSelectedManager(mgr);
+                                          setEditingVariable(null);
+                                          documentPreviewRef.current?.clearActiveVariable();
+                                        }}
+                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
+                                        style={{
+                                          background: isSelected ? '#eff6ff' : 'transparent',
+                                          color: '#3d3935',
+                                        }}
+                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
+                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                      >
+                                        <span className={isSelected ? 'font-medium' : ''}>{mgr.full_name || mgr.email}</span>
+                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+
+                            {cat === 'offer' && (
+                              <div>
+                                <input
+                                  type="text"
+                                  value={editingVariable.editValue}
+                                  onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleVariableSave(editingVariable.key, editingVariable.editValue);
+                                    if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                  }}
+                                  autoFocus
+                                  className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none transition-all"
+                                  style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                  onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                />
+                                <div className="flex justify-end mt-2.5 gap-2">
+                                  <button
+                                    onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                    className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
+                                    style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    Atšaukti
+                                  </button>
+                                  <button
+                                    onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                    className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
+                                    style={{ background: '#3d3935', color: 'white' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                                  >
+                                    Išsaugoti
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {cat === 'yaml' && (
+                              <div>
+                                {!aiVarEditMode ? (
+                                  <>
+                                    {/* Direct edit mode */}
+                                    <textarea
+                                      value={editingVariable.editValue}
+                                      onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
+                                      }}
+                                      autoFocus
+                                      rows={3}
+                                      className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
+                                      style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                      onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
+                                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                    />
+                                    <div className="flex items-center justify-between mt-2.5">
+                                      <button
+                                        onClick={() => { setAiVarEditMode(true); setAiVarEditInstruction(''); setAiVarEditResult(null); setAiVarEditError(null); }}
+                                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
+                                        style={{ color: '#8b5cf6' }}
+                                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3ff'}
+                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        title="AI redakcija"
+                                      >
+                                        <Sparkles className="w-3 h-3" />
+                                        AI
+                                      </button>
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
+                                          className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
+                                          style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                          Atšaukti
+                                        </button>
+                                        <button
+                                          onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
+                                          className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
+                                          style={{ background: '#3d3935', color: 'white' }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                                        >
+                                          Išsaugoti
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* AI edit mode */}
+                                    {!aiVarEditResult && !aiVarEditLoading && !aiVarEditError && (
+                                      <div>
+                                        {editingVariable.editValue && (
+                                          <div className="text-[12px] max-h-20 overflow-y-auto mb-2 px-2.5 py-2 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
+                                            {editingVariable.editValue.slice(0, 150)}{editingVariable.editValue.length > 150 ? '...' : ''}
+                                          </div>
+                                        )}
+                                        <textarea
+                                          value={aiVarEditInstruction}
+                                          onChange={(e) => setAiVarEditInstruction(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAIVariableEdit(); }
+                                            if (e.key === 'Escape') { setAiVarEditMode(false); }
+                                          }}
+                                          autoFocus
+                                          rows={2}
+                                          placeholder="Aprašykite, ką AI turėtų pakeisti..."
+                                          className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
+                                          style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
+                                          onFocus={(e) => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)'; }}
+                                          onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
+                                        />
+                                        <div className="flex items-center justify-between mt-2.5">
+                                          <button
+                                            onClick={() => setAiVarEditMode(false)}
+                                            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
+                                            style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                          >
+                                            Grįžti
+                                          </button>
+                                          <button
+                                            onClick={handleAIVariableEdit}
+                                            disabled={!aiVarEditInstruction.trim()}
+                                            className="flex items-center gap-1 text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
+                                            style={{
+                                              background: aiVarEditInstruction.trim() ? '#8b5cf6' : '#e5e2dd',
+                                              color: aiVarEditInstruction.trim() ? 'white' : '#9ca3af',
+                                            }}
+                                            onMouseEnter={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#7c3aed'; }}
+                                            onMouseLeave={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#8b5cf6'; }}
+                                          >
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                            Generuoti
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditLoading && (
+                                      <div className="flex items-center justify-center gap-2 py-4">
+                                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
+                                        <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditError && !aiVarEditLoading && (
+                                      <div>
+                                        <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
+                                          {aiVarEditError}
+                                        </div>
+                                        <button
+                                          onClick={() => setAiVarEditError(null)}
+                                          className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
+                                          style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
+                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
+                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                          Grįžti
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {aiVarEditResult && !aiVarEditLoading && (
+                                      <div>
+                                        <div
+                                          className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
+                                          style={{ color: '#3d3935', lineHeight: '1.6', background: '#faf5ff', border: '1px solid #e9d5ff' }}
+                                        >
+                                          {aiVarEditResult}
+                                        </div>
+                                        <div className="flex justify-end mt-2.5 gap-2">
+                                          <button
+                                            onClick={() => { setAiVarEditResult(null); }}
+                                            className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
+                                            style={{ color: '#ef4444' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                          >
+                                            Atmesti
+                                          </button>
+                                          <button
+                                            onClick={async () => {
+                                              const key = editingVariable.key;
+                                              const value = aiVarEditResult!;
+                                              setAiVarEditResult(null);
+                                              setAiVarEditMode(false);
+                                              await handleVariableSave(key, value);
+                                            }}
+                                            className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
+                                            style={{ background: '#8b5cf6', color: 'white' }}
+                                            onMouseEnter={(e) => e.currentTarget.style.background = '#7c3aed'}
+                                            onMouseLeave={(e) => e.currentTarget.style.background = '#8b5cf6'}
+                                          >
+                                            Priimti
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {popupPlacement === 'above' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderTop: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
+                          }} />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+
+                {/* Citation popover — shows AI reasoning for a variable */}
+                {activeCitation && (() => {
+                  const { key, citation, x, y } = activeCitation;
+                  const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === key);
+                  const label = paramDef?.label || key;
+                  const thinkingText = citation.thinking_excerpt || '';
+                  const chatText = citation.chat_excerpt || '';
+                  const hasThinking = thinkingText.trim().length > 0;
+                  const hasChatText = chatText.trim().length > 0;
+                  const msgIdx = citation.message_index;
+
+                  return (
+                    <>
+                      <div
+                        style={{ position: 'absolute', inset: 0, zIndex: 49 }}
+                        onClick={() => setActiveCitation(null)}
+                      />
+                      <div
+                        ref={citationPopupRef}
+                        style={{
+                          position: 'absolute',
+                          left: Math.min(Math.max(x - 150, 8), 220),
+                          top: citationPlacement === 'below' ? y + 8 : y - 8,
+                          transform: citationPlacement === 'above' ? 'translateY(-100%)' : undefined,
+                          zIndex: 50,
+                          width: '320px',
+                          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
+                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                        }}
+                      >
+                        {citationPlacement === 'below' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderBottom: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(x - Math.min(Math.max(x - 150, 8), 220) - 7, 16), 280) + 'px',
+                          }} />
+                        )}
+                        <div style={{
+                          background: '#ffffff',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          border: '1px solid rgba(0,0,0,0.06)',
+                        }}>
+                          {/* Header */}
+                          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-semibold truncate" style={{ color: '#1a1a1a', letterSpacing: '-0.01em' }}>{label}</div>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                  <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(199,168,138,0.12)', color: '#a0845e' }}>
+                                    AI šaltinis
+                                  </span>
+                                  <span className="text-[10px]" style={{ color: '#9ca3af' }}>
+                                    v{citation.version}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => setActiveCitation(null)}
+                                className="p-1 rounded-md flex-shrink-0 transition-colors mt-0.5"
+                                style={{ color: '#c0bbb5' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Body — reasoning excerpt */}
+                          <div className="px-3.5 py-3">
+                            {hasThinking ? (
+                              <div>
+                                <div className="text-[10px] font-medium mb-1.5" style={{ color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  AI samprotavimas
+                                </div>
+                                <div
+                                  className="text-[12px] leading-relaxed overflow-y-auto"
+                                  style={{
+                                    color: '#4b5563',
+                                    maxHeight: '180px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    background: '#fafaf8',
+                                    borderRadius: '6px',
+                                    padding: '8px 10px',
+                                    border: '1px solid #f0eeeb',
+                                  }}
+                                >
+                                  {thinkingText.length > 800 ? thinkingText.slice(0, 800) + '…' : thinkingText}
+                                </div>
+                              </div>
+                            ) : hasChatText ? (
+                              <div>
+                                <div className="text-[10px] font-medium mb-1.5" style={{ color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                  AI atsakymas
+                                </div>
+                                <div
+                                  className="text-[12px] leading-relaxed overflow-y-auto"
+                                  style={{
+                                    color: '#4b5563',
+                                    maxHeight: '180px',
+                                    whiteSpace: 'pre-wrap',
+                                    wordBreak: 'break-word',
+                                    background: '#fafaf8',
+                                    borderRadius: '6px',
+                                    padding: '8px 10px',
+                                    border: '1px solid #f0eeeb',
+                                  }}
+                                >
+                                  {chatText.length > 500 ? chatText.slice(0, 500) + '…' : chatText}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[12px]" style={{ color: '#9ca3af' }}>
+                                Nėra AI samprotavimo šiam kintamajam.
+                              </div>
+                            )}
+
+                            {/* Timestamp */}
+                            <div className="mt-2 text-[10px]" style={{ color: '#b5b0aa' }}>
+                              {new Date(citation.timestamp).toLocaleString('lt-LT', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </div>
+
+                            {/* Jump to message button */}
+                            {msgIdx >= 0 && currentConversation?.messages?.[msgIdx] && (
+                              <button
+                                onClick={() => {
+                                  setActiveCitation(null);
+                                  // Switch to chat area if needed and scroll to message
+                                  const msgEl = document.querySelector(`[data-message-index="${msgIdx}"]`);
+                                  if (msgEl) {
+                                    msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    // Flash highlight
+                                    msgEl.classList.add('citation-flash');
+                                    setTimeout(() => msgEl.classList.remove('citation-flash'), 2000);
+                                  }
+                                }}
+                                className="mt-2.5 w-full text-[12px] font-medium px-3 py-1.5 rounded-md transition-colors text-center"
+                                style={{ background: '#3d3935', color: 'white' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
+                              >
+                                Rodyti žinutę
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {citationPlacement === 'above' && (
+                          <div style={{
+                            width: 0, height: 0,
+                            borderLeft: '7px solid transparent',
+                            borderRight: '7px solid transparent',
+                            borderTop: '7px solid #ffffff',
+                            marginLeft: Math.min(Math.max(x - Math.min(Math.max(x - 150, 8), 220) - 7, 16), 280) + 'px',
+                          }} />
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+
+              </div>
+            </div>
+            <div
+              className="flex-1 overflow-y-auto px-6 py-4 relative"
+              style={{
+                display: artifactTab === 'data' || isStreamingArtifact ? 'block' : 'none',
+                maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)'
+              }}
+            >
+
                                 {economists.length === 0 ? (
                                   <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
                                 ) : (
@@ -4234,7 +4668,6 @@ Vartotojo instrukcija: ${instruction}`;
                 </div>
               )}
             </div>
-            )}
 
           </div>
         </div>
