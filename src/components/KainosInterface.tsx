@@ -248,11 +248,23 @@ interface ChartPoint {
   label: string;      // MM-DD for display
   kaina: number | null;
   predicted?: number;
+  aiPredicted?: number;
 }
 
-function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: KainuIrašas[] }) {
+interface AiPrediction {
+  artikulas: string;
+  kaina: number;
+  data: string;
+  reasoning: string;
+}
+
+function GrafaTab({ medziagas, istorija, analytics }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analytics: PrognozėInternetas | null }) {
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
+  const [aiToggle, setAiToggle] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Close on outside click
   useEffect(() => {
@@ -263,6 +275,80 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showInfo]);
+
+  // Fetch AI predictions when toggle is enabled
+  const fetchAiPredictions = useCallback(async () => {
+    if (aiLoading || medziagas.length === 0) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const client = new Anthropic({
+        apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
+        dangerouslyAllowBrowser: true,
+      });
+      const today = new Date().toISOString().split('T')[0];
+      const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
+      const priceData = formatPriceDataForPrompt(medziagas, istorija);
+
+      const contextParts: string[] = [];
+      if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${analytics.nafta}`);
+      if (analytics?.geoevents) contextParts.push(`GEOPOLITINIAI ĮVYKIAI:\n${analytics.geoevents}`);
+      if (analytics?.content) contextParts.push(`ANKSTESNĖ ANALIZĖ:\n${analytics.content}`);
+
+      const materialList = medziagas.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
+
+      let resultText = '';
+      const msgs: Anthropic.MessageParam[] = [{
+        role: 'user',
+        content: `Šiandien yra ${today}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
+
+ISTORINIAI KAINŲ DUOMENYS:
+${priceData}
+
+${contextParts.join('\n\n')}
+
+MEDŽIAGOS:
+${materialList}
+
+SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON. Formatas:
+[
+  {"artikulas": "CODE", "kaina": 1.23, "data": "YYYY-MM-DD", "reasoning": "Trumpas paaiškinimas lietuvių kalba (1-2 sakiniai)"}
+]
+
+Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kaina_min reikšmė. "data" yra prognozės data (3 mėn. nuo šiandien).`,
+      }];
+
+      while (true) {
+        const stream = client.messages.stream({
+          model: MODEL, max_tokens: 2000,
+          system: `Medžiagų kainų prognozavimo ekspertas. Atsakykite TIK JSON formatu. Šiandien: ${today}.`,
+          tools: webSearchTool, messages: msgs,
+        });
+        stream.on('text', d => { resultText += d; });
+        const msg = await stream.finalMessage();
+        if (msg.stop_reason !== 'pause_turn') break;
+        msgs.push({ role: 'assistant', content: msg.content as any });
+      }
+
+      // Parse JSON from response (handle markdown code blocks)
+      const jsonMatch = resultText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('AI negrąžino JSON formato');
+      const parsed: AiPrediction[] = JSON.parse(jsonMatch[0]);
+      setAiPredictions(parsed);
+    } catch (err: any) {
+      console.error('AI prediction error:', err);
+      setAiError(err.message || 'Nepavyko gauti AI prognozės');
+      setAiToggle(false);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiLoading, medziagas, istorija, analytics]);
+
+  useEffect(() => {
+    if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
+      fetchAiPredictions();
+    }
+  }, [aiToggle]);
 
   // Group history by artikulas
   const byArt = useMemo(() => {
@@ -312,18 +398,44 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
         });
       }
 
+      // Add AI prediction point if toggle is on
+      const aiPred = aiToggle ? aiPredictions.find(p => p.artikulas === m.artikulas) : null;
+      if (aiPred && aiPred.kaina > 0) {
+        const lastPoint = points.find(p => p.kaina !== null && p.aiPredicted === undefined);
+        const lastActual = [...points].reverse().find(p => p.kaina !== null);
+        if (lastActual) {
+          // Bridge from last actual to AI prediction
+          const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
+          if (!bridgeExists) {
+            points.push({
+              date: lastActual.date,
+              label: lastActual.date,
+              kaina: lastActual.kaina,
+              aiPredicted: lastActual.kaina!,
+            });
+          }
+          points.push({
+            date: aiPred.data,
+            label: aiPred.data,
+            kaina: null,
+            aiPredicted: aiPred.kaina,
+          });
+        }
+      }
+
       // Compute Y-axis domain
       const allValues = [
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
         ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
+        ...(aiPred ? [aiPred.kaina] : []),
       ];
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
 
-      return { material: m, entries, prediction, points, minY, maxY };
+      return { material: m, entries, prediction, points, minY, maxY, aiPred };
     }).filter(Boolean) as NonNullable<ReturnType<typeof Array.prototype.map>[number]>[];
-  }, [medziagas, byArt]);
+  }, [medziagas, byArt, aiToggle, aiPredictions]);
 
   if (charts.length === 0) {
     return (
@@ -355,14 +467,35 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
         }
       `}</style>
 
-      {/* Info button — top right */}
-      <div className="flex justify-end relative" ref={infoRef}>
-        <button onClick={() => setShowInfo(!showInfo)}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-          style={{ background: showInfo ? '#007AFF' : 'rgba(0,0,0,0.04)', color: showInfo ? 'white' : '#5a5550',
-                   border: '0.5px solid rgba(0,0,0,0.08)' }}>
-          <AlertTriangle className="w-3 h-3" />Kaip skaičiuojama prognozė?
+      {/* Controls row — AI toggle + info button */}
+      <div className="flex items-center justify-between">
+        {/* AI prediction toggle */}
+        <button
+          onClick={() => { if (!aiLoading) setAiToggle(!aiToggle); }}
+          disabled={aiLoading}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-60"
+          style={{
+            background: aiToggle ? 'linear-gradient(135deg,#7c3aed 0%,#a855f7 100%)' : 'rgba(0,0,0,0.04)',
+            color: aiToggle ? 'white' : '#5a5550',
+            border: `0.5px solid ${aiToggle ? 'transparent' : 'rgba(0,0,0,0.08)'}`,
+          }}>
+          {aiLoading ? (
+            <><Loader2 className="w-3 h-3 animate-spin" />AI prognozė generuojama...</>
+          ) : (
+            <><Sparkles className="w-3 h-3" />AI prognozė {aiToggle ? 'ON' : 'OFF'}</>
+          )}
         </button>
+
+        <div className="flex items-center gap-2 relative" ref={infoRef}>
+          {aiError && (
+            <span className="text-[10px] text-error">{aiError}</span>
+          )}
+          <button onClick={() => setShowInfo(!showInfo)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+            style={{ background: showInfo ? '#007AFF' : 'rgba(0,0,0,0.04)', color: showInfo ? 'white' : '#5a5550',
+                     border: '0.5px solid rgba(0,0,0,0.08)' }}>
+            <AlertTriangle className="w-3 h-3" />Kaip skaičiuojama prognozė?
+          </button>
         {showInfo && (
           <div className="absolute top-8 right-0 z-30 w-96 bg-white rounded-xl overflow-hidden"
             style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0ede8' }}>
@@ -399,9 +532,10 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
             </div>
           </div>
         )}
+        </div>
       </div>
 
-      {charts.map(({ material, entries, prediction, points, minY, maxY }) => (
+      {charts.map(({ material, entries, prediction, points, minY, maxY, aiPred }) => (
         <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
           style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           {/* Header */}
@@ -420,6 +554,13 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                   style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
                   Prognozė {prediction.data}: {prediction.kaina_min.toFixed(2)}–{prediction.kaina_max.toFixed(2)}
                   <span className="ml-1 opacity-60">({Math.round(prediction.confidence * 100)}%)</span>
+                </span>
+              )}
+              {aiPred && (
+                <span className="prediction-badge text-[10px] px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
+                  title={aiPred.reasoning}>
+                  AI {aiPred.data}: {aiPred.kaina.toFixed(2)}
                 </span>
               )}
             </div>
@@ -456,7 +597,7 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                   contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #f0ede8', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
                   formatter={(value: number, name: string) => [
                     value?.toFixed(2),
-                    name === 'predicted' ? 'Prognozė' : 'Kaina',
+                    name === 'aiPredicted' ? 'AI prognozė' : name === 'predicted' ? 'Prognozė' : 'Kaina',
                   ]}
                   labelFormatter={(label: string) => label}
                 />
@@ -484,11 +625,31 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                   animationDuration={1200}
                   animationEasing="ease-out"
                 />
+                {/* AI prediction dashed line — purple */}
+                {aiPred && (
+                  <Line
+                    type="monotone"
+                    dataKey="aiPredicted"
+                    stroke="url(#aiPredGradient)"
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                    dot={false}
+                    connectNulls={false}
+                    isAnimationActive={true}
+                    animationBegin={1200}
+                    animationDuration={1000}
+                    animationEasing="ease-out"
+                  />
+                )}
                 {/* Gradient + glow defs */}
                 <defs>
                   <linearGradient id="predGradient" x1="0" y1="0" x2="1" y2="0">
                     <stop offset="0%" stopColor="#007AFF" stopOpacity={0.4} />
                     <stop offset="100%" stopColor="#007AFF" stopOpacity={1} />
+                  </linearGradient>
+                  <linearGradient id="aiPredGradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#7c3aed" stopOpacity={1} />
                   </linearGradient>
                   <filter id="predGlow">
                     <feGaussianBlur stdDeviation="3" result="blur" />
@@ -499,27 +660,36 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                   </filter>
                 </defs>
                 {/* Prediction endpoint — pulsing glow dot */}
-                {prediction && points.length > 0 && (
-                  <ReferenceDot
-                    x={points[points.length - 1].label}
-                    y={points[points.length - 1].predicted!}
-                    r={0}
-                    fill="transparent"
-                    stroke="transparent"
-                  >
-                    <circle
-                      r={5}
-                      fill="#007AFF"
-                      stroke="white"
-                      strokeWidth={2}
-                      filter="url(#predGlow)"
-                      className="prediction-dot"
-                    />
-                  </ReferenceDot>
-                )}
+                {prediction && points.length > 0 && (() => {
+                  const predPoint = [...points].reverse().find(p => p.predicted !== undefined);
+                  return predPoint ? (
+                    <ReferenceDot x={predPoint.label} y={predPoint.predicted!} r={0} fill="transparent" stroke="transparent">
+                      <circle r={5} fill="#007AFF" stroke="white" strokeWidth={2} filter="url(#predGlow)" className="prediction-dot" />
+                    </ReferenceDot>
+                  ) : null;
+                })()}
+                {/* AI prediction endpoint — purple dot */}
+                {aiPred && (() => {
+                  const aiPoint = [...points].reverse().find(p => p.aiPredicted !== undefined && p.kaina === null);
+                  return aiPoint ? (
+                    <ReferenceDot x={aiPoint.label} y={aiPoint.aiPredicted!} r={0} fill="transparent" stroke="transparent">
+                      <circle r={5} fill="#7c3aed" stroke="white" strokeWidth={2} filter="url(#predGlow)" className="prediction-dot" />
+                    </ReferenceDot>
+                  ) : null;
+                })()}
               </LineChart>
             </ResponsiveContainer>
           </div>
+          {/* AI reasoning text below chart */}
+          {aiPred?.reasoning && (
+            <div className="px-4 pb-3">
+              <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11px]"
+                style={{ background: 'rgba(124,58,237,0.04)', border: '0.5px solid rgba(124,58,237,0.12)', color: '#6d28d9' }}>
+                <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                <span>{aiPred.reasoning}</span>
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -561,7 +731,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // ---- analytics gen state ----
   const [genLoading, setGenLoading] = useState(false);
-  const [genStep, setGenStep] = useState<'idle' | 'geo' | 'analysis'>('idle');
+  const [genStep, setGenStep] = useState<'idle' | 'nafta' | 'geo' | 'analysis'>('idle');
+  const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
 
@@ -606,6 +777,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   ) => {
     if (genLoading) return;
     setGenLoading(true);
+    setStreamNafta('');
     setStreamGeo('');
     setStreamAnalysis('');
     const client = new Anthropic({
@@ -615,7 +787,35 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     try {
-      // -- Step 1: Geopolitical events --
+      // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
+      setGenStep('nafta');
+      let naftaText = '';
+      {
+        const msgs: Anthropic.MessageParam[] = [{
+          role: 'user',
+          content: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
+
+1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
+2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
+3. **Nafta → dervos ryšys** — kaip dabartinės naftos kainos veikia poliestetinių ir epoksidinių dervų gamybos sąnaudas. Dervos yra naftos perdirbimo produktai (styrenas, propileno glikolis, epichlorhidrinas), todėl naftos kainų pokyčiai tiesiogiai veikia dervų kainas su 1-3 mėnesių vėlavimu.
+4. **Styreno kaina** — jei randama, dabartinė styreno (pagrindinis poliestetinės dervos komponentas) kaina Europoje
+
+Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`,
+        }];
+        while (true) {
+          const stream = client.messages.stream({
+            model: MODEL, max_tokens: 1500,
+            system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
+            tools: webSearchTool, messages: msgs,
+          });
+          stream.on('text', d => { naftaText += d; setStreamNafta(naftaText); });
+          const msg = await stream.finalMessage();
+          if (msg.stop_reason !== 'pause_turn') break;
+          msgs.push({ role: 'assistant', content: msg.content as any });
+        }
+      }
+
+      // -- Step 2: Geopolitical events --
       setGenStep('geo');
       let geoText = '';
       {
@@ -635,14 +835,26 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           msgs.push({ role: 'assistant', content: msg.content as any });
         }
       }
-      // -- Step 2: Price analysis --
+      // -- Step 3: Price analysis (enriched with oil context) --
       setGenStep('analysis');
       let analysisText = '';
       const priceData = formatPriceDataForPrompt(meds, hist);
       {
         const msgs: Anthropic.MessageParam[] = [{
           role: 'user',
-          content: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis ir ieškodami internete dabartinių rinkos sąlygų:\n\nISTORINIAI KAINitaslide DUOMENYS:\n${priceData}\n\nPateikite liečiai lietuvių kalba:\n1. **Kainų tendencijos** \u2013 kiekvienos medžiagos kainos pokytis\n2. **Kainų prognozė** \u2013 3\u20136 mėnesių prognozė\n3. **Rinkos veiksniai** \u2013 nafta, energija, tiekimo grandinė\n4. **Rekomendacijos** \u2013 pirkimo strategija`,
+          content: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
+
+ISTORINIAI KAINŲ DUOMENYS:
+${priceData}
+
+NAFTOS KAINŲ KONTEKSTAS:
+${naftaText}
+
+Pateikite lietuvių kalba:
+1. **Kainų tendencijos** – kiekvienos medžiagos kainos pokytis
+2. **Kainų prognozė** – 3–6 mėnesių prognozė atsižvelgiant į naftos kainų tendencijas
+3. **Rinkos veiksniai** – nafta, styrenas, energija, tiekimo grandinė
+4. **Rekomendacijos** – pirkimo strategija (ar laukti, ar pirkti dabar)`,
         }];
         while (true) {
           const stream = client.messages.stream({
@@ -657,7 +869,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           msgs.push({ role: 'assistant', content: msg.content as any });
         }
       }
-      await saveGeneralAnalysis(analysisText, geoText);
+      await saveGeneralAnalysis(analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
 
@@ -882,6 +1094,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       </p>;
     });
 
+  const naftaDisplay = genLoading ? streamNafta : (analytics?.nafta ?? '');
   const geoDisplay = genLoading ? streamGeo : (analytics?.geoevents ?? '');
   const analysisDisplay = genStep === 'analysis' ? streamAnalysis : (!genLoading ? (analytics?.content ?? '') : '');
   const lastUpdated = analytics?.atnaujinta ?? null;
@@ -1039,7 +1252,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           )
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
-          <GrafaTab medziagas={medziagas} istorija={istorija} />
+          <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="space-y-4 max-w-3xl">
@@ -1054,9 +1267,35 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
                 style={{ background: '#007AFF' }}>
                 {genLoading
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{genStep === 'geo' ? 'Ieško įvykių...' : 'Analizuoja...'}</>
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{genStep === 'nafta' ? 'Ieško naftos kainų...' : genStep === 'geo' ? 'Ieško įvykių...' : 'Analizuoja...'}</>
                   : <><RefreshCw className="w-3.5 h-3.5" />Generuoti analizę</>}
               </button>
+            </div>
+
+            {/* Oil prices box */}
+            <div className="rounded-xl overflow-hidden"
+              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+              <div className="flex items-center gap-2 px-4 py-3"
+                style={{ background: 'linear-gradient(135deg,#78350f 0%,#b45309 100%)' }}>
+                <BarChart2 className="w-4 h-4 text-white opacity-90" />
+                <span className="text-xs font-semibold text-white">Naftos kainos &middot; Styrenas &middot; Dervos ryšys</span>
+                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+              </div>
+              <div className="px-4 py-3 bg-white min-h-[60px]">
+                {naftaDisplay ? (
+                  <>{renderMd(naftaDisplay)}</>
+                ) : genLoading && genStep === 'nafta' ? (
+                  <div className="flex items-center gap-2 py-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b45309' }} />
+                    <span className="text-xs" style={{ color: '#8a857f' }}>Ieškomos naftos kainos...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 py-1">
+                    <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
+                    <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Geopolitical events box */}

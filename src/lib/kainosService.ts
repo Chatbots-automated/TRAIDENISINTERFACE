@@ -31,6 +31,7 @@ export interface PrognozėInternetas {
   artikulas: string;   // PK – one row per material (Option A – overwrite)
   content: string;     // markdown analysis
   geoevents: string;   // geopolitical events
+  nafta: string;       // oil price analysis
   atnaujinta: string;  // ISO timestamp
 }
 
@@ -216,7 +217,7 @@ export async function bulkInsertMedziagas(
 // Web analysis storage  (table: medziagos_prognoze_internetas)
 // ---------------------------------------------------------------------------
 
-const INTERNETAS_FIELDS = 'artikulas,content,geoevents,atnaujinta';
+const INTERNETAS_FIELDS = 'artikulas,content,geoevents,nafta,atnaujinta';
 
 export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]> {
   const { data, error } = await db
@@ -244,6 +245,7 @@ export async function upsertPrognozėInternetas(
   artikulas: string,
   content: string,
   geoevents: string,
+  nafta: string = '',
 ): Promise<void> {
   const { data: existing } = await db
     .from('medziagos_prognoze_internetas')
@@ -254,19 +256,19 @@ export async function upsertPrognozėInternetas(
   if (existing && existing.length > 0) {
     const { error } = await db
       .from('medziagos_prognoze_internetas')
-      .update({ content, geoevents, atnaujinta: new Date().toISOString() })
+      .update({ content, geoevents, nafta, atnaujinta: new Date().toISOString() })
       .eq('artikulas', artikulas);
     if (error) throw error;
   } else {
     const { error } = await db
       .from('medziagos_prognoze_internetas')
-      .insert({ artikulas, content, geoevents, atnaujinta: new Date().toISOString() });
+      .insert({ artikulas, content, geoevents, nafta, atnaujinta: new Date().toISOString() });
     if (error) throw error;
   }
 }
 
-export async function saveGeneralAnalysis(content: string, geoevents: string): Promise<void> {
-  await upsertPrognozėInternetas('__general__', content, geoevents);
+export async function saveGeneralAnalysis(content: string, geoevents: string, nafta: string = ''): Promise<void> {
+  await upsertPrognozėInternetas('__general__', content, geoevents, nafta);
 }
 
 export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null> {
