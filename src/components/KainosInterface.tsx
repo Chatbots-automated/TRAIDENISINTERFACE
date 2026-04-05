@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
-  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check,
+  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon,
 } from 'lucide-react';
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
+  CartesianGrid,
+} from 'recharts';
 import Anthropic from '@anthropic-ai/sdk';
 import * as XLSX from 'xlsx';
 import type { AppUser } from '../types';
@@ -12,11 +16,10 @@ import {
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
-  replacePrognozes, fetchPrognozes,
   bulkInsertMedziagas, bulkInsertIstorija,
-  formatPrice, relativeTime,
+  formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
-import type { Medžiaga, KainuIrašas, KainuPrognozė, PrognozėInternetas } from '../lib/kainosService';
+import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction } from '../lib/kainosService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
@@ -237,6 +240,180 @@ function PriceModal({ medziagas, initial, defaultArtikulas, defaultDate, onSave,
 }
 
 // ---------------------------------------------------------------------------
+// Grafa Tab — per-material line charts with prediction
+// ---------------------------------------------------------------------------
+
+interface ChartPoint {
+  date: string;       // YYYY-MM-DD
+  label: string;      // MM-DD for display
+  kaina: number | null;
+  predicted?: number;
+}
+
+function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: KainuIrašas[] }) {
+  // Group history by artikulas
+  const byArt = useMemo(() => {
+    const map = new Map<string, KainuIrašas[]>();
+    for (const e of istorija) {
+      const arr = map.get(e.artikulas) || [];
+      arr.push(e);
+      map.set(e.artikulas, arr);
+    }
+    return map;
+  }, [istorija]);
+
+  // Build chart data per material
+  const charts = useMemo(() => {
+    return medziagas.map(m => {
+      const entries = (byArt.get(m.artikulas) || [])
+        .filter(e => e.kaina_min !== null)
+        .sort((a, b) => a.data.localeCompare(b.data));
+
+      if (entries.length === 0) return null;
+
+      const prediction = computePrediction(entries);
+
+      // Build chart points from actual data
+      const points: ChartPoint[] = entries.map(e => ({
+        date: e.data,
+        label: e.data.slice(5), // MM-DD
+        kaina: e.kaina_min,
+        predicted: undefined,
+      }));
+
+      // Add prediction point
+      if (prediction) {
+        // Add a bridge point at the last real data point with predicted value to start the dashed line
+        const lastPoint = points[points.length - 1];
+        points.push({
+          date: lastPoint.date,
+          label: lastPoint.date.slice(5),
+          kaina: lastPoint.kaina,
+          predicted: lastPoint.kaina!,
+        });
+        points.push({
+          date: prediction.data,
+          label: prediction.data.slice(5),
+          kaina: null,
+          predicted: (prediction.kaina_min + prediction.kaina_max) / 2,
+        });
+      }
+
+      // Compute Y-axis domain
+      const allValues = [
+        ...entries.map(e => e.kaina_min!),
+        ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
+        ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
+      ];
+      const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
+      const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
+
+      return { material: m, entries, prediction, points, minY, maxY };
+    }).filter(Boolean) as NonNullable<ReturnType<typeof Array.prototype.map>[number]>[];
+  }, [medziagas, byArt]);
+
+  if (charts.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <LineChartIcon className="w-10 h-10" style={{ color: '#d4cfc8' }} />
+        <p className="text-sm" style={{ color: '#8a857f' }}>Nėra kainų duomenų grafams.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {charts.map(({ material, entries, prediction, points, minY, maxY }) => (
+        <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
+          style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-2.5"
+            style={{ borderBottom: '1px solid #f0ede8' }}>
+            <div>
+              <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>{material.pavadinimas}</span>
+              <span className="text-[10px] ml-1.5" style={{ color: '#b0aba4' }}>{material.artikulas} · {material.vienetas}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px]" style={{ color: '#8a857f' }}>
+                {entries.length} įraš{entries.length === 1 ? 'as' : 'ai'}
+              </span>
+              {prediction && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+                  Prognozė {prediction.data}: {prediction.kaina_min.toFixed(2)}–{prediction.kaina_max.toFixed(2)}
+                  <span className="ml-1 opacity-60">({Math.round(prediction.confidence * 100)}%)</span>
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Chart */}
+          <div className="px-2 py-3" style={{ height: 180 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={points} margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0ede8" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: '#8a857f' }}
+                  tickLine={false}
+                  axisLine={{ stroke: '#f0ede8' }}
+                />
+                <YAxis
+                  domain={[minY, maxY]}
+                  tick={{ fontSize: 10, fill: '#8a857f' }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) => v.toFixed(2)}
+                  width={45}
+                />
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #f0ede8', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
+                  formatter={(value: number, name: string) => [
+                    value?.toFixed(2),
+                    name === 'predicted' ? 'Prognozė' : 'Kaina',
+                  ]}
+                  labelFormatter={(label: string) => label}
+                />
+                {/* Actual price line */}
+                <Line
+                  type="monotone"
+                  dataKey="kaina"
+                  stroke="#3d3935"
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: '#3d3935', strokeWidth: 0 }}
+                  activeDot={{ r: 5, fill: '#007AFF' }}
+                  connectNulls={false}
+                />
+                {/* Prediction dashed line */}
+                <Line
+                  type="monotone"
+                  dataKey="predicted"
+                  stroke="#007AFF"
+                  strokeWidth={2}
+                  strokeDasharray="6 3"
+                  dot={false}
+                  connectNulls={false}
+                />
+                {/* Prediction endpoint dot */}
+                {prediction && points.length > 0 && (
+                  <ReferenceDot
+                    x={points[points.length - 1].label}
+                    y={points[points.length - 1].predicted!}
+                    r={5}
+                    fill="#007AFF"
+                    stroke="white"
+                    strokeWidth={2}
+                  />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -245,9 +422,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [medziagas, setMedziagas] = useState<Medžiaga[]>([]);
   const [istorija, setIstorija] = useState<KainuIrašas[]>([]);
   const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
-  const [prognozes, setPrognozes] = useState<KainuPrognozė[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'lentele' | 'analize'>('lentele');
+  const [activeTab, setActiveTab] = useState<'lentele' | 'grafa' | 'analize'>('lentele');
 
   // ---- Excel import state ----
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -292,10 +468,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [med, ist, ana, prog] = await Promise.all([
-        fetchMedziagas(), fetchIstorija(), fetchGeneralAnalysis(), fetchPrognozes(),
+      const [med, ist, ana] = await Promise.all([
+        fetchMedziagas(), fetchIstorija(), fetchGeneralAnalysis(),
       ]);
-      setMedziagas(med); setIstorija(ist); setAnalytics(ana); setPrognozes(prog);
+      setMedziagas(med); setIstorija(ist); setAnalytics(ana);
       return { med, ist, ana };
     } catch (err: any) {
       addNotif('error', 'Klaida', err.message || 'Nepavyko įkelti duomenų');
@@ -363,29 +539,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       await saveGeneralAnalysis(analysisText, geoText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
-
-      // Parse structured predictions from the analysis text and save them
-      try {
-        const predRows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pasitikejimas: number }[] = [];
-        const predDate = new Date(Date.now() + 90 * 86400000).toISOString().split('T')[0]; // ~3 months out
-        for (const m of meds) {
-          // Try to find a predicted price mention for this material in the analysis
-          const regex = new RegExp(`${m.pavadinimas.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\d]*(\\d+[.,]\\d+)`, 'i');
-          const match = analysisText.match(regex);
-          if (match) {
-            const price = parseFloat(match[1].replace(',', '.'));
-            if (!isNaN(price)) {
-              predRows.push({ artikulas: m.artikulas, data: predDate, kaina_min: price * 0.95, kaina_max: price * 1.05, pasitikejimas: 0.6 });
-            }
-          }
-        }
-        if (predRows.length > 0) {
-          await replacePrognozes(predRows);
-          setPrognozes(await fetchPrognozes());
-        }
-      } catch (predErr) {
-        console.warn('Could not parse predictions from analysis:', predErr);
-      }
 
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
@@ -641,7 +794,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         </div>
         {/* Tabs */}
         <div className="flex" style={{ borderBottom: '1px solid #f0ede8' }}>
-          {(['lentele', 'analize'] as const).map(tab => (
+          {(['lentele', 'grafa', 'analize'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="px-4 py-2.5 text-xs font-medium transition-colors relative"
               style={{ color: activeTab === tab ? '#007AFF' : '#8a857f',
@@ -649,6 +802,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                        marginBottom: '-1px' }}>
               {tab === 'lentele'
                 ? <span className="flex items-center gap-1.5"><BarChart2 className="w-3.5 h-3.5" />Kainų lentelė</span>
+                : tab === 'grafa'
+                ? <span className="flex items-center gap-1.5"><LineChartIcon className="w-3.5 h-3.5" />Grafa</span>
                 : <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" />Analizė</span>}
             </button>
           ))}
@@ -761,6 +916,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               </div>
             </div>
           )
+        ) : activeTab === 'grafa' ? (
+          /* ---- GRAFA TAB ---- */
+          <GrafaTab medziagas={medziagas} istorija={istorija} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="space-y-4 max-w-3xl">

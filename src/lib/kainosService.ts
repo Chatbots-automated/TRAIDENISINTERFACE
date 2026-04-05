@@ -3,7 +3,6 @@
 //   medziagos                    – materials catalogue (artikulas PK, pavadinimas, vienetas, sukurta_at)
 //   medziagos_kainu_istorija     – price history       (id PK auto, artikulas, data, kaina_min, kaina_max, pastabos, sukurta_at)
 //   medziagos_prognoze_internetas – AI web analysis    (artikulas PK, content, geoevents, atnaujinta)
-//   medziagos_kainu_prognozes    – AI price predictions (id PK auto, artikulas, data, kaina_min, kaina_max, pasitikejimas, sukurta_at)
 
 import { db } from './database';
 
@@ -28,21 +27,19 @@ export interface KainuIrašas {
   sukurta_at: string;
 }
 
-export interface KainuPrognozė {
-  id: number;
-  artikulas: string;        // FK → medziagos.artikulas
-  data: string;             // predicted-for date YYYY-MM-DD
-  kaina_min: number | null;
-  kaina_max: number | null;
-  pasitikejimas: number;    // 0.0–1.0 confidence
-  sukurta_at: string;
-}
-
 export interface PrognozėInternetas {
   artikulas: string;   // PK – one row per material (Option A – overwrite)
   content: string;     // markdown analysis
   geoevents: string;   // geopolitical events
   atnaujinta: string;  // ISO timestamp
+}
+
+/** Computed prediction (not stored in DB — calculated on-the-fly). */
+export interface ComputedPrediction {
+  data: string;           // predicted-for date YYYY-MM-DD
+  kaina_min: number;
+  kaina_max: number;
+  confidence: number;     // 0.0–1.0
 }
 
 // Returned from fetchLatestMaterialPrices for tool/webhook integration
@@ -51,7 +48,7 @@ export interface LatestMaterialPrice {
   pavadinimas: string;
   vienetas: string;
   kainos: { data: string; kaina_min: number | null; kaina_max: number | null; pastabos: string | null }[];
-  prognoze?: { data: string; kaina_min: number | null; kaina_max: number | null; pasitikejimas: number };
+  prognoze?: ComputedPrediction;
 }
 
 // ---------------------------------------------------------------------------
@@ -100,13 +97,12 @@ export async function updateMedžiaga(
 }
 
 export async function deleteMedžiaga(artikulas: string): Promise<void> {
-  // Delete price history, predictions, web analysis first
-  const [h, p, w] = await Promise.allSettled([
+  // Delete price history and web analysis first
+  const [h, w] = await Promise.allSettled([
     db.from('medziagos_kainu_istorija').delete().eq('artikulas', artikulas),
-    db.from('medziagos_kainu_prognozes').delete().eq('artikulas', artikulas),
     db.from('medziagos_prognoze_internetas').delete().eq('artikulas', artikulas),
   ]);
-  for (const r of [h, p, w]) {
+  for (const r of [h, w]) {
     if (r.status === 'rejected') console.warn('Cascade delete warning:', r.reason);
   }
 
@@ -190,7 +186,6 @@ export async function bulkInsertIstorija(
         .single();
       inserted++;
     } catch {
-      // Skip duplicates / errors silently (log to console)
       console.warn('[bulkInsertIstorija] Skipped row:', row.artikulas, row.data);
     }
   }
@@ -211,7 +206,6 @@ export async function bulkInsertMedziagas(
         .single();
       inserted++;
     } catch {
-      // Already exists — skip
       console.warn('[bulkInsertMedziagas] Skipped existing:', row.artikulas);
     }
   }
@@ -219,44 +213,11 @@ export async function bulkInsertMedziagas(
 }
 
 // ---------------------------------------------------------------------------
-// AI predictions CRUD  (table: medziagos_kainu_prognozes)
-// ---------------------------------------------------------------------------
-
-const PROGNOZE_FIELDS = 'id,artikulas,data,kaina_min,kaina_max,pasitikejimas,sukurta_at';
-
-export async function fetchPrognozes(): Promise<KainuPrognozė[]> {
-  const { data, error } = await db
-    .from('medziagos_kainu_prognozes')
-    .select(PROGNOZE_FIELDS)
-    .order('sukurta_at', { ascending: false })
-    .limit(-1);
-
-  if (error) throw error;
-  return data || [];
-}
-
-/** Delete old predictions and save fresh ones (full replace per generation). */
-export async function replacePrognozes(
-  rows: { artikulas: string; data: string; kaina_min: number | null; kaina_max: number | null; pasitikejimas: number }[],
-): Promise<void> {
-  // Delete all existing predictions
-  await db.from('medziagos_kainu_prognozes').delete().neq('id', 0); // delete all
-  // Insert fresh
-  for (const row of rows) {
-    await db
-      .from('medziagos_kainu_prognozes')
-      .insert(row);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Web analysis storage  (table: medziagos_prognoze_internetas)
-// Option A: one row per material, overwrite on each generation
 // ---------------------------------------------------------------------------
 
 const INTERNETAS_FIELDS = 'artikulas,content,geoevents,atnaujinta';
 
-/** Fetch all web analysis rows (one per material that has been analysed). */
 export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]> {
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
@@ -268,7 +229,6 @@ export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]>
   return data || [];
 }
 
-/** Fetch the most recently updated web analysis row (for "last updated" display). */
 export async function fetchLatestPrognozėInternetas(): Promise<PrognozėInternetas | null> {
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
@@ -280,13 +240,11 @@ export async function fetchLatestPrognozėInternetas(): Promise<PrognozėInterne
   return (data && data.length > 0) ? data[0] : null;
 }
 
-/** Upsert web analysis for a material (overwrites existing row). */
 export async function upsertPrognozėInternetas(
   artikulas: string,
   content: string,
   geoevents: string,
 ): Promise<void> {
-  // Try update first, then insert if not found
   const { data: existing } = await db
     .from('medziagos_prognoze_internetas')
     .select('artikulas')
@@ -307,15 +265,10 @@ export async function upsertPrognozėInternetas(
   }
 }
 
-/** Save a single general analysis row (artikulas = '__general__'). */
-export async function saveGeneralAnalysis(
-  content: string,
-  geoevents: string,
-): Promise<void> {
+export async function saveGeneralAnalysis(content: string, geoevents: string): Promise<void> {
   await upsertPrognozėInternetas('__general__', content, geoevents);
 }
 
-/** Fetch the general analysis row. */
 export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null> {
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
@@ -328,20 +281,132 @@ export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null
 }
 
 // ---------------------------------------------------------------------------
+// Price prediction — computed on-the-fly using weighted linear regression
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86400000;
+
+/** Convert YYYY-MM-DD to epoch days for regression math. */
+function dateToDays(d: string): number {
+  return Math.floor(new Date(d + 'T00:00:00Z').getTime() / DAY_MS);
+}
+
+/** Convert epoch days back to YYYY-MM-DD. */
+function daysToDate(days: number): string {
+  return new Date(days * DAY_MS).toISOString().split('T')[0];
+}
+
+/**
+ * Weighted linear regression.
+ * More recent data points get exponentially higher weight.
+ * Returns { slope, intercept } or null if not enough data.
+ */
+function weightedLinearRegression(
+  points: { x: number; y: number }[],
+  halfLife: number = 180, // days — weight halves every 180 days into the past
+): { slope: number; intercept: number } | null {
+  if (points.length < 2) return null;
+
+  const maxX = Math.max(...points.map(p => p.x));
+  // Compute weights: w = 2^((x - maxX) / halfLife)
+  const weighted = points.map(p => ({
+    ...p,
+    w: Math.pow(2, (p.x - maxX) / halfLife),
+  }));
+
+  const sumW = weighted.reduce((s, p) => s + p.w, 0);
+  const sumWx = weighted.reduce((s, p) => s + p.w * p.x, 0);
+  const sumWy = weighted.reduce((s, p) => s + p.w * p.y, 0);
+  const sumWxx = weighted.reduce((s, p) => s + p.w * p.x * p.x, 0);
+  const sumWxy = weighted.reduce((s, p) => s + p.w * p.x * p.y, 0);
+
+  const denom = sumW * sumWxx - sumWx * sumWx;
+  if (Math.abs(denom) < 1e-10) return null;
+
+  const slope = (sumW * sumWxy - sumWx * sumWy) / denom;
+  const intercept = (sumWy - slope * sumWx) / sumW;
+
+  return { slope, intercept };
+}
+
+/**
+ * Compute a price prediction for a material based on its price history.
+ *
+ * Logic:
+ * - If latest price is ≤30 days old → predict 1 month from today
+ * - If latest price is >30 days old → predict for today
+ * - Needs ≥2 data points with numeric prices
+ * - Uses weighted linear regression (recent data weighted more)
+ * - Confidence is based on R² and data density
+ */
+export function computePrediction(entries: KainuIrašas[]): ComputedPrediction | null {
+  // Filter to entries with numeric prices
+  const valid = entries
+    .filter(e => e.kaina_min !== null)
+    .sort((a, b) => a.data.localeCompare(b.data));
+
+  if (valid.length < 2) return null;
+
+  const today = dateToDays(new Date().toISOString().split('T')[0]);
+  const latestDate = dateToDays(valid[valid.length - 1].data);
+  const daysSinceLatest = today - latestDate;
+
+  // Target date: if data is fresh (≤30 days), predict 1 month out; otherwise predict today
+  const targetDays = daysSinceLatest <= 30 ? today + 30 : today;
+
+  // Build points for min price
+  const pointsMin = valid.map(e => ({ x: dateToDays(e.data), y: e.kaina_min! }));
+  const regMin = weightedLinearRegression(pointsMin);
+  if (!regMin) return null;
+
+  // Build points for max price (use kaina_max if available, otherwise kaina_min)
+  const pointsMax = valid.map(e => ({
+    x: dateToDays(e.data),
+    y: e.kaina_max ?? e.kaina_min!,
+  }));
+  const regMax = weightedLinearRegression(pointsMax);
+  if (!regMax) return null;
+
+  let predMin = regMin.slope * targetDays + regMin.intercept;
+  let predMax = regMax.slope * targetDays + regMax.intercept;
+
+  // Ensure predictions are non-negative
+  predMin = Math.max(0, predMin);
+  predMax = Math.max(0, predMax);
+
+  // Ensure min ≤ max
+  if (predMin > predMax) [predMin, predMax] = [predMax, predMin];
+
+  // Confidence: based on data points count, time span, and extrapolation distance
+  const timeSpanDays = dateToDays(valid[valid.length - 1].data) - dateToDays(valid[0].data);
+  const extrapolationDays = targetDays - latestDate;
+  const densityScore = Math.min(1, valid.length / 8);       // more points = better
+  const spanScore = Math.min(1, timeSpanDays / 365);        // wider history = better
+  const extrapPenalty = Math.max(0.3, 1 - extrapolationDays / (timeSpanDays || 1)); // extrapolating far = worse
+  const confidence = Math.round(densityScore * spanScore * extrapPenalty * 100) / 100;
+
+  return {
+    data: daysToDate(targetDays),
+    kaina_min: Math.round(predMin * 100) / 100,
+    kaina_max: Math.round(predMax * 100) / 100,
+    confidence: Math.max(0.1, Math.min(1, confidence)),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Analytics helper – enriched material prices for PaklausimasModal
 // ---------------------------------------------------------------------------
 
 /**
  * Returns every material with its 3 most recent historical prices
- * and optionally the latest AI prediction. The LLM in n8n uses
- * the price history to understand trends and pick relevant materials.
+ * plus an on-the-fly computed prediction. The LLM in n8n uses
+ * the price history + prediction to estimate tank prices.
  */
 export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]> {
   try {
-    const [medziagas, istorija, prognozes] = await Promise.all([
+    const [medziagas, istorija] = await Promise.all([
       fetchMedziagas(),
       fetchIstorija(),
-      fetchPrognozes(),
     ]);
 
     // Build map: artikulas → all entries sorted newest first
@@ -351,41 +416,28 @@ export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]
       arr.push(e);
       histByArt.set(e.artikulas, arr);
     }
-    // Sort each array newest first and keep top 3
-    for (const [art, arr] of histByArt) {
-      arr.sort((a, b) => b.data.localeCompare(a.data));
-      histByArt.set(art, arr.slice(0, 3));
-    }
-
-    // Build map: artikulas → latest prediction
-    const latestPredByArt = new Map<string, KainuPrognozė>();
-    for (const p of prognozes) {
-      const existing = latestPredByArt.get(p.artikulas);
-      if (!existing || p.data > existing.data) {
-        latestPredByArt.set(p.artikulas, p);
-      }
-    }
 
     return medziagas
       .map(m => {
-        const prices = histByArt.get(m.artikulas) || [];
-        const pred = latestPredByArt.get(m.artikulas);
-        if (prices.length === 0 && !pred) return null;
+        const allEntries = histByArt.get(m.artikulas) || [];
+        if (allEntries.length === 0) return null;
+
+        // Sort newest first, take top 3 for the payload
+        const sorted = [...allEntries].sort((a, b) => b.data.localeCompare(a.data));
+        const top3 = sorted.slice(0, 3);
+
+        // Compute prediction from ALL entries (not just top 3)
+        const prediction = computePrediction(allEntries);
 
         const result: LatestMaterialPrice = {
           artikulas: m.artikulas,
           pavadinimas: m.pavadinimas,
           vienetas: m.vienetas,
-          kainos: prices.map(e => ({
+          kainos: top3.map(e => ({
             data: e.data, kaina_min: e.kaina_min, kaina_max: e.kaina_max, pastabos: e.pastabos,
           })),
         };
-        if (pred) {
-          result.prognoze = {
-            data: pred.data, kaina_min: pred.kaina_min, kaina_max: pred.kaina_max,
-            pasitikejimas: pred.pasitikejimas,
-          };
-        }
+        if (prediction) result.prognoze = prediction;
         return result;
       })
       .filter((x): x is LatestMaterialPrice => x !== null);
