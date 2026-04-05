@@ -336,6 +336,25 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
 
   return (
     <div className="space-y-4">
+      {/* Prediction animations */}
+      <style>{`
+        @keyframes predPulse {
+          0%, 100% { r: 5; opacity: 1; filter: url(#predGlow); }
+          50% { r: 7; opacity: 0.85; }
+        }
+        @keyframes predBadgeIn {
+          0% { opacity: 0; transform: translateY(-4px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .prediction-dot {
+          animation: predPulse 2.5s ease-in-out infinite;
+          animation-delay: 2s;
+        }
+        .prediction-badge {
+          animation: predBadgeIn 0.5s ease-out 1.8s both;
+        }
+      `}</style>
+
       {/* Info button — top right */}
       <div className="flex justify-end relative" ref={infoRef}>
         <button onClick={() => setShowInfo(!showInfo)}
@@ -397,7 +416,7 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                 {entries.length} įraš{entries.length === 1 ? 'as' : 'ai'}
               </span>
               {prediction && (
-                <span className="text-[10px] px-2 py-0.5 rounded-full"
+                <span className="prediction-badge text-[10px] px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
                   Prognozė {prediction.data}: {prediction.kaina_min.toFixed(2)}–{prediction.kaina_max.toFixed(2)}
                   <span className="ml-1 opacity-60">({Math.round(prediction.confidence * 100)}%)</span>
@@ -451,26 +470,52 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
                   activeDot={{ r: 5, fill: '#007AFF' }}
                   connectNulls={false}
                 />
-                {/* Prediction dashed line */}
+                {/* Prediction dashed line — delayed draw animation */}
                 <Line
                   type="monotone"
                   dataKey="predicted"
-                  stroke="#007AFF"
+                  stroke="url(#predGradient)"
                   strokeWidth={2}
                   strokeDasharray="6 3"
                   dot={false}
                   connectNulls={false}
+                  isAnimationActive={true}
+                  animationBegin={800}
+                  animationDuration={1200}
+                  animationEasing="ease-out"
                 />
-                {/* Prediction endpoint dot */}
+                {/* Gradient + glow defs */}
+                <defs>
+                  <linearGradient id="predGradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#007AFF" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#007AFF" stopOpacity={1} />
+                  </linearGradient>
+                  <filter id="predGlow">
+                    <feGaussianBlur stdDeviation="3" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                </defs>
+                {/* Prediction endpoint — pulsing glow dot */}
                 {prediction && points.length > 0 && (
                   <ReferenceDot
                     x={points[points.length - 1].label}
                     y={points[points.length - 1].predicted!}
-                    r={5}
-                    fill="#007AFF"
-                    stroke="white"
-                    strokeWidth={2}
-                  />
+                    r={0}
+                    fill="transparent"
+                    stroke="transparent"
+                  >
+                    <circle
+                      r={5}
+                      fill="#007AFF"
+                      stroke="white"
+                      strokeWidth={2}
+                      filter="url(#predGlow)"
+                      className="prediction-dot"
+                    />
+                  </ReferenceDot>
                 )}
               </LineChart>
             </ResponsiveContainer>
