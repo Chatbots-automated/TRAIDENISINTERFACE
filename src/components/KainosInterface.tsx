@@ -251,6 +251,19 @@ interface ChartPoint {
 }
 
 function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: KainuIrašas[] }) {
+  const [showInfo, setShowInfo] = useState(false);
+  const infoRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!showInfo) return;
+    const handler = (e: MouseEvent) => {
+      if (infoRef.current && !infoRef.current.contains(e.target as Node)) setShowInfo(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showInfo]);
+
   // Group history by artikulas
   const byArt = useMemo(() => {
     const map = new Map<string, KainuIrašas[]>();
@@ -323,6 +336,52 @@ function GrafaTab({ medziagas, istorija }: { medziagas: Medžiaga[]; istorija: K
 
   return (
     <div className="space-y-4">
+      {/* Info button — top right */}
+      <div className="flex justify-end relative" ref={infoRef}>
+        <button onClick={() => setShowInfo(!showInfo)}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+          style={{ background: showInfo ? '#007AFF' : 'rgba(0,0,0,0.04)', color: showInfo ? 'white' : '#5a5550',
+                   border: '0.5px solid rgba(0,0,0,0.08)' }}>
+          <AlertTriangle className="w-3 h-3" />Kaip skaičiuojama prognozė?
+        </button>
+        {showInfo && (
+          <div className="absolute top-8 right-0 z-30 w-96 bg-white rounded-xl overflow-hidden"
+            style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0ede8' }}>
+            <div className="px-4 py-3" style={{ borderBottom: '1px solid #f0ede8', background: '#faf9f7' }}>
+              <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>Kaip veikia kainų prognozė</span>
+            </div>
+            <div className="px-4 py-3 space-y-2 text-xs leading-relaxed" style={{ color: '#5a5550' }}>
+              <p>
+                Sistema analizuoja <strong style={{ color: '#3d3935' }}>visus istorinius kainos įrašus</strong> kiekvienai medžiagai
+                ir nustato kainų tendenciją naudodama <strong style={{ color: '#3d3935' }}>svertinę tiesinę regresiją</strong>.
+              </p>
+              <p>
+                <strong style={{ color: '#3d3935' }}>Naujesni duomenys turi didesnę įtaką</strong> nei seni — kaina prieš
+                mėnesį yra svarbesnė nei kaina prieš 2 metus. Svoriai mažėja eksponentiškai: kas 6 mėnesius
+                seno įrašo svoris sumažėja perpus.
+              </p>
+              <p>
+                <strong style={{ color: '#3d3935' }}>Prognozės data priklauso nuo duomenų šviežumo:</strong>
+              </p>
+              <ul className="list-disc ml-4 space-y-1">
+                <li>Jei naujausia kaina įvesta <strong style={{ color: '#3d3935' }}>per paskutines 30 d.</strong> — prognozuojama
+                  <strong style={{ color: '#007AFF' }}> 1 mėn. į priekį</strong> nuo šiandien.</li>
+                <li>Jei naujausia kaina <strong style={{ color: '#3d3935' }}>senesnė nei 30 d.</strong> — prognozuojama
+                  <strong style={{ color: '#007AFF' }}> šiandienos kaina</strong>, nes trūksta aktualių duomenų.</li>
+              </ul>
+              <p>
+                <strong style={{ color: '#3d3935' }}>Patikimumo procentas</strong> apskaičiuojamas pagal:
+                duomenų taškų kiekį, istorijos laikotarpio plotį ir atstumą nuo paskutinio žinomo taško
+                iki prognozės datos. Kuo daugiau duomenų ir kuo arčiau prognozė — tuo patikimiau.
+              </p>
+              <p className="pt-1" style={{ color: '#b0aba4', fontSize: 10 }}>
+                Reikia bent 2 kainos įrašų su skaitinėmis reikšmėmis, kad prognozė būtų galima.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
       {charts.map(({ material, entries, prediction, points, minY, maxY }) => (
         <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
           style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
