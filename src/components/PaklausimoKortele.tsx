@@ -2892,6 +2892,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
   const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
+  const dervaMusuBeforeEdit = useRef(dervaMusu);
 
   // Sync dervaMusu input when switching tanks (idx reflects externalIdx or internal currentIdx)
   useEffect(() => {
@@ -3041,7 +3042,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
           await updateTalposField(currentTalposId, 'derva_ai', resultText);
           onTalposRowUpdated?.(currentTalposId, 'derva_ai', resultText);
         }
-        onRecordUpdated?.(await fetchNestandartiniaiById(record.id) || updated);
+        onRecordUpdated?.(updated);
       }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
@@ -3082,7 +3083,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         </div>
         {!readOnly && !dervaMusuEditing && (
           <button
-            onClick={() => setDervaMusuEditing(true)}
+            onClick={() => { dervaMusuBeforeEdit.current = dervaMusu; setDervaMusuEditing(true); }}
             className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
           >
             <Pencil className="w-3 h-3 inline mr-1" />
@@ -3098,12 +3099,12 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             placeholder="Įveskite dervos reikšmę šiai talpai..."
             className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
             rows={Math.max(3, dervaMusu.split('\n').length)}
-            onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
+            onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(dervaMusuBeforeEdit.current); } }}
             autoFocus
           />
           <div className="flex justify-end gap-2">
             <button
-              onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
+              onClick={() => { setDervaMusuEditing(false); setDervaMusu(dervaMusuBeforeEdit.current); }}
               className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
             >
               Atšaukti
