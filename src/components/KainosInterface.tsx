@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
-  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon,
+  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
@@ -20,6 +20,10 @@ import {
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
 import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction } from '../lib/kainosService';
+import {
+  fetchSablonai, createSablonas, updateSablonas, deleteSablonas, generateStructuredJson,
+} from '../lib/sablonaiService';
+import type { MedziaguSablonas } from '../lib/sablonaiService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
@@ -257,6 +261,306 @@ interface AiPrediction {
   data: string;
   reasoning: string;
 }
+
+// ---------------------------------------------------------------------------
+// SablonaiTab – CRUD for material slate templates
+// ---------------------------------------------------------------------------
+
+function SablonaiTab() {
+  const [sablonai, setSablonai] = useState<MedziaguSablonas[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Form state
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formName, setFormName] = useState('');
+  const [formText, setFormText] = useState('');
+  const [formJson, setFormJson] = useState<Record<string, any> | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // Preview
+  const [previewId, setPreviewId] = useState<number | null>(null);
+
+  // Delete
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setSablonai(await fetchSablonai());
+    } catch (err: any) {
+      setError(err?.message || 'Nepavyko gauti duomenų');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setFormName('');
+    setFormText('');
+    setFormJson(null);
+    setFormError(null);
+  };
+
+  const handleGenerate = async () => {
+    if (!formText.trim()) return;
+    setGenerating(true);
+    setFormError(null);
+    try {
+      const json = await generateStructuredJson(formText.trim());
+      setFormJson(json);
+      // Auto-extract name from first line if name is empty
+      if (!formName.trim()) {
+        const firstLine = formText.trim().split('\n')[0].trim();
+        if (firstLine) setFormName(firstLine);
+      }
+    } catch (err: any) {
+      setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!formName.trim()) { setFormError('Įveskite pavadinimą'); return; }
+    if (!formText.trim()) { setFormError('Įveskite medžiagų tekstą'); return; }
+    setSaving(true);
+    setFormError(null);
+    try {
+      if (editingId) {
+        await updateSablonas(editingId, {
+          name: formName.trim(),
+          raw_text: formText.trim(),
+          structured_json: formJson,
+        });
+      } else {
+        await createSablonas({
+          name: formName.trim(),
+          raw_text: formText.trim(),
+          structured_json: formJson,
+        });
+      }
+      resetForm();
+      await loadData();
+    } catch (err: any) {
+      setFormError(err?.message || 'Nepavyko išsaugoti');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (s: MedziaguSablonas) => {
+    setEditingId(s.id);
+    setFormName(s.name);
+    setFormText(s.raw_text);
+    setFormJson(s.structured_json);
+    setShowForm(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeleting(true);
+    try {
+      await deleteSablonas(id);
+      setConfirmDeleteId(null);
+      await loadData();
+    } catch (err: any) {
+      console.error('Delete error:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const previewItem = previewId ? sablonai.find(s => s.id === previewId) : null;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#007AFF' }} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="px-4 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,59,48,0.08)', color: '#FF3B30' }}>
+          <AlertTriangle className="w-4 h-4 inline mr-2" />{error}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm" style={{ color: '#8a857f' }}>{sablonai.length} šablonai</p>
+        <button
+          onClick={() => { resetForm(); setShowForm(true); }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95"
+          style={{ background: '#007AFF' }}
+        >
+          <Plus className="w-3.5 h-3.5" />Naujas šablonas
+        </button>
+      </div>
+
+      {/* Add/Edit form */}
+      {showForm && (
+        <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: '#e5e2dd', background: '#fafaf8' }}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>{editingId ? 'Redaguoti šabloną' : 'Naujas šablonas'}</h3>
+            <button onClick={resetForm} className="p-1 rounded-md hover:bg-black/5"><X className="w-4 h-4" style={{ color: '#8a857f' }} /></button>
+          </div>
+
+          {/* Name input */}
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: '#8a857f' }}>Pavadinimas</label>
+            <input
+              value={formName}
+              onChange={e => setFormName(e.target.value)}
+              placeholder="pvz. PGR V-230 m3"
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none transition-colors focus:border-blue-400"
+              style={{ borderColor: '#e5e2dd', color: '#3d3935' }}
+            />
+          </div>
+
+          {/* Raw text input */}
+          <div>
+            <label className="text-xs font-medium mb-1 block" style={{ color: '#8a857f' }}>Medžiagų aprašymas (tekstas)</label>
+            <textarea
+              value={formText}
+              onChange={e => setFormText(e.target.value)}
+              placeholder="Įveskite medžiagų aprašymą..."
+              rows={10}
+              className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
+              style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6' }}
+            />
+          </div>
+
+          {/* Generate button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleGenerate}
+              disabled={generating || !formText.trim()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
+              style={{ background: '#8b5cf6' }}
+            >
+              {generating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generuojama...</> : <><Sparkles className="w-3.5 h-3.5" />Generuoti struktūrą</>}
+            </button>
+            {formJson && <span className="text-xs font-medium" style={{ color: '#34C759' }}><Check className="w-3.5 h-3.5 inline mr-1" />Struktūra sugeneruota</span>}
+          </div>
+
+          {/* Structured JSON preview */}
+          {formJson && (
+            <div className="rounded-lg border p-3 max-h-60 overflow-y-auto" style={{ borderColor: '#e5e2dd', background: '#fff' }}>
+              <p className="text-xs font-medium mb-2" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys:</p>
+              <pre className="text-xs font-mono whitespace-pre-wrap" style={{ color: '#3d3935', lineHeight: '1.5' }}>
+                {JSON.stringify(formJson, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {formError && (
+            <p className="text-xs" style={{ color: '#FF3B30' }}>{formError}</p>
+          )}
+
+          {/* Save / Cancel */}
+          <div className="flex justify-end gap-2 pt-2" style={{ borderTop: '1px solid #f0ede8' }}>
+            <button onClick={resetForm} className="px-4 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-black/5" style={{ color: '#8a857f' }}>
+              Atšaukti
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !formName.trim() || !formText.trim()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
+              style={{ background: '#007AFF' }}
+            >
+              {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saugoma...</> : <><Save className="w-3.5 h-3.5" />Išsaugoti</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Templates list */}
+      {sablonai.length === 0 && !showForm ? (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <FileText className="w-10 h-10 mb-3" style={{ color: '#d1cdc7' }} />
+          <p className="text-sm font-medium" style={{ color: '#8a857f' }}>Nėra medžiagų šablonų</p>
+          <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>Sukurkite pirmą šabloną paspaudę „Naujas šablonas"</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {sablonai.map(s => (
+            <div key={s.id} className="group rounded-xl border px-4 py-3 transition-colors hover:border-blue-200" style={{ borderColor: '#e5e2dd', background: '#fff' }}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
+                    {s.structured_json && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-0.5 truncate" style={{ color: '#8a857f' }}>
+                    {s.raw_text.split('\n').slice(1, 3).join(' · ').slice(0, 80) || 'Tuščias'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => setPreviewId(previewId === s.id ? null : s.id)} className="p-1.5 rounded-md hover:bg-black/5" title="Peržiūrėti">
+                    <Eye className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                  </button>
+                  <button onClick={() => handleEdit(s)} className="p-1.5 rounded-md hover:bg-black/5" title="Redaguoti">
+                    <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                  </button>
+                  <button onClick={() => setConfirmDeleteId(s.id)} className="p-1.5 rounded-md hover:bg-red-50" title="Ištrinti">
+                    <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Preview expand */}
+              {previewId === s.id && (
+                <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f0ede8' }}>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Originalus tekstas</p>
+                      <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{s.raw_text}</pre>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys</p>
+                      {s.structured_json ? (
+                        <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{JSON.stringify(s.structured_json, null, 2)}</pre>
+                      ) : (
+                        <p className="text-xs italic" style={{ color: '#b5b0aa' }}>Struktūra dar nesugeneruota</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Delete confirmation */}
+              {confirmDeleteId === s.id && (
+                <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
+                  <span className="text-xs" style={{ color: '#FF3B30' }}>Ištrinti šį šabloną?</span>
+                  <button onClick={() => handleDelete(s.id)} disabled={deleting}
+                    className="text-xs px-3 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: '#FF3B30' }}>
+                    {deleting ? 'Trinama...' : 'Taip'}
+                  </button>
+                  <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-3 py-1 rounded-lg" style={{ color: '#8a857f' }}>Ne</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analytics: PrognozėInternetas | null; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
@@ -670,7 +974,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [istorija, setIstorija] = useState<KainuIrašas[]>([]);
   const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'lentele' | 'grafa' | 'analize'>(() => {
+  const [activeTab, setActiveTab] = useState<'lentele' | 'sablonai' | 'grafa' | 'analize'>(() => {
     const hash = window.location.hash.replace('#', '') as 'lentele' | 'grafa' | 'analize';
     return ['lentele', 'grafa', 'analize'].includes(hash) ? hash : 'lentele';
   });
@@ -1070,7 +1374,7 @@ Pateikite lietuvių kalba:
       {/* Header */}
       <div className="px-6 pt-6 pb-0 shrink-0">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Žaliavų Kainos</h2>
+          <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Žaliavos</h2>
           {activeTab === 'lentele' && (
             <div className="flex items-center gap-2">
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelFile} />
@@ -1094,7 +1398,7 @@ Pateikite lietuvių kalba:
         </div>
         {/* Tabs */}
         <div className="flex" style={{ borderBottom: '1px solid #f0ede8' }}>
-          {(['lentele', 'grafa', 'analize'] as const).map(tab => (
+          {(['lentele', 'sablonai', 'grafa', 'analize'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="px-4 py-2.5 text-xs font-medium transition-colors relative"
               style={{ color: activeTab === tab ? '#007AFF' : '#8a857f',
@@ -1102,6 +1406,8 @@ Pateikite lietuvių kalba:
                        marginBottom: '-1px' }}>
               {tab === 'lentele'
                 ? <span className="flex items-center gap-1.5"><BarChart2 className="w-3.5 h-3.5" />Kainų lentelė</span>
+                : tab === 'sablonai'
+                ? <span className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" />Medžiagų šablonai</span>
                 : tab === 'grafa'
                 ? <span className="flex items-center gap-1.5"><LineChartIcon className="w-3.5 h-3.5" />Grafa</span>
                 : <span className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" />Analizė</span>}
@@ -1216,6 +1522,9 @@ Pateikite lietuvių kalba:
               </div>
             </div>
           )
+        ) : activeTab === 'sablonai' ? (
+          /* ---- SABLONAI TAB ---- */
+          <SablonaiTab />
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
           <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />

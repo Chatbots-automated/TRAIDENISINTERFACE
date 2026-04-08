@@ -479,3 +479,45 @@ export function relativeTime(iso: string | null | undefined): string {
   if (days < 7) return `prieš ${days} d.`;
   return new Date(iso).toLocaleDateString('lt-LT');
 }
+
+// ---------------------------------------------------------------------------
+// Material prices with staleness check (for PaklausimoKortele)
+// ---------------------------------------------------------------------------
+
+const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
+
+export interface MaterialPriceForEstimate {
+  artikulas: string;
+  pavadinimas: string;
+  vienetas: string;
+  latest_price: { data: string; kaina_min: number | null; kaina_max: number | null } | null;
+  is_stale: boolean;
+  prediction_math?: ComputedPrediction;
+}
+
+/**
+ * Fetch material prices enriched with staleness flag and math prediction.
+ * If latest price date > 3 months old, `is_stale` is true and `prediction_math` is included.
+ */
+export async function fetchMaterialPricesForEstimate(): Promise<MaterialPriceForEstimate[]> {
+  const prices = await fetchLatestMaterialPrices();
+  const now = Date.now();
+
+  return prices.map(p => {
+    const latest = p.kainos[0] ?? null;
+    const latestDate = latest ? new Date(latest.data).getTime() : 0;
+    const isStale = !latest || (now - latestDate > THREE_MONTHS_MS);
+
+    const result: MaterialPriceForEstimate = {
+      artikulas: p.artikulas,
+      pavadinimas: p.pavadinimas,
+      vienetas: p.vienetas,
+      latest_price: latest,
+      is_stale: isStale,
+    };
+    if (isStale && p.prognoze) {
+      result.prediction_math = p.prognoze;
+    }
+    return result;
+  });
+}

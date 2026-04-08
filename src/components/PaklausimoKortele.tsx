@@ -22,7 +22,10 @@ import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
-import { fetchLatestMaterialPrices } from '../lib/kainosService';
+import { fetchLatestMaterialPrices, fetchMaterialPricesForEstimate } from '../lib/kainosService';
+import type { MaterialPriceForEstimate } from '../lib/kainosService';
+import { fetchSablonai } from '../lib/sablonaiService';
+import type { MedziaguSablonas } from '../lib/sablonaiService';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -327,7 +330,7 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
 const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'procurement_package', 'position']);
 
 /** Keys excluded from the talpos key-value panel (shown elsewhere or internal) */
-const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json']);
+const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json', 'material_slate']);
 
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
@@ -341,6 +344,7 @@ const DEDUP_EXCLUDE_KEYS = new Set([
   ...SKIP_DISPLAY_KEYS,
   ...TITLE_KEYS,
   'Pastabos', 'pastabos',
+  'material_slate',
   // Price fields must not affect grouping — entering a price for one tank
   // should not split it away from its identical siblings
   'kaina', 'Kaina', 'kaina_ai', 'kaina_ai_reasoning',
@@ -590,7 +594,7 @@ function isOldFormat(meta: Record<string, any>): boolean {
 // Tab: Talpos (replaces Bendra) — data from the 'talpos' Directus table
 // ---------------------------------------------------------------------------
 
-type TalposSubTab = 'parametrai' | 'derva';
+type TalposSubTab = 'parametrai' | 'derva' | 'medziagos';
 
 function TabTalpos({
   record, products, readOnly, onRecordUpdated, initialTalposId,
@@ -603,6 +607,14 @@ function TabTalpos({
 }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [subTab, setSubTab] = useState<TalposSubTab>('parametrai');
+
+  // Material templates (fetched once, shared with medziagos sub-tab)
+  const [sablonai, setSablonai] = useState<MedziaguSablonas[]>([]);
+  const [sablonaiLoading, setSablonaiLoading] = useState(false);
+  useEffect(() => {
+    setSablonaiLoading(true);
+    fetchSablonai().then(setSablonai).catch(() => {}).finally(() => setSablonaiLoading(false));
+  }, []);
 
   // Parse talpos UUIDs from the record
   const talposIds = useMemo(() => {
@@ -992,6 +1004,7 @@ function TabTalpos({
           product_metadata: payload,
           similar_tanks: similarTanksPayload,
           material_prices: materialPrices,
+          material_slate: currentTalposRow?.material_slate || null,
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1151,14 +1164,14 @@ function TabTalpos({
       {/* Parametrai / Derva toggle */}
       <div className="flex justify-center mb-2 shrink-0">
         <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
-          {(['parametrai', 'derva'] as TalposSubTab[]).map(t => (
+          {(['parametrai', 'derva', 'medziagos'] as TalposSubTab[]).map(t => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
               className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${subTab === t ? 'text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
               style={subTab === t ? { background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' } : undefined}
             >
-              {t === 'parametrai' ? 'Parametrai' : 'Derva'}
+              {t === 'parametrai' ? 'Parametrai' : t === 'derva' ? 'Derva' : 'Medžiagos'}
             </button>
           ))}
         </div>
@@ -1422,19 +1435,6 @@ function TabTalpos({
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={estimatePrice}
-                          disabled={!!priceEstimating[idx]}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
-                          title="AI kainos įvertinimas"
-                        >
-                          {priceEstimating[idx] ? (
-                            <><Loader2 className="w-3 h-3 animate-spin" /> Skaičiuojama...</>
-                          ) : (
-                            <><Sparkles className="w-3 h-3" /> Kainos parinkimas</>
-                          )}
-                        </button>
-                        <button
                           onClick={findSimilar}
                           disabled={!!similarSearching[idx]}
                           className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1447,29 +1447,6 @@ function TabTalpos({
                         </button>
                       </div>
                     </div>
-
-                    {priceEstimateError[idx] && (
-                      <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span>{priceEstimateError[idx]}</span>
-                      </div>
-                    )}
-
-                    {/* AI price estimation full response text */}
-                    {(() => {
-                      const aiText = localKainaAiText[idx] !== undefined
-                        ? localKainaAiText[idx]
-                        : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
-                      return aiText ? (
-                        <div className="mb-2 px-3 py-2.5 rounded-xl border border-base-content/8 bg-base-content/[0.02] shrink-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/35 mb-1.5 flex items-center gap-1">
-                            <Sparkles className="w-2.5 h-2.5" style={{ color: '#AF52DE' }} />
-                            <span style={{ color: '#AF52DE' }}>AI įvertinimas</span>
-                          </p>
-                          <p className="text-xs text-base-content/70 leading-relaxed whitespace-pre-wrap">{aiText}</p>
-                        </div>
-                      ) : null;
-                    })()}
 
                     {similarError[idx] && (
                       <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
@@ -1553,6 +1530,25 @@ function TabTalpos({
           onTalposJsonSaved={(id, newJson) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, json: newJson } : r));
           }}
+          onTalposRowUpdated={(id, field, value) => {
+            setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
+          }}
+        />
+      )}
+
+      {/* ── Medžiagos sub-tab ── */}
+      {subTab === 'medziagos' && (
+        <TabMedziagos
+          record={record}
+          currentTalposId={currentTalposId}
+          currentTalposRow={currentTalposRow}
+          idx={idx}
+          sablonai={sablonai}
+          sablonaiLoading={sablonaiLoading}
+          estimatePrice={estimatePrice}
+          priceEstimating={!!priceEstimating[idx]}
+          priceEstimateError={priceEstimateError[idx] || null}
+          localKainaAiText={localKainaAiText[idx] ?? null}
           onTalposRowUpdated={(id, field, value) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
           }}
@@ -2857,6 +2853,383 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   }
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// TabMedziagos – material slate selection / manual entry + AI estimate display
+// ---------------------------------------------------------------------------
+
+function TabMedziagos({
+  record, currentTalposId, currentTalposRow, idx, sablonai, sablonaiLoading,
+  estimatePrice, priceEstimating, priceEstimateError, localKainaAiText,
+  onTalposRowUpdated,
+}: {
+  record: NestandartiniaiRecord;
+  currentTalposId: string | null;
+  currentTalposRow: any;
+  idx: number;
+  sablonai: MedziaguSablonas[];
+  sablonaiLoading: boolean;
+  estimatePrice: () => Promise<void>;
+  priceEstimating: boolean;
+  priceEstimateError: string | null;
+  localKainaAiText: string | null;
+  onTalposRowUpdated?: (id: string, field: string, value: any) => void;
+}) {
+  const [mode, setMode] = useState<'prompt' | 'template' | 'manual'>(() => {
+    if (currentTalposRow?.material_slate) return 'template';
+    return 'prompt';
+  });
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
+  const [savingSlate, setSavingSlate] = useState(false);
+  const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
+
+  // Manual entry rows
+  const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
+    { name: '', amount: '', unit: 'kg' },
+  ]);
+
+  // Sync with talpos row changes
+  useEffect(() => {
+    const slate = currentTalposRow?.material_slate;
+    if (slate) {
+      setLocalSlate(slate);
+      setMode('template');
+    } else {
+      setLocalSlate(null);
+      if (mode !== 'manual') setMode('prompt');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTalposRow?.material_slate, idx]);
+
+  const handleSelectTemplate = async (templateId: number) => {
+    const template = sablonai.find(s => s.id === templateId);
+    if (!template?.structured_json || !currentTalposId) return;
+    setSelectedTemplateId(templateId);
+    setSavingSlate(true);
+    try {
+      const snapshot = { ...template.structured_json, _template_id: template.id, _template_name: template.name };
+      await updateTalposField(currentTalposId, 'material_slate', snapshot);
+      setLocalSlate(snapshot);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', snapshot);
+      setMode('template');
+    } catch (err) {
+      console.error('Error saving material slate:', err);
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  const handleSaveManual = async () => {
+    if (!currentTalposId) return;
+    const items = manualRows.filter(r => r.name.trim() && r.amount.trim());
+    if (items.length === 0) return;
+    setSavingSlate(true);
+    try {
+      const slate = { items, _manual: true };
+      await updateTalposField(currentTalposId, 'material_slate', slate);
+      setLocalSlate(slate);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', slate);
+    } catch (err) {
+      console.error('Error saving manual slate:', err);
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  const handleClearSlate = async () => {
+    if (!currentTalposId) return;
+    setSavingSlate(true);
+    try {
+      await updateTalposField(currentTalposId, 'material_slate', null);
+      setLocalSlate(null);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', null);
+      setMode('prompt');
+      setSelectedTemplateId(null);
+    } catch (err) {
+      console.error('Error clearing slate:', err);
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  // Get AI text from local override or talpos.json
+  const aiText = localKainaAiText
+    ?? (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
+
+  const renderSlateData = (data: Record<string, any>) => {
+    const entries = Object.entries(data).filter(([k]) => !k.startsWith('_'));
+    if (data.items && Array.isArray(data.items)) {
+      return (
+        <div className="space-y-1">
+          {data.items.map((item: any, i: number) => (
+            <div key={i} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+              <span className="text-xs font-medium text-base-content flex-1 min-w-0 truncate">{item.name || item.pavadinimas || `#${i + 1}`}</span>
+              <span className="text-xs text-base-content/60 font-mono shrink-0">{item.amount || item.kiekis || '—'}</span>
+              <span className="text-[10px] text-base-content/40 shrink-0 w-8">{item.unit || item.vienetas || ''}</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-1">
+        {entries.map(([k, v]) => {
+          if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+            return (
+              <div key={k} className="py-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1">{k.replace(/_/g, ' ')}</p>
+                {renderSlateData(v)}
+              </div>
+            );
+          }
+          if (Array.isArray(v)) {
+            return (
+              <div key={k} className="py-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1">{k.replace(/_/g, ' ')}</p>
+                {v.map((item: any, i: number) => (
+                  <div key={i} className="flex items-center gap-3 py-1 px-2">
+                    {typeof item === 'object' ? (
+                      <span className="text-xs text-base-content">{Object.entries(item).map(([ik, iv]) => `${ik}: ${iv}`).join(', ')}</span>
+                    ) : (
+                      <span className="text-xs text-base-content">{String(item)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          }
+          return (
+            <div key={k} className="flex items-center justify-between gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+              <span className="text-xs text-base-content/50">{k.replace(/_/g, ' ')}</span>
+              <span className="text-xs font-medium text-base-content">{String(v)}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Warning if tank may not be appropriate for templates */}
+      {currentTalposRow && (() => {
+        const json = tryParseJsonObject(currentTalposRow.json);
+        const chemija = currentTalposRow.chemija || json?.chemija || '';
+        const derva = currentTalposRow.derva_musu || currentTalposRow.derva_ai || json?.derva || '';
+        const hasChemicals = chemija && typeof chemija === 'string' && !['vanduo', 'water', 'techninis vanduo', '-', 'nenurodyta', ''].includes(chemija.toLowerCase().trim());
+        const isNonPolyester = derva && typeof derva === 'string' && !derva.toLowerCase().includes('poliester');
+        if (hasChemicals || isNonPolyester) {
+          return (
+            <div className="mb-3 px-3 py-2 rounded-xl text-xs flex items-center gap-2 shrink-0" style={{ background: 'rgba(255,159,10,0.08)', color: '#FF9F0A', border: '0.5px solid rgba(255,159,10,0.2)' }}>
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>Šis šablonas gali netikti {hasChemicals ? 'cheminių medžiagų' : 'ne poliesterinės dervos'} talpai</span>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Two-column layout */}
+      <div className="flex gap-4 flex-1 min-h-0">
+        {/* Left column: materials slate */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-y-auto">
+          {mode === 'prompt' && !localSlate && (
+            <div className="flex flex-col items-center justify-center py-8 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <FileText className="w-8 h-8 mb-3 text-base-content/20" />
+              <p className="text-sm font-medium text-base-content/60 mb-1">Medžiagų sąrašas</p>
+              <p className="text-xs text-base-content/40 mb-4 max-w-xs">Pasirinkite šabloną iš sąrašo arba įveskite medžiagas rankiniu būdu</p>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedTemplateId ?? ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val) handleSelectTemplate(Number(val));
+                  }}
+                  disabled={sablonaiLoading || savingSlate}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-base-content/10 bg-base-100 text-base-content outline-none focus:border-primary/30"
+                >
+                  <option value="">-- Pasirinkti šabloną --</option>
+                  {sablonai.filter(s => s.structured_json).map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+                <span className="text-xs text-base-content/30">arba</span>
+                <button
+                  onClick={() => setMode('manual')}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5 transition-colors"
+                >
+                  Įvesti rankiniu būdu
+                </button>
+              </div>
+              {savingSlate && <Loader2 className="w-4 h-4 animate-spin text-primary mt-3" />}
+            </div>
+          )}
+
+          {/* Template selected — show structured data */}
+          {localSlate && mode === 'template' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Medžiagų šablonas</p>
+                  {localSlate._template_name && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>{localSlate._template_name}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={selectedTemplateId ?? localSlate._template_id ?? ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (val) handleSelectTemplate(Number(val));
+                    }}
+                    className="text-[10px] px-2 py-1 rounded border border-base-content/10 bg-base-100 text-base-content/60 outline-none"
+                  >
+                    <option value="">Keisti šabloną...</option>
+                    {sablonai.filter(s => s.structured_json).map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                  <button onClick={handleClearSlate} disabled={savingSlate} className="p-1 rounded-md hover:bg-error/10 transition-colors" title="Pašalinti šabloną">
+                    <Trash2 className="w-3 h-3 text-error/40 hover:text-error" />
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3 overflow-y-auto" style={{ maxHeight: '400px' }}>
+                {renderSlateData(localSlate)}
+              </div>
+            </div>
+          )}
+
+          {/* Manual entry mode */}
+          {mode === 'manual' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Rankinis įvedimas</p>
+                <button onClick={() => { setMode('prompt'); setManualRows([{ name: '', amount: '', unit: 'kg' }]); }}
+                  className="text-[10px] px-2 py-1 rounded text-base-content/40 hover:text-base-content/60 hover:bg-base-content/5">
+                  Atšaukti
+                </button>
+              </div>
+              <div className="space-y-1.5 mb-3">
+                <div className="grid grid-cols-[1fr_80px_60px_28px] gap-1.5 px-1">
+                  <span className="text-[9px] uppercase tracking-wider text-base-content/30 font-semibold">Medžiaga</span>
+                  <span className="text-[9px] uppercase tracking-wider text-base-content/30 font-semibold">Kiekis</span>
+                  <span className="text-[9px] uppercase tracking-wider text-base-content/30 font-semibold">Vnt.</span>
+                  <span />
+                </div>
+                {manualRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_80px_60px_28px] gap-1.5">
+                    <input
+                      value={row.name}
+                      onChange={e => { const next = [...manualRows]; next[i] = { ...next[i], name: e.target.value }; setManualRows(next); }}
+                      placeholder="pvz. Derva"
+                      className="text-xs px-2 py-1.5 rounded-lg border border-base-content/10 outline-none focus:border-primary/30 bg-base-100"
+                    />
+                    <input
+                      value={row.amount}
+                      onChange={e => { const next = [...manualRows]; next[i] = { ...next[i], amount: e.target.value }; setManualRows(next); }}
+                      placeholder="100"
+                      className="text-xs px-2 py-1.5 rounded-lg border border-base-content/10 outline-none focus:border-primary/30 bg-base-100 font-mono"
+                    />
+                    <input
+                      value={row.unit}
+                      onChange={e => { const next = [...manualRows]; next[i] = { ...next[i], unit: e.target.value }; setManualRows(next); }}
+                      placeholder="kg"
+                      className="text-xs px-2 py-1.5 rounded-lg border border-base-content/10 outline-none focus:border-primary/30 bg-base-100"
+                    />
+                    <button
+                      onClick={() => setManualRows(prev => prev.filter((_, j) => j !== i))}
+                      className="p-1 rounded-md hover:bg-error/10 self-center"
+                      disabled={manualRows.length <= 1}
+                    >
+                      <X className="w-3 h-3 text-base-content/30" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setManualRows(prev => [...prev, { name: '', amount: '', unit: 'kg' }])}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-dashed border-base-content/15 text-base-content/50 hover:bg-base-content/5 transition-colors"
+                >
+                  <Plus className="w-3 h-3 inline mr-1" />Pridėti
+                </button>
+                <button
+                  onClick={handleSaveManual}
+                  disabled={savingSlate || manualRows.every(r => !r.name.trim())}
+                  className="text-xs px-3 py-1 rounded-lg text-white font-medium disabled:opacity-50 transition-colors"
+                  style={{ background: '#007AFF' }}
+                >
+                  {savingSlate ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : <Save className="w-3 h-3 inline mr-1" />}
+                  Išsaugoti
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right column: AI price estimate */}
+        <div className="w-[280px] shrink-0 flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">AI kainos įvertinimas</p>
+          </div>
+
+          {/* Prediction mode toggle */}
+          <div className="flex items-center gap-1 mb-2 shrink-0">
+            <div className="inline-flex rounded-[8px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+              {(['math', 'ai'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setPredictionMode(m)}
+                  className={`px-2.5 py-1 rounded-[6px] text-[10px] font-medium transition-all ${predictionMode === m ? 'text-base-content' : 'text-base-content/40'}`}
+                  style={predictionMode === m ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
+                >
+                  {m === 'math' ? 'Matematinė' : 'Su DI'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Estimate button */}
+          <button
+            onClick={estimatePrice}
+            disabled={priceEstimating}
+            className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 mb-2 shrink-0"
+            style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
+          >
+            {priceEstimating ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Skaičiuojama...</>
+            ) : (
+              <><Sparkles className="w-3.5 h-3.5" /> Kainos parinkimas</>
+            )}
+          </button>
+
+          {priceEstimateError && (
+            <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2 shrink-0">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{priceEstimateError}</span>
+            </div>
+          )}
+
+          {/* AI response text */}
+          {aiText ? (
+            <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3">
+              <MarkdownText text={aiText} />
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <p className="text-xs text-base-content/30 text-center px-4">
+                {localSlate ? 'Spauskite „Kainos parinkimas" norėdami gauti AI įvertinimą' : 'Pirma pasirinkite medžiagų šabloną'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposRow: talposRow, currentTalposJson, onTalposJsonSaved, onTalposRowUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposRow?: any; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void; onTalposRowUpdated?: (id: string, field: string, value: any) => void }) {
   const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
