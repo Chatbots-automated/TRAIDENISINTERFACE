@@ -73,8 +73,8 @@ import {
 } from '../lib/sharedConversationService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, saveGlobalTemplate, resetGlobalTemplate, isGlobalTemplateCustomized, renderTemplateForEditor, renderTemplate, loadGlobalTemplateFromDb, getGlobalTemplateMeta, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { getGlobalTemplateVersions, revertToVersion, computeHtmlDiff, type GlobalTemplateVersion, type DiffSegment, uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
+import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -189,12 +189,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateVersion, setTemplateVersion] = useState(0);
   // Global template editor
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
-  const [templateVersionHistory, setTemplateVersionHistory] = useState<GlobalTemplateVersion[]>([]);
-  const [showTemplateVersions, setShowTemplateVersions] = useState(false);
-  const [templateSaving, setTemplateSaving] = useState(false);
-  const [revertConfirm, setRevertConfirm] = useState<{ id: string; versionNumber: number } | null>(null);
-  const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
-  const [expandedDiff, setExpandedDiff] = useState<DiffSegment[] | null>(null);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
@@ -218,7 +212,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [hasDocxTemplate, setHasDocxTemplate] = useState(false);
   const [globalDocxFileId, setGlobalDocxFileId] = useState<string | null>(null);
   const [docxUploading, setDocxUploading] = useState(false);
-  const [tplEditorTab, setTplEditorTab] = useState<'html' | 'docx'>('html');
+  const [tplEditorTab] = useState<'docx'>('docx');
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
 
@@ -272,7 +266,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     loadSharedConversations();
     loadShareableUsers();
     // Hydrate global template cache from DB so all users share the same template
-    loadGlobalTemplateFromDb().then(() => setTemplateVersion(v => v + 1));
+
     // Check if a DOCX template exists
     getDocxTemplateFileId().then(id => { setHasDocxTemplate(!!id); setGlobalDocxFileId(id); });
   }, []);
@@ -2163,12 +2157,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
-    setShowTemplateVersions(false);
+
     setTplEditMode(false);
     setTplSelectedImage(null);
     setTplCropMode(false);
     // Fetch version history in the background
-    getGlobalTemplateVersions(30).then(setTemplateVersionHistory).catch(() => {});
+
   };
 
   // ── Save document to standartiniai_projektai ──
@@ -2394,40 +2388,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   };
 
-  /**
-   * Save the visually-edited global template.
-   * Extracts outerHTML from the editor iframe, strips injected preview CSS,
-   * converts data-var spans back to {{key}}, and persists.
-   */
-  const handleSaveGlobalTemplate = () => {
-    const doc = templateEditorIframeRef.current?.contentDocument;
-    if (!doc) return;
-
-    // Clean up image editing classes before extracting HTML
-    doc.querySelectorAll('.img-selected').forEach(el => el.classList.remove('img-selected'));
-    doc.body.classList.remove('img-edit-mode');
-
-    let html = doc.documentElement.outerHTML;
-
-    // Strip the preview CSS we injected
-    html = html.replace(/\/\* Preview host overrides \*\/[\s\S]*?<\/style>/, '</style>');
-
-    // Convert data-var spans back to {{key}} placeholders
-    html = html.replace(/<span[^>]+data-var="([^"]+)"[^>]*>[^<]*<\/span>/gi,
-      (_m, key) => `{{${key}}}`);
-
-    // Clean up editor artifacts
-    html = html.replace(/\s*contenteditable="(true|false)"/gi, '');
-
-    const userName = user.full_name || user.email;
-    saveGlobalTemplate(html, user.id, userName);
-    setTemplateVersion(v => v + 1);
-    setShowTemplateEditor(false);
-    setTplSelectedImage(null);
-    setTplCropMode(false);
-    addNotification('success', 'Šablonas išsaugotas', 'Globalus dokumentų šablonas atnaujintas sėkmingai.');
-  };
-
   // Build Google Docs Viewer URL when switching to DOCX tab
   const [docxViewerUrl, setDocxViewerUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -2446,32 +2406,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
-
-  /** Revert the global template to a specific version from history. */
-  const handleRevertTemplate = async (versionId: string) => {
-    setTemplateSaving(true);
-    try {
-      const userName = user.full_name || user.email;
-      const result = await revertToVersion(versionId, user.id, userName);
-      if (result) {
-        // Reload from DB to refresh cache
-        await loadGlobalTemplateFromDb();
-        setTemplateVersion(v => v + 1);
-        // Refresh version history
-        const versions = await getGlobalTemplateVersions(30);
-        setTemplateVersionHistory(versions);
-        setShowTemplateVersions(false);
-        setShowTemplateEditor(false);
-        addNotification('success', 'Šablonas atkurtas', 'Globalus šablonas sėkmingai grąžintas į ankstesnę versiją.');
-      } else {
-        addNotification('error', 'Klaida', 'Nepavyko atkurti šablono versijos.');
-      }
-    } catch {
-      addNotification('error', 'Klaida', 'Nepavyko atkurti šablono versijos.');
-    } finally {
-      setTemplateSaving(false);
-    }
-  };
 
   /** Save the current editing variable value — surgical replacement for YAML keys. */
   const handleVariableSave = async (key: string, value: string) => {
@@ -4711,13 +4645,8 @@ Vartotojo instrukcija: ${instruction}`;
           }
           </style>`
         );
-        const meta = getGlobalTemplateMeta();
-        const lastEditedFirstName = meta?.updated_by_name
-          ? meta.updated_by_name.split(' ')[0]
-          : null;
-        const versionNum = meta?.version ?? null;
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowTemplateEditor(false)}>
             <div className="w-full max-w-4xl flex flex-col rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-xl" style={{ height: '88vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' }} onClick={(e) => e.stopPropagation()}>
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.08)', background: 'linear-gradient(to bottom, rgba(0,0,0,0.015), transparent)' }}>
@@ -4725,13 +4654,7 @@ Vartotojo instrukcija: ${instruction}`;
                   <div>
                     <div className="flex items-center gap-2.5">
                       <span className="text-[17px] font-semibold text-base-content" style={{ letterSpacing: '-0.02em' }}>Šablono redagavimas</span>
-                      {isGlobalTemplateCustomized() && (
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-warning/15 text-warning-content">Pakeistas</span>
-                      )}
                     </div>
-                    {versionNum !== null && (
-                      <span className="text-[11px] text-base-content/40 mt-0.5 block">versija: <span className="font-semibold text-base-content/60">#{versionNum}</span></span>
-                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -4767,16 +4690,8 @@ Vartotojo instrukcija: ${instruction}`;
                     {docxUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                     {hasDocxTemplate ? '.docx ✓' : '.docx'}
                   </button>
-                  {/* Version history / undo button */}
                   <button
-                    onClick={() => { setShowTemplateVersions(!showTemplateVersions); setExpandedVersionId(null); setExpandedDiff(null); }}
-                    className={`btn btn-soft btn-sm ${showTemplateVersions ? 'btn-active' : ''}`}
-                    title="Versijų istorija"
-                  >
-                    Istorija
-                  </button>
-                  <button
-                    onClick={() => { setShowTemplateEditor(false); setShowTemplateVersions(false); }}
+                    onClick={() => setShowTemplateEditor(false)}
                     className="btn btn-soft btn-sm"
                   >
                     Uždaryti
@@ -4793,14 +4708,6 @@ Vartotojo instrukcija: ${instruction}`;
                     Tik peržiūra — DOCX failą redaguokite Word programoje ir įkelkite iš naujo.
                   </span>
                 </div>
-                {lastEditedFirstName && (
-                  <span className="text-[10px] text-base-content/30 ml-4 whitespace-nowrap">
-                    Paskutinį kartą redagavo: <span className="text-base-content/50 font-medium">{lastEditedFirstName}</span>
-                    {meta?.updated_at && (
-                      <> &middot; {new Date(meta.updated_at).toLocaleDateString('lt-LT', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
-                    )}
-                  </span>
-                )}
               </div>
               {/* Image replacement input removed — HTML editor removed */}
 
@@ -4955,187 +4862,6 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 )}
                 {/* HTML visual editor removed — .docx template is the single source of truth */}
-                {/* Version history sidebar */}
-                {showTemplateVersions && (
-                  <div className="w-72 flex-shrink-0 flex flex-col bg-base-100 border-l border-base-content/10">
-                    <div className="px-4 py-3 border-b border-base-content/10">
-                      <span className="text-sm font-semibold text-base-content">Istorija</span>
-                      <p className="text-[11px] mt-0.5" style={{ color: '#b0b0b0' }}>Galite grįžti prie ankstesnės versijos</p>
-                    </div>
-                    <div className="flex-1 overflow-auto">
-                    {templateVersionHistory.length === 0 ? (
-                      <div className="px-4 py-8 text-center">
-                        <span className="text-[12px]" style={{ color: '#b0b0b0' }}>Kol kas pakeitimų nėra</span>
-                      </div>
-                    ) : (
-                      <div className="py-3 px-3 space-y-4">
-                        {/* Group versions by date */}
-                        {(() => {
-                          const groups: { dateLabel: string; items: { v: typeof templateVersionHistory[0]; idx: number }[] }[] = [];
-                          templateVersionHistory.forEach((v, idx) => {
-                            const d = new Date(v.created_at);
-                            const label = d.toLocaleDateString('lt-LT', { year: 'numeric', month: 'long', day: 'numeric' });
-                            const last = groups[groups.length - 1];
-                            if (last && last.dateLabel === label) {
-                              last.items.push({ v, idx });
-                            } else {
-                              groups.push({ dateLabel: label, items: [{ v, idx }] });
-                            }
-                          });
-
-                          const relativeTime = (dateStr: string) => {
-                            const diff = Date.now() - new Date(dateStr).getTime();
-                            const mins = Math.floor(diff / 60000);
-                            if (mins < 1) return 'ką tik';
-                            if (mins < 60) return `prieš ${mins} min.`;
-                            const hrs = Math.floor(mins / 60);
-                            if (hrs < 24) return `prieš ${hrs} val.`;
-                            const days = Math.floor(hrs / 24);
-                            if (days === 1) return 'vakar';
-                            return `prieš ${days} d.`;
-                          };
-
-                          return groups.map((group, gi) => (
-                            <div key={gi}>
-                              {/* Date group header */}
-                              <div className="flex items-center gap-2 mb-2">
-                                <svg className="w-4 h-4 text-base-content/40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <circle cx="12" cy="12" r="4" />
-                                  <path d="M12 2v4m0 12v4" />
-                                </svg>
-                                <span className="text-[12px] font-medium text-base-content/50">Pakeitimai {group.dateLabel}</span>
-                              </div>
-                              {/* Bordered card with rows */}
-                              <div className="rounded-lg border border-base-content/10 overflow-hidden">
-                                {group.items.map((item, ii) => {
-                                  const { v, idx } = item;
-                                  const firstName = v.created_by_name ? v.created_by_name.split(' ')[0] : '—';
-                                  const isConfirming = revertConfirm?.id === v.id;
-                                  const isExpanded = expandedVersionId === v.id;
-                                  return (
-                                    <div key={v.id} className={`${ii > 0 ? 'border-t border-base-content/10' : ''} ${isConfirming ? 'bg-warning/5' : ''}`}>
-                                      {/* Row */}
-                                      <div
-                                        className={`px-3 py-2.5 cursor-pointer transition-colors duration-100 ${isExpanded ? 'bg-base-content/[0.03]' : 'hover:bg-base-content/[0.03]'}`}
-                                        onClick={() => {
-                                          if (isExpanded) {
-                                            setExpandedVersionId(null);
-                                            setExpandedDiff(null);
-                                          } else {
-                                            const nextHtml = idx === 0
-                                              ? getDefaultTemplate()
-                                              : templateVersionHistory[idx - 1].html_content;
-                                            const segments = computeHtmlDiff(v.html_content, nextHtml);
-                                            setExpandedDiff(segments);
-                                            setExpandedVersionId(v.id);
-                                          }
-                                        }}
-                                      >
-                                        <div className="text-[12.5px] font-medium text-base-content/80 leading-snug">
-                                          {v.change_description || 'Šablono pakeitimas'}
-                                        </div>
-                                        <div className="mt-1 text-[11px] text-base-content/40">
-                                          {firstName} pakeitė {relativeTime(v.created_at)}
-                                        </div>
-                                      </div>
-
-                                      {/* Expanded diff + actions */}
-                                      {isExpanded && expandedDiff && (
-                                        <div className="px-3 pb-3 border-t border-base-content/5">
-                                          <div className="mt-2 rounded-md bg-base-200/60 p-2.5 max-h-48 overflow-auto">
-                                            <div className="text-[11px] leading-relaxed" style={{ wordBreak: 'break-word' }}>
-                                              {expandedDiff.every(s => s.type === 'same') ? (
-                                                <span className="text-base-content/40">Tik formatavimo pakeitimai (tekstas nepasikeitė)</span>
-                                              ) : (
-                                                expandedDiff.map((seg, si) => {
-                                                  if (seg.type === 'same') {
-                                                    const words = seg.text.split(' ');
-                                                    if (words.length > 8) {
-                                                      return (
-                                                        <span key={si} className="text-base-content/30">
-                                                          {words.slice(0, 3).join(' ')}{' '}
-                                                          <span className="text-base-content/20">···</span>{' '}
-                                                          {words.slice(-3).join(' ')}{' '}
-                                                        </span>
-                                                      );
-                                                    }
-                                                    return <span key={si} className="text-base-content/30">{seg.text} </span>;
-                                                  }
-                                                  if (seg.type === 'added') {
-                                                    return (
-                                                      <span key={si} style={{ background: '#dcfce7', color: '#166534', borderRadius: '2px', padding: '0 2px' }}>
-                                                        {seg.text}
-                                                      </span>
-                                                    );
-                                                  }
-                                                  return (
-                                                    <span key={si} style={{ background: '#fee2e2', color: '#991b1b', textDecoration: 'line-through', borderRadius: '2px', padding: '0 2px' }}>
-                                                      {seg.text}
-                                                    </span>
-                                                  );
-                                                })
-                                              )}
-                                            </div>
-                                          </div>
-                                          <div className="mt-2 flex items-center gap-3">
-                                            {isConfirming ? (
-                                              <>
-                                                <span className="text-[11px] text-warning-content/70">Grįžti prie šios versijos?</span>
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); handleRevertTemplate(v.id); }}
-                                                  disabled={templateSaving}
-                                                  className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                                                >
-                                                  {templateSaving ? '...' : 'Taip'}
-                                                </button>
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); setRevertConfirm(null); }}
-                                                  className="text-[11px] px-2 py-0.5 rounded hover:bg-base-content/5 text-base-content/40 transition-colors"
-                                                >
-                                                  Ne
-                                                </button>
-                                              </>
-                                            ) : (
-                                              <button
-                                                onClick={(e) => { e.stopPropagation(); setRevertConfirm({ id: v.id, versionNumber: v.version_number }); }}
-                                                className="text-[11px] bg-transparent border-none cursor-pointer text-primary/60 hover:text-primary transition-colors p-0"
-                                              >
-                                                Grįžti prie šios versijos
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ));
-                        })()}
-                      </div>
-                    )}
-                    </div>
-                    {/* Restore default - prominent at bottom */}
-                    {isGlobalTemplateCustomized() && (
-                      <div className="px-3 py-3 border-t border-base-content/10 flex-shrink-0">
-                        <button
-                          onClick={() => {
-                            if (confirm('Ar tikrai norite atkurti pradinį šabloną?\n\nDabartiniai pakeitimai bus išsaugoti istorijoje.')) {
-                              const userName = user.full_name || user.email;
-                              resetGlobalTemplate(user.id, userName);
-                              setTemplateVersion(v => v + 1);
-                              setShowTemplateEditor(false);
-                            }
-                          }}
-                          className="w-full text-[12px] font-medium py-2 px-3 rounded-lg transition-all duration-150 border border-error/20 text-error/70 hover:bg-error/10 hover:text-error hover:border-error/30"
-                        >
-                          Atkurti pradinį šabloną
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </div>
           </div>
