@@ -39,7 +39,7 @@ interface DervaInterfaceProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const ACCEPTED_TYPES = '.pdf,.md,.txt,.doc,.docx';
+const ACCEPTED_TYPES = '.pdf,.md,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp,.svg,.html,.htm,.xml';
 const VECTORIZING_STORAGE_KEY = 'derva_vectorizing_ids';
 
 function formatFileSize(bytes: number | null): string {
@@ -66,10 +66,66 @@ const FILES_COLUMNS: { key: FilesSortColumn; label: string; width?: string }[] =
 // File preview modal
 // ---------------------------------------------------------------------------
 
+/** Determine preview strategy for a given mime type / file name */
+function getPreviewType(mimeType: string | null, fileName: string): 'pdf' | 'image' | 'office' | 'text' | 'none' {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (mimeType?.includes('pdf') || ext === 'pdf') return 'pdf';
+  if (mimeType?.startsWith('image/') || ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext)) return 'image';
+  if ([
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ].includes(mimeType || '') || ['doc','docx','xls','xlsx','ppt','pptx'].includes(ext)) return 'office';
+  if (mimeType?.startsWith('text/') || ['txt','csv','md','log','json','xml','htm','html','rtf'].includes(ext)) return 'text';
+  return 'none';
+}
+
 function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => void }) {
   if (!file.directus_file_id) return null;
   const url = getFileViewUrl(file.directus_file_id);
-  const isPdf = file.mime_type?.includes('pdf');
+  const previewType = getPreviewType(file.mime_type, file.file_name);
+
+  const renderPreview = () => {
+    switch (previewType) {
+      case 'pdf':
+        return (
+          <iframe src={`${url}#toolbar=1`} className="w-full h-full border-0" title={file.file_name} />
+        );
+      case 'image':
+        return (
+          <div className="flex items-center justify-center h-full p-6" style={{ background: '#fafaf8' }}>
+            <img src={url} alt={file.file_name} className="max-w-full max-h-full object-contain rounded-lg" />
+          </div>
+        );
+      case 'office':
+        return (
+          <iframe
+            src={`https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`}
+            className="w-full h-full border-0"
+            title={file.file_name}
+          />
+        );
+      case 'text':
+        return <iframe src={url} className="w-full h-full border-0" title={file.file_name} style={{ background: '#fff' }} />;
+      default:
+        return (
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <FileText className="w-16 h-16" style={{ color: '#d4cfc8' }} />
+            <p className="text-sm" style={{ color: '#8a857f' }}>Peržiūra nepalaiko šio failo formato</p>
+            <a
+              href={getFileDownloadUrl(file.directus_file_id!)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-macos text-xs font-medium text-white"
+              style={{ background: '#007AFF' }}
+            >
+              <Download className="w-3.5 h-3.5" />Atsisiųsti failą
+            </a>
+          </div>
+        );
+    }
+  };
 
   return (
     <div
@@ -112,28 +168,7 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
 
         {/* Content */}
         <div className="w-full h-full" style={{ height: 'calc(85vh - 52px)' }}>
-          {isPdf ? (
-            <iframe
-              src={`${url}#toolbar=1`}
-              className="w-full h-full border-0"
-              title={file.file_name}
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-4">
-              <FileText className="w-16 h-16" style={{ color: '#d4cfc8' }} />
-              <p className="text-sm" style={{ color: '#8a857f' }}>
-                Peržiūra nepalaiko šio failo formato
-              </p>
-              <a
-                href={getFileDownloadUrl(file.directus_file_id!)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-macos text-xs font-medium text-white"
-                style={{ background: '#007AFF' }}
-              >
-                <Download className="w-3.5 h-3.5" />
-                Atsisiųsti failą
-              </a>
-            </div>
-          )}
+          {renderPreview()}
         </div>
       </div>
     </div>

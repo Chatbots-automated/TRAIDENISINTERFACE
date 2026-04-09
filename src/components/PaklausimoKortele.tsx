@@ -2683,33 +2683,48 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
             </div>
             {/* Preview body */}
             <div className="flex-1 overflow-hidden">
-              {previewFile.mime_type === 'application/pdf' ? (
-                <iframe
-                  src={`${getViewUrl(previewFile.directus_file_id)}#toolbar=1`}
-                  className="w-full h-full border-0"
-                  title={previewFile.file_name}
-                />
-              ) : previewFile.mime_type?.startsWith('image/') ? (
-                <div className="flex items-center justify-center h-full p-6 bg-base-content/[0.02]">
-                  <img
-                    src={getViewUrl(previewFile.directus_file_id)}
-                    alt={previewFile.file_name}
-                    className="max-w-full max-h-full object-contain rounded-lg"
+              {(() => {
+                const ext = previewFile.file_name.split('.').pop()?.toLowerCase() || '';
+                const mime = previewFile.mime_type || '';
+                const viewUrl = getViewUrl(previewFile.directus_file_id);
+                const isPdf = mime.includes('pdf') || ext === 'pdf';
+                const isImage = mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext);
+                const isOffice = [
+                  'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  'application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                ].includes(mime) || ['doc','docx','xls','xlsx','ppt','pptx'].includes(ext);
+                const isText = mime.startsWith('text/') || ['txt','csv','md','log','json','xml','htm','html','rtf'].includes(ext);
+
+                if (isPdf) return <iframe src={`${viewUrl}#toolbar=1`} className="w-full h-full border-0" title={previewFile.file_name} />;
+                if (isImage) return (
+                  <div className="flex items-center justify-center h-full p-6 bg-base-content/[0.02]">
+                    <img src={viewUrl} alt={previewFile.file_name} className="max-w-full max-h-full object-contain rounded-lg" />
+                  </div>
+                );
+                if (isOffice) return (
+                  <iframe
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(viewUrl)}&embedded=true`}
+                    className="w-full h-full border-0"
+                    title={previewFile.file_name}
                   />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-                  <FileText className="w-12 h-12 text-base-content/20" />
-                  <p className="text-sm text-base-content/50">Peržiūra negalima šiam failų tipui</p>
-                  <a
-                    href={getDownloadUrl(previewFile.directus_file_id)}
-                    className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
-                    style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-                  >
-                    <Download className="w-4 h-4" /> Atsisiųsti
-                  </a>
-                </div>
-              )}
+                );
+                if (isText) return <iframe src={viewUrl} className="w-full h-full border-0" title={previewFile.file_name} style={{ background: '#fff' }} />;
+
+                return (
+                  <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                    <FileText className="w-12 h-12 text-base-content/20" />
+                    <p className="text-sm text-base-content/50">Peržiūra negalima šiam failų tipui</p>
+                    <a
+                      href={getDownloadUrl(previewFile.directus_file_id)}
+                      className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
+                      style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                    >
+                      <Download className="w-4 h-4" /> Atsisiųsti
+                    </a>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
