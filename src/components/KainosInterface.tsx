@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
-  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye,
+  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye, ArrowRight, Lock, Unlock,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
@@ -271,17 +271,19 @@ function SablonaiTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Form state
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [formName, setFormName] = useState('');
-  const [formText, setFormText] = useState('');
-  const [formJson, setFormJson] = useState<Record<string, any> | null>(null);
-  const [generating, setGenerating] = useState(false);
+  // Inline editing: 'new' for adding, or a record id for editing; null = view-only
+  const [inlineEditId, setInlineEditId] = useState<number | 'new' | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editText, setEditText] = useState('');
+  const [editJson, setEditJson] = useState<Record<string, any> | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Preview
+  // Generate / structurize
+  const [generating, setGenerating] = useState(false);
+  const [structureUnlocked, setStructureUnlocked] = useState(false);
+
+  // Preview (view mode — eye icon)
   const [previewId, setPreviewId] = useState<number | null>(null);
 
   // Delete
@@ -302,54 +304,42 @@ function SablonaiTab() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const resetForm = () => {
-    setShowForm(false);
-    setEditingId(null);
-    setFormName('');
-    setFormText('');
-    setFormJson(null);
+  const resetInline = () => {
+    setInlineEditId(null);
+    setEditName('');
+    setEditText('');
+    setEditJson(null);
     setFormError(null);
+    setStructureUnlocked(false);
   };
 
-  const handleGenerate = async () => {
-    if (!formText.trim()) return;
-    setGenerating(true);
-    setFormError(null);
-    try {
-      const json = await generateStructuredJson(formText.trim());
-      setFormJson(json);
-      // Auto-extract name from first line if name is empty
-      if (!formName.trim()) {
-        const firstLine = formText.trim().split('\n')[0].trim();
-        if (firstLine) setFormName(firstLine);
-      }
-    } catch (err: any) {
-      setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
-    } finally {
-      setGenerating(false);
-    }
+  const startNew = () => {
+    resetInline();
+    setInlineEditId('new');
+    setPreviewId(null);
+  };
+
+  const startEdit = (s: MedziaguSablonas) => {
+    resetInline();
+    setInlineEditId(s.id);
+    setEditName(s.name);
+    setEditText(s.raw_text);
+    setEditJson(s.structured_json);
+    setPreviewId(null);
   };
 
   const handleSave = async () => {
-    if (!formName.trim()) { setFormError('Įveskite pavadinimą'); return; }
-    if (!formText.trim()) { setFormError('Įveskite medžiagų tekstą'); return; }
+    if (!editName.trim()) { setFormError('Įveskite pavadinimą'); return; }
+    if (!editText.trim()) { setFormError('Įveskite medžiagų tekstą'); return; }
     setSaving(true);
     setFormError(null);
     try {
-      if (editingId) {
-        await updateSablonas(editingId, {
-          name: formName.trim(),
-          raw_text: formText.trim(),
-          structured_json: formJson,
-        });
-      } else {
-        await createSablonas({
-          name: formName.trim(),
-          raw_text: formText.trim(),
-          structured_json: formJson,
-        });
+      if (inlineEditId === 'new') {
+        await createSablonas({ name: editName.trim(), raw_text: editText.trim(), structured_json: editJson });
+      } else if (typeof inlineEditId === 'number') {
+        await updateSablonas(inlineEditId, { name: editName.trim(), raw_text: editText.trim(), structured_json: editJson });
       }
-      resetForm();
+      resetInline();
       await loadData();
     } catch (err: any) {
       setFormError(err?.message || 'Nepavyko išsaugoti');
@@ -358,12 +348,44 @@ function SablonaiTab() {
     }
   };
 
-  const handleEdit = (s: MedziaguSablonas) => {
-    setEditingId(s.id);
-    setFormName(s.name);
-    setFormText(s.raw_text);
-    setFormJson(s.structured_json);
-    setShowForm(true);
+  const handleGenerate = async (rawText: string) => {
+    if (!rawText.trim()) return;
+    setGenerating(true);
+    setFormError(null);
+    try {
+      const json = await generateStructuredJson(rawText.trim());
+      setEditJson(json);
+      setStructureUnlocked(false);
+      // Auto-extract name from first line if name is empty
+      if (!editName.trim()) {
+        const firstLine = rawText.trim().split('\n')[0].trim();
+        if (firstLine) setEditName(firstLine);
+      }
+      // If editing an existing record, auto-save the JSON
+      if (typeof inlineEditId === 'number') {
+        await updateSablonas(inlineEditId, { structured_json: json });
+        await loadData();
+      }
+    } catch (err: any) {
+      setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleViewGenerate = async (s: MedziaguSablonas) => {
+    setGenerating(true);
+    setFormError(null);
+    try {
+      const json = await generateStructuredJson(s.raw_text.trim());
+      await updateSablonas(s.id, { structured_json: json });
+      setStructureUnlocked(false);
+      await loadData();
+    } catch (err: any) {
+      setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleDelete = async (id: number) => {
@@ -371,6 +393,7 @@ function SablonaiTab() {
     try {
       await deleteSablonas(id);
       setConfirmDeleteId(null);
+      if (inlineEditId === id) resetInline();
       await loadData();
     } catch (err: any) {
       console.error('Delete error:', err);
@@ -379,7 +402,102 @@ function SablonaiTab() {
     }
   };
 
-  const previewItem = previewId ? sablonai.find(s => s.id === previewId) : null;
+  // Arrow button between columns (structurize)
+  const StructureArrowButton = ({ hasJson, rawText, record }: { hasJson: boolean; rawText: string; record?: MedziaguSablonas }) => {
+    const [hovered, setHovered] = useState(false);
+    const isLocked = hasJson && !structureUnlocked;
+    const showUnlockLabel = isLocked && hovered;
+    const showStructLabel = !isLocked && hovered;
+
+    const handleClick = () => {
+      if (isLocked) {
+        setStructureUnlocked(true);
+        return;
+      }
+      // Trigger generate
+      if (record && inlineEditId !== record.id) {
+        handleViewGenerate(record);
+      } else {
+        handleGenerate(rawText);
+      }
+    };
+
+    return (
+      <div className="flex flex-col items-center justify-center" style={{ width: '48px', flexShrink: 0 }}>
+        <button
+          onClick={handleClick}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          disabled={generating || (!rawText.trim() && !record)}
+          className="relative flex items-center justify-center rounded-full border transition-all disabled:opacity-40"
+          style={{
+            width: hovered ? 'auto' : '32px',
+            height: '32px',
+            minWidth: '32px',
+            borderColor: isLocked ? '#e5e2dd' : generating ? '#8b5cf6' : '#d1cdc7',
+            background: generating ? 'rgba(139,92,246,0.06)' : isLocked ? '#fafaf8' : hovered ? 'rgba(139,92,246,0.06)' : '#fff',
+            padding: hovered ? '0 10px' : '0',
+            whiteSpace: 'nowrap',
+          }}
+          title={isLocked ? 'Atrakinti' : 'Strukturizuoti'}
+        >
+          {generating ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#8b5cf6' }} />
+          ) : showUnlockLabel ? (
+            <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Atrakinti</span>
+          ) : showStructLabel ? (
+            <span className="text-[10px] font-medium" style={{ color: '#8b5cf6' }}>Strukturizuoti</span>
+          ) : isLocked ? (
+            <Lock className="w-3.5 h-3.5" style={{ color: '#b5b0aa' }} />
+          ) : (
+            <ArrowRight className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+          )}
+        </button>
+      </div>
+    );
+  };
+
+  // Shared 2-column card content for view/edit/add
+  const CardContent = ({ rawText, json, editable, record }: {
+    rawText: string;
+    json: Record<string, any> | null;
+    editable: boolean;
+    record?: MedziaguSablonas;
+  }) => (
+    <div className="flex gap-0 items-stretch">
+      {/* Left: raw text */}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Originalus tekstas</p>
+        {editable ? (
+          <textarea
+            value={editText}
+            onChange={e => setEditText(e.target.value)}
+            placeholder="Įveskite medžiagų aprašymą..."
+            rows={8}
+            className="w-full px-3 py-2 rounded-lg text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
+            style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
+          />
+        ) : (
+          <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{rawText}</pre>
+        )}
+      </div>
+
+      {/* Middle: arrow button */}
+      <StructureArrowButton hasJson={!!json} rawText={editable ? editText : rawText} record={record} />
+
+      {/* Right: structured JSON */}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys</p>
+        {(editable ? editJson : json) ? (
+          <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{JSON.stringify(editable ? editJson : json, null, 2)}</pre>
+        ) : (
+          <div className="flex items-center justify-center rounded-lg p-3" style={{ background: '#fafaf8', border: '1px solid #f0ede8', minHeight: '80px' }}>
+            <p className="text-xs italic" style={{ color: '#b5b0aa' }}>Struktūra dar nesugeneruota</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
@@ -401,93 +519,48 @@ function SablonaiTab() {
       <div className="flex items-center justify-between">
         <p className="text-sm" style={{ color: '#8a857f' }}>{sablonai.length} šablonai</p>
         <button
-          onClick={() => { resetForm(); setShowForm(true); }}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95"
+          onClick={startNew}
+          disabled={inlineEditId === 'new'}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
           style={{ background: '#007AFF' }}
         >
           <Plus className="w-3.5 h-3.5" />Naujas šablonas
         </button>
       </div>
 
-      {/* Add/Edit form */}
-      {showForm && (
-        <div className="rounded-xl border p-5 space-y-4" style={{ borderColor: '#e5e2dd', background: '#fafaf8' }}>
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>{editingId ? 'Redaguoti šabloną' : 'Naujas šablonas'}</h3>
-            <button onClick={resetForm} className="p-1 rounded-md hover:bg-black/5"><X className="w-4 h-4" style={{ color: '#8a857f' }} /></button>
-          </div>
-
-          {/* Name input */}
-          <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: '#8a857f' }}>Pavadinimas</label>
-            <input
-              value={formName}
-              onChange={e => setFormName(e.target.value)}
-              placeholder="pvz. PGR V-230 m3"
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none transition-colors focus:border-blue-400"
-              style={{ borderColor: '#e5e2dd', color: '#3d3935' }}
-            />
-          </div>
-
-          {/* Raw text input */}
-          <div>
-            <label className="text-xs font-medium mb-1 block" style={{ color: '#8a857f' }}>Medžiagų aprašymas (tekstas)</label>
-            <textarea
-              value={formText}
-              onChange={e => setFormText(e.target.value)}
-              placeholder="Įveskite medžiagų aprašymą..."
-              rows={10}
-              className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
-              style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6' }}
-            />
-          </div>
-
-          {/* Generate button */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !formText.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
-              style={{ background: '#8b5cf6' }}
-            >
-              {generating ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generuojama...</> : <><Sparkles className="w-3.5 h-3.5" />Generuoti struktūrą</>}
-            </button>
-            {formJson && <span className="text-xs font-medium" style={{ color: '#34C759' }}><Check className="w-3.5 h-3.5 inline mr-1" />Struktūra sugeneruota</span>}
-          </div>
-
-          {/* Structured JSON preview */}
-          {formJson && (
-            <div className="rounded-lg border p-3 max-h-60 overflow-y-auto" style={{ borderColor: '#e5e2dd', background: '#fff' }}>
-              <p className="text-xs font-medium mb-2" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys:</p>
-              <pre className="text-xs font-mono whitespace-pre-wrap" style={{ color: '#3d3935', lineHeight: '1.5' }}>
-                {JSON.stringify(formJson, null, 2)}
-              </pre>
+      {/* New template card (inline) */}
+      {inlineEditId === 'new' && (
+        <div className="rounded-xl border px-4 py-3" style={{ borderColor: '#007AFF', background: '#fff' }}>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <input
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                placeholder="Šablono pavadinimas..."
+                className="text-sm font-semibold bg-transparent border-b outline-none flex-1 py-0.5 transition-colors focus:border-blue-400"
+                style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
+                autoFocus
+              />
             </div>
-          )}
-
-          {formError && (
-            <p className="text-xs" style={{ color: '#FF3B30' }}>{formError}</p>
-          )}
-
-          {/* Save / Cancel */}
-          <div className="flex justify-end gap-2 pt-2" style={{ borderTop: '1px solid #f0ede8' }}>
-            <button onClick={resetForm} className="px-4 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-black/5" style={{ color: '#8a857f' }}>
-              Atšaukti
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || !formName.trim() || !formText.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
-              style={{ background: '#007AFF' }}
-            >
-              {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Saugoma...</> : <><Save className="w-3.5 h-3.5" />Išsaugoti</>}
-            </button>
+            <div className="flex items-center gap-1">
+              <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
+                style={{ background: '#007AFF' }}>
+                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                Išsaugoti
+              </button>
+              <button onClick={resetInline} className="p-1.5 rounded-md hover:bg-black/5">
+                <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+              </button>
+            </div>
           </div>
+          {formError && <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{formError}</p>}
+          <CardContent rawText="" json={null} editable={true} />
         </div>
       )}
 
       {/* Templates list */}
-      {sablonai.length === 0 && !showForm ? (
+      {sablonai.length === 0 && inlineEditId !== 'new' ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <FileText className="w-10 h-10 mb-3" style={{ color: '#d1cdc7' }} />
           <p className="text-sm font-medium" style={{ color: '#8a857f' }}>Nėra medžiagų šablonų</p>
@@ -495,66 +568,96 @@ function SablonaiTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {sablonai.map(s => (
-            <div key={s.id} className="group rounded-xl border px-4 py-3 transition-colors hover:border-blue-200" style={{ borderColor: '#e5e2dd', background: '#fff' }}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
-                    {s.structured_json && (
-                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
+          {sablonai.map(s => {
+            const isEditing = inlineEditId === s.id;
+            const isPreviewing = previewId === s.id && !isEditing;
+
+            return (
+              <div key={s.id} className="group rounded-xl border px-4 py-3 transition-colors hover:border-blue-200"
+                style={{ borderColor: isEditing ? '#007AFF' : '#e5e2dd', background: '#fff' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    {isEditing ? (
+                      <input
+                        value={editName}
+                        onChange={e => setEditName(e.target.value)}
+                        className="text-sm font-semibold bg-transparent border-b outline-none w-full py-0.5 transition-colors focus:border-blue-400"
+                        style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
+                        autoFocus
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
+                        {s.structured_json && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
+                        )}
+                      </div>
+                    )}
+                    {!isEditing && !isPreviewing && (
+                      <p className="text-xs mt-0.5 truncate" style={{ color: '#8a857f' }}>
+                        {s.raw_text.split('\n').slice(1, 3).join(' · ').slice(0, 80) || 'Tuščias'}
+                      </p>
                     )}
                   </div>
-                  <p className="text-xs mt-0.5 truncate" style={{ color: '#8a857f' }}>
-                    {s.raw_text.split('\n').slice(1, 3).join(' · ').slice(0, 80) || 'Tuščias'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => setPreviewId(previewId === s.id ? null : s.id)} className="p-1.5 rounded-md hover:bg-black/5" title="Peržiūrėti">
-                    <Eye className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-                  </button>
-                  <button onClick={() => handleEdit(s)} className="p-1.5 rounded-md hover:bg-black/5" title="Redaguoti">
-                    <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-                  </button>
-                  <button onClick={() => setConfirmDeleteId(s.id)} className="p-1.5 rounded-md hover:bg-red-50" title="Ištrinti">
-                    <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Preview expand */}
-              {previewId === s.id && (
-                <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f0ede8' }}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Originalus tekstas</p>
-                      <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{s.raw_text}</pre>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys</p>
-                      {s.structured_json ? (
-                        <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{JSON.stringify(s.structured_json, null, 2)}</pre>
-                      ) : (
-                        <p className="text-xs italic" style={{ color: '#b5b0aa' }}>Struktūra dar nesugeneruota</p>
-                      )}
-                    </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: isEditing || isPreviewing ? 1 : undefined }}>
+                    {isEditing ? (
+                      <>
+                        <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
+                          style={{ background: '#007AFF' }}>
+                          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                          Išsaugoti
+                        </button>
+                        <button onClick={resetInline} className="p-1.5 rounded-md hover:bg-black/5">
+                          <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button onClick={() => setPreviewId(previewId === s.id ? null : s.id)} className="p-1.5 rounded-md hover:bg-black/5" title="Peržiūrėti">
+                          <Eye className="w-3.5 h-3.5" style={{ color: isPreviewing ? '#007AFF' : '#8a857f' }} />
+                        </button>
+                        <button onClick={() => startEdit(s)} className="p-1.5 rounded-md hover:bg-black/5" title="Redaguoti">
+                          <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                        </button>
+                        <button onClick={() => setConfirmDeleteId(s.id)} className="p-1.5 rounded-md hover:bg-red-50" title="Ištrinti">
+                          <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
-              )}
 
-              {/* Delete confirmation */}
-              {confirmDeleteId === s.id && (
-                <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
-                  <span className="text-xs" style={{ color: '#FF3B30' }}>Ištrinti šį šabloną?</span>
-                  <button onClick={() => handleDelete(s.id)} disabled={deleting}
-                    className="text-xs px-3 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: '#FF3B30' }}>
-                    {deleting ? 'Trinama...' : 'Taip'}
-                  </button>
-                  <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-3 py-1 rounded-lg" style={{ color: '#8a857f' }}>Ne</button>
-                </div>
-              )}
-            </div>
-          ))}
+                {/* Inline edit content */}
+                {isEditing && (
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f0ede8' }}>
+                    {formError && <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{formError}</p>}
+                    <CardContent rawText={s.raw_text} json={editJson} editable={true} record={s} />
+                  </div>
+                )}
+
+                {/* Preview (view mode) */}
+                {isPreviewing && (
+                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f0ede8' }}>
+                    {formError && <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{formError}</p>}
+                    <CardContent rawText={s.raw_text} json={s.structured_json} editable={false} record={s} />
+                  </div>
+                )}
+
+                {/* Delete confirmation */}
+                {confirmDeleteId === s.id && (
+                  <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
+                    <span className="text-xs" style={{ color: '#FF3B30' }}>Ištrinti šį šabloną?</span>
+                    <button onClick={() => handleDelete(s.id)} disabled={deleting}
+                      className="text-xs px-3 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: '#FF3B30' }}>
+                      {deleting ? 'Trinama...' : 'Taip'}
+                    </button>
+                    <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-3 py-1 rounded-lg" style={{ color: '#8a857f' }}>Ne</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
