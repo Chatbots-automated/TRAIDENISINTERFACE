@@ -423,7 +423,7 @@ function SablonaiTab() {
     };
 
     return (
-      <div className="flex flex-col items-center justify-center" style={{ width: '48px', flexShrink: 0 }}>
+      <div className="flex flex-col items-center justify-center px-2" style={{ width: '80px', flexShrink: 0 }}>
         <button
           onClick={handleClick}
           onMouseEnter={() => setHovered(true)}
@@ -457,6 +457,98 @@ function SablonaiTab() {
     );
   };
 
+  /** Pretty-print a structured JSON value as clean UI */
+  const StructuredDataView = ({ data }: { data: Record<string, any> }) => {
+    const cleanStr = (v: any): string => {
+      if (typeof v !== 'string') return String(v ?? '');
+      return v.replace(/\\n/g, '\n').replace(/\\t/g, ' ').trim();
+    };
+
+    const renderValue = (value: any, depth: number = 0): React.ReactNode => {
+      if (value === null || value === undefined) return <span style={{ color: '#b5b0aa', fontStyle: 'italic' }}>—</span>;
+
+      if (typeof value === 'boolean') return (
+        <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ background: value ? 'rgba(52,199,89,0.1)' : 'rgba(255,59,48,0.08)', color: value ? '#34C759' : '#FF3B30' }}>
+          {value ? 'Taip' : 'Ne'}
+        </span>
+      );
+
+      if (typeof value === 'number') return <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>{value}</span>;
+
+      if (typeof value === 'string') {
+        const cleaned = cleanStr(value);
+        if (cleaned.includes('\n')) {
+          return <div className="text-xs whitespace-pre-wrap" style={{ color: '#3d3935', lineHeight: '1.5' }}>{cleaned}</div>;
+        }
+        return <span className="text-xs" style={{ color: '#3d3935' }}>{cleaned}</span>;
+      }
+
+      if (Array.isArray(value)) {
+        if (value.length === 0) return <span className="text-xs italic" style={{ color: '#b5b0aa' }}>Tuščias sąrašas</span>;
+        // Array of primitives — show as inline tags
+        if (value.every(v => typeof v === 'string' || typeof v === 'number')) {
+          return (
+            <div className="flex flex-wrap gap-1">
+              {value.map((item, i) => (
+                <span key={i} className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: '#f0ede8', color: '#3d3935' }}>
+                  {cleanStr(item)}
+                </span>
+              ))}
+            </div>
+          );
+        }
+        // Array of objects — render each as a card
+        return (
+          <div className="space-y-2">
+            {value.map((item, i) => (
+              <div key={i} className="rounded-lg p-2.5" style={{ background: depth === 0 ? '#fafaf8' : '#f5f3f0', border: '1px solid #f0ede8' }}>
+                {typeof item === 'object' && item !== null ? renderObject(item, depth + 1) : (
+                  <span className="text-xs" style={{ color: '#3d3935' }}>{cleanStr(item)}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      if (typeof value === 'object') {
+        return (
+          <div className="rounded-lg p-2.5" style={{ background: depth === 0 ? '#fafaf8' : '#f5f3f0', border: '1px solid #f0ede8' }}>
+            {renderObject(value, depth + 1)}
+          </div>
+        );
+      }
+
+      return <span className="text-xs" style={{ color: '#3d3935' }}>{String(value)}</span>;
+    };
+
+    const formatLabel = (key: string): string => {
+      return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    };
+
+    const renderObject = (obj: Record<string, any>, depth: number = 0): React.ReactNode => {
+      const entries = Object.entries(obj);
+      return (
+        <div className="space-y-2">
+          {entries.map(([key, val]) => (
+            <div key={key}>
+              <div className="text-[10px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: '#8a857f' }}>
+                {formatLabel(key)}
+              </div>
+              {renderValue(val, depth)}
+            </div>
+          ))}
+        </div>
+      );
+    };
+
+    return (
+      <div className="rounded-lg p-3 overflow-y-auto" style={{ background: '#fafaf8', border: '1px solid #f0ede8', maxHeight: '300px' }}>
+        {renderObject(data)}
+      </div>
+    );
+  };
+
   // Shared 2-column card content for view/edit/add
   const CardContent = ({ rawText, json, editable, record }: {
     rawText: string;
@@ -464,7 +556,7 @@ function SablonaiTab() {
     editable: boolean;
     record?: MedziaguSablonas;
   }) => (
-    <div className="flex gap-0 items-stretch">
+    <div className="flex items-stretch">
       {/* Left: raw text */}
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Originalus tekstas</p>
@@ -478,18 +570,18 @@ function SablonaiTab() {
             style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
           />
         ) : (
-          <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{rawText}</pre>
+          <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '300px', overflow: 'auto' }}>{rawText}</pre>
         )}
       </div>
 
       {/* Middle: arrow button */}
-      <StructureArrowButton hasJson={!!json} rawText={editable ? editText : rawText} record={record} />
+      <StructureArrowButton hasJson={!!(editable ? editJson : json)} rawText={editable ? editText : rawText} record={record} />
 
-      {/* Right: structured JSON */}
+      {/* Right: structured data */}
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys</p>
         {(editable ? editJson : json) ? (
-          <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '240px', overflow: 'auto' }}>{JSON.stringify(editable ? editJson : json, null, 2)}</pre>
+          <StructuredDataView data={(editable ? editJson : json)!} />
         ) : (
           <div className="flex items-center justify-center rounded-lg p-3" style={{ background: '#fafaf8', border: '1px solid #f0ede8', minHeight: '80px' }}>
             <p className="text-xs italic" style={{ color: '#b5b0aa' }}>Struktūra dar nesugeneruota</p>
