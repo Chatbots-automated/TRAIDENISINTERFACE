@@ -2898,6 +2898,7 @@ function TabMedziagos({
   const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
   const [savingSlate, setSavingSlate] = useState(false);
   const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   // Manual entry rows
   const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
@@ -2972,18 +2973,41 @@ function TabMedziagos({
   const aiText = localKainaAiText
     ?? (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
 
+  /** Render a material item row */
+  const renderItemRow = (item: any, i: number) => {
+    const name = item.name || item.pavadinimas || item.material || `#${i + 1}`;
+    const amount = item.amount || item.kiekis || item.quantity || '—';
+    const unit = item.unit || item.vienetas || '';
+    return (
+      <div key={i} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+        <span className="w-5 text-center text-[10px] font-mono text-base-content/25 shrink-0">{i + 1}</span>
+        <span className="text-xs font-medium text-base-content flex-1 min-w-0 truncate">{String(name).replace(/\\n/g, ' ')}</span>
+        <span className="text-xs text-base-content/60 font-mono shrink-0">{String(amount).replace(/\\n/g, ' ')}</span>
+        <span className="text-[10px] text-base-content/40 shrink-0 w-10 text-right">{String(unit).replace(/\\n/g, ' ')}</span>
+      </div>
+    );
+  };
+
+  /** Render structured slate data (items list + extra fields) */
   const renderSlateData = (data: Record<string, any>) => {
     const entries = Object.entries(data).filter(([k]) => !k.startsWith('_'));
     if (data.items && Array.isArray(data.items)) {
       return (
-        <div className="space-y-1">
-          {data.items.map((item: any, i: number) => (
-            <div key={i} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
-              <span className="text-xs font-medium text-base-content flex-1 min-w-0 truncate">{item.name || item.pavadinimas || `#${i + 1}`}</span>
-              <span className="text-xs text-base-content/60 font-mono shrink-0">{item.amount || item.kiekis || '—'}</span>
-              <span className="text-[10px] text-base-content/40 shrink-0 w-8">{item.unit || item.vienetas || ''}</span>
+        <div>
+          <div className="space-y-0">
+            {data.items.map((item: any, i: number) => renderItemRow(item, i))}
+          </div>
+          {/* Extra non-items fields */}
+          {entries.filter(([k]) => k !== 'items').length > 0 && (
+            <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.04)' }}>
+              {entries.filter(([k]) => k !== 'items').map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between gap-3 py-1 px-2">
+                  <span className="text-[10px] text-base-content/40">{k.replace(/_/g, ' ')}</span>
+                  <span className="text-[10px] font-medium text-base-content/60">{typeof v === 'object' ? JSON.stringify(v) : String(v).replace(/\\n/g, ' ')}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       );
     }
@@ -3002,13 +3026,9 @@ function TabMedziagos({
             return (
               <div key={k} className="py-1.5">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1">{k.replace(/_/g, ' ')}</p>
-                {v.map((item: any, i: number) => (
+                {v.map((item: any, i: number) => typeof item === 'object' && item !== null ? renderItemRow(item, i) : (
                   <div key={i} className="flex items-center gap-3 py-1 px-2">
-                    {typeof item === 'object' ? (
-                      <span className="text-xs text-base-content">{Object.entries(item).map(([ik, iv]) => `${ik}: ${iv}`).join(', ')}</span>
-                    ) : (
-                      <span className="text-xs text-base-content">{String(item)}</span>
-                    )}
+                    <span className="text-xs text-base-content">{String(item).replace(/\\n/g, ' ')}</span>
                   </div>
                 ))}
               </div>
@@ -3017,10 +3037,154 @@ function TabMedziagos({
           return (
             <div key={k} className="flex items-center justify-between gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
               <span className="text-xs text-base-content/50">{k.replace(/_/g, ' ')}</span>
-              <span className="text-xs font-medium text-base-content">{String(v)}</span>
+              <span className="text-xs font-medium text-base-content">{String(v).replace(/\\n/g, ' ')}</span>
             </div>
           );
         })}
+      </div>
+    );
+  };
+
+  /** Template card — used in both picker overlay and eye preview */
+  const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
+    const json = template.structured_json;
+    const items = json?.items && Array.isArray(json.items) ? json.items : [];
+    const itemCount = items.length;
+    const extraKeys = json ? Object.keys(json).filter(k => k !== 'items' && !k.startsWith('_')) : [];
+
+    return (
+      <div
+        onClick={onClick}
+        className={`rounded-xl border p-3.5 transition-all ${onClick ? 'cursor-pointer hover:border-primary/40 hover:shadow-sm' : ''}`}
+        style={{
+          borderColor: selected ? '#007AFF' : 'rgba(0,0,0,0.06)',
+          background: selected ? 'rgba(0,122,255,0.03)' : '#fff',
+          boxShadow: selected ? '0 0 0 1px rgba(0,122,255,0.2)' : undefined,
+        }}
+      >
+        {/* Card header */}
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <h4 className="text-xs font-semibold text-base-content truncate">{template.name}</h4>
+            {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {itemCount > 0 && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+                {itemCount} medž.
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Items list */}
+        {itemCount > 0 ? (
+          <div className="rounded-lg overflow-hidden" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
+            {/* Column headers */}
+            <div className="flex items-center gap-3 py-1 px-2" style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
+              <span className="w-5 text-center text-[9px] font-semibold uppercase tracking-wider text-base-content/25 shrink-0">#</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-base-content/30 flex-1">Medžiaga</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-base-content/30 shrink-0">Kiekis</span>
+              <span className="text-[9px] font-semibold uppercase tracking-wider text-base-content/30 shrink-0 w-10 text-right">Vnt.</span>
+            </div>
+            {items.slice(0, 8).map((item: any, i: number) => {
+              const name = item.name || item.pavadinimas || item.material || `#${i + 1}`;
+              const amount = item.amount || item.kiekis || item.quantity || '—';
+              const unit = item.unit || item.vienetas || '';
+              return (
+                <div key={i} className="flex items-center gap-3 py-1.5 px-2" style={{ borderBottom: i < Math.min(items.length, 8) - 1 ? '1px solid rgba(0,0,0,0.03)' : undefined }}>
+                  <span className="w-5 text-center text-[10px] font-mono text-base-content/20 shrink-0">{i + 1}</span>
+                  <span className="text-[11px] font-medium text-base-content flex-1 min-w-0 truncate">{String(name).replace(/\\n/g, ' ')}</span>
+                  <span className="text-[11px] text-base-content/50 font-mono shrink-0">{String(amount).replace(/\\n/g, ' ')}</span>
+                  <span className="text-[10px] text-base-content/35 shrink-0 w-10 text-right">{String(unit).replace(/\\n/g, ' ')}</span>
+                </div>
+              );
+            })}
+            {items.length > 8 && (
+              <div className="py-1 px-2 text-center">
+                <span className="text-[10px] text-base-content/30">+{items.length - 8} daugiau...</span>
+              </div>
+            )}
+          </div>
+        ) : json ? (
+          <div className="rounded-lg p-2" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
+            {Object.entries(json).filter(([k]) => !k.startsWith('_')).slice(0, 4).map(([k, v]) => (
+              <div key={k} className="flex items-center justify-between gap-2 py-1 px-1">
+                <span className="text-[10px] text-base-content/40">{k.replace(/_/g, ' ')}</span>
+                <span className="text-[10px] font-medium text-base-content/60 truncate max-w-[150px]">{typeof v === 'object' ? JSON.stringify(v).slice(0, 50) : String(v).replace(/\\n/g, ' ').slice(0, 50)}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
+            <span className="text-[10px] italic text-base-content/30">Struktūra nesugeneruota</span>
+          </div>
+        )}
+
+        {/* Extra metadata */}
+        {extraKeys.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {extraKeys.slice(0, 3).map(k => (
+              <span key={k} className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.03)', color: 'rgba(0,0,0,0.35)' }}>
+                {k.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** Template picker overlay */
+  const TemplatePicker = () => {
+    const available = sablonai.filter(s => s.structured_json);
+    return (
+      <div
+        className="fixed inset-0 z-[10000] flex items-center justify-center"
+        style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
+        onClick={() => setShowTemplatePicker(false)}
+      >
+        <div
+          className="bg-base-100 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          style={{ width: '90vw', maxWidth: 720, height: '80vh', maxHeight: 700 }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+            <div>
+              <h3 className="text-sm font-semibold text-base-content">Medžiagų šablonai</h3>
+              <p className="text-[11px] text-base-content/40 mt-0.5">{available.length} šablonai su struktūra</p>
+            </div>
+            <button onClick={() => setShowTemplatePicker(false)} className="p-1.5 rounded-lg hover:bg-base-content/5 transition-colors">
+              <X className="w-4 h-4 text-base-content/40" />
+            </button>
+          </div>
+
+          {/* Scrollable card grid */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {available.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <FileText className="w-10 h-10 mb-3 text-base-content/15" />
+                <p className="text-sm font-medium text-base-content/40">Nėra šablonų su struktūra</p>
+                <p className="text-xs text-base-content/30 mt-1">Sukurkite šablonus Žaliavos → Medžiagų šablonai</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {available.map(t => (
+                  <TemplateCard
+                    key={t.id}
+                    template={t}
+                    selected={selectedTemplateId === t.id || localSlate?._template_id === t.id}
+                    onClick={() => {
+                      handleSelectTemplate(t.id);
+                      setShowTemplatePicker(false);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   };
@@ -3055,20 +3219,14 @@ function TabMedziagos({
               <p className="text-sm font-medium text-base-content/60 mb-1">Medžiagų sąrašas</p>
               <p className="text-xs text-base-content/40 mb-4 max-w-xs">Pasirinkite šabloną iš sąrašo arba įveskite medžiagas rankiniu būdu</p>
               <div className="flex items-center gap-2">
-                <select
-                  value={selectedTemplateId ?? ''}
-                  onChange={e => {
-                    const val = e.target.value;
-                    if (val) handleSelectTemplate(Number(val));
-                  }}
+                <button
+                  onClick={() => setShowTemplatePicker(true)}
                   disabled={sablonaiLoading || savingSlate}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-base-content/10 bg-base-100 text-base-content outline-none focus:border-primary/30"
+                  className="text-xs px-4 py-1.5 rounded-lg font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
+                  style={{ background: '#007AFF' }}
                 >
-                  <option value="">-- Pasirinkti šabloną --</option>
-                  {sablonai.filter(s => s.structured_json).map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                  Pasirinkti šabloną
+                </button>
                 <span className="text-xs text-base-content/30">arba</span>
                 <button
                   onClick={() => setMode('manual')}
@@ -3092,19 +3250,12 @@ function TabMedziagos({
                   )}
                 </div>
                 <div className="flex items-center gap-1">
-                  <select
-                    value={selectedTemplateId ?? localSlate._template_id ?? ''}
-                    onChange={e => {
-                      const val = e.target.value;
-                      if (val) handleSelectTemplate(Number(val));
-                    }}
-                    className="text-[10px] px-2 py-1 rounded border border-base-content/10 bg-base-100 text-base-content/60 outline-none"
+                  <button
+                    onClick={() => setShowTemplatePicker(true)}
+                    className="text-[10px] px-2 py-1 rounded border border-base-content/10 text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5 transition-colors"
                   >
-                    <option value="">Keisti šabloną...</option>
-                    {sablonai.filter(s => s.structured_json).map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                    Keisti šabloną
+                  </button>
                   <button onClick={handleClearSlate} disabled={savingSlate} className="p-1 rounded-md hover:bg-error/10 transition-colors" title="Pašalinti šabloną">
                     <Trash2 className="w-3 h-3 text-error/40 hover:text-error" />
                   </button>
@@ -3241,6 +3392,9 @@ function TabMedziagos({
           )}
         </div>
       </div>
+
+      {/* Template picker overlay */}
+      {showTemplatePicker && <TemplatePicker />}
     </div>
   );
 }
