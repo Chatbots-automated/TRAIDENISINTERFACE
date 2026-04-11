@@ -26,6 +26,7 @@ import { fetchLatestMaterialPrices, fetchMaterialPricesForEstimate } from '../li
 import type { MaterialPriceForEstimate } from '../lib/kainosService';
 import { fetchSablonai } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
+import MaterialSlateView from './MaterialSlateView';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2973,84 +2974,12 @@ function TabMedziagos({
   const aiText = localKainaAiText
     ?? (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
 
-  /** Render a material item row */
-  const renderItemRow = (item: any, i: number) => {
-    const name = item.name || item.pavadinimas || item.material || `#${i + 1}`;
-    const amount = item.amount || item.kiekis || item.quantity || '—';
-    const unit = item.unit || item.vienetas || '';
-    return (
-      <div key={i} className="flex items-center gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
-        <span className="w-5 text-center text-[10px] font-mono text-base-content/25 shrink-0">{i + 1}</span>
-        <span className="text-xs font-medium text-base-content flex-1 min-w-0 truncate">{String(name).replace(/\\n/g, ' ')}</span>
-        <span className="text-xs text-base-content/60 font-mono shrink-0">{String(amount).replace(/\\n/g, ' ')}</span>
-        <span className="text-[10px] text-base-content/40 shrink-0 w-10 text-right">{String(unit).replace(/\\n/g, ' ')}</span>
-      </div>
-    );
-  };
+  /** Render structured slate data — delegates to shared MaterialSlateView */
+  const renderSlateData = (data: Record<string, any>) => <MaterialSlateView data={data} />;
 
-  /** Render structured slate data (items list + extra fields) */
-  const renderSlateData = (data: Record<string, any>) => {
-    const entries = Object.entries(data).filter(([k]) => !k.startsWith('_'));
-    if (data.items && Array.isArray(data.items)) {
-      return (
-        <div>
-          <div className="space-y-0">
-            {data.items.map((item: any, i: number) => renderItemRow(item, i))}
-          </div>
-          {/* Extra non-items fields */}
-          {entries.filter(([k]) => k !== 'items').length > 0 && (
-            <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(0,0,0,0.04)' }}>
-              {entries.filter(([k]) => k !== 'items').map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between gap-3 py-1 px-2">
-                  <span className="text-[10px] text-base-content/40">{k.replace(/_/g, ' ')}</span>
-                  <span className="text-[10px] font-medium text-base-content/60">{typeof v === 'object' ? JSON.stringify(v) : String(v).replace(/\\n/g, ' ')}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-    return (
-      <div className="space-y-1">
-        {entries.map(([k, v]) => {
-          if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
-            return (
-              <div key={k} className="py-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1">{k.replace(/_/g, ' ')}</p>
-                {renderSlateData(v)}
-              </div>
-            );
-          }
-          if (Array.isArray(v)) {
-            return (
-              <div key={k} className="py-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40 mb-1">{k.replace(/_/g, ' ')}</p>
-                {v.map((item: any, i: number) => typeof item === 'object' && item !== null ? renderItemRow(item, i) : (
-                  <div key={i} className="flex items-center gap-3 py-1 px-2">
-                    <span className="text-xs text-base-content">{String(item).replace(/\\n/g, ' ')}</span>
-                  </div>
-                ))}
-              </div>
-            );
-          }
-          return (
-            <div key={k} className="flex items-center justify-between gap-3 py-1.5 px-2 rounded-lg hover:bg-base-content/[0.02]" style={{ borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
-              <span className="text-xs text-base-content/50">{k.replace(/_/g, ' ')}</span>
-              <span className="text-xs font-medium text-base-content">{String(v).replace(/\\n/g, ' ')}</span>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  /** Template card — used in both picker overlay and eye preview */
+  /** Template card — used in template picker overlay; compact domain-aware display */
   const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
     const json = template.structured_json;
-    const items = json?.items && Array.isArray(json.items) ? json.items : [];
-    const itemCount = items.length;
-    const extraKeys = json ? Object.keys(json).filter(k => k !== 'items' && !k.startsWith('_')) : [];
 
     return (
       <div
@@ -3063,72 +2992,19 @@ function TabMedziagos({
         }}
       >
         {/* Card header */}
-        <div className="flex items-center justify-between mb-2.5">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2 min-w-0">
             <h4 className="text-xs font-semibold text-base-content truncate">{template.name}</h4>
             {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {itemCount > 0 && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
-                {itemCount} medž.
-              </span>
-            )}
-          </div>
         </div>
 
-        {/* Items list */}
-        {itemCount > 0 ? (
-          <div className="rounded-lg overflow-hidden" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
-            {/* Column headers */}
-            <div className="flex items-center gap-3 py-1 px-2" style={{ borderBottom: '1px solid rgba(0,0,0,0.04)' }}>
-              <span className="w-5 text-center text-[9px] font-semibold uppercase tracking-wider text-base-content/25 shrink-0">#</span>
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-base-content/30 flex-1">Medžiaga</span>
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-base-content/30 shrink-0">Kiekis</span>
-              <span className="text-[9px] font-semibold uppercase tracking-wider text-base-content/30 shrink-0 w-10 text-right">Vnt.</span>
-            </div>
-            {items.slice(0, 8).map((item: any, i: number) => {
-              const name = item.name || item.pavadinimas || item.material || `#${i + 1}`;
-              const amount = item.amount || item.kiekis || item.quantity || '—';
-              const unit = item.unit || item.vienetas || '';
-              return (
-                <div key={i} className="flex items-center gap-3 py-1.5 px-2" style={{ borderBottom: i < Math.min(items.length, 8) - 1 ? '1px solid rgba(0,0,0,0.03)' : undefined }}>
-                  <span className="w-5 text-center text-[10px] font-mono text-base-content/20 shrink-0">{i + 1}</span>
-                  <span className="text-[11px] font-medium text-base-content flex-1 min-w-0 truncate">{String(name).replace(/\\n/g, ' ')}</span>
-                  <span className="text-[11px] text-base-content/50 font-mono shrink-0">{String(amount).replace(/\\n/g, ' ')}</span>
-                  <span className="text-[10px] text-base-content/35 shrink-0 w-10 text-right">{String(unit).replace(/\\n/g, ' ')}</span>
-                </div>
-              );
-            })}
-            {items.length > 8 && (
-              <div className="py-1 px-2 text-center">
-                <span className="text-[10px] text-base-content/30">+{items.length - 8} daugiau...</span>
-              </div>
-            )}
-          </div>
-        ) : json ? (
-          <div className="rounded-lg p-2" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
-            {Object.entries(json).filter(([k]) => !k.startsWith('_')).slice(0, 4).map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between gap-2 py-1 px-1">
-                <span className="text-[10px] text-base-content/40">{k.replace(/_/g, ' ')}</span>
-                <span className="text-[10px] font-medium text-base-content/60 truncate max-w-[150px]">{typeof v === 'object' ? JSON.stringify(v).slice(0, 50) : String(v).replace(/\\n/g, ' ').slice(0, 50)}</span>
-              </div>
-            ))}
-          </div>
+        {/* Body: compact domain-aware view or placeholder */}
+        {json ? (
+          <MaterialSlateView data={json} compact />
         ) : (
           <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
             <span className="text-[10px] italic text-base-content/30">Struktūra nesugeneruota</span>
-          </div>
-        )}
-
-        {/* Extra metadata */}
-        {extraKeys.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {extraKeys.slice(0, 3).map(k => (
-              <span key={k} className="text-[9px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,0,0,0.03)', color: 'rgba(0,0,0,0.35)' }}>
-                {k.replace(/_/g, ' ')}
-              </span>
-            ))}
           </div>
         )}
       </div>
