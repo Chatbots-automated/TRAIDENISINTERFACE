@@ -1081,9 +1081,9 @@ function TabTalpos({
       )}
 
       {/* Top controls: talpa selector + sub-tab toggles on one centered row */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mb-3 shrink-0">
+      <div className="flex flex-wrap items-center justify-center gap-2.5 mb-3 shrink-0">
         {(navCount > 1 || !readOnly) && (
-          <div className="flex items-center gap-1 w-full max-w-[520px]">
+          <div className="flex items-center gap-1 w-full max-w-[520px] px-1.5 py-1 rounded-2xl border border-base-content/10 bg-base-100 shadow-sm">
             {navCount > 1 && (
               <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
                 <ChevronLeft className="w-4 h-4 text-base-content/40" />
@@ -1130,13 +1130,13 @@ function TabTalpos({
           </div>
         )}
 
-        <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+        <div className="inline-flex rounded-2xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
           {(['parametrai', 'derva', 'medziagos'] as TalposSubTab[]).map(t => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${subTab === t ? 'text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
-              style={subTab === t ? { background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' } : undefined}
+              className={`px-4 py-1.5 rounded-xl text-sm font-medium transition-all duration-200 ${subTab === t ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
+              style={subTab === t ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
             >
               {t === 'parametrai' ? 'Parametrai' : t === 'derva' ? 'Derva' : 'Medžiagos'}
             </button>
@@ -4061,16 +4061,16 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
-      style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      style={{ background: 'rgba(17,24,39,0.28)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
       onClick={handleClose}
     >
       <div
-        className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl"
-        style={{ maxWidth: '960px', height: 'min(90vh, 860px)' }}
+        className="w-full flex flex-col bg-base-100 rounded-2xl overflow-hidden border border-base-content/10 shadow-xl"
+        style={{ maxWidth: '960px', height: 'min(90vh, 860px)', boxShadow: '0 18px 48px rgba(17,24,39,0.16)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Accent strip */}
-        <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+        <div className="h-[2px] shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
         <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/10">
@@ -4108,16 +4108,16 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <button onClick={refreshRecord} disabled={refreshing} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atnaujinti duomenis">
+              <button onClick={refreshRecord} disabled={refreshing} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Atnaujinti duomenis">
                 <RefreshCw className={`w-4 h-4 text-base-content/40 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
-              <button onClick={copy} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Kopijuoti nuorodą">
+              <button onClick={copy} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Kopijuoti nuorodą">
                 <Link2 className={`w-4 h-4 ${copied ? '' : 'text-base-content/40'}`} style={copied ? { color: '#34C759' } : undefined} />
               </button>
-              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atidaryti naujame lange">
+              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Atidaryti naujame lange">
                 <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
-              <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
+              <button onClick={handleClose} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20">
                 <X className="w-4 h-4 text-base-content/40" />
               </button>
             </div>
@@ -4127,7 +4127,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40 flex flex-col">
+          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/10 bg-base-200/25 flex flex-col">
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -4135,7 +4135,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-sm transition-all duration-200 mb-1 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/65 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
@@ -4170,7 +4170,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               {!isLocked && (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/30 transition-all hover:text-error hover:bg-error/5"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs text-base-content/35 border border-transparent transition-all duration-200 hover:text-error hover:bg-error/5 hover:border-error/10"
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Ištrinti</span>
@@ -4330,9 +4330,9 @@ export default function PaklausimoKortelePage() {
 
   return (
     <div className="h-screen flex items-center justify-center p-6 overflow-hidden bg-base-100">
-      <div className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl" style={{ maxWidth: '960px', height: 'min(90vh, 860px)' }}>
+      <div className="w-full flex flex-col bg-base-100 rounded-2xl overflow-hidden border border-base-content/10 shadow-xl" style={{ maxWidth: '960px', height: 'min(90vh, 860px)', boxShadow: '0 18px 48px rgba(17,24,39,0.16)' }}>
         {/* Accent strip */}
-        <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+        <div className="h-[2px] shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
         <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/10">
@@ -4367,7 +4367,7 @@ export default function PaklausimoKortelePage() {
 
         {/* Body */}
         <div className="flex flex-1 min-h-0">
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
+          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/10 bg-base-200/25">
             {readOnlyTabs.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -4375,7 +4375,7 @@ export default function PaklausimoKortelePage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-sm transition-all duration-200 mb-1 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/65 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
