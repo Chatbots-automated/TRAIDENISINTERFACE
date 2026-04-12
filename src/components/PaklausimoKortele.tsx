@@ -685,7 +685,6 @@ function TabTalpos({
   // Price estimation state (per-idx)
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
-  const [localKainaAi, setLocalKainaAi] = useState<Record<number, number | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
 
   // Add / delete tank state
@@ -1011,59 +1010,27 @@ function TabTalpos({
       let respData: any = null;
       try { respData = JSON.parse(respText); } catch { /* plain string response */ }
 
-      // Full response text for display: prefer known text fields, fall back to raw body
+      // Full response text for display/storage: prefer known text fields, fall back to raw body
       const fullResponseText: string | null = (() => {
         if (typeof respData === 'string' && respData.trim()) return respData.trim();
         for (const k of ['text', 'output', 'result', 'reasoning', 'message']) {
           if (respData?.[k] && typeof respData[k] === 'string') return respData[k];
         }
+        if (respData && typeof respData === 'object') {
+          try { return JSON.stringify(respData); } catch { /* ignore */ }
+        }
         return respText.trim() || null;
       })();
 
-      // Numeric price: try structured JSON fields, then parse from text
-      const rawPrice = respData != null && typeof respData === 'object'
-        ? (respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? fullResponseText)
-        : fullResponseText;
-      const estimatedPrice = (() => {
-        if (rawPrice == null) return null;
-        if (typeof rawPrice === 'number') return rawPrice;
-        let s = String(rawPrice).replace(/[€$£\s]/g, '').trim();
-        if (s.includes('.') && s.includes(',')) {
-          const lastDot = s.lastIndexOf('.');
-          const lastComma = s.lastIndexOf(',');
-          if (lastDot > lastComma) {
-            s = s.replace(/,/g, '');
-          } else {
-            s = s.replace(/\./g, '').replace(',', '.');
-          }
-        } else if (s.includes(',')) {
-          const parts = s.split(',');
-          if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[1])) {
-            s = s.replace(',', '');
-          } else {
-            s = s.replace(',', '.');
-          }
-        }
-        s = s.replace(/[^\d.]/g, '');
-        const n = parseFloat(s);
-        return isNaN(n) ? null : n;
-      })();
-
-      if (fullResponseText || (estimatedPrice != null && !isNaN(estimatedPrice))) {
-        const kainaAiValue = fullResponseText || String(estimatedPrice ?? '');
+      if (fullResponseText) {
+        const kainaAiValue = fullResponseText;
         await updateTalposField(currentTalposId, 'kaina_ai', kainaAiValue);
-        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
-        const updates: Record<string, any> = {};
-        if (fullResponseText) updates.kaina_ai_text = fullResponseText;
-        const newJsonObj = { ...currentJsonObj, ...updates };
-        if (fullResponseText) await updateTalposField(currentTalposId, 'json', newJsonObj);
         setTalposRows(prev => prev.map(r =>
           String(r.id) === String(currentTalposId)
-            ? { ...r, kaina_ai: kainaAiValue, json: fullResponseText ? newJsonObj : r.json }
+            ? { ...r, kaina_ai: kainaAiValue }
             : r
         ));
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
-        if (fullResponseText) setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
+        setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
       } else {
         throw new Error('Negauta kaina iš atsakymo');
       }
@@ -3056,6 +3023,7 @@ function TabMedziagos({
 
   // Get AI text from local override or talpos.json
   const aiText = localKainaAiText
+    ?? (typeof currentTalposRow?.kaina_ai === 'string' ? currentTalposRow.kaina_ai : null)
     ?? (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
 
   /** Render structured slate data — delegates to shared MaterialSlateView */
