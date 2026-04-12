@@ -2957,8 +2957,10 @@ function TabMedziagos({
   const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
   const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [showSlateEditor, setShowSlateEditor] = useState(false);
-  const [slateDraft, setSlateDraft] = useState('');
+  const [isSlateEditing, setIsSlateEditing] = useState(false);
+  const [slateDraftEntries, setSlateDraftEntries] = useState<Array<{ key: string; value: string }>>([]);
+  const [newSlateKey, setNewSlateKey] = useState('');
+  const [newSlateValue, setNewSlateValue] = useState('');
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
 
   // Manual entry rows
@@ -3043,27 +3045,46 @@ function TabMedziagos({
   const openSlateEditor = () => {
     if (!localSlate) return;
     setSlateEditError(null);
-    setSlateDraft(JSON.stringify(localSlate, null, 2));
-    setShowSlateEditor(true);
+    const entries = Object.entries(localSlate).map(([key, value]) => ({
+      key,
+      value: (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value ?? ''),
+    }));
+    setSlateDraftEntries(entries);
+    setNewSlateKey('');
+    setNewSlateValue('');
+    setIsSlateEditing(true);
   };
 
   const saveSlateEdits = async () => {
     if (!currentTalposId) return;
     try {
-      const parsed = JSON.parse(slateDraft);
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setSlateEditError('Šablono struktūra turi būti JSON objektas.');
-        return;
+      const toTypedValue = (raw: string): any => {
+        const t = raw.trim();
+        if (t === '') return '';
+        if (t === 'null') return null;
+        if (t === 'true') return true;
+        if (t === 'false') return false;
+        if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+        if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+          try { return JSON.parse(t); } catch { /* keep as string */ }
+        }
+        return raw;
+      };
+      const parsed: Record<string, any> = {};
+      for (const row of slateDraftEntries) {
+        const k = row.key.trim();
+        if (!k) continue;
+        parsed[k] = toTypedValue(row.value);
       }
       setSavingSlate(true);
       await updateTalposField(currentTalposId, 'material_slate', parsed);
       setLocalSlate(parsed);
       onTalposRowUpdated?.(currentTalposId, 'material_slate', parsed);
       setMode('template');
-      setShowSlateEditor(false);
+      setIsSlateEditing(false);
     } catch (err) {
       console.error('Error saving slate edits:', err);
-      setSlateEditError('Nepavyko išsaugoti pakeitimų. Patikrinkite JSON formatą.');
+      setSlateEditError('Nepavyko išsaugoti pakeitimų.');
     } finally {
       setSavingSlate(false);
     }
@@ -3264,7 +3285,7 @@ function TabMedziagos({
                     onClick={openSlateEditor}
                     className="text-[10px] px-2.5 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
                   >
-                    Redaguoti
+                    {isSlateEditing ? 'Redaguojama' : 'Redaguoti'}
                   </button>
                   <button onClick={handleClearSlate} disabled={savingSlate} className="p-1 rounded-md hover:bg-error/10 transition-colors" title="Pašalinti šabloną">
                     <Trash2 className="w-3 h-3 text-error/40 hover:text-error" />
@@ -3272,7 +3293,53 @@ function TabMedziagos({
                 </div>
               </div>
               <div className="rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3 overflow-y-auto" style={{ maxHeight: '400px' }}>
-                {renderSlateData(localSlate)}
+                {!isSlateEditing && renderSlateData(localSlate)}
+                {isSlateEditing && (
+                  <div className="space-y-2">
+                    {slateDraftEntries.map((row, i) => (
+                      <div key={`${row.key}-${i}`} className="grid grid-cols-[160px_1fr_28px] gap-1.5">
+                        <input
+                          value={row.key}
+                          onChange={e => setSlateDraftEntries(prev => prev.map((r, j) => j === i ? { ...r, key: e.target.value } : r))}
+                          className="text-xs px-2 py-1.5 rounded-lg border border-base-content/12 bg-base-100"
+                          placeholder="lauko_pavadinimas"
+                        />
+                        <input
+                          value={row.value}
+                          onChange={e => setSlateDraftEntries(prev => prev.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
+                          className="text-xs px-2 py-1.5 rounded-lg border border-base-content/12 bg-base-100 font-mono"
+                        />
+                        <button onClick={() => setSlateDraftEntries(prev => prev.filter((_, j) => j !== i))} className="p-1 rounded-md hover:bg-error/10">
+                          <X className="w-3 h-3 text-base-content/35" />
+                        </button>
+                      </div>
+                    ))}
+
+                    <div className="grid grid-cols-[160px_1fr_auto] gap-1.5 pt-1">
+                      <input value={newSlateKey} onChange={e => setNewSlateKey(e.target.value)} placeholder="naujas_laukas" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
+                      <input value={newSlateValue} onChange={e => setNewSlateValue(e.target.value)} placeholder="reikšmė" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100 font-mono" />
+                      <button
+                        onClick={() => {
+                          if (!newSlateKey.trim()) return;
+                          setSlateDraftEntries(prev => [...prev, { key: newSlateKey.trim(), value: newSlateValue }]);
+                          setNewSlateKey('');
+                          setNewSlateValue('');
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]"
+                      >
+                        Pridėti
+                      </button>
+                    </div>
+
+                    {slateEditError && <p className="text-xs text-error">{slateEditError}</p>}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button onClick={() => setIsSlateEditing(false)} className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">Atšaukti</button>
+                      <button onClick={saveSlateEdits} disabled={savingSlate} className="text-xs px-3 py-1.5 rounded-xl text-white disabled:opacity-60" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
+                        {savingSlate ? 'Saugoma...' : 'Išsaugoti'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -3405,40 +3472,6 @@ function TabMedziagos({
 
       {/* Template picker overlay */}
       {showTemplatePicker && <TemplatePicker />}
-      {showSlateEditor && (
-        <div
-          className="fixed inset-0 z-[10001] flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
-          onClick={() => setShowSlateEditor(false)}
-        >
-          <div
-            className="bg-base-100 rounded-2xl shadow-2xl w-[90vw] max-w-[780px] max-h-[82vh] overflow-hidden border border-base-content/10"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-base-content/10 flex items-center justify-between">
-              <p className="text-sm font-semibold text-base-content">Redaguoti pasirinktą šabloną</p>
-              <button onClick={() => setShowSlateEditor(false)} className="p-1.5 rounded-lg hover:bg-base-content/5">
-                <X className="w-4 h-4 text-base-content/40" />
-              </button>
-            </div>
-            <div className="p-4">
-              <p className="text-xs text-base-content/45 mb-2">Šie pakeitimai bus taikomi tik šiai talpai ir nepakeis originalaus šablono.</p>
-              <textarea
-                value={slateDraft}
-                onChange={e => setSlateDraft(e.target.value)}
-                className="w-full h-[50vh] text-xs font-mono rounded-xl border border-base-content/12 bg-base-100 p-3 outline-none focus:border-primary/35"
-              />
-              {slateEditError && <p className="text-xs text-error mt-2">{slateEditError}</p>}
-            </div>
-            <div className="px-4 py-3 border-t border-base-content/10 flex items-center justify-end gap-2">
-              <button onClick={() => setShowSlateEditor(false)} className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03]">Atšaukti</button>
-              <button onClick={saveSlateEdits} disabled={savingSlate} className="text-xs px-3 py-1.5 rounded-xl text-white disabled:opacity-60" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
-                {savingSlate ? 'Saugoma...' : 'Išsaugoti'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
