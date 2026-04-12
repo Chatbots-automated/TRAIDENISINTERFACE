@@ -2898,6 +2898,7 @@ function TabMedziagos({
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
   const [savingSlate, setSavingSlate] = useState(false);
+  const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
   const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
@@ -2919,9 +2920,10 @@ function TabMedziagos({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTalposRow?.material_slate, idx]);
 
-  const handleSelectTemplate = async (templateId: number) => {
+  const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
     const template = sablonai.find(s => s.id === templateId);
-    if (!template?.structured_json || !currentTalposId) return;
+    if (!template?.structured_json || !currentTalposId) return false;
+    setTemplateSelectError(null);
     setSelectedTemplateId(templateId);
     setSavingSlate(true);
     try {
@@ -2930,8 +2932,12 @@ function TabMedziagos({
       setLocalSlate(snapshot);
       onTalposRowUpdated?.(currentTalposId, 'material_slate', snapshot);
       setMode('template');
+      return true;
     } catch (err) {
       console.error('Error saving material slate:', err);
+      setTemplateSelectError('Nepavyko pritaikyti šablono. Bandykite dar kartą.');
+      setSelectedTemplateId(localSlate?._template_id ?? null);
+      return false;
     } finally {
       setSavingSlate(false);
     }
@@ -3045,21 +3051,26 @@ function TabMedziagos({
                 <p className="text-xs text-base-content/30 mt-1">Sukurkite šablonus Žaliavos → Medžiagų šablonai</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {available.map(t => (
                   <TemplateCard
                     key={t.id}
                     template={t}
                     selected={selectedTemplateId === t.id || localSlate?._template_id === t.id}
-                    onClick={() => {
-                      handleSelectTemplate(t.id);
-                      setShowTemplatePicker(false);
+                    onClick={async () => {
+                      const ok = await handleSelectTemplate(t.id);
+                      if (ok) setShowTemplatePicker(false);
                     }}
                   />
                 ))}
               </div>
             )}
           </div>
+          {templateSelectError && (
+            <div className="px-4 py-2.5 text-xs" style={{ color: '#FF3B30', borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(255,59,48,0.04)' }}>
+              {templateSelectError}
+            </div>
+          )}
         </div>
       </div>
     );
