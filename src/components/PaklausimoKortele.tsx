@@ -2958,7 +2958,7 @@ function TabMedziagos({
   const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [isSlateEditing, setIsSlateEditing] = useState(false);
-  const [slateDraftEntries, setSlateDraftEntries] = useState<Array<{ key: string; value: string }>>([]);
+  const [slateDraftEntries, setSlateDraftEntries] = useState<Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }>>([]);
   const [newSlateKey, setNewSlateKey] = useState('');
   const [newSlateValue, setNewSlateValue] = useState('');
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
@@ -3045,10 +3045,33 @@ function TabMedziagos({
   const openSlateEditor = () => {
     if (!localSlate) return;
     setSlateEditError(null);
-    const entries = Object.entries(localSlate).map(([key, value]) => ({
-      key,
-      value: (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value ?? ''),
-    }));
+    const formatLabel = (path: string) => path
+      .split('.')
+      .map(part => part.replace(/_/g, ' '))
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' → ');
+    const entries: Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }> = [];
+    const flatten = (obj: Record<string, any>, prefix = '') => {
+      for (const [k, v] of Object.entries(obj)) {
+        const p = prefix ? `${prefix}.${k}` : k;
+        if (v === null) {
+          entries.push({ path: p, label: formatLabel(p), value: '', kind: 'null' });
+        } else if (typeof v === 'string') {
+          entries.push({ path: p, label: formatLabel(p), value: v, kind: 'string' });
+        } else if (typeof v === 'number') {
+          entries.push({ path: p, label: formatLabel(p), value: String(v), kind: 'number' });
+        } else if (typeof v === 'boolean') {
+          entries.push({ path: p, label: formatLabel(p), value: v ? 'taip' : 'ne', kind: 'boolean' });
+        } else if (Array.isArray(v)) {
+          if (v.every(x => ['string', 'number', 'boolean'].includes(typeof x) || x === null)) {
+            entries.push({ path: p, label: formatLabel(p), value: v.map(x => x ?? '').join(', '), kind: 'array' });
+          }
+        } else if (typeof v === 'object') {
+          flatten(v as Record<string, any>, p);
+        }
+      }
+    };
+    flatten(localSlate);
     setSlateDraftEntries(entries);
     setNewSlateKey('');
     setNewSlateValue('');
@@ -3058,23 +3081,31 @@ function TabMedziagos({
   const saveSlateEdits = async () => {
     if (!currentTalposId) return;
     try {
-      const toTypedValue = (raw: string): any => {
+      const toTypedValue = (raw: string, kind: 'string' | 'number' | 'boolean' | 'null' | 'array'): any => {
         const t = raw.trim();
-        if (t === '') return '';
-        if (t === 'null') return null;
-        if (t === 'true') return true;
-        if (t === 'false') return false;
-        if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
-        if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
-          try { return JSON.parse(t); } catch { /* keep as string */ }
-        }
+        if (kind === 'number') return t === '' ? null : Number(t.replace(',', '.'));
+        if (kind === 'boolean') return ['taip', 'true', '1'].includes(t.toLowerCase());
+        if (kind === 'null') return t === '' ? null : t;
+        if (kind === 'array') return t.split(',').map(s => s.trim()).filter(Boolean);
         return raw;
       };
-      const parsed: Record<string, any> = {};
+      const setByPath = (target: Record<string, any>, path: string, value: any) => {
+        const parts = path.split('.');
+        let obj: any = target;
+        for (let i = 0; i < parts.length - 1; i++) {
+          obj[parts[i]] = obj[parts[i]] && typeof obj[parts[i]] === 'object' ? obj[parts[i]] : {};
+          obj = obj[parts[i]];
+        }
+        obj[parts[parts.length - 1]] = value;
+      };
+
+      const parsed: Record<string, any> = JSON.parse(JSON.stringify(localSlate || {}));
       for (const row of slateDraftEntries) {
-        const k = row.key.trim();
-        if (!k) continue;
-        parsed[k] = toTypedValue(row.value);
+        if (!row.path.trim()) continue;
+        setByPath(parsed, row.path, toTypedValue(row.value, row.kind));
+      }
+      if (newSlateKey.trim()) {
+        parsed[newSlateKey.trim()] = newSlateValue;
       }
       setSavingSlate(true);
       await updateTalposField(currentTalposId, 'material_slate', parsed);
@@ -3297,37 +3328,37 @@ function TabMedziagos({
                 {isSlateEditing && (
                   <div className="space-y-2">
                     {slateDraftEntries.map((row, i) => (
-                      <div key={`${row.key}-${i}`} className="grid grid-cols-[160px_1fr_28px] gap-1.5">
-                        <input
-                          value={row.key}
-                          onChange={e => setSlateDraftEntries(prev => prev.map((r, j) => j === i ? { ...r, key: e.target.value } : r))}
-                          className="text-xs px-2 py-1.5 rounded-lg border border-base-content/12 bg-base-100"
-                          placeholder="lauko_pavadinimas"
-                        />
+                      <div key={`${row.path}-${i}`} className="grid grid-cols-[180px_1fr_28px] gap-1.5 items-center">
+                        <span className="text-[11px] text-base-content/65">{row.label}</span>
                         <input
                           value={row.value}
                           onChange={e => setSlateDraftEntries(prev => prev.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
                           className="text-xs px-2 py-1.5 rounded-lg border border-base-content/12 bg-base-100 font-mono"
                         />
-                        <button onClick={() => setSlateDraftEntries(prev => prev.filter((_, j) => j !== i))} className="p-1 rounded-md hover:bg-error/10">
+                        <button onClick={() => setSlateDraftEntries(prev => prev.filter((_, j) => j !== i))} className="p-1 rounded-md hover:bg-error/10" title="Pašalinti lauką iš šios talpos šablono">
                           <X className="w-3 h-3 text-base-content/35" />
                         </button>
                       </div>
                     ))}
 
-                    <div className="grid grid-cols-[160px_1fr_auto] gap-1.5 pt-1">
-                      <input value={newSlateKey} onChange={e => setNewSlateKey(e.target.value)} placeholder="naujas_laukas" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
-                      <input value={newSlateValue} onChange={e => setNewSlateValue(e.target.value)} placeholder="reikšmė" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100 font-mono" />
+                    <div className="grid grid-cols-[180px_1fr_auto] gap-1.5 pt-1">
+                      <input value={newSlateKey} onChange={e => setNewSlateKey(e.target.value)} placeholder="Naujas laukas" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
+                      <input value={newSlateValue} onChange={e => setNewSlateValue(e.target.value)} placeholder="Reikšmė" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
                       <button
                         onClick={() => {
                           if (!newSlateKey.trim()) return;
-                          setSlateDraftEntries(prev => [...prev, { key: newSlateKey.trim(), value: newSlateValue }]);
+                          setSlateDraftEntries(prev => [...prev, {
+                            path: newSlateKey.trim(),
+                            label: newSlateKey.trim(),
+                            value: newSlateValue,
+                            kind: 'string',
+                          }]);
                           setNewSlateKey('');
                           setNewSlateValue('');
                         }}
                         className="text-xs px-2.5 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]"
                       >
-                        Pridėti
+                        Naujas laukas
                       </button>
                     </div>
 
