@@ -509,8 +509,7 @@ function SablonaiTab() {
         <button
           onClick={startNew}
           disabled={inlineEditId === 'new'}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
-          style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80 disabled:opacity-50"
         >
           <Plus className="w-3.5 h-3.5" />Naujas šablonas
         </button>
@@ -532,8 +531,7 @@ function SablonaiTab() {
             </div>
             <div className="flex items-center gap-1">
               <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
-                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80 disabled:opacity-50">
                 {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                 Išsaugoti
               </button>
@@ -580,38 +578,35 @@ function SablonaiTab() {
                     <button
                       onClick={() => handleViewGenerate(s)}
                       disabled={generating}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-60"
-                      style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80 disabled:opacity-60"
                     >
                       {generating && generatingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
                       Strūkturizuoti
                     </button>
-                    <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-red-50" title="Ištrinti">
-                      <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
+                    <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-white/65 backdrop-blur-sm hover:bg-white/80" title="Ištrinti">
+                      <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
                     </button>
                   </div>
                 </div>
 
-                <div className="mt-2 rounded-lg p-2.5 flex-1" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
-                  <p
-                    className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-                    style={{
-                      color: '#5a5550',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 6,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    {s.raw_text || 'Nėra teksto'}
-                  </p>
-                </div>
-
-                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015]">
+                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
                   {s.structured_json ? (
-                    <MaterialSlateView data={s.structured_json} compact />
+                    <div className="max-h-[320px] overflow-y-auto">
+                      <MaterialSlateView data={s.structured_json} />
+                    </div>
                   ) : (
-                    <p className="text-xs italic text-base-content/35">Struktūra dar nesugeneruota</p>
+                    <p
+                      className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+                      style={{
+                        color: '#5a5550',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 10,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {s.raw_text || 'Nėra teksto'}
+                    </p>
                   )}
                 </div>
 
