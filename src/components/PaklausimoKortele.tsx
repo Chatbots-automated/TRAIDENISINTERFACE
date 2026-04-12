@@ -1113,57 +1113,56 @@ function TabTalpos({
         </div>
       )}
 
-      {/* Talpos selection bar — always visible when editable or more than one tank */}
-      {(navCount > 1 || !readOnly) && (
-        <div className="flex items-center gap-1 mb-4 shrink-0">
-          {navCount > 1 && (
-            <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
-              <ChevronLeft className="w-4 h-4 text-base-content/40" />
-            </button>
-          )}
-          <select
-            value={idx}
-            onChange={e => { setCurrentIdx(Number(e.target.value)); }}
-            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
-          >
-            {navCount === 0 ? (
-              <option value={0}>Nėra talpų</option>
-            ) : Array.from({ length: navCount }, (_, i) => (
-              <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
-            ))}
-          </select>
-          {navCount > 1 && (
-            <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
-              <ChevronRight className="w-4 h-4 text-base-content/40" />
-            </button>
-          )}
-          {!readOnly && (
-            <>
-              <button
-                onClick={addTank}
-                disabled={addingTank}
-                className="p-1.5 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-40"
-                title="Pridėti talpą"
-              >
-                {addingTank ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <Plus className="w-4 h-4 text-primary/60 hover:text-primary" />}
+      {/* Top controls: talpa selector + sub-tab toggles on one centered row */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mb-3 shrink-0">
+        {(navCount > 1 || !readOnly) && (
+          <div className="flex items-center gap-1 w-full max-w-[520px]">
+            {navCount > 1 && (
+              <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+                <ChevronLeft className="w-4 h-4 text-base-content/40" />
               </button>
-              {currentTalposId && (
+            )}
+            <select
+              value={idx}
+              onChange={e => { setCurrentIdx(Number(e.target.value)); }}
+              className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+            >
+              {navCount === 0 ? (
+                <option value={0}>Nėra talpų</option>
+              ) : Array.from({ length: navCount }, (_, i) => (
+                <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
+              ))}
+            </select>
+            {navCount > 1 && (
+              <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+                <ChevronRight className="w-4 h-4 text-base-content/40" />
+              </button>
+            )}
+            {!readOnly && (
+              <>
                 <button
-                  onClick={() => setConfirmDeleteTalposId(currentTalposId)}
-                  disabled={deletingTank || !!confirmDeleteTalposId}
-                  className="p-1.5 rounded-md hover:bg-error/10 transition-colors disabled:opacity-40"
-                  title="Ištrinti šią talpą"
+                  onClick={addTank}
+                  disabled={addingTank}
+                  className="p-1.5 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-40"
+                  title="Pridėti talpą"
                 >
-                  <Trash2 className="w-4 h-4 text-error/40 hover:text-error" />
+                  {addingTank ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <Plus className="w-4 h-4 text-primary/60 hover:text-primary" />}
                 </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+                {currentTalposId && (
+                  <button
+                    onClick={() => setConfirmDeleteTalposId(currentTalposId)}
+                    disabled={deletingTank || !!confirmDeleteTalposId}
+                    className="p-1.5 rounded-md hover:bg-error/10 transition-colors disabled:opacity-40"
+                    title="Ištrinti šią talpą"
+                  >
+                    <Trash2 className="w-4 h-4 text-error/40 hover:text-error" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-      {/* Parametrai / Derva toggle */}
-      <div className="flex justify-center mb-2 shrink-0">
         <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
           {(['parametrai', 'derva', 'medziagos'] as TalposSubTab[]).map(t => (
             <button
