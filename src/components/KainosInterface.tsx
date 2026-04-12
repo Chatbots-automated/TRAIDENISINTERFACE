@@ -472,21 +472,21 @@ function SablonaiTab() {
     editable: boolean;
     record?: MedziaguSablonas;
   }) => (
-    <div className="flex items-stretch">
+    <div className="flex items-stretch gap-2">
       {/* Left: raw text */}
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Originalus tekstas</p>
+      <div className="flex-1 min-w-0 rounded-xl border border-base-content/10 bg-base-100 p-2.5">
+        <p className="text-xs font-medium mb-1.5 text-base-content/50">Originalus tekstas</p>
         {editable ? (
           <textarea
             value={editText}
             onChange={e => setEditText(e.target.value)}
             placeholder="Įveskite medžiagų aprašymą..."
             rows={8}
-            className="w-full px-3 py-2 rounded-lg text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
+            className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
             style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
           />
         ) : (
-          <pre className="text-xs font-mono whitespace-pre-wrap rounded-lg p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '300px', overflow: 'auto' }}>{rawText}</pre>
+          <pre className="text-xs font-mono whitespace-pre-wrap rounded-xl p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '300px', overflow: 'auto' }}>{rawText}</pre>
         )}
       </div>
 
@@ -494,8 +494,8 @@ function SablonaiTab() {
       <StructureArrowButton hasJson={!!(editable ? editJson : json)} rawText={editable ? editText : rawText} record={record} />
 
       {/* Right: structured data */}
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium mb-1.5" style={{ color: '#8a857f' }}>Struktūrizuoti duomenys</p>
+      <div className="flex-1 min-w-0 rounded-xl border border-base-content/10 bg-base-100 p-2.5">
+        <p className="text-xs font-medium mb-1.5 text-base-content/50">Struktūrizuoti duomenys</p>
         {(editable ? editJson : json) ? (
           <StructuredDataView data={(editable ? editJson : json)!} />
         ) : (
@@ -524,13 +524,13 @@ function SablonaiTab() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm" style={{ color: '#8a857f' }}>{sablonai.length} šablonai</p>
+      <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
+        <p className="text-sm text-base-content/60">{sablonai.length} šablonai</p>
         <button
           onClick={startNew}
           disabled={inlineEditId === 'new'}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
-          style={{ background: '#007AFF' }}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
+          style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
         >
           <Plus className="w-3.5 h-3.5" />Naujas šablonas
         </button>
@@ -538,7 +538,7 @@ function SablonaiTab() {
 
       {/* New template card (inline) */}
       {inlineEditId === 'new' && (
-        <div className="rounded-xl border px-4 py-3" style={{ borderColor: '#007AFF', background: '#fff' }}>
+        <div className="rounded-2xl border px-4 py-3 shadow-sm" style={{ borderColor: '#007AFF', background: '#fff' }}>
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <input
@@ -552,12 +552,12 @@ function SablonaiTab() {
             </div>
             <div className="flex items-center gap-1">
               <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
-                style={{ background: '#007AFF' }}>
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
+                style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
                 {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                 Išsaugoti
               </button>
-              <button onClick={resetInline} className="p-1.5 rounded-md hover:bg-black/5">
+              <button onClick={resetInline} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]">
                 <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
               </button>
             </div>
@@ -581,7 +581,7 @@ function SablonaiTab() {
             const isPreviewing = previewId === s.id && !isEditing;
 
             return (
-              <div key={s.id} className="group rounded-xl border px-4 py-3 transition-colors hover:border-blue-200"
+              <div key={s.id} className="group rounded-2xl border px-4 py-3 transition-colors hover:border-blue-200 shadow-sm"
                 style={{ borderColor: isEditing ? '#007AFF' : '#e5e2dd', background: '#fff' }}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -611,24 +611,24 @@ function SablonaiTab() {
                     {isEditing ? (
                       <>
                         <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
-                          style={{ background: '#007AFF' }}>
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
+                          style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
                           {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                           Išsaugoti
                         </button>
-                        <button onClick={resetInline} className="p-1.5 rounded-md hover:bg-black/5">
+                        <button onClick={resetInline} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]">
                           <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
                         </button>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => setPreviewId(previewId === s.id ? null : s.id)} className="p-1.5 rounded-md hover:bg-black/5" title="Peržiūrėti">
+                        <button onClick={() => setPreviewId(previewId === s.id ? null : s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]" title="Peržiūrėti">
                           <Eye className="w-3.5 h-3.5" style={{ color: isPreviewing ? '#007AFF' : '#8a857f' }} />
                         </button>
-                        <button onClick={() => startEdit(s)} className="p-1.5 rounded-md hover:bg-black/5" title="Redaguoti">
+                        <button onClick={() => startEdit(s)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]" title="Redaguoti">
                           <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
                         </button>
-                        <button onClick={() => setConfirmDeleteId(s.id)} className="p-1.5 rounded-md hover:bg-red-50" title="Ištrinti">
+                        <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-red-50" title="Ištrinti">
                           <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
                         </button>
                       </>
