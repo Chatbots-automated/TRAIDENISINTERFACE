@@ -598,16 +598,20 @@ function isOldFormat(meta: Record<string, any>): boolean {
 type TalposSubTab = 'parametrai' | 'derva' | 'medziagos';
 
 function TabTalpos({
-  record, products, readOnly, onRecordUpdated, initialTalposId,
+  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange,
 }: {
   record: NestandartiniaiRecord;
   products: Record<string, any>[];
   readOnly?: boolean;
   onRecordUpdated?: (r: NestandartiniaiRecord) => void;
   initialTalposId?: string;
+  initialSubTab?: TalposSubTab;
+  onSubTabChange?: (tab: TalposSubTab) => void;
+  initialTankIdx?: number;
+  onTankIdxChange?: (idx: number) => void;
 }) {
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [subTab, setSubTab] = useState<TalposSubTab>('parametrai');
+  const [currentIdx, setCurrentIdx] = useState(initialTankIdx ?? 0);
+  const [subTab, setSubTab] = useState<TalposSubTab>(initialSubTab ?? 'parametrai');
 
   // Material templates (fetched once, shared with medziagos sub-tab)
   const [sablonai, setSablonai] = useState<MedziaguSablonas[]>([]);
@@ -649,6 +653,19 @@ function TabTalpos({
   const idx = Math.min(currentIdx, Math.max(0, navCount - 1));
   const currentTalposRow = talposRows[idx] ?? null;
   const currentTalposId = talposIds[idx] ?? null;
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== subTab) setSubTab(initialSubTab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSubTab]);
+
+  useEffect(() => {
+    if (typeof initialTankIdx === 'number' && initialTankIdx !== currentIdx) setCurrentIdx(initialTankIdx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTankIdx]);
+
+  useEffect(() => { onSubTabChange?.(subTab); }, [subTab, onSubTabChange]);
+  useEffect(() => { onTankIdxChange?.(idx); }, [idx, onTankIdxChange]);
 
   // Kaina editing (writes to talpos table)
   const [kainaEditing, setKainaEditing] = useState(false);
@@ -2940,6 +2957,9 @@ function TabMedziagos({
   const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
   const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [showSlateEditor, setShowSlateEditor] = useState(false);
+  const [slateDraft, setSlateDraft] = useState('');
+  const [slateEditError, setSlateEditError] = useState<string | null>(null);
 
   // Manual entry rows
   const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
@@ -3015,6 +3035,35 @@ function TabMedziagos({
       setSelectedTemplateId(null);
     } catch (err) {
       console.error('Error clearing slate:', err);
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  const openSlateEditor = () => {
+    if (!localSlate) return;
+    setSlateEditError(null);
+    setSlateDraft(JSON.stringify(localSlate, null, 2));
+    setShowSlateEditor(true);
+  };
+
+  const saveSlateEdits = async () => {
+    if (!currentTalposId) return;
+    try {
+      const parsed = JSON.parse(slateDraft);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setSlateEditError('Šablono struktūra turi būti JSON objektas.');
+        return;
+      }
+      setSavingSlate(true);
+      await updateTalposField(currentTalposId, 'material_slate', parsed);
+      setLocalSlate(parsed);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', parsed);
+      setMode('template');
+      setShowSlateEditor(false);
+    } catch (err) {
+      console.error('Error saving slate edits:', err);
+      setSlateEditError('Nepavyko išsaugoti pakeitimų. Patikrinkite JSON formatą.');
     } finally {
       setSavingSlate(false);
     }
@@ -3211,6 +3260,12 @@ function TabMedziagos({
                   >
                     Keisti šabloną
                   </button>
+                  <button
+                    onClick={openSlateEditor}
+                    className="text-[10px] px-2.5 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
+                  >
+                    Redaguoti
+                  </button>
                   <button onClick={handleClearSlate} disabled={savingSlate} className="p-1 rounded-md hover:bg-error/10 transition-colors" title="Pašalinti šabloną">
                     <Trash2 className="w-3 h-3 text-error/40 hover:text-error" />
                   </button>
@@ -3350,6 +3405,40 @@ function TabMedziagos({
 
       {/* Template picker overlay */}
       {showTemplatePicker && <TemplatePicker />}
+      {showSlateEditor && (
+        <div
+          className="fixed inset-0 z-[10001] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setShowSlateEditor(false)}
+        >
+          <div
+            className="bg-base-100 rounded-2xl shadow-2xl w-[90vw] max-w-[780px] max-h-[82vh] overflow-hidden border border-base-content/10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-base-content/10 flex items-center justify-between">
+              <p className="text-sm font-semibold text-base-content">Redaguoti pasirinktą šabloną</p>
+              <button onClick={() => setShowSlateEditor(false)} className="p-1.5 rounded-lg hover:bg-base-content/5">
+                <X className="w-4 h-4 text-base-content/40" />
+              </button>
+            </div>
+            <div className="p-4">
+              <p className="text-xs text-base-content/45 mb-2">Šie pakeitimai bus taikomi tik šiai talpai ir nepakeis originalaus šablono.</p>
+              <textarea
+                value={slateDraft}
+                onChange={e => setSlateDraft(e.target.value)}
+                className="w-full h-[50vh] text-xs font-mono rounded-xl border border-base-content/12 bg-base-100 p-3 outline-none focus:border-primary/35"
+              />
+              {slateEditError && <p className="text-xs text-error mt-2">{slateEditError}</p>}
+            </div>
+            <div className="px-4 py-3 border-t border-base-content/10 flex items-center justify-end gap-2">
+              <button onClick={() => setShowSlateEditor(false)} className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03]">Atšaukti</button>
+              <button onClick={saveSlateEdits} disabled={savingSlate} className="text-xs px-3 py-1.5 rounded-xl text-white disabled:opacity-60" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
+                {savingSlate ? 'Saugoma...' : 'Išsaugoti'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3814,7 +3903,22 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
-  const [activeTab, setActiveTab] = useState<ModalTab>('talpos');
+  const readModalStateFromUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    const rid = params.get('pm_rid');
+    if (rid !== String(record.id)) return { tab: 'talpos' as ModalTab, subTab: 'parametrai' as TalposSubTab, tankIdx: 0 };
+    const tab = (params.get('pm_tab') || 'talpos') as ModalTab;
+    const subTab = (params.get('pm_sub') || 'parametrai') as TalposSubTab;
+    const tankIdxRaw = Number(params.get('pm_idx') || '0');
+    const safeTab: ModalTab = TABS.some(t => t.id === tab) ? tab : 'talpos';
+    const safeSubTab: TalposSubTab = ['parametrai', 'derva', 'medziagos'].includes(subTab) ? subTab : 'parametrai';
+    return { tab: safeTab, subTab: safeSubTab, tankIdx: Number.isFinite(tankIdxRaw) && tankIdxRaw >= 0 ? tankIdxRaw : 0 };
+  };
+
+  const initialModalState = readModalStateFromUrl();
+  const [activeTab, setActiveTab] = useState<ModalTab>(initialModalState.tab);
+  const [talposSubTab, setTalposSubTab] = useState<TalposSubTab>(initialModalState.subTab);
+  const [talposIdx, setTalposIdx] = useState<number>(initialModalState.tankIdx);
   const [updating, setUpdating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState<'save' | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -4057,6 +4161,16 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     }
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('pm_rid', String(record.id));
+    params.set('pm_tab', activeTab);
+    params.set('pm_sub', talposSubTab);
+    params.set('pm_idx', String(talposIdx));
+    const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    window.history.replaceState(null, '', next);
+  }, [record.id, activeTab, talposSubTab, talposIdx]);
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
@@ -4072,7 +4186,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         <div className="h-[2px] shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/10">
+        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               {/* Project-level title row */}
@@ -4126,7 +4240,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/10 bg-base-200/25 flex flex-col">
+          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/6 bg-base-200/20 flex flex-col">
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -4179,7 +4293,18 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
-            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
+            {activeTab === 'talpos' && (
+              <TabTalpos
+                record={record}
+                products={products}
+                readOnly={isLocked}
+                onRecordUpdated={onRefresh}
+                initialSubTab={talposSubTab}
+                onSubTabChange={setTalposSubTab}
+                initialTankIdx={talposIdx}
+                onTankIdxChange={setTalposIdx}
+              />
+            )}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
