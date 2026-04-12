@@ -4106,21 +4106,21 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
-          <div className="flex items-start justify-between gap-4">
+        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/10">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               {/* Project-level title row */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-[15px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.01em' }}>
                   {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
                 </h2>
                 {record.klientas && (
-                  <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
                     {record.klientas}
                   </span>
                 )}
                 <span
-                  className="text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0"
+                  className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
                   style={record.status
                     ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
                     : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
@@ -4129,13 +4129,13 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 </span>
               </div>
               {/* Project-level meta row */}
-              <p className="text-sm mt-1 text-base-content/40">
+              <p className="text-xs mt-0.5 text-base-content/45">
                 Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
                 {products.length > 1 && ` · ${products.length} talpos`}
               </p>
               {/* Pastabos (project-level notes) */}
               {getSantraukaFromMetadata(record.metadata) && (
-                <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
+                <p className="text-xs mt-1 text-base-content/60 leading-snug" style={{ maxWidth: '620px' }}>
                   {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
@@ -4368,16 +4368,16 @@ export default function PaklausimoKortelePage() {
         <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
-          <div className="flex items-start justify-between gap-4">
+        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/10">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-[15px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.01em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
                 {record.klientas && (
-                  <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">{record.klientas}</span>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">{record.klientas}</span>
                 )}
                 <span
-                  className="text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0"
+                  className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
                   style={record.status
                     ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
                     : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
@@ -4385,12 +4385,12 @@ export default function PaklausimoKortelePage() {
                   {record.status ? 'Aktyvus' : 'Neaktyvus'}
                 </span>
               </div>
-              <p className="text-sm mt-1 text-base-content/40">
+              <p className="text-xs mt-0.5 text-base-content/45">
                 Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
                 {products.length > 1 && ` · ${products.length} talpos`}
               </p>
               {getSantraukaFromMetadata(record.metadata) && (
-                <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
+                <p className="text-xs mt-1 text-base-content/60 leading-snug" style={{ maxWidth: '620px' }}>
                   {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
