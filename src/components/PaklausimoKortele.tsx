@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiKainaByIds,
@@ -2871,10 +2871,10 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
 }
 
 class SlateRenderErrorBoundary extends React.Component<
-  { children: React.ReactNode; fallback?: React.ReactNode },
+  { children: React.ReactNode; fallback?: React.ReactNode; resetKey?: string | number | null },
   { hasError: boolean }
 > {
-  constructor(props: { children: React.ReactNode; fallback?: React.ReactNode }) {
+  constructor(props: { children: React.ReactNode; fallback?: React.ReactNode; resetKey?: string | number | null }) {
     super(props);
     this.state = { hasError: false };
   }
@@ -2885,6 +2885,13 @@ class SlateRenderErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error) {
     console.error('Material slate render error:', error);
+  }
+
+  componentDidUpdate(prevProps: { resetKey?: string | number | null }) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      // Allow retrying render when user switches/updates template data.
+      this.setState({ hasError: false });
+    }
   }
 
   render() {
@@ -3059,7 +3066,7 @@ function TabMedziagos({
       return <p className="text-xs text-base-content/40">Nėra tinkamų šablono duomenų atvaizdavimui.</p>;
     }
     return (
-      <SlateRenderErrorBoundary>
+      <SlateRenderErrorBoundary resetKey={normalized?._template_id ?? 'material-slate'}>
         <MaterialSlateView data={normalized} />
       </SlateRenderErrorBoundary>
     );
