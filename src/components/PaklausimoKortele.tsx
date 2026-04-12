@@ -2870,6 +2870,31 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
+class SlateRenderErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; fallback?: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('Material slate render error:', error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || <p className="text-xs text-base-content/40">Nepavyko atvaizduoti šablono struktūros.</p>;
+    }
+    return this.props.children;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // TabMedziagos – material slate selection / manual entry + AI estimate display
 // ---------------------------------------------------------------------------
@@ -3033,7 +3058,11 @@ function TabMedziagos({
     if (!normalized || typeof normalized !== 'object') {
       return <p className="text-xs text-base-content/40">Nėra tinkamų šablono duomenų atvaizdavimui.</p>;
     }
-    return <MaterialSlateView data={normalized} />;
+    return (
+      <SlateRenderErrorBoundary>
+        <MaterialSlateView data={normalized} />
+      </SlateRenderErrorBoundary>
+    );
   };
 
   /** Template card — used in template picker overlay; compact domain-aware display */
