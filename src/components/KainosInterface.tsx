@@ -575,14 +575,21 @@ function SablonaiTab() {
           <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>Sukurkite pirmą šabloną paspaudę „Naujas šablonas"</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,320px))] justify-center gap-3">
           {sablonai.map(s => {
             const isEditing = inlineEditId === s.id;
             const isPreviewing = previewId === s.id && !isEditing;
 
             return (
-              <div key={s.id} className="group rounded-2xl border px-4 py-3 transition-colors hover:border-blue-200 shadow-sm min-h-[180px] flex flex-col"
-                style={{ borderColor: isEditing ? '#007AFF' : '#e5e2dd', background: '#fff' }}>
+              <div
+                key={s.id}
+                className="group rounded-xl border p-3.5 transition-all min-h-[180px] flex flex-col"
+                style={{
+                  borderColor: isEditing ? '#007AFF' : 'rgba(0,0,0,0.06)',
+                  background: isEditing ? 'rgba(0,122,255,0.03)' : '#fff',
+                  boxShadow: isEditing ? '0 0 0 1px rgba(0,122,255,0.2)' : undefined,
+                }}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     {isEditing ? (
@@ -635,13 +642,13 @@ function SablonaiTab() {
                 </div>
 
                 {!isEditing && !isPreviewing && (
-                  <div className="mt-2 rounded-xl p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1">
+                  <div className="mt-2 rounded-lg p-2.5 flex-1" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
                     <p
                       className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
                       style={{
                         color: '#5a5550',
                         display: '-webkit-box',
-                        WebkitLineClamp: 6,
+                        WebkitLineClamp: 8,
                         WebkitBoxOrient: 'vertical',
                         overflow: 'hidden',
                       }}
