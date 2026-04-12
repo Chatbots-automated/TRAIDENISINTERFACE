@@ -495,6 +495,15 @@ export interface MaterialPriceForEstimate {
   prediction_math?: ComputedPrediction;
 }
 
+export interface MaterialPriceEstimatePayloadItem {
+  artikulas: string;
+  pavadinimas: string;
+  vienetas: string;
+  latest_price: { data: string; kaina_min: number | null; kaina_max: number | null } | null;
+  is_stale: boolean;
+  predicted_current_date: { data: string; kaina_min: number | null; kaina_max: number | null; source: 'math' | 'ai' } | null;
+}
+
 /**
  * Fetch material prices enriched with staleness flag and math prediction.
  * If latest price date > 3 months old, `is_stale` is true and `prediction_math` is included.
@@ -519,5 +528,113 @@ export async function fetchMaterialPricesForEstimate(): Promise<MaterialPriceFor
       result.prediction_math = p.prognoze;
     }
     return result;
+  });
+}
+
+function tryExtractAiPrice(content: string): { kaina: number | null; data: string | null } {
+  const text = (content || '').trim();
+  if (!text) return { kaina: null, data: null };
+
+  const tryJson = (raw: string): any => {
+    try { return JSON.parse(raw); } catch { return null; }
+  };
+
+  const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const jsonCandidate = blockMatch?.[1] || text;
+  let parsed = tryJson(jsonCandidate);
+  if (!parsed) {
+    const arrMatch = text.match(/\[[\s\S]*\]/);
+    if (arrMatch) parsed = tryJson(arrMatch[0]);
+  }
+  if (!parsed) {
+    const objMatch = text.match(/\{[\s\S]*\}/);
+    if (objMatch) parsed = tryJson(objMatch[0]);
+  }
+
+  const pickFromObj = (obj: any): { kaina: number | null; data: string | null } => {
+    if (!obj || typeof obj !== 'object') return { kaina: null, data: null };
+    const raw = obj.kaina ?? obj.kaina_min ?? obj.price ?? obj.predicted_price ?? null;
+    const n = raw == null ? null : Number(raw);
+    const date = obj.data ?? obj.date ?? null;
+    return {
+      kaina: n != null && !isNaN(n) ? n : null,
+      data: typeof date === 'string' && date.trim() ? date.trim() : null,
+    };
+  };
+
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    const v = pickFromObj(parsed[0]);
+    if (v.kaina != null) return v;
+  } else if (parsed && typeof parsed === 'object') {
+    const v = pickFromObj(parsed);
+    if (v.kaina != null) return v;
+  }
+
+  const numMatch = text.match(/(\d+(?:[.,]\d+)?)/);
+  const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
+  return {
+    kaina: numMatch ? Number(numMatch[1].replace(',', '.')) : null,
+    data: dateMatch ? dateMatch[0] : null,
+  };
+}
+
+export async function fetchMaterialPricesForEstimatePayload(
+  mode: 'math' | 'ai',
+): Promise<MaterialPriceEstimatePayloadItem[]> {
+  const base = await fetchMaterialPricesForEstimate();
+  const today = new Date().toISOString().split('T')[0];
+
+  let aiMap = new Map<string, { kaina: number | null; data: string | null }>();
+  if (mode === 'ai') {
+    try {
+      const rows = await fetchPrognozėInternetas();
+      aiMap = new Map(
+        rows
+          .filter(r => r.artikulas && r.artikulas !== '__general__')
+          .map(r => [r.artikulas, tryExtractAiPrice(r.content || '')]),
+      );
+    } catch {
+      aiMap = new Map();
+    }
+  }
+
+  return base.map((m): MaterialPriceEstimatePayloadItem => {
+    let predicted: MaterialPriceEstimatePayloadItem['predicted_current_date'] = null;
+    if (m.is_stale) {
+      if (mode === 'ai') {
+        const ai = aiMap.get(m.artikulas);
+        if (ai?.kaina != null && !isNaN(ai.kaina)) {
+          predicted = {
+            data: today,
+            kaina_min: ai.kaina,
+            kaina_max: ai.kaina,
+            source: 'ai',
+          };
+        } else if (m.prediction_math) {
+          predicted = {
+            data: today,
+            kaina_min: m.prediction_math.kaina_min,
+            kaina_max: m.prediction_math.kaina_max,
+            source: 'math',
+          };
+        }
+      } else if (m.prediction_math) {
+        predicted = {
+          data: today,
+          kaina_min: m.prediction_math.kaina_min,
+          kaina_max: m.prediction_math.kaina_max,
+          source: 'math',
+        };
+      }
+    }
+
+    return {
+      artikulas: m.artikulas,
+      pavadinimas: m.pavadinimas,
+      vienetas: m.vienetas,
+      latest_price: m.latest_price,
+      is_stale: m.is_stale,
+      predicted_current_date: predicted,
+    };
   });
 }

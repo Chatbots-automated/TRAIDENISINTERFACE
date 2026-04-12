@@ -22,8 +22,8 @@ import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
-import { fetchLatestMaterialPrices, fetchMaterialPricesForEstimate } from '../lib/kainosService';
-import type { MaterialPriceForEstimate } from '../lib/kainosService';
+import { fetchMaterialPricesForEstimatePayload } from '../lib/kainosService';
+import type { MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
 import { fetchSablonai } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
@@ -946,52 +946,48 @@ function TabTalpos({
     }
   };
 
-  const estimatePrice = async () => {
+  const estimatePrice = async (predictionMode: 'math' | 'ai' = 'math') => {
     if (!currentTalposId || !currentTalposRow) return;
     setPriceEstimating(prev => ({ ...prev, [idx]: true }));
     setPriceEstimateError(prev => ({ ...prev, [idx]: null }));
     try {
       const webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
-      const payload = Object.fromEntries(
-        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
-      );
+      const currentTankSpecs = {
+        id: currentTalposId,
+        json: currentTalposRow?.json ?? null,
+        derva_musu: currentTalposRow?.derva_musu ?? null,
+        derva_ai: currentTalposRow?.derva_ai ?? null,
+        material_slate: currentTalposRow?.material_slate ?? null,
+      };
 
-      // Fetch full tank records from talpos table for all similar tanks,
-      // so n8n receives complete specs (not just similarity score & name).
       const rawSimilarItems = displayedSimilarEnriched ?? [];
-      const similarUuids = rawSimilarItems
-        .map((item: any) => item.id)
-        .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
-      let similarTanksPayload: any[] = [];
-      if (similarUuids.length > 0) {
-        try {
-          const fullRows = await fetchTalposByIds(similarUuids);
-          const fullRowMap = new Map(fullRows.map((r: any) => [String(r.id), r]));
-          similarTanksPayload = rawSimilarItems.map((item: any) => {
-            const id = item.id && typeof item.id === 'string' && item.id.length >= 32 ? item.id : null;
-            const fullRow = id ? fullRowMap.get(id) : null;
-            if (fullRow) {
-              // Use the full DB record, strip embedding/similar_talpos, keep similarity_score from original
-              const { embedding, similar_talpos, ...fullData } = fullRow;
-              return { ...fullData, similarity_score: item.similarity_score ?? null };
-            }
-            // Fallback: use whatever we already have, minus heavy fields
-            const { embedding, similar_talpos, ...rest } = item;
-            return rest;
-          });
-        } catch {
-          // Fallback to slim data if fetch fails
-          similarTanksPayload = rawSimilarItems.map((item: any) => {
-            const { embedding, similar_talpos, ...rest } = item;
-            return rest;
-          });
-        }
-      }
+      const similarIdsWithScore = rawSimilarItems
+        .map((item: any) => ({
+          id: item?.id && typeof item.id === 'string' && item.id.length >= 32 ? item.id : null,
+          similarity_score: typeof item?.similarity_score === 'number' ? item.similarity_score : null,
+        }))
+        .filter((x: any) => x.id);
+      const similarRows = similarIdsWithScore.length > 0
+        ? await fetchTalposByIds(similarIdsWithScore.map((x: any) => x.id))
+        : [];
+      const similarRowMap = new Map(similarRows.map((r: any) => [String(r.id), r]));
+      const similarTanksPayload = similarIdsWithScore.map((x: any) => {
+        const row = similarRowMap.get(String(x.id));
+        return {
+          id: x.id,
+          similarity_score: x.similarity_score,
+          json: row?.json ?? null,
+          derva_musu: row?.derva_musu ?? null,
+          derva_ai: row?.derva_ai ?? null,
+          material_slate: row?.material_slate ?? null,
+          kaina: row?.kaina ?? null,
+          kaina_ai: row?.kaina_ai ?? null,
+        };
+      });
 
-      // Fetch material prices (actual or predicted) for context
-      let materialPrices: any[] = [];
-      try { materialPrices = await fetchLatestMaterialPrices(); } catch { /* non-fatal */ }
+      let materialPrices: MaterialPriceEstimatePayloadItem[] = [];
+      try { materialPrices = await fetchMaterialPricesForEstimatePayload(predictionMode); } catch { /* non-fatal */ }
 
       const resp = await fetch(webhookUrl, {
         method: 'POST',
@@ -1002,10 +998,11 @@ function TabTalpos({
           description: record.description,
           klientas: record.klientas,
           talpos_id: currentTalposId,
-          product_metadata: payload,
+          estimation_mode: predictionMode,
+          current_tank_specs: currentTankSpecs,
           similar_tanks: similarTanksPayload,
           material_prices: materialPrices,
-          material_slate: currentTalposRow?.material_slate || null,
+          material_price_source: predictionMode === 'ai' ? 'Su DI' : 'Matematinė',
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1053,14 +1050,17 @@ function TabTalpos({
       })();
 
       if (fullResponseText || (estimatedPrice != null && !isNaN(estimatedPrice))) {
+        const kainaAiValue = fullResponseText || String(estimatedPrice ?? '');
+        await updateTalposField(currentTalposId, 'kaina_ai', kainaAiValue);
         const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
         const updates: Record<string, any> = {};
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) updates.kaina_ai = estimatedPrice;
         if (fullResponseText) updates.kaina_ai_text = fullResponseText;
         const newJsonObj = { ...currentJsonObj, ...updates };
-        await updateTalposField(currentTalposId, 'json', newJsonObj);
+        if (fullResponseText) await updateTalposField(currentTalposId, 'json', newJsonObj);
         setTalposRows(prev => prev.map(r =>
-          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+          String(r.id) === String(currentTalposId)
+            ? { ...r, kaina_ai: kainaAiValue, json: fullResponseText ? newJsonObj : r.json }
+            : r
         ));
         if (estimatedPrice != null && !isNaN(estimatedPrice)) setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
         if (fullResponseText) setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
@@ -2917,7 +2917,7 @@ function TabMedziagos({
   idx: number;
   sablonai: MedziaguSablonas[];
   sablonaiLoading: boolean;
-  estimatePrice: () => Promise<void>;
+  estimatePrice: (mode: 'math' | 'ai') => Promise<void>;
   priceEstimating: boolean;
   priceEstimateError: string | null;
   localKainaAiText: string | null;
@@ -3348,7 +3348,7 @@ function TabMedziagos({
 
           {/* Estimate button */}
           <button
-            onClick={estimatePrice}
+            onClick={() => estimatePrice(predictionMode)}
             disabled={priceEstimating}
             className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 mb-2 shrink-0"
             style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
