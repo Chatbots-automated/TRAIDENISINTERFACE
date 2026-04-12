@@ -575,13 +575,13 @@ function SablonaiTab() {
           <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>Sukurkite pirmą šabloną paspaudę „Naujas šablonas"</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {sablonai.map(s => {
             const isEditing = inlineEditId === s.id;
             const isPreviewing = previewId === s.id && !isEditing;
 
             return (
-              <div key={s.id} className="group rounded-2xl border px-4 py-3 transition-colors hover:border-blue-200 shadow-sm"
+              <div key={s.id} className="group rounded-2xl border px-4 py-3 transition-colors hover:border-blue-200 shadow-sm min-h-[180px] flex flex-col"
                 style={{ borderColor: isEditing ? '#007AFF' : '#e5e2dd', background: '#fff' }}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -602,9 +602,7 @@ function SablonaiTab() {
                       </div>
                     )}
                     {!isEditing && !isPreviewing && (
-                      <p className="text-xs mt-0.5 truncate" style={{ color: '#8a857f' }}>
-                        {s.raw_text.split('\n').slice(1, 3).join(' · ').slice(0, 80) || 'Tuščias'}
-                      </p>
+                      <p className="text-xs mt-0.5 text-base-content/45">{s.raw_text.split('\n')[0] || 'Tuščias'}</p>
                     )}
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: isEditing || isPreviewing ? 1 : undefined }}>
@@ -635,6 +633,23 @@ function SablonaiTab() {
                     )}
                   </div>
                 </div>
+
+                {!isEditing && !isPreviewing && (
+                  <div className="mt-2 rounded-xl p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1">
+                    <p
+                      className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+                      style={{
+                        color: '#5a5550',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 6,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {s.raw_text || 'Nėra teksto'}
+                    </p>
+                  </div>
+                )}
 
                 {/* Inline edit content */}
                 {isEditing && (
