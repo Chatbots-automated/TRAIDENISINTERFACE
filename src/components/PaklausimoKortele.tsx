@@ -2891,6 +2891,48 @@ function TabMedziagos({
   localKainaAiText: string | null;
   onTalposRowUpdated?: (id: string, field: string, value: any) => void;
 }) {
+  const normalizeStructuredSlate = (input: unknown): Record<string, any> | null => {
+    if (!input) return null;
+
+    // Some webhook responses come as [{ text: "{...json...}" }]
+    if (Array.isArray(input)) {
+      const first = input[0];
+      if (first && typeof first === 'object' && typeof (first as any).text === 'string') {
+        try {
+          const parsed = JSON.parse((first as any).text);
+          return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+      return first && typeof first === 'object' && !Array.isArray(first) ? first as Record<string, any> : null;
+    }
+
+    if (typeof input === 'object') {
+      const asObj = input as Record<string, any>;
+      if (typeof asObj.text === 'string') {
+        try {
+          const parsed = JSON.parse(asObj.text);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch {
+          // keep original object
+        }
+      }
+      return asObj;
+    }
+
+    if (typeof input === 'string') {
+      try {
+        const parsed = JSON.parse(input);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  };
+
   const [mode, setMode] = useState<'prompt' | 'template' | 'manual'>(() => {
     if (currentTalposRow?.material_slate) return 'template';
     return 'prompt';
@@ -2923,11 +2965,16 @@ function TabMedziagos({
   const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
     const template = sablonai.find(s => s.id === templateId);
     if (!template?.structured_json || !currentTalposId) return false;
+    const normalized = normalizeStructuredSlate(template.structured_json);
+    if (!normalized) {
+      setTemplateSelectError('Šio šablono struktūra neteisinga. Prašome peržiūrėti Žaliavos → Medžiagų šablonai.');
+      return false;
+    }
     setTemplateSelectError(null);
     setSelectedTemplateId(templateId);
     setSavingSlate(true);
     try {
-      const snapshot = { ...template.structured_json, _template_id: template.id, _template_name: template.name };
+      const snapshot = { ...normalized, _template_id: template.id, _template_name: template.name };
       await updateTalposField(currentTalposId, 'material_slate', snapshot);
       setLocalSlate(snapshot);
       onTalposRowUpdated?.(currentTalposId, 'material_slate', snapshot);
@@ -2981,7 +3028,12 @@ function TabMedziagos({
     ?? (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
 
   /** Render structured slate data — delegates to shared MaterialSlateView */
-  const renderSlateData = (data: Record<string, any>) => <MaterialSlateView data={data} />;
+  const renderSlateData = (data: Record<string, any>) => {
+    if (!data || typeof data !== 'object') {
+      return <p className="text-xs text-base-content/40">Nėra tinkamų šablono duomenų atvaizdavimui.</p>;
+    }
+    return <MaterialSlateView data={data} />;
+  };
 
   /** Template card — used in template picker overlay; compact domain-aware display */
   const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
