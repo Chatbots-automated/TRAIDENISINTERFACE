@@ -272,8 +272,8 @@ function SablonaiTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Inline editing: 'new' for adding, or a record id for editing; null = view-only
-  const [inlineEditId, setInlineEditId] = useState<number | 'new' | null>(null);
+  // Inline add form: 'new' or null
+  const [inlineEditId, setInlineEditId] = useState<'new' | null>(null);
   const [editName, setEditName] = useState('');
   const [editText, setEditText] = useState('');
   const [editJson, setEditJson] = useState<Record<string, any> | null>(null);
@@ -284,12 +284,10 @@ function SablonaiTab() {
   const [generating, setGenerating] = useState(false);
   const [structureUnlocked, setStructureUnlocked] = useState(false);
 
-  // Preview (view mode — eye icon)
-  const [previewId, setPreviewId] = useState<number | null>(null);
-
   // Delete
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [generatingId, setGeneratingId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -317,16 +315,6 @@ function SablonaiTab() {
   const startNew = () => {
     resetInline();
     setInlineEditId('new');
-    setPreviewId(null);
-  };
-
-  const startEdit = (s: MedziaguSablonas) => {
-    resetInline();
-    setInlineEditId(s.id);
-    setEditName(s.name);
-    setEditText(s.raw_text);
-    setEditJson(s.structured_json);
-    setPreviewId(null);
   };
 
   const handleSave = async () => {
@@ -335,11 +323,7 @@ function SablonaiTab() {
     setSaving(true);
     setFormError(null);
     try {
-      if (inlineEditId === 'new') {
-        await createSablonas({ name: editName.trim(), raw_text: editText.trim(), structured_json: editJson });
-      } else if (typeof inlineEditId === 'number') {
-        await updateSablonas(inlineEditId, { name: editName.trim(), raw_text: editText.trim(), structured_json: editJson });
-      }
+      await createSablonas({ name: editName.trim(), raw_text: editText.trim(), structured_json: editJson });
       resetInline();
       await loadData();
     } catch (err: any) {
@@ -362,11 +346,6 @@ function SablonaiTab() {
         const firstLine = rawText.trim().split('\n')[0].trim();
         if (firstLine) setEditName(firstLine);
       }
-      // If editing an existing record, auto-save the JSON
-      if (typeof inlineEditId === 'number') {
-        await updateSablonas(inlineEditId, { structured_json: json });
-        await loadData();
-      }
     } catch (err: any) {
       setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
     } finally {
@@ -376,6 +355,7 @@ function SablonaiTab() {
 
   const handleViewGenerate = async (s: MedziaguSablonas) => {
     setGenerating(true);
+    setGeneratingId(s.id);
     setFormError(null);
     try {
       const json = await generateStructuredJson(s.raw_text.trim());
@@ -386,6 +366,7 @@ function SablonaiTab() {
       setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
     } finally {
       setGenerating(false);
+      setGeneratingId(null);
     }
   };
 
@@ -394,7 +375,6 @@ function SablonaiTab() {
     try {
       await deleteSablonas(id);
       setConfirmDeleteId(null);
-      if (inlineEditId === id) resetInline();
       await loadData();
     } catch (err: any) {
       console.error('Delete error:', err);
@@ -416,7 +396,7 @@ function SablonaiTab() {
         return;
       }
       // Trigger generate
-      if (record && inlineEditId !== record.id) {
+      if (record) {
         handleViewGenerate(record);
       } else {
         handleGenerate(rawText);
@@ -577,102 +557,63 @@ function SablonaiTab() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,320px))] justify-center gap-3">
           {sablonai.map(s => {
-            const isEditing = inlineEditId === s.id;
-            const isPreviewing = previewId === s.id && !isEditing;
-
             return (
               <div
                 key={s.id}
                 className="group rounded-xl border p-3.5 transition-all min-h-[180px] flex flex-col"
                 style={{
-                  borderColor: isEditing ? '#007AFF' : 'rgba(0,0,0,0.06)',
-                  background: isEditing ? 'rgba(0,122,255,0.03)' : '#fff',
-                  boxShadow: isEditing ? '0 0 0 1px rgba(0,122,255,0.2)' : undefined,
+                  borderColor: 'rgba(0,0,0,0.06)',
+                  background: '#fff',
                 }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    {isEditing ? (
-                      <input
-                        value={editName}
-                        onChange={e => setEditName(e.target.value)}
-                        className="text-sm font-semibold bg-transparent border-b outline-none w-full py-0.5 transition-colors focus:border-blue-400"
-                        style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
-                        autoFocus
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
-                        {s.structured_json && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
-                        )}
-                      </div>
-                    )}
-                    {!isEditing && !isPreviewing && (
-                      <p className="text-xs mt-0.5 text-base-content/45">{s.raw_text.split('\n')[0] || 'Tuščias'}</p>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
+                      {s.structured_json && (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
+                      )}
+                    </div>
+                    <p className="text-xs mt-0.5 text-base-content/45">{s.raw_text.split('\n')[0] || 'Tuščias'}</p>
                   </div>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: isEditing || isPreviewing ? 1 : undefined }}>
-                    {isEditing ? (
-                      <>
-                        <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
-                          style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
-                          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                          Išsaugoti
-                        </button>
-                        <button onClick={resetInline} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]">
-                          <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => setPreviewId(previewId === s.id ? null : s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]" title="Peržiūrėti">
-                          <Eye className="w-3.5 h-3.5" style={{ color: isPreviewing ? '#007AFF' : '#8a857f' }} />
-                        </button>
-                        <button onClick={() => startEdit(s)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]" title="Redaguoti">
-                          <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-                        </button>
-                        <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-red-50" title="Ištrinti">
-                          <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
-                        </button>
-                      </>
-                    )}
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleViewGenerate(s)}
+                      disabled={generating}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-60"
+                      style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                    >
+                      {generating && generatingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                      Strūkturizuoti
+                    </button>
+                    <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-red-50" title="Ištrinti">
+                      <Trash2 className="w-3.5 h-3.5" style={{ color: '#FF3B30' }} />
+                    </button>
                   </div>
                 </div>
 
-                {!isEditing && !isPreviewing && (
-                  <div className="mt-2 rounded-lg p-2.5 flex-1" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
-                    <p
-                      className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-                      style={{
-                        color: '#5a5550',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 8,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {s.raw_text || 'Nėra teksto'}
-                    </p>
-                  </div>
-                )}
+                <div className="mt-2 rounded-lg p-2.5 flex-1" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
+                  <p
+                    className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+                    style={{
+                      color: '#5a5550',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 6,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {s.raw_text || 'Nėra teksto'}
+                  </p>
+                </div>
 
-                {/* Inline edit content */}
-                {isEditing && (
-                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f0ede8' }}>
-                    {formError && <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{formError}</p>}
-                    <CardContent rawText={s.raw_text} json={editJson} editable={true} record={s} />
-                  </div>
-                )}
-
-                {/* Preview (view mode) */}
-                {isPreviewing && (
-                  <div className="mt-3 pt-3" style={{ borderTop: '1px solid #f0ede8' }}>
-                    {formError && <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{formError}</p>}
-                    <CardContent rawText={s.raw_text} json={s.structured_json} editable={false} record={s} />
-                  </div>
-                )}
+                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015]">
+                  {s.structured_json ? (
+                    <MaterialSlateView data={s.structured_json} compact />
+                  ) : (
+                    <p className="text-xs italic text-base-content/35">Struktūra dar nesugeneruota</p>
+                  )}
+                </div>
 
                 {/* Delete confirmation */}
                 {confirmDeleteId === s.id && (
