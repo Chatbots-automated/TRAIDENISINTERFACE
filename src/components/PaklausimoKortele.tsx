@@ -2953,7 +2953,7 @@ function TabMedziagos({
   useEffect(() => {
     const slate = currentTalposRow?.material_slate;
     if (slate) {
-      setLocalSlate(slate);
+      setLocalSlate(normalizeStructuredSlate(slate) || slate);
       setMode('template');
     } else {
       setLocalSlate(null);
@@ -3029,15 +3029,18 @@ function TabMedziagos({
 
   /** Render structured slate data — delegates to shared MaterialSlateView */
   const renderSlateData = (data: Record<string, any>) => {
-    if (!data || typeof data !== 'object') {
+    const normalized = normalizeStructuredSlate(data) || data;
+    if (!normalized || typeof normalized !== 'object') {
       return <p className="text-xs text-base-content/40">Nėra tinkamų šablono duomenų atvaizdavimui.</p>;
     }
-    return <MaterialSlateView data={data} />;
+    return <MaterialSlateView data={normalized} />;
   };
 
   /** Template card — used in template picker overlay; compact domain-aware display */
   const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
-    const plainPreview = (template.raw_text || '').trim();
+    const plainPreview = typeof template.raw_text === 'string'
+      ? template.raw_text.trim()
+      : (template.raw_text == null ? '' : String(template.raw_text));
 
     return (
       <div
