@@ -2129,10 +2129,10 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
 
       {!readOnly && !addingSide && (
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-base-content/10">
-          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl transition-all text-base-content" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
+          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl transition-all duration-200 text-base-content/70 border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">
             <Plus className="w-3.5 h-3.5" /> Gavėjas
           </button>
-          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl text-white transition-all hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
+          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl text-white transition-all duration-200 hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}>
             <Plus className="w-3.5 h-3.5" /> Komanda
           </button>
         </div>
@@ -2166,15 +2166,14 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
               <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmDeleteIdx(null)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/65 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03]"
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={() => handleDelete(confirmDeleteIdx)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-white transition-all duration-200 hover:opacity-90"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Ištrinti
                 </button>
@@ -2437,8 +2436,8 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
         {!readOnly && (
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
-            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-xl text-white transition-all duration-200 hover:brightness-95"
+            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
           >
             <Upload className="w-3.5 h-3.5" /> Įkelti
           </button>
@@ -3208,7 +3207,7 @@ function TabMedziagos({
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => setShowTemplatePicker(true)}
-                    className="text-[10px] px-2 py-1 rounded border border-base-content/10 text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5 transition-colors"
+                    className="text-[10px] px-2.5 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
                   >
                     Keisti šabloną
                   </button>
@@ -3299,12 +3298,12 @@ function TabMedziagos({
 
           {/* Prediction mode toggle */}
           <div className="flex items-center gap-1 mb-2 shrink-0">
-            <div className="inline-flex rounded-[8px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
+            <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
               {(['math', 'ai'] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setPredictionMode(m)}
-                  className={`px-2.5 py-1 rounded-[6px] text-[10px] font-medium transition-all ${predictionMode === m ? 'text-base-content' : 'text-base-content/40'}`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${predictionMode === m ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
                   style={predictionMode === m ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
                 >
                   {m === 'math' ? 'Matematinė' : 'Su DI'}
@@ -3317,8 +3316,8 @@ function TabMedziagos({
           <button
             onClick={() => estimatePrice(predictionMode)}
             disabled={priceEstimating}
-            className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 mb-2 shrink-0"
-            style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
+            className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium text-white transition-all duration-200 disabled:opacity-50 mb-2 shrink-0 hover:brightness-95"
+            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
           >
             {priceEstimating ? (
               <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Skaičiuojama...</>
@@ -3665,7 +3664,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
               <button
                 onClick={() => dervaResult && saveDervaMusu(dervaResult)}
                 disabled={!dervaResult || selecting || dervaMusuSaving}
-                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-xl transition-all duration-200"
                 style={{
                   background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
                   color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
@@ -3683,8 +3682,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             <button
               onClick={triggerDervaSelect}
               disabled={selecting}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl text-white transition-all duration-200 hover:brightness-95 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
             >
               {isCurrentTankSelecting
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
