@@ -1086,8 +1086,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'lentele' | 'sablonai' | 'grafa' | 'analize'>(() => {
-    const hash = window.location.hash.replace('#', '') as 'lentele' | 'grafa' | 'analize';
-    return ['lentele', 'grafa', 'analize'].includes(hash) ? hash : 'lentele';
+    const hash = window.location.hash.replace('#', '') as 'lentele' | 'sablonai' | 'grafa' | 'analize';
+    return ['lentele', 'sablonai', 'grafa', 'analize'].includes(hash) ? hash : 'lentele';
   });
 
   // Persist active tab in URL hash

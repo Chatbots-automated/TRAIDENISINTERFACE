@@ -2985,7 +2985,7 @@ function TabMedziagos({
 
   /** Template card — used in template picker overlay; compact domain-aware display */
   const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
-    const json = template.structured_json;
+    const plainPreview = (template.raw_text || '').trim();
 
     return (
       <div
@@ -3005,14 +3005,25 @@ function TabMedziagos({
           </div>
         </div>
 
-        {/* Body: compact domain-aware view or placeholder */}
-        {json ? (
-          <MaterialSlateView data={json} compact />
-        ) : (
-          <div className="rounded-lg p-3 text-center" style={{ background: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.04)' }}>
-            <span className="text-[10px] italic text-base-content/30">Struktūra nesugeneruota</span>
-          </div>
-        )}
+        {/* Body: plain-text preview */}
+        <div className="rounded-lg p-2.5" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
+          {plainPreview ? (
+            <p
+              className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+              style={{
+                color: '#5a5550',
+                display: '-webkit-box',
+                WebkitLineClamp: 8,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {plainPreview}
+            </p>
+          ) : (
+            <span className="text-[10px] italic text-base-content/30">Nėra teksto</span>
+          )}
+        </div>
       </div>
     );
   };

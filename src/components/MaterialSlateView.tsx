@@ -24,24 +24,6 @@ const cleanStr = (v: any): string => {
   return v.replace(/\\n/g, '\n').replace(/\\t/g, ' ').trim();
 };
 
-const humanizeKey = (key: string): string =>
-  key
-    .replace(/_/g, ' ')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/\b\w/g, c => c.toUpperCase())
-    .trim();
-
-const tryParseJsonLikeString = (value: string): unknown => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (!(trimmed.startsWith('{') || trimmed.startsWith('['))) return null;
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-};
-
 // ---------------------------------------------------------------------------
 // Subcomponents
 // ---------------------------------------------------------------------------
@@ -446,30 +428,11 @@ function LegacyItemsView({ data, compact }: { data: Record<string, any>; compact
 // Generic fallback for unknown structures
 // ---------------------------------------------------------------------------
 
-function GenericView({ data, compact }: { data: Record<string, any>; compact?: boolean }) {
+function GenericView({ data }: { data: Record<string, any> }) {
   const entries = Object.entries(data).filter(([k]) => !k.startsWith('_'));
 
-  const formatLabel = (key: string): string => humanizeKey(key);
-
-  const summarizeCompact = (value: any): string => {
-    if (value === null || value === undefined || value === '') return '—';
-    if (typeof value === 'boolean') return value ? 'Taip' : 'Ne';
-    if (typeof value === 'number') return String(fmtKg(value));
-    if (typeof value === 'string') {
-      const parsed = tryParseJsonLikeString(value);
-      if (parsed && typeof parsed === 'object') return summarizeCompact(parsed);
-      return cleanStr(value).replace(/\n+/g, ' · ');
-    }
-    if (Array.isArray(value)) {
-      if (value.length === 0) return 'Tuščias';
-      return value.slice(0, 3).map(v => summarizeCompact(v)).join(' • ');
-    }
-    if (typeof value === 'object') {
-      const objEntries = Object.entries(value).filter(([k]) => !k.startsWith('_'));
-      return objEntries.slice(0, 3).map(([k, v]) => `${humanizeKey(k)}: ${summarizeCompact(v)}`).join(' • ');
-    }
-    return String(value);
-  };
+  const formatLabel = (key: string): string =>
+    key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
   const renderValue = (value: any, depth: number = 0): React.ReactNode => {
     if (value === null || value === undefined) return <span style={{ color: '#b5b0aa', fontStyle: 'italic' }}>—</span>;
@@ -481,14 +444,6 @@ function GenericView({ data, compact }: { data: Record<string, any>; compact?: b
     if (typeof value === 'number') return <span className="text-xs font-semibold font-mono" style={{ color: '#3d3935' }}>{fmtKg(value)}</span>;
     if (typeof value === 'string') {
       const cleaned = cleanStr(value);
-      const parsed = tryParseJsonLikeString(cleaned);
-      if (parsed && typeof parsed === 'object') {
-        return (
-          <div className="rounded-lg p-2" style={{ background: depth === 0 ? '#fafaf8' : '#f5f3f0', border: '1px solid #f0ede8' }}>
-            {renderObject(parsed as Record<string, any>, depth + 1)}
-          </div>
-        );
-      }
       if (cleaned.includes('\n')) return <div className="text-xs whitespace-pre-wrap" style={{ color: '#3d3935', lineHeight: '1.5' }}>{cleaned}</div>;
       return <span className="text-xs" style={{ color: '#3d3935' }}>{cleaned}</span>;
     }
@@ -536,29 +491,6 @@ function GenericView({ data, compact }: { data: Record<string, any>; compact?: b
     </div>
   );
 
-  if (compact) {
-    const compactRows = entries.slice(0, 6);
-    return (
-      <div className="rounded-lg p-2.5 space-y-1.5" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
-        {compactRows.map(([key, val]) => (
-          <div key={key} className="flex items-start justify-between gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0" style={{ color: '#8a857f' }}>
-              {formatLabel(key)}
-            </span>
-            <span className="text-[11px] text-right leading-relaxed" style={{ color: '#3d3935' }}>
-              {summarizeCompact(val)}
-            </span>
-          </div>
-        ))}
-        {entries.length > compactRows.length && (
-          <div className="pt-0.5 text-center">
-            <span className="text-[10px]" style={{ color: '#b5b0aa' }}>+{entries.length - compactRows.length} laukai</span>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-2">
       {entries.map(([key, val]) => (
@@ -591,5 +523,5 @@ export default function MaterialSlateView({ data, compact }: MaterialSlateViewPr
   }
 
   // Generic fallback
-  return <GenericView data={data} compact={compact} />;
+  return <GenericView data={data} />;
 }
