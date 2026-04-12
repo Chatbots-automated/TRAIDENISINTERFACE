@@ -3178,15 +3178,15 @@ function TabMedziagos({
                 <button
                   onClick={() => setShowTemplatePicker(true)}
                   disabled={sablonaiLoading || savingSlate}
-                  className="text-xs px-4 py-1.5 rounded-lg font-medium text-white transition-all hover:brightness-95 disabled:opacity-50"
-                  style={{ background: '#007AFF' }}
+                  className="text-xs px-4 py-1.5 rounded-xl font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
+                  style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}
                 >
                   Pasirinkti šabloną
                 </button>
                 <span className="text-xs text-base-content/30">arba</span>
                 <button
                   onClick={() => setMode('manual')}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-base-content/10 text-base-content/60 hover:bg-base-content/5 transition-colors"
+                  className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
                 >
                   Įvesti rankiniu būdu
                 </button>
@@ -3280,8 +3280,8 @@ function TabMedziagos({
                 <button
                   onClick={handleSaveManual}
                   disabled={savingSlate || manualRows.every(r => !r.name.trim())}
-                  className="text-xs px-3 py-1 rounded-lg text-white font-medium disabled:opacity-50 transition-colors"
-                  style={{ background: '#007AFF' }}
+                  className="text-xs px-3 py-1 rounded-xl text-white font-medium disabled:opacity-50 transition-colors duration-200"
+                  style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}
                 >
                   {savingSlate ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : <Save className="w-3 h-3 inline mr-1" />}
                   Išsaugoti
@@ -4148,14 +4148,13 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               <button
                 onClick={handleSaveOnly}
                 disabled={updating || !hasContextChanges}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-xs font-medium transition-all mt-3 ${
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 mt-3 border ${
                   updateStatus === 'saved'
-                    ? 'text-success bg-success/10 border border-success/20'
+                    ? 'text-success bg-success/10 border-success/20'
                     : hasContextChanges
-                      ? 'text-base-content/70 hover:bg-base-content/5'
-                      : 'text-base-content/30'
+                      ? 'text-base-content/70 bg-base-100 border-base-content/15 hover:bg-base-content/[0.03]'
+                      : 'text-base-content/30 bg-base-100 border-base-content/10'
                 } disabled:opacity-50`}
-                style={updateStatus !== 'saved' ? { background: '#f8f8f9', border: '1px solid #e5e5e6' } : undefined}
               >
                 {updatingMode === 'save'
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</>
@@ -4225,16 +4224,14 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <div className="flex gap-2">
                   <button
                     onClick={onClose}
-                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/65 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03]"
                   >
                     Uždaryti
                   </button>
                   <button
                     onClick={() => { executeSaveAndProcess(); }}
                     disabled={updating}
-                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/70 transition-all hover:bg-base-content/5 disabled:opacity-60"
-                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/75 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03] disabled:opacity-60"
                   >
                     {updatingMode === 'save' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</> : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>}
                   </button>
@@ -4274,16 +4271,15 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
                   disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5 disabled:opacity-60"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/65 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03] disabled:opacity-60"
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={handleDeleteRecord}
                   disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-white transition-all duration-200 hover:opacity-90 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.10)' }}
                 >
                   {deleting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Trinama...</> : <><Trash2 className="w-3.5 h-3.5" /> Ištrinti</>}
                 </button>
