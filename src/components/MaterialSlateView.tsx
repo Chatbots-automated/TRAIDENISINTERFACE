@@ -429,7 +429,9 @@ function LegacyItemsView({ data, compact }: { data: Record<string, any>; compact
             <div key={k} className="flex items-center justify-between gap-2 px-2">
               <span className="text-[10px]" style={{ color: '#8a857f' }}>{k.replace(/_/g, ' ')}</span>
               <span className="text-[10px] font-medium truncate max-w-[200px]" style={{ color: '#5a5550' }}>
-                {typeof v === 'object' ? JSON.stringify(v) : cleanStr(v)}
+                {typeof v === 'object'
+                  ? 'Struktūrizuota reikšmė'
+                  : cleanStr(v)}
               </span>
             </div>
           ))}

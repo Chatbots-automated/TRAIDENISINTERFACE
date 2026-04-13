@@ -277,6 +277,61 @@ function formatInline(text: string): React.ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
+type NormalizedDisplayData =
+  | { kind: 'structured'; data: Record<string, any> }
+  | { kind: 'text'; text: string }
+  | { kind: 'scalar'; value: string }
+  | { kind: 'empty' };
+
+function looksLikeJsonString(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const t = value.trim();
+  if (!t) return false;
+  return (
+    (t.startsWith('{') && t.endsWith('}')) ||
+    (t.startsWith('[') && t.endsWith(']'))
+  );
+}
+
+function safeParseJson(value: unknown): any | null {
+  if (typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function isRenderableStructuredData(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(v => v !== null && v !== undefined);
+  return !!value && typeof value === 'object';
+}
+
+function normalizeDisplayData(value: unknown): NormalizedDisplayData {
+  if (value === null || value === undefined) return { kind: 'empty' };
+
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t) return { kind: 'empty' };
+    if (looksLikeJsonString(t)) {
+      const parsed = safeParseJson(t);
+      if (isRenderableStructuredData(parsed)) {
+        if (Array.isArray(parsed)) return { kind: 'structured', data: { items: parsed } };
+        return { kind: 'structured', data: parsed };
+      }
+    }
+    return { kind: 'text', text: value };
+  }
+
+  if (isRenderableStructuredData(value)) {
+    if (Array.isArray(value)) return { kind: 'structured', data: { items: value } };
+    return { kind: 'structured', data: value as Record<string, any> };
+  }
+
+  if (typeof value === 'boolean') return { kind: 'scalar', value: value ? 'Taip' : 'Ne' };
+  return { kind: 'scalar', value: String(value) };
+}
+
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split('\n');
 
@@ -308,6 +363,20 @@ function MarkdownText({ text }: { text: string }) {
       })}
     </div>
   );
+}
+
+function NormalizedDisplayRenderer({ value }: { value: unknown }) {
+  const normalized = normalizeDisplayData(value);
+  if (normalized.kind === 'empty') return <span className="text-base-content/25">—</span>;
+  if (normalized.kind === 'structured') {
+    return (
+      <div className="rounded-xl border border-base-content/8 bg-base-content/[0.015] p-2.5">
+        <MaterialSlateView data={normalized.data} variant="panel" />
+      </div>
+    );
+  }
+  if (normalized.kind === 'scalar') return <span>{normalized.value}</span>;
+  return <MarkdownText text={normalized.text} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -447,7 +516,9 @@ function NestedObjectField({ label, obj }: { label: string; obj: Record<string, 
           {entries.map(([k, v]) => (
             <div key={k} className="flex gap-2">
               <span className="text-xs text-base-content/40 shrink-0">{formatMetaLabel(k)}:</span>
-              <span className="text-xs text-base-content font-medium">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+              <div className="text-xs text-base-content font-medium min-w-0">
+                <NormalizedDisplayRenderer value={v} />
+              </div>
             </div>
           ))}
         </div>
@@ -1258,8 +1329,12 @@ function TabTalpos({
                               {/* Group rows */}
                               {Object.entries(entry.obj).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
-                                const childObj = tryParseJsonObject(cv);
-                                const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
+                                const normalizedCv = normalizeDisplayData(cv);
+                                const displayVal = normalizedCv.kind === 'scalar'
+                                  ? normalizedCv.value
+                                  : normalizedCv.kind === 'text'
+                                    ? normalizedCv.text
+                                    : '';
                                 return (
                                   <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors">
                                     <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '72px', maxWidth: '100px' }} title={formatMetaLabel(ck)}>
@@ -1286,13 +1361,19 @@ function TabTalpos({
                                         </button>
                                       </div>
                                     ) : (
-                                      <span
-                                        onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
-                                        className={`text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
-                                        title={displayVal || undefined}
-                                      >
-                                        {displayVal || <span className="text-base-content/25">—</span>}
-                                      </span>
+                                      <div className="text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug">
+                                        {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar') ? (
+                                          <span
+                                            onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
+                                            className={`${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                            title={displayVal || undefined}
+                                          >
+                                            {displayVal || <span className="text-base-content/25">—</span>}
+                                          </span>
+                                        ) : (
+                                          <NormalizedDisplayRenderer value={cv} />
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                 );
@@ -1402,7 +1483,7 @@ function TabTalpos({
                         className="overflow-auto rounded-xl p-3 border border-base-content/8 bg-base-content/[0.02]"
                         style={{ maxHeight: '220px' }}
                       >
-                        <MarkdownText text={String(currentTalposRow.description)} />
+                        <NormalizedDisplayRenderer value={currentTalposRow.description} />
                       </div>
                     ) : (
                       <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
@@ -2068,7 +2149,27 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
                   {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
                   {meta.position && <InfoField label="Pozicija" value={meta.position} />}
                   {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
-                  {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                  {extraMeta.map(([k, v]) => {
+                    const normalized = normalizeDisplayData(v);
+                    return (
+                      <div key={k}>
+                        <dt className="text-xs text-base-content/40">{k.replace(/_/g, ' ')}</dt>
+                        <dd className="text-sm font-medium mt-0.5 text-base-content">
+                          <NormalizedDisplayRenderer
+                            value={
+                              normalized.kind === 'structured'
+                                ? normalized.data
+                                : normalized.kind === 'text'
+                                  ? normalized.text
+                                  : normalized.kind === 'scalar'
+                                    ? normalized.value
+                                    : null
+                            }
+                          />
+                        </dd>
+                      </div>
+                    );
+                  })}
                 </div>
               </CollapsibleSection>
             </div>
@@ -3122,9 +3223,12 @@ function TabMedziagos({
   };
 
   // Get AI text from local override or talpos.json
-  const aiText = localKainaAiText
-    ?? (typeof currentTalposRow?.kaina_ai === 'string' ? currentTalposRow.kaina_ai : null)
-    ?? (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
+  const aiText: unknown = localKainaAiText
+    ?? (currentTalposRow?.kaina_ai ?? null)
+    ?? (() => {
+      const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text;
+      return v ?? null;
+    })();
 
   /** Render structured slate data — delegates to shared MaterialSlateView */
   const renderSlateData = (data: Record<string, any>) => {
@@ -3489,7 +3593,7 @@ function TabMedziagos({
           {/* AI response text */}
           {aiText ? (
             <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3">
-              <MarkdownText text={aiText} />
+              <NormalizedDisplayRenderer value={aiText} />
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
@@ -3771,7 +3875,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         </div>
       ) : dervaMusu ? (
         <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
-          <MarkdownText text={dervaMusu} />
+          <NormalizedDisplayRenderer value={dervaMusu} />
         </div>
       ) : (
         <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
@@ -3882,7 +3986,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
       {/* Recommendation display — hide content when already applied to derva_musu */}
       {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
         <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
-          <MarkdownText text={dervaResult} />
+          <NormalizedDisplayRenderer value={dervaResult} />
         </div>
       ) : !isCurrentTankSelecting && !dervaResult && (
         <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
