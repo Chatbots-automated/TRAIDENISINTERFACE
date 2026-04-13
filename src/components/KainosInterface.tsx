@@ -592,7 +592,7 @@ function SablonaiTab() {
                 <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
                   {s.structured_json ? (
                     <div className="max-h-[320px] overflow-y-auto">
-                      <MaterialSlateView data={s.structured_json} />
+                      <MaterialSlateView data={s.structured_json} variant="panel" />
                     </div>
                   ) : (
                     <p

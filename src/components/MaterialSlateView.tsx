@@ -8,6 +8,7 @@ import React from 'react';
 interface MaterialSlateViewProps {
   data: Record<string, any>;
   compact?: boolean;
+  variant?: 'default' | 'panel';
 }
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,20 @@ const fmtKg = (n: number | null | undefined): string => {
 const cleanStr = (v: any): string => {
   if (typeof v !== 'string') return String(v ?? '');
   return v.replace(/\\n/g, '\n').replace(/\\t/g, ' ').trim();
+};
+
+const formatLabel = (key: string): string =>
+  key
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\b\w/g, c => c.toUpperCase());
+
+const hasUsableValue = (value: any): boolean => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return cleanStr(value).length > 0;
+  if (Array.isArray(value)) return value.some(hasUsableValue);
+  if (typeof value === 'object') return Object.entries(value).some(([k, v]) => !k.startsWith('_') && hasUsableValue(v));
+  return true;
 };
 
 // ---------------------------------------------------------------------------
@@ -308,7 +323,7 @@ function FullDomainView({ data }: { data: Record<string, any> }) {
 // ---------------------------------------------------------------------------
 
 function CompactDomainView({ data }: { data: Record<string, any> }) {
-  const { product, body, wrapped_section, ribs, ends, seam_lamination, total_estimate } = data;
+  const { body, wrapped_section, ribs, ends, seam_lamination, total_estimate } = data;
 
   // Collect all materials from all sections for a flat list
   const allMaterials: Array<{ name: string; amount_kg: number; extra_kg?: number; section: string }> = [];
@@ -504,10 +519,124 @@ function GenericView({ data }: { data: Record<string, any> }) {
 }
 
 // ---------------------------------------------------------------------------
+// Premium panel variant for template cards
+// ---------------------------------------------------------------------------
+
+function PanelValue({ value, depth = 0 }: { value: any; depth?: number }) {
+  if (!hasUsableValue(value)) return null;
+
+  if (typeof value === 'boolean') {
+    return <p className="text-sm font-medium text-base-content/80">{value ? 'Taip' : 'Ne'}</p>;
+  }
+
+  if (typeof value === 'number') {
+    return <p className="text-sm font-medium text-base-content/80">{value.toLocaleString('lt-LT')}</p>;
+  }
+
+  if (typeof value === 'string') {
+    return <p className="text-sm font-medium text-base-content/80 whitespace-pre-wrap break-words">{cleanStr(value)}</p>;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.every(item => typeof item !== 'object' || item === null)) {
+      return (
+        <div className="flex flex-wrap gap-1.5">
+          {value.filter(hasUsableValue).map((item, idx) => (
+            <span key={idx} className="px-2 py-1 rounded-lg border border-base-content/10 bg-base-100 text-xs font-medium text-base-content/75">
+              {typeof item === 'boolean' ? (item ? 'Taip' : 'Ne') : cleanStr(item)}
+            </span>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {value.filter(hasUsableValue).map((item, idx) => (
+          <div key={idx} className="rounded-xl border border-base-content/10 bg-base-content/[0.015] p-2.5">
+            <PanelObject obj={item} depth={depth + 1} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof value === 'object') {
+    return (
+      <div className={`rounded-xl border border-base-content/10 ${depth === 0 ? 'bg-base-content/[0.015]' : 'bg-base-100'} p-2.5`}>
+        <PanelObject obj={value} depth={depth + 1} />
+      </div>
+    );
+  }
+
+  return <p className="text-sm font-medium text-base-content/80">{String(value)}</p>;
+}
+
+function PanelField({ label, value, depth = 0 }: { label: string; value: any; depth?: number }) {
+  if (!hasUsableValue(value)) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[10px] uppercase tracking-[0.08em] text-base-content/45">{formatLabel(label)}</p>
+      <PanelValue value={value} depth={depth} />
+    </div>
+  );
+}
+
+function PanelObject({ obj, depth = 0 }: { obj: Record<string, any>; depth?: number }) {
+  const entries = Object.entries(obj).filter(([k, v]) => !k.startsWith('_') && hasUsableValue(v));
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      {entries.map(([key, val]) => (
+        <PanelField key={key} label={key} value={val} depth={depth} />
+      ))}
+    </div>
+  );
+}
+
+function PanelSection({ label, value }: { label: string; value: any }) {
+  if (!hasUsableValue(value)) return null;
+
+  const primitive = typeof value !== 'object' || value === null;
+  return (
+    <section className="rounded-2xl border border-base-content/10 bg-base-100 p-3">
+      <p className="text-[10px] uppercase tracking-[0.1em] text-base-content/45 mb-2">{formatLabel(label)}</p>
+      {primitive ? (
+        <PanelValue value={value} />
+      ) : Array.isArray(value) ? (
+        <PanelValue value={value} />
+      ) : (
+        <PanelObject obj={value} />
+      )}
+    </section>
+  );
+}
+
+function PremiumPanelView({ data }: { data: Record<string, any> }) {
+  const entries = Object.entries(data).filter(([k, v]) => !k.startsWith('_') && hasUsableValue(v));
+  if (entries.length === 0) {
+    return <p className="text-xs italic text-base-content/40">Nėra struktūrizuotų duomenų</p>;
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {entries.map(([key, value]) => (
+        <PanelSection key={key} label={key} value={value} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
-export default function MaterialSlateView({ data, compact }: MaterialSlateViewProps) {
+export default function MaterialSlateView({ data, compact, variant = 'default' }: MaterialSlateViewProps) {
+  if (variant === 'panel') {
+    return <PremiumPanelView data={data} />;
+  }
+
   // Detect new domain format
   const isDomainFormat = data.product || data.body || data.wrapped_section || data.seam_lamination;
   // Detect legacy items format
