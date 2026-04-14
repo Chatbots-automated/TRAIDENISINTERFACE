@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos, TALPOS_TABLE_FIELDS } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import { getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
@@ -590,13 +590,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     finally { setLoadingTalpos(false); }
   };
 
-  // Dynamically derive columns from talpos data
+  // Fixed talpos schema columns from Directus table definition
   const talposCols = useMemo(() => {
-    if (talposData.length === 0) return [] as string[];
-    const keys = new Set<string>();
-    for (const row of talposData) { Object.keys(row).forEach(k => keys.add(k)); }
-    return Array.from(keys);
-  }, [talposData]);
+    return [...TALPOS_TABLE_FIELDS] as string[];
+  }, []);
 
   // Lookup map: talpos id (string) → row — used by nestandartiniai table to show Talpa m3
   const talposById = useMemo(() => {
