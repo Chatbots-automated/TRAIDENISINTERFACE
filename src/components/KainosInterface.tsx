@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
-  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye, ArrowRight, Lock, Unlock,
+  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye, ArrowRight, Lock, Unlock, ChevronDown,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
@@ -282,6 +282,7 @@ function SablonaiTab() {
     isSaving: boolean;
     saveError: string | null;
   } | null>(null);
+  const [showSavedHint, setShowSavedHint] = useState(false);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Generate / structurize
@@ -326,6 +327,17 @@ function SablonaiTab() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [draftCard?.localId]);
+
+  useEffect(() => {
+    const shouldWarn = !!draftCard && (draftCard.isSaving || (!!draftCard.rawText.trim() && !draftCard.id));
+    if (!shouldWarn) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [draftCard]);
 
   const toggleCard = (id: string) => {
     setExpandedCards(prev => {
@@ -378,10 +390,12 @@ function SablonaiTab() {
         if (!draftCard.id) {
           const created = await createSablonas({ name: inferredName, raw_text: rawText, structured_json: null });
           setDraftCard(prev => prev ? { ...prev, id: created.id, isSaving: false } : prev);
+          setShowSavedHint(true);
           await loadData();
         } else {
           await updateSablonas(draftCard.id, { name: inferredName, raw_text: rawText });
           setDraftCard(prev => prev ? { ...prev, isSaving: false } : prev);
+          setShowSavedHint(true);
           await loadData();
         }
       } catch (err: any) {
@@ -391,6 +405,12 @@ function SablonaiTab() {
 
     return () => window.clearTimeout(timer);
   }, [draftCard?.rawText, draftCard?.name, draftCard?.id, loadData]);
+
+  useEffect(() => {
+    if (!showSavedHint) return;
+    const timer = window.setTimeout(() => setShowSavedHint(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [showSavedHint]);
 
   const handleViewGenerate = async (s: MedziaguSablonas) => {
     setGenerating(true);
@@ -475,7 +495,62 @@ function SablonaiTab() {
           <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>{capacityFilter ? 'Pakeiskite V- filtro reikšmę' : 'Sukurkite pirmą šabloną paspaudę „Naujas šablonas"'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,320px))] justify-center items-start gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,360px))] justify-center items-start gap-3">
+          {draftCard && (
+            <div
+              key={draftCard.localId}
+              className="rounded-xl border p-3.5 transition-all min-h-[160px] flex flex-col"
+              style={{
+                borderColor: '#007AFF',
+                background: 'rgba(0,122,255,0.04)',
+                boxShadow: '0 0 0 1px rgba(0,122,255,0.12) inset',
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <input
+                    value={draftCard.name}
+                    onChange={e => setDraftCard(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                    placeholder="Šablono pavadinimas..."
+                    className="text-sm font-semibold bg-transparent border-b outline-none w-full py-0.5 transition-colors focus:border-blue-400"
+                    style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
+                  />
+                </div>
+                <button
+                  onClick={() => toggleCard(draftCard.localId)}
+                  className="p-1 text-base-content/60 hover:text-base-content"
+                  title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
+                >
+                  <ChevronDown className={`w-4 h-4 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+
+              {expandedCards[draftCard.localId] && (
+                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
+                  <textarea
+                    ref={draftTextareaRef}
+                    value={draftCard.rawText}
+                    onChange={e => setDraftCard(prev => prev ? { ...prev, rawText: e.target.value } : prev)}
+                    placeholder="Įveskite medžiagų aprašymą..."
+                    rows={8}
+                    className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
+                    style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
+                  />
+                  <div className="mt-2 min-h-[16px]">
+                    {draftCard.isSaving ? (
+                      <p className="text-[11px] text-base-content/55">Išsaugoma...</p>
+                    ) : showSavedHint ? (
+                      <p className="text-[11px]" style={{ color: '#34C759' }}>Išsaugota</p>
+                    ) : null}
+                    {draftCard.saveError && (
+                      <p className="text-xs mt-1" style={{ color: '#FF3B30' }}>{draftCard.saveError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {filteredSablonai.map(s => {
             const cardKey = String(s.id);
             const isExpanded = !!expandedCards[cardKey];
@@ -483,22 +558,15 @@ function SablonaiTab() {
             return (
               <div
                 key={s.id}
-                className="group rounded-xl border p-3.5 transition-all min-h-[76px] flex flex-col"
+                className={`group rounded-xl border p-3.5 transition-all flex flex-col ${isExpanded ? 'min-h-[180px]' : 'min-h-[60px]'}`}
                 style={{
                   borderColor: 'rgba(0,0,0,0.06)',
                   background: '#fff',
                 }}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1 flex items-center gap-2">
-                    <button
-                      onClick={() => toggleCard(cardKey)}
-                      className="w-6 h-6 inline-flex items-center justify-center rounded-md border border-base-content/10 hover:bg-base-content/[0.03]"
-                      title={isExpanded ? 'Sutraukti' : 'Išskleisti'}
-                    >
-                      <ArrowRight className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                    </button>
-                    <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
+                <div className={`flex items-center gap-3 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
+                  <div className={`min-w-0 flex-1 ${isExpanded ? '' : 'text-center'}`}>
+                    <h4 className={`text-sm font-semibold truncate ${isExpanded ? '' : 'mx-auto'}`} style={{ color: '#3d3935' }}>{s.name}</h4>
                   </div>
                   <div className="flex items-center gap-1">
                     {!s.structured_json && isExpanded && (
@@ -513,6 +581,13 @@ function SablonaiTab() {
                     )}
                     <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-white/65 backdrop-blur-sm hover:bg-white/80" title="Ištrinti">
                       <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
+                    </button>
+                    <button
+                      onClick={() => toggleCard(cardKey)}
+                      className="p-1 text-base-content/60 hover:text-base-content"
+                      title={isExpanded ? 'Sutraukti' : 'Išskleisti'}
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                     </button>
                   </div>
                 </div>
@@ -555,57 +630,6 @@ function SablonaiTab() {
             );
           })}
 
-          {draftCard && (
-            <div
-              key={draftCard.localId}
-              className="rounded-xl border p-3.5 transition-all min-h-[180px] flex flex-col"
-              style={{
-                borderColor: '#007AFF',
-                background: 'rgba(0,122,255,0.04)',
-                boxShadow: '0 0 0 1px rgba(0,122,255,0.12) inset',
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1 flex items-center gap-2">
-                  <button
-                    onClick={() => toggleCard(draftCard.localId)}
-                    className="w-6 h-6 inline-flex items-center justify-center rounded-md border border-base-content/10 hover:bg-base-content/[0.03]"
-                    title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
-                  >
-                    <ArrowRight className={`w-3.5 h-3.5 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-90' : ''}`} />
-                  </button>
-                  <input
-                    value={draftCard.name}
-                    onChange={e => setDraftCard(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                    placeholder="Šablono pavadinimas..."
-                    className="text-sm font-semibold bg-transparent border-b outline-none flex-1 py-0.5 transition-colors focus:border-blue-400"
-                    style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
-                  />
-                </div>
-                <div className="flex items-center gap-2 text-[11px]" style={{ color: '#007AFF' }}>
-                  {draftCard.isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  {draftCard.isSaving ? 'Saugoma...' : 'Automatinis išsaugojimas'}
-                </div>
-              </div>
-
-              {expandedCards[draftCard.localId] && (
-                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
-                  <textarea
-                    ref={draftTextareaRef}
-                    value={draftCard.rawText}
-                    onChange={e => setDraftCard(prev => prev ? { ...prev, rawText: e.target.value } : prev)}
-                    placeholder="Įveskite medžiagų aprašymą..."
-                    rows={8}
-                    className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
-                    style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
-                  />
-                  {draftCard.saveError && (
-                    <p className="text-xs mt-2" style={{ color: '#FF3B30' }}>{draftCard.saveError}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </div>
