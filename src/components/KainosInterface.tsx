@@ -389,6 +389,16 @@ function SablonaiTab() {
     });
   }, [sablonai, capacityFilter]);
 
+  const upsertLocalTemplate = useCallback((next: Partial<MedziaguSablonas> & { id: number }) => {
+    setSablonai(prev => {
+      const i = prev.findIndex(s => s.id === next.id);
+      if (i === -1) return [next as MedziaguSablonas, ...prev];
+      const copy = [...prev];
+      copy[i] = { ...copy[i], ...next };
+      return copy;
+    });
+  }, []);
+
   useEffect(() => {
     if (!draftCard) return;
     const rawText = draftCard.rawText.trim();
@@ -401,13 +411,13 @@ function SablonaiTab() {
         if (!draftCard.id) {
           const created = await createSablonas({ name: inferredName, raw_text: rawText, structured_json: null });
           setDraftCard(prev => prev ? { ...prev, id: created.id, isSaving: false } : prev);
+          upsertLocalTemplate(created);
           setShowSavedHint(true);
-          await loadData();
         } else {
           await updateSablonas(draftCard.id, { name: inferredName, raw_text: rawText });
           setDraftCard(prev => prev ? { ...prev, isSaving: false } : prev);
+          upsertLocalTemplate({ id: draftCard.id, name: inferredName, raw_text: rawText });
           setShowSavedHint(true);
-          await loadData();
         }
       } catch (err: any) {
         setDraftCard(prev => prev ? { ...prev, isSaving: false, saveError: err?.message || 'Nepavyko automatiškai išsaugoti' } : prev);
@@ -415,7 +425,7 @@ function SablonaiTab() {
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [draftCard?.rawText, draftCard?.name, draftCard?.id, loadData]);
+  }, [draftCard?.rawText, draftCard?.name, draftCard?.id, upsertLocalTemplate]);
 
   useEffect(() => {
     if (!showSavedHint) return;
@@ -449,6 +459,41 @@ function SablonaiTab() {
       console.error('Delete error:', err);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleFinishDraft = async () => {
+    if (!draftCard) return;
+    const rawText = draftCard.rawText.trim();
+    if (!rawText) {
+      setDraftCard(null);
+      return;
+    }
+
+    const inferredName = draftCard.name.trim() || rawText.split('\n')[0].trim() || 'Naujas šablonas';
+    setDraftCard(prev => prev ? { ...prev, isSaving: true, saveError: null, name: inferredName } : prev);
+    try {
+      let targetId = draftCard.id;
+      if (!targetId) {
+        const created = await createSablonas({ name: inferredName, raw_text: rawText, structured_json: null });
+        targetId = created.id;
+        upsertLocalTemplate(created);
+      } else {
+        await updateSablonas(targetId, { name: inferredName, raw_text: rawText });
+        upsertLocalTemplate({ id: targetId, name: inferredName, raw_text: rawText });
+      }
+      setDraftCard(null);
+      if (targetId) {
+        setExpandedCards(prev => {
+          const collapsed: Record<string, boolean> = {};
+          for (const key of Object.keys(prev)) collapsed[key] = false;
+          collapsed[String(targetId)] = true;
+          return collapsed;
+        });
+      }
+      setShowSavedHint(false);
+    } catch (err: any) {
+      setDraftCard(prev => prev ? { ...prev, isSaving: false, saveError: err?.message || 'Nepavyko išsaugoti' } : prev);
     }
   };
 
@@ -527,13 +572,25 @@ function SablonaiTab() {
                     style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
                   />
                 </div>
-                <button
-                  onClick={() => toggleCard(draftCard.localId)}
-                  className="p-1 text-base-content/60 hover:text-base-content"
-                  title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
-                >
-                  <ChevronDown className={`w-4 h-4 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-180' : ''}`} />
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {draftCard.id && (
+                    <button
+                      onClick={handleFinishDraft}
+                      disabled={draftCard.isSaving}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-base-content/15 bg-white/70 hover:bg-white disabled:opacity-50"
+                    >
+                      <Check className="w-3 h-3" />
+                      Baigti
+                    </button>
+                  )}
+                  <button
+                    onClick={() => toggleCard(draftCard.localId)}
+                    className="p-1 text-base-content/60 hover:text-base-content"
+                    title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
               </div>
 
               {expandedCards[draftCard.localId] && (
