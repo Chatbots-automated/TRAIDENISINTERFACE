@@ -375,7 +375,8 @@ function SablonaiTab() {
   const filteredSablonai = useMemo(() => {
     const normalized = capacityFilter.trim();
     if (!normalized) return sablonai;
-    return sablonai.filter(s => s.name.toLowerCase().includes(`v-${normalized.toLowerCase()}`));
+    const pattern = new RegExp(`\\bV\\s*[-–]?\\s*${normalized}(?=\\D|$)`, 'i');
+    return sablonai.filter(s => pattern.test(s.name));
   }, [sablonai, capacityFilter]);
 
   useEffect(() => {
