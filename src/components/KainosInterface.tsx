@@ -272,17 +272,20 @@ function SablonaiTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Inline add form: 'new' or null
-  const [inlineEditId, setInlineEditId] = useState<'new' | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editText, setEditText] = useState('');
-  const [editJson, setEditJson] = useState<Record<string, any> | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [draftCard, setDraftCard] = useState<{
+    localId: string;
+    id: number | null;
+    name: string;
+    rawText: string;
+    isSaving: boolean;
+    saveError: string | null;
+  } | null>(null);
+  const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Generate / structurize
   const [generating, setGenerating] = useState(false);
-  const [structureUnlocked, setStructureUnlocked] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Delete
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -303,55 +306,67 @@ function SablonaiTab() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const resetInline = () => {
-    setInlineEditId(null);
-    setEditName('');
-    setEditText('');
-    setEditJson(null);
-    setFormError(null);
-    setStructureUnlocked(false);
+  useEffect(() => {
+    setExpandedCards(prev => {
+      const next = { ...prev };
+      for (const s of sablonai) {
+        const key = String(s.id);
+        if (!(key in next)) next[key] = false;
+      }
+      return next;
+    });
+  }, [sablonai]);
+
+  useEffect(() => {
+    if (!draftCard) return;
+    const timer = window.setTimeout(() => {
+      draftTextareaRef.current?.focus();
+      draftTextareaRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [draftCard?.localId]);
+
+  const toggleCard = (id: string) => {
+    setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const startNew = () => {
-    resetInline();
-    setInlineEditId('new');
-  };
-
-  const handleSave = async () => {
-    if (!editName.trim()) { setFormError('Įveskite pavadinimą'); return; }
-    if (!editText.trim()) { setFormError('Įveskite medžiagų tekstą'); return; }
-    setSaving(true);
-    setFormError(null);
-    try {
-      await createSablonas({ name: editName.trim(), raw_text: editText.trim(), structured_json: editJson });
-      resetInline();
-      await loadData();
-    } catch (err: any) {
-      setFormError(err?.message || 'Nepavyko išsaugoti');
-    } finally {
-      setSaving(false);
+    if (draftCard) {
+      setExpandedCards(prev => ({ ...prev, [draftCard.localId]: true }));
+      draftTextareaRef.current?.focus();
+      return;
     }
+
+    const localId = `new-${Date.now()}`;
+    setDraftCard({ localId, id: null, name: '', rawText: '', isSaving: false, saveError: null });
+    setExpandedCards(prev => ({ ...prev, [localId]: true }));
   };
 
-  const handleGenerate = async (rawText: string) => {
-    if (!rawText.trim()) return;
-    setGenerating(true);
-    setFormError(null);
-    try {
-      const json = await generateStructuredJson(rawText.trim());
-      setEditJson(json);
-      setStructureUnlocked(false);
-      // Auto-extract name from first line if name is empty
-      if (!editName.trim()) {
-        const firstLine = rawText.trim().split('\n')[0].trim();
-        if (firstLine) setEditName(firstLine);
+  useEffect(() => {
+    if (!draftCard) return;
+    const rawText = draftCard.rawText.trim();
+    if (!rawText) return;
+
+    const timer = window.setTimeout(async () => {
+      const inferredName = draftCard.name.trim() || rawText.split('\n')[0].trim() || 'Naujas šablonas';
+      setDraftCard(prev => prev ? { ...prev, isSaving: true, saveError: null, name: inferredName } : prev);
+      try {
+        if (!draftCard.id) {
+          const created = await createSablonas({ name: inferredName, raw_text: rawText, structured_json: null });
+          setDraftCard(prev => prev ? { ...prev, id: created.id, isSaving: false } : prev);
+          await loadData();
+        } else {
+          await updateSablonas(draftCard.id, { name: inferredName, raw_text: rawText });
+          setDraftCard(prev => prev ? { ...prev, isSaving: false } : prev);
+          await loadData();
+        }
+      } catch (err: any) {
+        setDraftCard(prev => prev ? { ...prev, isSaving: false, saveError: err?.message || 'Nepavyko automatiškai išsaugoti' } : prev);
       }
-    } catch (err: any) {
-      setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
-    } finally {
-      setGenerating(false);
-    }
-  };
+    }, 700);
+
+    return () => window.clearTimeout(timer);
+  }, [draftCard?.rawText, draftCard?.name, draftCard?.id, loadData]);
 
   const handleViewGenerate = async (s: MedziaguSablonas) => {
     setGenerating(true);
@@ -360,7 +375,6 @@ function SablonaiTab() {
     try {
       const json = await generateStructuredJson(s.raw_text.trim());
       await updateSablonas(s.id, { structured_json: json });
-      setStructureUnlocked(false);
       await loadData();
     } catch (err: any) {
       setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
@@ -383,110 +397,6 @@ function SablonaiTab() {
     }
   };
 
-  // Arrow button between columns (structurize)
-  const StructureArrowButton = ({ hasJson, rawText, record }: { hasJson: boolean; rawText: string; record?: MedziaguSablonas }) => {
-    const [hovered, setHovered] = useState(false);
-    const isLocked = hasJson && !structureUnlocked;
-    const showUnlockLabel = isLocked && hovered;
-    const showStructLabel = !isLocked && hovered;
-
-    const handleClick = () => {
-      if (isLocked) {
-        setStructureUnlocked(true);
-        return;
-      }
-      // Trigger generate
-      if (record) {
-        handleViewGenerate(record);
-      } else {
-        handleGenerate(rawText);
-      }
-    };
-
-    return (
-      <div className="flex flex-col items-center justify-center px-2" style={{ width: '80px', flexShrink: 0 }}>
-        <button
-          onClick={handleClick}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          disabled={generating || (!rawText.trim() && !record)}
-          className="relative flex items-center justify-center rounded-full border transition-all disabled:opacity-40"
-          style={{
-            width: hovered ? 'auto' : '32px',
-            height: '32px',
-            minWidth: '32px',
-            borderColor: isLocked ? '#e5e2dd' : generating ? '#8b5cf6' : '#d1cdc7',
-            background: generating ? 'rgba(139,92,246,0.06)' : isLocked ? '#fafaf8' : hovered ? 'rgba(139,92,246,0.06)' : '#fff',
-            padding: hovered ? '0 10px' : '0',
-            whiteSpace: 'nowrap',
-          }}
-          title={isLocked ? 'Atrakinti' : 'Strukturizuoti'}
-        >
-          {generating ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#8b5cf6' }} />
-          ) : showUnlockLabel ? (
-            <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Atrakinti</span>
-          ) : showStructLabel ? (
-            <span className="text-[10px] font-medium" style={{ color: '#8b5cf6' }}>Strukturizuoti</span>
-          ) : isLocked ? (
-            <Lock className="w-3.5 h-3.5" style={{ color: '#b5b0aa' }} />
-          ) : (
-            <ArrowRight className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-          )}
-        </button>
-      </div>
-    );
-  };
-
-  /** Pretty-print a structured JSON value as clean UI */
-  const StructuredDataView = ({ data }: { data: Record<string, any> }) => (
-    <div className="rounded-lg p-3 overflow-y-auto" style={{ background: '#fafaf8', border: '1px solid #f0ede8', maxHeight: '300px' }}>
-      <MaterialSlateView data={data} />
-    </div>
-  );
-
-  // Shared 2-column card content for view/edit/add
-  const CardContent = ({ rawText, json, editable, record }: {
-    rawText: string;
-    json: Record<string, any> | null;
-    editable: boolean;
-    record?: MedziaguSablonas;
-  }) => (
-    <div className="flex items-stretch gap-2">
-      {/* Left: raw text */}
-      <div className="flex-1 min-w-0 rounded-xl border border-base-content/10 bg-base-100 p-2.5">
-        <p className="text-xs font-medium mb-1.5 text-base-content/50">Originalus tekstas</p>
-        {editable ? (
-          <textarea
-            value={editText}
-            onChange={e => setEditText(e.target.value)}
-            placeholder="Įveskite medžiagų aprašymą..."
-            rows={8}
-            className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
-            style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
-          />
-        ) : (
-          <pre className="text-xs font-mono whitespace-pre-wrap rounded-xl p-3" style={{ background: '#fafaf8', color: '#3d3935', border: '1px solid #f0ede8', lineHeight: '1.5', maxHeight: '300px', overflow: 'auto' }}>{rawText}</pre>
-        )}
-      </div>
-
-      {/* Middle: arrow button */}
-      <StructureArrowButton hasJson={!!(editable ? editJson : json)} rawText={editable ? editText : rawText} record={record} />
-
-      {/* Right: structured data */}
-      <div className="flex-1 min-w-0 rounded-xl border border-base-content/10 bg-base-100 p-2.5">
-        <p className="text-xs font-medium mb-1.5 text-base-content/50">Struktūrizuoti duomenys</p>
-        {(editable ? editJson : json) ? (
-          <StructuredDataView data={(editable ? editJson : json)!} />
-        ) : (
-          <div className="flex items-center justify-center rounded-lg p-3" style={{ background: '#fafaf8', border: '1px solid #f0ede8', minHeight: '80px' }}>
-            <p className="text-xs italic" style={{ color: '#b5b0aa' }}>Struktūra dar nesugeneruota</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -503,50 +413,25 @@ function SablonaiTab() {
         </div>
       )}
 
+      {formError && (
+        <div className="px-4 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,59,48,0.08)', color: '#FF3B30' }}>
+          {formError}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
         <p className="text-sm text-base-content/60">{sablonai.length} šablonai</p>
         <button
           onClick={startNew}
-          disabled={inlineEditId === 'new'}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80"
         >
           <Plus className="w-3.5 h-3.5" />Naujas šablonas
         </button>
       </div>
 
-      {/* New template card (inline) */}
-      {inlineEditId === 'new' && (
-        <div className="rounded-2xl border px-4 py-3 shadow-sm" style={{ borderColor: '#007AFF', background: '#fff' }}>
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <input
-                value={editName}
-                onChange={e => setEditName(e.target.value)}
-                placeholder="Šablono pavadinimas..."
-                className="text-sm font-semibold bg-transparent border-b outline-none flex-1 py-0.5 transition-colors focus:border-blue-400"
-                style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
-                autoFocus
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={handleSave} disabled={saving || !editName.trim() || !editText.trim()}
-                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80 disabled:opacity-50">
-                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                Išsaugoti
-              </button>
-              <button onClick={resetInline} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 hover:bg-base-content/[0.03]">
-                <X className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-              </button>
-            </div>
-          </div>
-          {formError && <p className="text-xs mb-2" style={{ color: '#FF3B30' }}>{formError}</p>}
-          <CardContent rawText="" json={null} editable={true} />
-        </div>
-      )}
-
       {/* Templates list */}
-      {sablonai.length === 0 && inlineEditId !== 'new' ? (
+      {sablonai.length === 0 && !draftCard ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <FileText className="w-10 h-10 mb-3" style={{ color: '#d1cdc7' }} />
           <p className="text-sm font-medium" style={{ color: '#8a857f' }}>Nėra medžiagų šablonų</p>
@@ -555,21 +440,31 @@ function SablonaiTab() {
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,320px))] justify-center gap-3">
           {sablonai.map(s => {
+            const cardKey = String(s.id);
+            const isExpanded = !!expandedCards[cardKey];
+
             return (
               <div
                 key={s.id}
-                className="group rounded-xl border p-3.5 transition-all min-h-[180px] flex flex-col"
+                className="group rounded-xl border p-3.5 transition-all min-h-[76px] flex flex-col"
                 style={{
                   borderColor: 'rgba(0,0,0,0.06)',
                   background: '#fff',
                 }}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 flex items-center gap-2">
+                    <button
+                      onClick={() => toggleCard(cardKey)}
+                      className="w-6 h-6 inline-flex items-center justify-center rounded-md border border-base-content/10 hover:bg-base-content/[0.03]"
+                      title={isExpanded ? 'Sutraukti' : 'Išskleisti'}
+                    >
+                      <ArrowRight className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                    </button>
                     <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
                   </div>
                   <div className="flex items-center gap-1">
-                    {!s.structured_json && (
+                    {!s.structured_json && isExpanded && (
                       <button
                         onClick={() => handleViewGenerate(s)}
                         disabled={generating}
@@ -585,26 +480,28 @@ function SablonaiTab() {
                   </div>
                 </div>
 
-                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
-                  {s.structured_json ? (
-                    <div className="max-h-[320px] overflow-y-auto">
-                      <MaterialSlateView data={s.structured_json} variant="panel" />
-                    </div>
-                  ) : (
-                    <p
-                      className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-                      style={{
-                        color: '#5a5550',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 10,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      {s.raw_text || 'Nėra teksto'}
-                    </p>
-                  )}
-                </div>
+                {isExpanded && (
+                  <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
+                    {s.structured_json ? (
+                      <div className="max-h-[320px] overflow-y-auto">
+                        <MaterialSlateView data={s.structured_json} variant="panel" />
+                      </div>
+                    ) : (
+                      <p
+                        className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+                        style={{
+                          color: '#5a5550',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 10,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {s.raw_text || 'Nėra teksto'}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Delete confirmation */}
                 {confirmDeleteId === s.id && (
@@ -620,6 +517,58 @@ function SablonaiTab() {
               </div>
             );
           })}
+
+          {draftCard && (
+            <div
+              key={draftCard.localId}
+              className="rounded-xl border p-3.5 transition-all min-h-[180px] flex flex-col"
+              style={{
+                borderColor: '#007AFF',
+                background: 'rgba(0,122,255,0.04)',
+                boxShadow: '0 0 0 1px rgba(0,122,255,0.12) inset',
+              }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1 flex items-center gap-2">
+                  <button
+                    onClick={() => toggleCard(draftCard.localId)}
+                    className="w-6 h-6 inline-flex items-center justify-center rounded-md border border-base-content/10 hover:bg-base-content/[0.03]"
+                    title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
+                  >
+                    <ArrowRight className={`w-3.5 h-3.5 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-90' : ''}`} />
+                  </button>
+                  <input
+                    value={draftCard.name}
+                    onChange={e => setDraftCard(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                    placeholder="Šablono pavadinimas..."
+                    className="text-sm font-semibold bg-transparent border-b outline-none flex-1 py-0.5 transition-colors focus:border-blue-400"
+                    style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
+                  />
+                </div>
+                <div className="flex items-center gap-2 text-[11px]" style={{ color: '#007AFF' }}>
+                  {draftCard.isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  {draftCard.isSaving ? 'Saugoma...' : 'Automatinis išsaugojimas'}
+                </div>
+              </div>
+
+              {expandedCards[draftCard.localId] && (
+                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
+                  <textarea
+                    ref={draftTextareaRef}
+                    value={draftCard.rawText}
+                    onChange={e => setDraftCard(prev => prev ? { ...prev, rawText: e.target.value } : prev)}
+                    placeholder="Įveskite medžiagų aprašymą..."
+                    rows={8}
+                    className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
+                    style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
+                  />
+                  {draftCard.saveError && (
+                    <p className="text-xs mt-2" style={{ color: '#FF3B30' }}>{draftCard.saveError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
