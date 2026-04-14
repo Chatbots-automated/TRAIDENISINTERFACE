@@ -566,14 +566,12 @@ function SablonaiTab() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
-                      {s.structured_json && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
-                      )}
-                    </div>
+                    <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
                   </div>
                   <div className="flex items-center gap-1">
+                    {s.structured_json && (
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
+                    )}
                     <button
                       onClick={() => handleViewGenerate(s)}
                       disabled={generating}
