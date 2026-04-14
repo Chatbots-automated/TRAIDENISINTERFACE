@@ -3,6 +3,23 @@ import { db } from './database';
 
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+export const TALPOS_TABLE_FIELDS = [
+  'id',
+  'pavadinimas',
+  'embedding',
+  'project',
+  'description',
+  'json',
+  'kaina',
+  'kaina_ai',
+  'derva_ai',
+  'derva_musu',
+  'quantity',
+  'similar_talpos',
+  'created_at',
+  'material_slate',
+] as const;
+const TALPOS_SELECT = TALPOS_TABLE_FIELDS.join(',');
 
 /**
  * Fetch all records from standartiniai_projektai table
@@ -376,7 +393,7 @@ export const fetchTalpos = async (): Promise<any[]> => {
   try {
     const { data, error } = await db
       .from('talpos')
-      .select('*')
+      .select(TALPOS_SELECT)
       .order('id', { ascending: false })
       .limit(-1);
 
@@ -400,7 +417,7 @@ export const fetchTalposByIds = async (ids: string[]): Promise<any[]> => {
   try {
     const { data, error } = await db
       .from('talpos')
-      .select('*')
+      .select(TALPOS_SELECT)
       .in('id', ids);
     if (error) throw error;
     return data || [];
