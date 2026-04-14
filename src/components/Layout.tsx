@@ -199,10 +199,10 @@ export default function Layout({
                 <button
                   onClick={() => onViewModeChange?.('kainos')}
                   className={viewMode === 'kainos' ? 'active' : ''}
-                  title={sidebarCollapsed ? 'Žaliavų Kainos' : undefined}
+                  title={sidebarCollapsed ? 'Žaliavos' : undefined}
                 >
                   <TrendingUp className="w-4 h-4" />
-                  {!sidebarCollapsed && <span className="whitespace-nowrap">Žaliavų Kainos</span>}
+                  {!sidebarCollapsed && <span className="whitespace-nowrap">Žaliavos</span>}
                 </button>
               </li>
               {user.is_admin && (

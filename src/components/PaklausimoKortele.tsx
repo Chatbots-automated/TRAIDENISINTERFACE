@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiKainaByIds,
@@ -22,6 +22,11 @@ import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
+import { fetchMaterialPricesForEstimatePayload } from '../lib/kainosService';
+import type { MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
+import { fetchSablonai } from '../lib/sablonaiService';
+import type { MedziaguSablonas } from '../lib/sablonaiService';
+import MaterialSlateView from './MaterialSlateView';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -272,6 +277,61 @@ function formatInline(text: string): React.ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
+type NormalizedDisplayData =
+  | { kind: 'structured'; data: Record<string, any> }
+  | { kind: 'text'; text: string }
+  | { kind: 'scalar'; value: string }
+  | { kind: 'empty' };
+
+function looksLikeJsonString(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const t = value.trim();
+  if (!t) return false;
+  return (
+    (t.startsWith('{') && t.endsWith('}')) ||
+    (t.startsWith('[') && t.endsWith(']'))
+  );
+}
+
+function safeParseJson(value: unknown): any | null {
+  if (typeof value !== 'string') return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function isRenderableStructuredData(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(v => v !== null && v !== undefined);
+  return !!value && typeof value === 'object';
+}
+
+function normalizeDisplayData(value: unknown): NormalizedDisplayData {
+  if (value === null || value === undefined) return { kind: 'empty' };
+
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t) return { kind: 'empty' };
+    if (looksLikeJsonString(t)) {
+      const parsed = safeParseJson(t);
+      if (isRenderableStructuredData(parsed)) {
+        if (Array.isArray(parsed)) return { kind: 'structured', data: { items: parsed } };
+        return { kind: 'structured', data: parsed };
+      }
+    }
+    return { kind: 'text', text: value };
+  }
+
+  if (isRenderableStructuredData(value)) {
+    if (Array.isArray(value)) return { kind: 'structured', data: { items: value } };
+    return { kind: 'structured', data: value as Record<string, any> };
+  }
+
+  if (typeof value === 'boolean') return { kind: 'scalar', value: value ? 'Taip' : 'Ne' };
+  return { kind: 'scalar', value: String(value) };
+}
+
 function MarkdownText({ text }: { text: string }) {
   const lines = text.split('\n');
 
@@ -305,6 +365,20 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
+function NormalizedDisplayRenderer({ value }: { value: unknown }) {
+  const normalized = normalizeDisplayData(value);
+  if (normalized.kind === 'empty') return <span className="text-base-content/25">—</span>;
+  if (normalized.kind === 'structured') {
+    return (
+      <div className="rounded-xl border border-base-content/8 bg-base-content/[0.015] p-2.5">
+        <MaterialSlateView data={normalized.data} variant="panel" />
+      </div>
+    );
+  }
+  if (normalized.kind === 'scalar') return <span>{normalized.value}</span>;
+  return <MarkdownText text={normalized.text} />;
+}
+
 // ---------------------------------------------------------------------------
 // Small UI components
 // ---------------------------------------------------------------------------
@@ -326,7 +400,7 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
 const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'procurement_package', 'position']);
 
 /** Keys excluded from the talpos key-value panel (shown elsewhere or internal) */
-const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json']);
+const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json', 'material_slate']);
 
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
@@ -340,6 +414,7 @@ const DEDUP_EXCLUDE_KEYS = new Set([
   ...SKIP_DISPLAY_KEYS,
   ...TITLE_KEYS,
   'Pastabos', 'pastabos',
+  'material_slate',
   // Price fields must not affect grouping — entering a price for one tank
   // should not split it away from its identical siblings
   'kaina', 'Kaina', 'kaina_ai', 'kaina_ai_reasoning',
@@ -441,7 +516,9 @@ function NestedObjectField({ label, obj }: { label: string; obj: Record<string, 
           {entries.map(([k, v]) => (
             <div key={k} className="flex gap-2">
               <span className="text-xs text-base-content/40 shrink-0">{formatMetaLabel(k)}:</span>
-              <span className="text-xs text-base-content font-medium">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+              <div className="text-xs text-base-content font-medium min-w-0">
+                <NormalizedDisplayRenderer value={v} />
+              </div>
             </div>
           ))}
         </div>
@@ -589,19 +666,31 @@ function isOldFormat(meta: Record<string, any>): boolean {
 // Tab: Talpos (replaces Bendra) — data from the 'talpos' Directus table
 // ---------------------------------------------------------------------------
 
-type TalposSubTab = 'parametrai' | 'derva';
+type TalposSubTab = 'parametrai' | 'derva' | 'medziagos';
 
 function TabTalpos({
-  record, products, readOnly, onRecordUpdated, initialTalposId,
+  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange,
 }: {
   record: NestandartiniaiRecord;
   products: Record<string, any>[];
   readOnly?: boolean;
   onRecordUpdated?: (r: NestandartiniaiRecord) => void;
   initialTalposId?: string;
+  initialSubTab?: TalposSubTab;
+  onSubTabChange?: (tab: TalposSubTab) => void;
+  initialTankIdx?: number;
+  onTankIdxChange?: (idx: number) => void;
 }) {
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [subTab, setSubTab] = useState<TalposSubTab>('parametrai');
+  const [currentIdx, setCurrentIdx] = useState(initialTankIdx ?? 0);
+  const [subTab, setSubTab] = useState<TalposSubTab>(initialSubTab ?? 'parametrai');
+
+  // Material templates (fetched once, shared with medziagos sub-tab)
+  const [sablonai, setSablonai] = useState<MedziaguSablonas[]>([]);
+  const [sablonaiLoading, setSablonaiLoading] = useState(false);
+  useEffect(() => {
+    setSablonaiLoading(true);
+    fetchSablonai().then(setSablonai).catch(() => {}).finally(() => setSablonaiLoading(false));
+  }, []);
 
   // Parse talpos UUIDs from the record
   const talposIds = useMemo(() => {
@@ -635,6 +724,19 @@ function TabTalpos({
   const idx = Math.min(currentIdx, Math.max(0, navCount - 1));
   const currentTalposRow = talposRows[idx] ?? null;
   const currentTalposId = talposIds[idx] ?? null;
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== subTab) setSubTab(initialSubTab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSubTab]);
+
+  useEffect(() => {
+    if (typeof initialTankIdx === 'number' && initialTankIdx !== currentIdx) setCurrentIdx(initialTankIdx);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTankIdx]);
+
+  useEffect(() => { onSubTabChange?.(subTab); }, [subTab, onSubTabChange]);
+  useEffect(() => { onTankIdxChange?.(idx); }, [idx, onTankIdxChange]);
 
   // Kaina editing (writes to talpos table)
   const [kainaEditing, setKainaEditing] = useState(false);
@@ -671,7 +773,6 @@ function TabTalpos({
   // Price estimation state (per-idx)
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
-  const [localKainaAi, setLocalKainaAi] = useState<Record<number, number | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
 
   // Add / delete tank state
@@ -932,41 +1033,48 @@ function TabTalpos({
     }
   };
 
-  const estimatePrice = async () => {
+  const estimatePrice = async (predictionMode: 'math' | 'ai' = 'math') => {
     if (!currentTalposId || !currentTalposRow) return;
     setPriceEstimating(prev => ({ ...prev, [idx]: true }));
     setPriceEstimateError(prev => ({ ...prev, [idx]: null }));
     try {
       const webhookUrl = await getWebhookUrl('n8n_price_estimation');
       if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
-      const payload = Object.fromEntries(
-        Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
-      );
+      const currentTankSpecs = {
+        id: currentTalposId,
+        json: currentTalposRow?.json ?? null,
+        derva_musu: currentTalposRow?.derva_musu ?? null,
+        derva_ai: currentTalposRow?.derva_ai ?? null,
+        material_slate: currentTalposRow?.material_slate ?? null,
+      };
 
-      // Fetch kaina fresh from talpos table for all similar tanks right now,
-      // so the payload always contains up-to-date prices regardless of render timing.
       const rawSimilarItems = displayedSimilarEnriched ?? [];
-      const similarUuids = rawSimilarItems
-        .map((item: any) => item.id)
-        .filter((id: any) => id && typeof id === 'string' && id.length >= 32);
-      let freshKainaMap: Record<string, number | null> = {};
-      if (similarUuids.length > 0) {
-        try {
-          const rows = await fetchTalposByIds(similarUuids);
-          for (const row of rows) {
-            freshKainaMap[String(row.id)] = row.kaina != null ? Number(row.kaina) : null;
-          }
-        } catch { /* fall back to whatever is already in the item */ }
-      }
-      const similarTanksPayload = rawSimilarItems.map((item: any) => {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { embedding, similar_talpos, ...rest } = item;
-        const id = rest.id && typeof rest.id === 'string' && rest.id.length >= 32 ? rest.id : null;
+      const similarIdsWithScore = rawSimilarItems
+        .map((item: any) => ({
+          id: item?.id && typeof item.id === 'string' && item.id.length >= 32 ? item.id : null,
+          similarity_score: typeof item?.similarity_score === 'number' ? item.similarity_score : null,
+        }))
+        .filter((x: any) => x.id);
+      const similarRows = similarIdsWithScore.length > 0
+        ? await fetchTalposByIds(similarIdsWithScore.map((x: any) => x.id))
+        : [];
+      const similarRowMap = new Map(similarRows.map((r: any) => [String(r.id), r]));
+      const similarTanksPayload = similarIdsWithScore.map((x: any) => {
+        const row = similarRowMap.get(String(x.id));
         return {
-          ...rest,
-          kaina: id && id in freshKainaMap ? freshKainaMap[id] : (rest.kaina ?? null),
+          id: x.id,
+          similarity_score: x.similarity_score,
+          json: row?.json ?? null,
+          derva_musu: row?.derva_musu ?? null,
+          derva_ai: row?.derva_ai ?? null,
+          material_slate: row?.material_slate ?? null,
+          kaina: row?.kaina ?? null,
+          kaina_ai: row?.kaina_ai ?? null,
         };
       });
+
+      let materialPrices: MaterialPriceEstimatePayloadItem[] = [];
+      try { materialPrices = await fetchMaterialPricesForEstimatePayload(predictionMode); } catch { /* non-fatal */ }
 
       const resp = await fetch(webhookUrl, {
         method: 'POST',
@@ -977,8 +1085,11 @@ function TabTalpos({
           description: record.description,
           klientas: record.klientas,
           talpos_id: currentTalposId,
-          product_metadata: payload,
+          estimation_mode: predictionMode,
+          current_tank_specs: currentTankSpecs,
           similar_tanks: similarTanksPayload,
+          material_prices: materialPrices,
+          material_price_source: predictionMode === 'ai' ? 'Su DI' : 'Matematinė',
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -987,56 +1098,27 @@ function TabTalpos({
       let respData: any = null;
       try { respData = JSON.parse(respText); } catch { /* plain string response */ }
 
-      // Full response text for display: prefer known text fields, fall back to raw body
+      // Full response text for display/storage: prefer known text fields, fall back to raw body
       const fullResponseText: string | null = (() => {
         if (typeof respData === 'string' && respData.trim()) return respData.trim();
         for (const k of ['text', 'output', 'result', 'reasoning', 'message']) {
           if (respData?.[k] && typeof respData[k] === 'string') return respData[k];
         }
+        if (respData && typeof respData === 'object') {
+          try { return JSON.stringify(respData); } catch { /* ignore */ }
+        }
         return respText.trim() || null;
       })();
 
-      // Numeric price: try structured JSON fields, then parse from text
-      const rawPrice = respData != null && typeof respData === 'object'
-        ? (respData?.estimated_price ?? respData?.price ?? respData?.kaina ?? respData?.kaina_ai ?? respData?.output ?? respData?.result ?? respData?.text ?? fullResponseText)
-        : fullResponseText;
-      const estimatedPrice = (() => {
-        if (rawPrice == null) return null;
-        if (typeof rawPrice === 'number') return rawPrice;
-        let s = String(rawPrice).replace(/[€$£\s]/g, '').trim();
-        if (s.includes('.') && s.includes(',')) {
-          const lastDot = s.lastIndexOf('.');
-          const lastComma = s.lastIndexOf(',');
-          if (lastDot > lastComma) {
-            s = s.replace(/,/g, '');
-          } else {
-            s = s.replace(/\./g, '').replace(',', '.');
-          }
-        } else if (s.includes(',')) {
-          const parts = s.split(',');
-          if (parts.length === 2 && parts[1].length === 3 && /^\d+$/.test(parts[1])) {
-            s = s.replace(',', '');
-          } else {
-            s = s.replace(',', '.');
-          }
-        }
-        s = s.replace(/[^\d.]/g, '');
-        const n = parseFloat(s);
-        return isNaN(n) ? null : n;
-      })();
-
-      if (fullResponseText || (estimatedPrice != null && !isNaN(estimatedPrice))) {
-        const currentJsonObj = tryParseJsonObject(currentTalposRow?.json) || {};
-        const updates: Record<string, any> = {};
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) updates.kaina_ai = estimatedPrice;
-        if (fullResponseText) updates.kaina_ai_text = fullResponseText;
-        const newJsonObj = { ...currentJsonObj, ...updates };
-        await updateTalposField(currentTalposId, 'json', newJsonObj);
+      if (fullResponseText) {
+        const kainaAiValue = fullResponseText;
+        await updateTalposField(currentTalposId, 'kaina_ai', kainaAiValue);
         setTalposRows(prev => prev.map(r =>
-          String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r
+          String(r.id) === String(currentTalposId)
+            ? { ...r, kaina_ai: kainaAiValue }
+            : r
         ));
-        if (estimatedPrice != null && !isNaN(estimatedPrice)) setLocalKainaAi(prev => ({ ...prev, [idx]: estimatedPrice }));
-        if (fullResponseText) setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
+        setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
       } else {
         throw new Error('Negauta kaina iš atsakymo');
       }
@@ -1086,66 +1168,65 @@ function TabTalpos({
         </div>
       )}
 
-      {/* Talpos selection bar — always visible when editable or more than one tank */}
-      {(navCount > 1 || !readOnly) && (
-        <div className="flex items-center gap-1 mb-4 shrink-0">
-          {navCount > 1 && (
-            <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
-              <ChevronLeft className="w-4 h-4 text-base-content/40" />
-            </button>
-          )}
-          <select
-            value={idx}
-            onChange={e => { setCurrentIdx(Number(e.target.value)); }}
-            className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
-          >
-            {navCount === 0 ? (
-              <option value={0}>Nėra talpų</option>
-            ) : Array.from({ length: navCount }, (_, i) => (
-              <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
-            ))}
-          </select>
-          {navCount > 1 && (
-            <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
-              <ChevronRight className="w-4 h-4 text-base-content/40" />
-            </button>
-          )}
-          {!readOnly && (
-            <>
-              <button
-                onClick={addTank}
-                disabled={addingTank}
-                className="p-1.5 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-40"
-                title="Pridėti talpą"
-              >
-                {addingTank ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <Plus className="w-4 h-4 text-primary/60 hover:text-primary" />}
+      {/* Top controls: talpa selector + sub-tab toggles on one centered row */}
+      <div className="flex flex-wrap items-center justify-center gap-2.5 mb-3 shrink-0">
+        {(navCount > 1 || !readOnly) && (
+          <div className="flex items-center gap-1 w-full max-w-[520px] px-1.5 py-1 rounded-2xl border border-base-content/10 bg-base-100 shadow-sm">
+            {navCount > 1 && (
+              <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
+                <ChevronLeft className="w-4 h-4 text-base-content/40" />
               </button>
-              {currentTalposId && (
+            )}
+            <select
+              value={idx}
+              onChange={e => { setCurrentIdx(Number(e.target.value)); }}
+              className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
+            >
+              {navCount === 0 ? (
+                <option value={0}>Nėra talpų</option>
+              ) : Array.from({ length: navCount }, (_, i) => (
+                <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
+              ))}
+            </select>
+            {navCount > 1 && (
+              <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
+                <ChevronRight className="w-4 h-4 text-base-content/40" />
+              </button>
+            )}
+            {!readOnly && (
+              <>
                 <button
-                  onClick={() => setConfirmDeleteTalposId(currentTalposId)}
-                  disabled={deletingTank || !!confirmDeleteTalposId}
-                  className="p-1.5 rounded-md hover:bg-error/10 transition-colors disabled:opacity-40"
-                  title="Ištrinti šią talpą"
+                  onClick={addTank}
+                  disabled={addingTank}
+                  className="p-1.5 rounded-md hover:bg-primary/10 transition-colors disabled:opacity-40"
+                  title="Pridėti talpą"
                 >
-                  <Trash2 className="w-4 h-4 text-error/40 hover:text-error" />
+                  {addingTank ? <Loader2 className="w-4 h-4 animate-spin text-primary" /> : <Plus className="w-4 h-4 text-primary/60 hover:text-primary" />}
                 </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+                {currentTalposId && (
+                  <button
+                    onClick={() => setConfirmDeleteTalposId(currentTalposId)}
+                    disabled={deletingTank || !!confirmDeleteTalposId}
+                    className="p-1.5 rounded-md hover:bg-error/10 transition-colors disabled:opacity-40"
+                    title="Ištrinti šią talpą"
+                  >
+                    <Trash2 className="w-4 h-4 text-error/40 hover:text-error" />
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
-      {/* Parametrai / Derva toggle */}
-      <div className="flex justify-center mb-2 shrink-0">
-        <div className="inline-flex rounded-[10px] p-0.5" style={{ background: 'rgba(0,0,0,0.06)' }}>
-          {(['parametrai', 'derva'] as TalposSubTab[]).map(t => (
+        <div className="inline-flex rounded-2xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
+          {(['parametrai', 'derva', 'medziagos'] as TalposSubTab[]).map(t => (
             <button
               key={t}
               onClick={() => setSubTab(t)}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${subTab === t ? 'text-base-content' : 'text-base-content/40 hover:text-base-content/60'}`}
-              style={subTab === t ? { background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' } : undefined}
+              className={`px-4 py-1.5 rounded-xl text-sm font-medium transition-all duration-200 ${subTab === t ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
+              style={subTab === t ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
             >
-              {t === 'parametrai' ? 'Parametrai' : 'Derva'}
+              {t === 'parametrai' ? 'Parametrai' : t === 'derva' ? 'Derva' : 'Medžiagos'}
             </button>
           ))}
         </div>
@@ -1248,8 +1329,12 @@ function TabTalpos({
                               {/* Group rows */}
                               {Object.entries(entry.obj).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
-                                const childObj = tryParseJsonObject(cv);
-                                const displayVal = cv === null || cv === undefined ? '' : childObj ? JSON.stringify(childObj) : String(cv);
+                                const normalizedCv = normalizeDisplayData(cv);
+                                const displayVal = normalizedCv.kind === 'scalar'
+                                  ? normalizedCv.value
+                                  : normalizedCv.kind === 'text'
+                                    ? normalizedCv.text
+                                    : '';
                                 return (
                                   <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors">
                                     <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '72px', maxWidth: '100px' }} title={formatMetaLabel(ck)}>
@@ -1276,13 +1361,19 @@ function TabTalpos({
                                         </button>
                                       </div>
                                     ) : (
-                                      <span
-                                        onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
-                                        className={`text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug ${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
-                                        title={displayVal || undefined}
-                                      >
-                                        {displayVal || <span className="text-base-content/25">—</span>}
-                                      </span>
+                                      <div className="text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug">
+                                        {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar') ? (
+                                          <span
+                                            onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
+                                            className={`${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
+                                            title={displayVal || undefined}
+                                          >
+                                            {displayVal || <span className="text-base-content/25">—</span>}
+                                          </span>
+                                        ) : (
+                                          <NormalizedDisplayRenderer value={cv} />
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                 );
@@ -1392,7 +1483,7 @@ function TabTalpos({
                         className="overflow-auto rounded-xl p-3 border border-base-content/8 bg-base-content/[0.02]"
                         style={{ maxHeight: '220px' }}
                       >
-                        <MarkdownText text={String(currentTalposRow.description)} />
+                        <NormalizedDisplayRenderer value={currentTalposRow.description} />
                       </div>
                     ) : (
                       <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
@@ -1409,19 +1500,6 @@ function TabTalpos({
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={estimatePrice}
-                          disabled={!!priceEstimating[idx]}
-                          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          style={{ background: 'rgba(175,82,222,0.08)', color: '#AF52DE', border: '0.5px solid rgba(175,82,222,0.18)' }}
-                          title="AI kainos įvertinimas"
-                        >
-                          {priceEstimating[idx] ? (
-                            <><Loader2 className="w-3 h-3 animate-spin" /> Skaičiuojama...</>
-                          ) : (
-                            <><Sparkles className="w-3 h-3" /> Kainos parinkimas</>
-                          )}
-                        </button>
-                        <button
                           onClick={findSimilar}
                           disabled={!!similarSearching[idx]}
                           className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1434,29 +1512,6 @@ function TabTalpos({
                         </button>
                       </div>
                     </div>
-
-                    {priceEstimateError[idx] && (
-                      <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span>{priceEstimateError[idx]}</span>
-                      </div>
-                    )}
-
-                    {/* AI price estimation full response text */}
-                    {(() => {
-                      const aiText = localKainaAiText[idx] !== undefined
-                        ? localKainaAiText[idx]
-                        : (() => { const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text; return v && typeof v === 'string' ? v : null; })();
-                      return aiText ? (
-                        <div className="mb-2 px-3 py-2.5 rounded-xl border border-base-content/8 bg-base-content/[0.02] shrink-0">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/35 mb-1.5 flex items-center gap-1">
-                            <Sparkles className="w-2.5 h-2.5" style={{ color: '#AF52DE' }} />
-                            <span style={{ color: '#AF52DE' }}>AI įvertinimas</span>
-                          </p>
-                          <p className="text-xs text-base-content/70 leading-relaxed whitespace-pre-wrap">{aiText}</p>
-                        </div>
-                      ) : null;
-                    })()}
 
                     {similarError[idx] && (
                       <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2">
@@ -1535,9 +1590,32 @@ function TabTalpos({
           hideNavigator
           aiFirst
           currentTalposId={currentTalposId}
+          currentTalposRow={currentTalposRow}
           currentTalposJson={currentTalposRow?.json}
           onTalposJsonSaved={(id, newJson) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, json: newJson } : r));
+          }}
+          onTalposRowUpdated={(id, field, value) => {
+            setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
+          }}
+        />
+      )}
+
+      {/* ── Medžiagos sub-tab ── */}
+      {subTab === 'medziagos' && (
+        <TabMedziagos
+          record={record}
+          currentTalposId={currentTalposId}
+          currentTalposRow={currentTalposRow}
+          idx={idx}
+          sablonai={sablonai}
+          sablonaiLoading={sablonaiLoading}
+          estimatePrice={estimatePrice}
+          priceEstimating={!!priceEstimating[idx]}
+          priceEstimateError={priceEstimateError[idx] || null}
+          localKainaAiText={localKainaAiText[idx] ?? null}
+          onTalposRowUpdated={(id, field, value) => {
+            setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
           }}
         />
       )}
@@ -2071,7 +2149,27 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
                   {meta.talpa && <InfoField label="Talpa" value={meta.talpa} />}
                   {meta.position && <InfoField label="Pozicija" value={meta.position} />}
                   {record.pateikimo_data && <InfoField label="Pateikimo data" value={record.pateikimo_data} />}
-                  {extraMeta.map(([k, v]) => <InfoField key={k} label={k.replace(/_/g, ' ')} value={typeof v === 'object' ? JSON.stringify(v) : String(v)} />)}
+                  {extraMeta.map(([k, v]) => {
+                    const normalized = normalizeDisplayData(v);
+                    return (
+                      <div key={k}>
+                        <dt className="text-xs text-base-content/40">{k.replace(/_/g, ' ')}</dt>
+                        <dd className="text-sm font-medium mt-0.5 text-base-content">
+                          <NormalizedDisplayRenderer
+                            value={
+                              normalized.kind === 'structured'
+                                ? normalized.data
+                                : normalized.kind === 'text'
+                                  ? normalized.text
+                                  : normalized.kind === 'scalar'
+                                    ? normalized.value
+                                    : null
+                            }
+                          />
+                        </dd>
+                      </div>
+                    );
+                  })}
                 </div>
               </CollapsibleSection>
             </div>
@@ -2149,10 +2247,10 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
 
       {!readOnly && !addingSide && (
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-base-content/10">
-          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl transition-all text-base-content" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
+          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl transition-all duration-200 text-base-content/70 border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">
             <Plus className="w-3.5 h-3.5" /> Gavėjas
           </button>
-          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-3xl text-white transition-all hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}>
+          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl text-white transition-all duration-200 hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}>
             <Plus className="w-3.5 h-3.5" /> Komanda
           </button>
         </div>
@@ -2186,15 +2284,14 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
               <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmDeleteIdx(null)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/65 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03]"
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={() => handleDelete(confirmDeleteIdx)}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-white transition-all duration-200 hover:opacity-90"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Ištrinti
                 </button>
@@ -2457,8 +2554,8 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
         {!readOnly && (
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
-            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-xl text-white transition-all duration-200 hover:brightness-95"
+            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
           >
             <Upload className="w-3.5 h-3.5" /> Įkelti
           </button>
@@ -2670,33 +2767,48 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
             </div>
             {/* Preview body */}
             <div className="flex-1 overflow-hidden">
-              {previewFile.mime_type === 'application/pdf' ? (
-                <iframe
-                  src={`${getViewUrl(previewFile.directus_file_id)}#toolbar=1`}
-                  className="w-full h-full border-0"
-                  title={previewFile.file_name}
-                />
-              ) : previewFile.mime_type?.startsWith('image/') ? (
-                <div className="flex items-center justify-center h-full p-6 bg-base-content/[0.02]">
-                  <img
-                    src={getViewUrl(previewFile.directus_file_id)}
-                    alt={previewFile.file_name}
-                    className="max-w-full max-h-full object-contain rounded-lg"
+              {(() => {
+                const ext = previewFile.file_name.split('.').pop()?.toLowerCase() || '';
+                const mime = previewFile.mime_type || '';
+                const viewUrl = getViewUrl(previewFile.directus_file_id);
+                const isPdf = mime.includes('pdf') || ext === 'pdf';
+                const isImage = mime.startsWith('image/') || ['jpg','jpeg','png','gif','webp','svg','bmp'].includes(ext);
+                const isOffice = [
+                  'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  'application/vnd.ms-powerpoint','application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                ].includes(mime) || ['doc','docx','xls','xlsx','ppt','pptx'].includes(ext);
+                const isText = mime.startsWith('text/') || ['txt','csv','md','log','json','xml','htm','html','rtf'].includes(ext);
+
+                if (isPdf) return <iframe src={`${viewUrl}#toolbar=1`} className="w-full h-full border-0" title={previewFile.file_name} />;
+                if (isImage) return (
+                  <div className="flex items-center justify-center h-full p-6 bg-base-content/[0.02]">
+                    <img src={viewUrl} alt={previewFile.file_name} className="max-w-full max-h-full object-contain rounded-lg" />
+                  </div>
+                );
+                if (isOffice) return (
+                  <iframe
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(viewUrl)}&embedded=true`}
+                    className="w-full h-full border-0"
+                    title={previewFile.file_name}
                   />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-                  <FileText className="w-12 h-12 text-base-content/20" />
-                  <p className="text-sm text-base-content/50">Peržiūra negalima šiam failų tipui</p>
-                  <a
-                    href={getDownloadUrl(previewFile.directus_file_id)}
-                    className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
-                    style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
-                  >
-                    <Download className="w-4 h-4" /> Atsisiųsti
-                  </a>
-                </div>
-              )}
+                );
+                if (isText) return <iframe src={viewUrl} className="w-full h-full border-0" title={previewFile.file_name} style={{ background: '#fff' }} />;
+
+                return (
+                  <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
+                    <FileText className="w-12 h-12 text-base-content/20" />
+                    <p className="text-sm text-base-content/50">Peržiūra negalima šiam failų tipui</p>
+                    <a
+                      href={getDownloadUrl(previewFile.directus_file_id)}
+                      className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
+                      style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                    >
+                      <Download className="w-4 h-4" /> Atsisiųsti
+                    </a>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -2841,7 +2953,666 @@ function getTankSpecsSummary(tankMeta: Record<string, any>): [string, string][] 
   return result;
 }
 
-function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposJson, onTalposJsonSaved }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void }) {
+class SlateRenderErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode; resetKey?: string | number | null },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; fallback?: React.ReactNode; resetKey?: string | number | null }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('Material slate render error:', error);
+  }
+
+  componentDidUpdate(prevProps: { resetKey?: string | number | null }) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      // Allow retrying render when user switches/updates template data.
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || <p className="text-xs text-base-content/40">Nepavyko atvaizduoti šablono struktūros.</p>;
+    }
+    return this.props.children;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// TabMedziagos – material slate selection / manual entry + AI estimate display
+// ---------------------------------------------------------------------------
+
+function TabMedziagos({
+  record, currentTalposId, currentTalposRow, idx, sablonai, sablonaiLoading,
+  estimatePrice, priceEstimating, priceEstimateError, localKainaAiText,
+  onTalposRowUpdated,
+}: {
+  record: NestandartiniaiRecord;
+  currentTalposId: string | null;
+  currentTalposRow: any;
+  idx: number;
+  sablonai: MedziaguSablonas[];
+  sablonaiLoading: boolean;
+  estimatePrice: (mode: 'math' | 'ai') => Promise<void>;
+  priceEstimating: boolean;
+  priceEstimateError: string | null;
+  localKainaAiText: string | null;
+  onTalposRowUpdated?: (id: string, field: string, value: any) => void;
+}) {
+  const normalizeStructuredSlate = (input: unknown): Record<string, any> | null => {
+    if (!input) return null;
+
+    // Some webhook responses come as [{ text: "{...json...}" }]
+    if (Array.isArray(input)) {
+      const first = input[0];
+      if (first && typeof first === 'object' && typeof (first as any).text === 'string') {
+        try {
+          const parsed = JSON.parse((first as any).text);
+          return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+      return first && typeof first === 'object' && !Array.isArray(first) ? first as Record<string, any> : null;
+    }
+
+    if (typeof input === 'object') {
+      const asObj = input as Record<string, any>;
+      if (typeof asObj.text === 'string') {
+        try {
+          const parsed = JSON.parse(asObj.text);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch {
+          // keep original object
+        }
+      }
+      return asObj;
+    }
+
+    if (typeof input === 'string') {
+      try {
+        const parsed = JSON.parse(input);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+
+    return null;
+  };
+
+  const [mode, setMode] = useState<'prompt' | 'template' | 'manual'>(() => {
+    if (currentTalposRow?.material_slate) return 'template';
+    return 'prompt';
+  });
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
+  const [savingSlate, setSavingSlate] = useState(false);
+  const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
+  const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [isSlateEditing, setIsSlateEditing] = useState(false);
+  const [slateDraftEntries, setSlateDraftEntries] = useState<Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }>>([]);
+  const [newSlateKey, setNewSlateKey] = useState('');
+  const [newSlateValue, setNewSlateValue] = useState('');
+  const [slateEditError, setSlateEditError] = useState<string | null>(null);
+
+  // Manual entry rows
+  const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
+    { name: '', amount: '', unit: 'kg' },
+  ]);
+
+  // Sync with talpos row changes
+  useEffect(() => {
+    const slate = currentTalposRow?.material_slate;
+    if (slate) {
+      setLocalSlate(normalizeStructuredSlate(slate) || slate);
+      setMode('template');
+    } else {
+      setLocalSlate(null);
+      if (mode !== 'manual') setMode('prompt');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTalposRow?.material_slate, idx]);
+
+  const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
+    const template = sablonai.find(s => s.id === templateId);
+    if (!template?.structured_json || !currentTalposId) return false;
+    const normalized = normalizeStructuredSlate(template.structured_json);
+    if (!normalized) {
+      setTemplateSelectError('Šio šablono struktūra neteisinga. Prašome peržiūrėti Žaliavos → Medžiagų šablonai.');
+      return false;
+    }
+    setTemplateSelectError(null);
+    setSelectedTemplateId(templateId);
+    setSavingSlate(true);
+    try {
+      const snapshot = { ...normalized, _template_id: template.id, _template_name: template.name };
+      await updateTalposField(currentTalposId, 'material_slate', snapshot);
+      setLocalSlate(snapshot);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', snapshot);
+      setMode('template');
+      return true;
+    } catch (err) {
+      console.error('Error saving material slate:', err);
+      setTemplateSelectError('Nepavyko pritaikyti šablono. Bandykite dar kartą.');
+      setSelectedTemplateId(localSlate?._template_id ?? null);
+      return false;
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  const handleSaveManual = async () => {
+    if (!currentTalposId) return;
+    const items = manualRows.filter(r => r.name.trim() && r.amount.trim());
+    if (items.length === 0) return;
+    setSavingSlate(true);
+    try {
+      const slate = { items, _manual: true };
+      await updateTalposField(currentTalposId, 'material_slate', slate);
+      setLocalSlate(slate);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', slate);
+    } catch (err) {
+      console.error('Error saving manual slate:', err);
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  const handleClearSlate = async () => {
+    if (!currentTalposId) return;
+    setSavingSlate(true);
+    try {
+      await updateTalposField(currentTalposId, 'material_slate', null);
+      setLocalSlate(null);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', null);
+      setMode('prompt');
+      setSelectedTemplateId(null);
+    } catch (err) {
+      console.error('Error clearing slate:', err);
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  const openSlateEditor = () => {
+    if (!localSlate) return;
+    setSlateEditError(null);
+    const formatLabel = (path: string) => path
+      .split('.')
+      .map(part => part.replace(/_/g, ' '))
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' → ');
+    const entries: Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }> = [];
+    const flatten = (obj: Record<string, any>, prefix = '') => {
+      for (const [k, v] of Object.entries(obj)) {
+        const p = prefix ? `${prefix}.${k}` : k;
+        if (v === null) {
+          entries.push({ path: p, label: formatLabel(p), value: '', kind: 'null' });
+        } else if (typeof v === 'string') {
+          entries.push({ path: p, label: formatLabel(p), value: v, kind: 'string' });
+        } else if (typeof v === 'number') {
+          entries.push({ path: p, label: formatLabel(p), value: String(v), kind: 'number' });
+        } else if (typeof v === 'boolean') {
+          entries.push({ path: p, label: formatLabel(p), value: v ? 'taip' : 'ne', kind: 'boolean' });
+        } else if (Array.isArray(v)) {
+          if (v.every(x => ['string', 'number', 'boolean'].includes(typeof x) || x === null)) {
+            entries.push({ path: p, label: formatLabel(p), value: v.map(x => x ?? '').join(', '), kind: 'array' });
+          }
+        } else if (typeof v === 'object') {
+          flatten(v as Record<string, any>, p);
+        }
+      }
+    };
+    flatten(localSlate);
+    setSlateDraftEntries(entries);
+    setNewSlateKey('');
+    setNewSlateValue('');
+    setIsSlateEditing(true);
+  };
+
+  const saveSlateEdits = async () => {
+    if (!currentTalposId) return;
+    try {
+      const toTypedValue = (raw: string, kind: 'string' | 'number' | 'boolean' | 'null' | 'array'): any => {
+        const t = raw.trim();
+        if (kind === 'number') return t === '' ? null : Number(t.replace(',', '.'));
+        if (kind === 'boolean') return ['taip', 'true', '1'].includes(t.toLowerCase());
+        if (kind === 'null') return t === '' ? null : t;
+        if (kind === 'array') return t.split(',').map(s => s.trim()).filter(Boolean);
+        return raw;
+      };
+      const setByPath = (target: Record<string, any>, path: string, value: any) => {
+        const parts = path.split('.');
+        let obj: any = target;
+        for (let i = 0; i < parts.length - 1; i++) {
+          obj[parts[i]] = obj[parts[i]] && typeof obj[parts[i]] === 'object' ? obj[parts[i]] : {};
+          obj = obj[parts[i]];
+        }
+        obj[parts[parts.length - 1]] = value;
+      };
+
+      const parsed: Record<string, any> = JSON.parse(JSON.stringify(localSlate || {}));
+      for (const row of slateDraftEntries) {
+        if (!row.path.trim()) continue;
+        setByPath(parsed, row.path, toTypedValue(row.value, row.kind));
+      }
+      if (newSlateKey.trim()) {
+        parsed[newSlateKey.trim()] = newSlateValue;
+      }
+      setSavingSlate(true);
+      await updateTalposField(currentTalposId, 'material_slate', parsed);
+      setLocalSlate(parsed);
+      onTalposRowUpdated?.(currentTalposId, 'material_slate', parsed);
+      setMode('template');
+      setIsSlateEditing(false);
+    } catch (err) {
+      console.error('Error saving slate edits:', err);
+      setSlateEditError('Nepavyko išsaugoti pakeitimų.');
+    } finally {
+      setSavingSlate(false);
+    }
+  };
+
+  // Get AI text from local override or talpos.json
+  const aiText: unknown = localKainaAiText
+    ?? (currentTalposRow?.kaina_ai ?? null)
+    ?? (() => {
+      const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text;
+      return v ?? null;
+    })();
+
+  /** Render structured slate data — delegates to shared MaterialSlateView */
+  const renderSlateData = (data: Record<string, any>) => {
+    const normalized = normalizeStructuredSlate(data) || data;
+    if (!normalized || typeof normalized !== 'object') {
+      return <p className="text-xs text-base-content/40">Nėra tinkamų šablono duomenų atvaizdavimui.</p>;
+    }
+    return (
+      <SlateRenderErrorBoundary resetKey={normalized?._template_id ?? 'material-slate'}>
+        <MaterialSlateView data={normalized} />
+      </SlateRenderErrorBoundary>
+    );
+  };
+
+  /** Template card — used in template picker overlay; compact domain-aware display */
+  const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
+    const plainPreview = typeof template.raw_text === 'string'
+      ? template.raw_text.trim()
+      : (template.raw_text == null ? '' : String(template.raw_text));
+
+    return (
+      <div
+        onClick={onClick}
+        className={`rounded-xl border p-3.5 transition-all ${onClick ? 'cursor-pointer hover:border-primary/40 hover:shadow-sm' : ''}`}
+        style={{
+          borderColor: selected ? '#007AFF' : 'rgba(0,0,0,0.06)',
+          background: selected ? 'rgba(0,122,255,0.03)' : '#fff',
+          boxShadow: selected ? '0 0 0 1px rgba(0,122,255,0.2)' : undefined,
+        }}
+      >
+        {/* Card header */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <h4 className="text-xs font-semibold text-base-content truncate">{template.name}</h4>
+            {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+          </div>
+        </div>
+
+        {/* Body: plain-text preview */}
+        <div className="rounded-lg p-2.5" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
+          {plainPreview ? (
+            <p
+              className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+              style={{
+                color: '#5a5550',
+                display: '-webkit-box',
+                WebkitLineClamp: 8,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {plainPreview}
+            </p>
+          ) : (
+            <span className="text-[10px] italic text-base-content/30">Nėra teksto</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /** Template picker overlay */
+  const TemplatePicker = () => {
+    const available = sablonai.filter(s => s.structured_json);
+    return (
+      <div
+        className="fixed inset-0 z-[10000] flex items-center justify-center"
+        style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
+        onClick={() => setShowTemplatePicker(false)}
+      >
+        <div
+          className="bg-base-100 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+          style={{ width: '90vw', maxWidth: 720, height: '80vh', maxHeight: 700 }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+            <div>
+              <h3 className="text-sm font-semibold text-base-content">Medžiagų šablonai</h3>
+              <p className="text-[11px] text-base-content/40 mt-0.5">{available.length} šablonai su struktūra</p>
+            </div>
+            <button onClick={() => setShowTemplatePicker(false)} className="p-1.5 rounded-lg hover:bg-base-content/5 transition-colors">
+              <X className="w-4 h-4 text-base-content/40" />
+            </button>
+          </div>
+
+          {/* Scrollable card grid */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {available.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center">
+                <FileText className="w-10 h-10 mb-3 text-base-content/15" />
+                <p className="text-sm font-medium text-base-content/40">Nėra šablonų su struktūra</p>
+                <p className="text-xs text-base-content/30 mt-1">Sukurkite šablonus Žaliavos → Medžiagų šablonai</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {available.map(t => (
+                  <TemplateCard
+                    key={t.id}
+                    template={t}
+                    selected={selectedTemplateId === t.id || localSlate?._template_id === t.id}
+                    onClick={async () => {
+                      const ok = await handleSelectTemplate(t.id);
+                      if (ok) setShowTemplatePicker(false);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {templateSelectError && (
+            <div className="px-4 py-2.5 text-xs" style={{ color: '#FF3B30', borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(255,59,48,0.04)' }}>
+              {templateSelectError}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Warning if tank may not be appropriate for templates */}
+      {currentTalposRow && (() => {
+        const json = tryParseJsonObject(currentTalposRow.json);
+        const chemija = currentTalposRow.chemija || json?.chemija || '';
+        const derva = currentTalposRow.derva_musu || currentTalposRow.derva_ai || json?.derva || '';
+        const hasChemicals = chemija && typeof chemija === 'string' && !['vanduo', 'water', 'techninis vanduo', '-', 'nenurodyta', ''].includes(chemija.toLowerCase().trim());
+        const isNonPolyester = derva && typeof derva === 'string' && !derva.toLowerCase().includes('poliester');
+        if (hasChemicals || isNonPolyester) {
+          return (
+            <div className="mb-3 px-3 py-2 rounded-xl text-xs flex items-center gap-2 shrink-0" style={{ background: 'rgba(255,159,10,0.08)', color: '#FF9F0A', border: '0.5px solid rgba(255,159,10,0.2)' }}>
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>Šis šablonas gali netikti {hasChemicals ? 'cheminių medžiagų' : 'ne poliesterinės dervos'} talpai</span>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
+      {/* Two-column layout */}
+      <div className="flex gap-4 flex-1 min-h-0">
+        {/* Left column: materials slate */}
+        <div className="flex-1 min-w-0 flex flex-col min-h-0 overflow-y-auto">
+          {mode === 'prompt' && !localSlate && (
+            <div className="flex flex-col items-center justify-center py-8 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <FileText className="w-8 h-8 mb-3 text-base-content/20" />
+              <p className="text-sm font-medium text-base-content/60 mb-1">Medžiagų sąrašas</p>
+              <p className="text-xs text-base-content/40 mb-4 max-w-xs">Pasirinkite šabloną iš sąrašo arba įveskite medžiagas rankiniu būdu</p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowTemplatePicker(true)}
+                  disabled={sablonaiLoading || savingSlate}
+                  className="text-xs px-4 py-1.5 rounded-xl font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
+                  style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}
+                >
+                  Pasirinkti šabloną
+                </button>
+                <span className="text-xs text-base-content/30">arba</span>
+                <button
+                  onClick={() => setMode('manual')}
+                  className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
+                >
+                  Įvesti rankiniu būdu
+                </button>
+              </div>
+              {savingSlate && <Loader2 className="w-4 h-4 animate-spin text-primary mt-3" />}
+            </div>
+          )}
+
+          {/* Template selected — show structured data */}
+          {localSlate && mode === 'template' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Medžiagų šablonas</p>
+                  {localSlate._template_name && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>{localSlate._template_name}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setShowTemplatePicker(true)}
+                    className="text-[10px] px-2.5 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
+                  >
+                    Keisti šabloną
+                  </button>
+                  <button
+                    onClick={openSlateEditor}
+                    className="text-[10px] px-2.5 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
+                  >
+                    {isSlateEditing ? 'Redaguojama' : 'Redaguoti'}
+                  </button>
+                  <button onClick={handleClearSlate} disabled={savingSlate} className="p-1 rounded-md hover:bg-error/10 transition-colors" title="Pašalinti šabloną">
+                    <Trash2 className="w-3 h-3 text-error/40 hover:text-error" />
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3 overflow-y-auto" style={{ maxHeight: '400px' }}>
+                {!isSlateEditing && renderSlateData(localSlate)}
+                {isSlateEditing && (
+                  <div className="space-y-2">
+                    {slateDraftEntries.map((row, i) => (
+                      <div key={`${row.path}-${i}`} className="grid grid-cols-[180px_1fr_28px] gap-1.5 items-center">
+                        <span className="text-[11px] text-base-content/65">{row.label}</span>
+                        <input
+                          value={row.value}
+                          onChange={e => setSlateDraftEntries(prev => prev.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
+                          className="text-xs px-2 py-1.5 rounded-lg border border-base-content/12 bg-base-100 font-mono"
+                        />
+                        <button onClick={() => setSlateDraftEntries(prev => prev.filter((_, j) => j !== i))} className="p-1 rounded-md hover:bg-error/10" title="Pašalinti lauką iš šios talpos šablono">
+                          <X className="w-3 h-3 text-base-content/35" />
+                        </button>
+                      </div>
+                    ))}
+
+                    <div className="grid grid-cols-[180px_1fr_auto] gap-1.5 pt-1">
+                      <input value={newSlateKey} onChange={e => setNewSlateKey(e.target.value)} placeholder="Naujas laukas" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
+                      <input value={newSlateValue} onChange={e => setNewSlateValue(e.target.value)} placeholder="Reikšmė" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
+                      <button
+                        onClick={() => {
+                          if (!newSlateKey.trim()) return;
+                          setSlateDraftEntries(prev => [...prev, {
+                            path: newSlateKey.trim(),
+                            label: newSlateKey.trim(),
+                            value: newSlateValue,
+                            kind: 'string',
+                          }]);
+                          setNewSlateKey('');
+                          setNewSlateValue('');
+                        }}
+                        className="text-xs px-2.5 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]"
+                      >
+                        Naujas laukas
+                      </button>
+                    </div>
+
+                    {slateEditError && <p className="text-xs text-error">{slateEditError}</p>}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button onClick={() => setIsSlateEditing(false)} className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">Atšaukti</button>
+                      <button onClick={saveSlateEdits} disabled={savingSlate} className="text-xs px-3 py-1.5 rounded-xl text-white disabled:opacity-60" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
+                        {savingSlate ? 'Saugoma...' : 'Išsaugoti'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Manual entry mode */}
+          {mode === 'manual' && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Rankinis įvedimas</p>
+                <button onClick={() => { setMode('prompt'); setManualRows([{ name: '', amount: '', unit: 'kg' }]); }}
+                  className="text-[10px] px-2 py-1 rounded text-base-content/40 hover:text-base-content/60 hover:bg-base-content/5">
+                  Atšaukti
+                </button>
+              </div>
+              <div className="space-y-1.5 mb-3">
+                <div className="grid grid-cols-[1fr_80px_60px_28px] gap-1.5 px-1">
+                  <span className="text-[9px] uppercase tracking-wider text-base-content/30 font-semibold">Medžiaga</span>
+                  <span className="text-[9px] uppercase tracking-wider text-base-content/30 font-semibold">Kiekis</span>
+                  <span className="text-[9px] uppercase tracking-wider text-base-content/30 font-semibold">Vnt.</span>
+                  <span />
+                </div>
+                {manualRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_80px_60px_28px] gap-1.5">
+                    <input
+                      value={row.name}
+                      onChange={e => { const next = [...manualRows]; next[i] = { ...next[i], name: e.target.value }; setManualRows(next); }}
+                      placeholder="pvz. Derva"
+                      className="text-xs px-2 py-1.5 rounded-lg border border-base-content/10 outline-none focus:border-primary/30 bg-base-100"
+                    />
+                    <input
+                      value={row.amount}
+                      onChange={e => { const next = [...manualRows]; next[i] = { ...next[i], amount: e.target.value }; setManualRows(next); }}
+                      placeholder="100"
+                      className="text-xs px-2 py-1.5 rounded-lg border border-base-content/10 outline-none focus:border-primary/30 bg-base-100 font-mono"
+                    />
+                    <input
+                      value={row.unit}
+                      onChange={e => { const next = [...manualRows]; next[i] = { ...next[i], unit: e.target.value }; setManualRows(next); }}
+                      placeholder="kg"
+                      className="text-xs px-2 py-1.5 rounded-lg border border-base-content/10 outline-none focus:border-primary/30 bg-base-100"
+                    />
+                    <button
+                      onClick={() => setManualRows(prev => prev.filter((_, j) => j !== i))}
+                      className="p-1 rounded-md hover:bg-error/10 self-center"
+                      disabled={manualRows.length <= 1}
+                    >
+                      <X className="w-3 h-3 text-base-content/30" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setManualRows(prev => [...prev, { name: '', amount: '', unit: 'kg' }])}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-dashed border-base-content/15 text-base-content/50 hover:bg-base-content/5 transition-colors"
+                >
+                  <Plus className="w-3 h-3 inline mr-1" />Pridėti
+                </button>
+                <button
+                  onClick={handleSaveManual}
+                  disabled={savingSlate || manualRows.every(r => !r.name.trim())}
+                  className="text-xs px-3 py-1 rounded-xl text-white font-medium disabled:opacity-50 transition-colors duration-200"
+                  style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}
+                >
+                  {savingSlate ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : <Save className="w-3 h-3 inline mr-1" />}
+                  Išsaugoti
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right column: AI price estimate */}
+        <div className="w-[280px] shrink-0 flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">AI kainos įvertinimas</p>
+          </div>
+
+          {/* Prediction mode toggle */}
+          <div className="flex items-center gap-1 mb-2 shrink-0">
+            <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
+              {(['math', 'ai'] as const).map(m => (
+                <button
+                  key={m}
+                  onClick={() => setPredictionMode(m)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${predictionMode === m ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
+                  style={predictionMode === m ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
+                >
+                  {m === 'math' ? 'Matematinė' : 'Su DI'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Estimate button */}
+          <button
+            onClick={() => estimatePrice(predictionMode)}
+            disabled={priceEstimating}
+            className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium text-white transition-all duration-200 disabled:opacity-50 mb-2 shrink-0 hover:brightness-95"
+            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+          >
+            {priceEstimating ? (
+              <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Skaičiuojama...</>
+            ) : (
+              <><Sparkles className="w-3.5 h-3.5" /> Kainos parinkimas</>
+            )}
+          </button>
+
+          {priceEstimateError && (
+            <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-2 shrink-0">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{priceEstimateError}</span>
+            </div>
+          )}
+
+          {/* AI response text */}
+          {aiText ? (
+            <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3">
+              <NormalizedDisplayRenderer value={aiText} />
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+              <p className="text-xs text-base-content/30 text-center px-4">
+                {localSlate ? 'Spauskite „Kainos parinkimas" norėdami gauti AI įvertinimą' : 'Pirma pasirinkite medžiagų šabloną'}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Template picker overlay */}
+      {showTemplatePicker && <TemplatePicker />}
+    </div>
+  );
+}
+
+
+function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hideNavigator, aiFirst, currentTalposId, currentTalposRow: talposRow, currentTalposJson, onTalposJsonSaved, onTalposRowUpdated }: { record: NestandartiniaiRecord; products: Record<string, any>[]; readOnly?: boolean; onRecordUpdated?: (r: NestandartiniaiRecord) => void; externalIdx?: number; hideNavigator?: boolean; aiFirst?: boolean; currentTalposId?: string | null; currentTalposRow?: any; currentTalposJson?: any; onTalposJsonSaved?: (id: string, newJson: any) => void; onTalposRowUpdated?: (id: string, field: string, value: any) => void }) {
   const [currentIdx, setCurrentIdx] = useState(externalIdx ?? 0);
   const hasMultiple = products.length > 1;
   const idx = externalIdx !== undefined ? Math.min(externalIdx, products.length - 1) : Math.min(currentIdx, products.length - 1);
@@ -2850,7 +3621,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
   // Per-tank derva results
   const [dervaPerTank, setDervaPerTank] = useState<Record<string, string>>(() => parseDervaPerTank(record.derva));
-  const dervaResult = dervaPerTank[tankKey] || null;
+  // Prefer derva_ai from talpos row when available, fall back to legacy project-level derva
+  const dervaResult = (currentTalposId && talposRow?.derva_ai) ? String(talposRow.derva_ai) : (dervaPerTank[tankKey] || null);
 
   const selecting = useProcessing(record.id, 'derva');
   const [selectingTankIdx, setSelectingTankIdx] = useState<number | null>(null);
@@ -2860,22 +3632,26 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   // Per-tank derva_musu
   // When currentTalposId is provided, read/write from talpos.json per-row.
   // Otherwise fall back to legacy record.metadata storage.
-  const getTalposMusu = (json: any): string => {
-    const parsed = json && typeof json === 'object' ? json : tryParseJsonObject(json);
+  const getTalposMusu = (_json: any, row?: any): string => {
+    // Read from dedicated talpos.derva_musu column
+    if (row?.derva_musu) return String(row.derva_musu);
+    // Fallback: read from json column (legacy storage)
+    const parsed = _json && typeof _json === 'object' ? _json : tryParseJsonObject(_json);
     return parsed?.derva_musu || '';
   };
   const [dervaMusuPerTank, setDervaMusuPerTank] = useState<Record<string, string>>(() => parseDervaMusuPerTank(record.metadata));
   const [dervaMusu, setDervaMusu] = useState<string>(() =>
-    currentTalposId ? getTalposMusu(currentTalposJson) : (dervaMusuPerTank[tankKey] || '')
+    currentTalposId ? getTalposMusu(currentTalposJson, talposRow) : (dervaMusuPerTank[tankKey] || '')
   );
   const [dervaMusuSaving, setDervaMusuSaving] = useState(false);
   const [dervaMusuSaved, setDervaMusuSaved] = useState(false);
   const [dervaMusuEditing, setDervaMusuEditing] = useState(false);
+  const dervaMusuBeforeEdit = useRef(dervaMusu);
 
   // Sync dervaMusu input when switching tanks (idx reflects externalIdx or internal currentIdx)
   useEffect(() => {
     if (currentTalposId) {
-      setDervaMusu(getTalposMusu(currentTalposJson));
+      setDervaMusu(getTalposMusu(currentTalposJson, talposRow));
     } else {
       setDervaMusu(dervaMusuPerTank[String(idx)] || '');
     }
@@ -2900,15 +3676,17 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
     setDervaMusuSaving(true);
     try {
       if (currentTalposId) {
-        // New path: write derva_musu to this talpos row's json column
-        const currentJsonObj = getTalposMusu(currentTalposJson) !== undefined
-          ? (currentTalposJson && typeof currentTalposJson === 'object' ? currentTalposJson : (tryParseJsonObject(currentTalposJson) || {}))
-          : {};
-        const newJsonObj = valueToSave.trim()
-          ? { ...currentJsonObj, derva_musu: valueToSave.trim() }
-          : (() => { const { derva_musu: _r, ...rest } = currentJsonObj as any; return rest; })();
-        await updateTalposField(currentTalposId, 'json', newJsonObj);
-        onTalposJsonSaved?.(currentTalposId, newJsonObj);
+        // Write derva_musu to dedicated talpos.derva_musu column
+        await updateTalposField(currentTalposId, 'derva_musu', valueToSave.trim() || null);
+        onTalposRowUpdated?.(currentTalposId, 'derva_musu', valueToSave.trim() || null);
+        // Clean legacy: remove derva_musu from json column if present
+        const currentJsonObj = currentTalposJson && typeof currentTalposJson === 'object'
+          ? currentTalposJson : (tryParseJsonObject(currentTalposJson) || {});
+        if ('derva_musu' in currentJsonObj) {
+          const { derva_musu: _r, ...cleanJson } = currentJsonObj as any;
+          await updateTalposField(currentTalposId, 'json', cleanJson);
+          onTalposJsonSaved?.(currentTalposId, cleanJson);
+        }
         if (overrideValue !== undefined) setDervaMusu(valueToSave);
       } else {
         // Legacy path: write to record.metadata per-product index
@@ -2945,27 +3723,39 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         return;
       }
 
-      // Build clean tank metadata — only scalar fields relevant to this specific tank
-      const cleanTankMeta: Record<string, any> = {};
-      for (const [k, v] of Object.entries(tankMeta)) {
-        if (k.startsWith('_')) continue; // skip internal fields
-        if (v === null || v === undefined || v === '') continue;
-        if (typeof v === 'object' && !Array.isArray(v)) continue; // skip nested objects
-        cleanTankMeta[k] = v;
+      // Build tank data — prefer actual talpos row over legacy metadata
+      let tankData: Record<string, any>;
+      if (talposRow) {
+        tankData = {};
+        for (const [k, v] of Object.entries(talposRow)) {
+          if (k === 'embedding' || k === 'similar_talpos') continue;
+          if (v === null || v === undefined || v === '') continue;
+          tankData[k] = v;
+        }
+      } else {
+        // Fallback: legacy metadata
+        tankData = {};
+        for (const [k, v] of Object.entries(tankMeta)) {
+          if (k.startsWith('_')) continue;
+          if (v === null || v === undefined || v === '') continue;
+          if (typeof v === 'object' && !Array.isArray(v)) continue;
+          tankData[k] = v;
+        }
       }
 
       const currentDervaMusuValue = dervaMusu || 'neparinkta';
 
-      // Send only this tank's metadata + product_index
+      // Send tank data with the specific tank ID
       const resp = await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           record_id: record.id,
+          talpos_id: currentTalposId || null,
           product_index: idx,
           product_count: products.length,
           product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
-          product_metadata: cleanTankMeta,
+          product_metadata: tankData,
           derva_org: formatDervaOrg(tankMeta),
           derva_musu: currentDervaMusuValue,
           project_name: record.project_name,
@@ -2985,9 +3775,11 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         const freshDerva = updated.derva || '';
         // Check if webhook wrote a per-tank JSON or a plain string
         const parsed = parseDervaPerTank(freshDerva);
+        let resultText: string | null = null;
         if (Object.keys(parsed).length > 0 && parsed[tankKey]) {
           // Webhook already wrote per-tank format — use as-is
           setDervaPerTank(parsed);
+          resultText = parsed[tankKey];
         } else {
           // Webhook wrote a plain string — merge it into our per-tank structure
           const plainResult = freshDerva || '';
@@ -2996,9 +3788,15 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             setDervaPerTank(merged);
             // Save merged per-tank structure back to the derva column
             await updateNestandartiniaiField(record.id, 'derva', JSON.stringify(merged));
+            resultText = plainResult;
           }
         }
-        onRecordUpdated?.(await fetchNestandartiniaiById(record.id) || updated);
+        // Save AI result to talpos.derva_ai column
+        if (resultText && currentTalposId) {
+          await updateTalposField(currentTalposId, 'derva_ai', resultText);
+          onTalposRowUpdated?.(currentTalposId, 'derva_ai', resultText);
+        }
+        onRecordUpdated?.(updated);
       }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 4000);
@@ -3039,7 +3837,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         </div>
         {!readOnly && !dervaMusuEditing && (
           <button
-            onClick={() => setDervaMusuEditing(true)}
+            onClick={() => { dervaMusuBeforeEdit.current = dervaMusu; setDervaMusuEditing(true); }}
             className="text-xs px-2.5 py-1 rounded-full transition-colors text-base-content/50 hover:text-base-content/70 hover:bg-base-content/5"
           >
             <Pencil className="w-3 h-3 inline mr-1" />
@@ -3055,12 +3853,12 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             placeholder="Įveskite dervos reikšmę šiai talpai..."
             className="w-full text-sm bg-transparent outline-none text-base-content placeholder:text-base-content/30 mb-2 resize-y min-h-[60px]"
             rows={Math.max(3, dervaMusu.split('\n').length)}
-            onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); } }}
+            onKeyDown={e => { if (e.key === 'Escape') { setDervaMusuEditing(false); setDervaMusu(dervaMusuBeforeEdit.current); } }}
             autoFocus
           />
           <div className="flex justify-end gap-2">
             <button
-              onClick={() => { setDervaMusuEditing(false); setDervaMusu(currentDervaMusu); }}
+              onClick={() => { setDervaMusuEditing(false); setDervaMusu(dervaMusuBeforeEdit.current); }}
               className="text-xs px-3 py-1.5 rounded-full text-base-content/50 hover:bg-base-content/5 transition-colors"
             >
               Atšaukti
@@ -3077,7 +3875,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         </div>
       ) : dervaMusu ? (
         <div className="rounded-xl px-4 py-3 border border-primary/15" style={{ background: 'rgba(0,122,255,0.04)' }}>
-          <MarkdownText text={dervaMusu} />
+          <NormalizedDisplayRenderer value={dervaMusu} />
         </div>
       ) : (
         <div className="rounded-xl px-4 py-3 border border-dashed border-base-content/10 bg-base-content/[0.02] text-center">
@@ -3123,7 +3921,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
               <button
                 onClick={() => dervaResult && saveDervaMusu(dervaResult)}
                 disabled={!dervaResult || selecting || dervaMusuSaving}
-                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-3xl transition-all"
+                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-xl transition-all duration-200"
                 style={{
                   background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
                   color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
@@ -3141,8 +3939,8 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             <button
               onClick={triggerDervaSelect}
               disabled={selecting}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-3xl text-white transition-all hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl text-white transition-all duration-200 hover:brightness-95 disabled:opacity-60"
+              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
             >
               {isCurrentTankSelecting
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
@@ -3188,7 +3986,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
       {/* Recommendation display — hide content when already applied to derva_musu */}
       {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
         <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
-          <MarkdownText text={dervaResult} />
+          <NormalizedDisplayRenderer value={dervaResult} />
         </div>
       ) : !isCurrentTankSelecting && !dervaResult && (
         <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
@@ -3273,7 +4071,22 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
 export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
-  const [activeTab, setActiveTab] = useState<ModalTab>('talpos');
+  const readModalStateFromUrl = () => {
+    const params = new URLSearchParams(window.location.search);
+    const rid = params.get('pm_rid');
+    if (rid !== String(record.id)) return { tab: 'talpos' as ModalTab, subTab: 'parametrai' as TalposSubTab, tankIdx: 0 };
+    const tab = (params.get('pm_tab') || 'talpos') as ModalTab;
+    const subTab = (params.get('pm_sub') || 'parametrai') as TalposSubTab;
+    const tankIdxRaw = Number(params.get('pm_idx') || '0');
+    const safeTab: ModalTab = TABS.some(t => t.id === tab) ? tab : 'talpos';
+    const safeSubTab: TalposSubTab = ['parametrai', 'derva', 'medziagos'].includes(subTab) ? subTab : 'parametrai';
+    return { tab: safeTab, subTab: safeSubTab, tankIdx: Number.isFinite(tankIdxRaw) && tankIdxRaw >= 0 ? tankIdxRaw : 0 };
+  };
+
+  const initialModalState = readModalStateFromUrl();
+  const [activeTab, setActiveTab] = useState<ModalTab>(initialModalState.tab);
+  const [talposSubTab, setTalposSubTab] = useState<TalposSubTab>(initialModalState.subTab);
+  const [talposIdx, setTalposIdx] = useState<number>(initialModalState.tankIdx);
   const [updating, setUpdating] = useState(false);
   const [updatingMode, setUpdatingMode] = useState<'save' | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'saved' | 'error'>('idle');
@@ -3516,36 +4329,46 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
     }
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('pm_rid', String(record.id));
+    params.set('pm_tab', activeTab);
+    params.set('pm_sub', talposSubTab);
+    params.set('pm_idx', String(talposIdx));
+    const next = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
+    window.history.replaceState(null, '', next);
+  }, [record.id, activeTab, talposSubTab, talposIdx]);
+
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
-      style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      style={{ background: 'rgba(17,24,39,0.28)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
       onClick={handleClose}
     >
       <div
-        className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl"
-        style={{ maxWidth: '960px', height: 'min(90vh, 860px)' }}
+        className="w-full flex flex-col bg-base-100 rounded-2xl overflow-hidden border border-base-content/10 shadow-xl"
+        style={{ maxWidth: '960px', height: 'min(90vh, 860px)', boxShadow: '0 18px 48px rgba(17,24,39,0.16)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Accent strip */}
-        <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+        <div className="h-[2px] shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
-          <div className="flex items-start justify-between gap-4">
+        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/6">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               {/* Project-level title row */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-[15px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.01em' }}>
                   {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
                 </h2>
                 {record.klientas && (
-                  <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
                     {record.klientas}
                   </span>
                 )}
                 <span
-                  className="text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0"
+                  className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
                   style={record.status
                     ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
                     : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
@@ -3554,28 +4377,28 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 </span>
               </div>
               {/* Project-level meta row */}
-              <p className="text-sm mt-1 text-base-content/40">
+              <p className="text-xs mt-0.5 text-base-content/45">
                 Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
                 {products.length > 1 && ` · ${products.length} talpos`}
               </p>
               {/* Pastabos (project-level notes) */}
               {getSantraukaFromMetadata(record.metadata) && (
-                <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
+                <p className="text-xs mt-1 text-base-content/60 leading-snug" style={{ maxWidth: '620px' }}>
                   {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <button onClick={refreshRecord} disabled={refreshing} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atnaujinti duomenis">
+              <button onClick={refreshRecord} disabled={refreshing} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Atnaujinti duomenis">
                 <RefreshCw className={`w-4 h-4 text-base-content/40 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
-              <button onClick={copy} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Kopijuoti nuorodą">
+              <button onClick={copy} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Kopijuoti nuorodą">
                 <Link2 className={`w-4 h-4 ${copied ? '' : 'text-base-content/40'}`} style={copied ? { color: '#34C759' } : undefined} />
               </button>
-              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5" title="Atidaryti naujame lange">
+              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Atidaryti naujame lange">
                 <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
-              <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors hover:bg-base-content/5">
+              <button onClick={handleClose} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20">
                 <X className="w-4 h-4 text-base-content/40" />
               </button>
             </div>
@@ -3585,7 +4408,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40 flex flex-col">
+          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/6 bg-base-200/20 flex flex-col">
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -3593,7 +4416,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-sm transition-all duration-200 mb-1 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/65 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
@@ -3606,14 +4429,13 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               <button
                 onClick={handleSaveOnly}
                 disabled={updating || !hasContextChanges}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-3xl text-xs font-medium transition-all mt-3 ${
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 mt-3 border ${
                   updateStatus === 'saved'
-                    ? 'text-success bg-success/10 border border-success/20'
+                    ? 'text-success bg-success/10 border-success/20'
                     : hasContextChanges
-                      ? 'text-base-content/70 hover:bg-base-content/5'
-                      : 'text-base-content/30'
+                      ? 'text-base-content/70 bg-base-100 border-base-content/15 hover:bg-base-content/[0.03]'
+                      : 'text-base-content/30 bg-base-100 border-base-content/10'
                 } disabled:opacity-50`}
-                style={updateStatus !== 'saved' ? { background: '#f8f8f9', border: '1px solid #e5e5e6' } : undefined}
               >
                 {updatingMode === 'save'
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</>
@@ -3628,7 +4450,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               {!isLocked && (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/30 transition-all hover:text-error hover:bg-error/5"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs text-base-content/35 border border-transparent transition-all duration-200 hover:text-error hover:bg-error/5 hover:border-error/10"
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Ištrinti</span>
@@ -3639,7 +4461,18 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
 
           {/* Tab content */}
           <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
-            {activeTab === 'talpos' && <TabTalpos record={record} products={products} readOnly={isLocked} onRecordUpdated={onRefresh} />}
+            {activeTab === 'talpos' && (
+              <TabTalpos
+                record={record}
+                products={products}
+                readOnly={isLocked}
+                onRecordUpdated={onRefresh}
+                initialSubTab={talposSubTab}
+                onSubTabChange={setTalposSubTab}
+                initialTankIdx={talposIdx}
+                onTankIdxChange={setTalposIdx}
+              />
+            )}
             {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
@@ -3683,16 +4516,14 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <div className="flex gap-2">
                   <button
                     onClick={onClose}
-                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5"
-                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/65 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03]"
                   >
                     Uždaryti
                   </button>
                   <button
                     onClick={() => { executeSaveAndProcess(); }}
                     disabled={updating}
-                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/70 transition-all hover:bg-base-content/5 disabled:opacity-60"
-                    style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                    className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/75 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03] disabled:opacity-60"
                   >
                     {updatingMode === 'save' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saugoma...</> : <><Save className="w-3.5 h-3.5" /> Išsaugoti</>}
                   </button>
@@ -3732,16 +4563,15 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
                   disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-base-content/60 transition-all hover:bg-base-content/5 disabled:opacity-60"
-                  style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-base-content/65 border border-base-content/15 bg-base-100 transition-all duration-200 hover:bg-base-content/[0.03] disabled:opacity-60"
                 >
                   Atšaukti
                 </button>
                 <button
                   onClick={handleDeleteRecord}
                   disabled={deleting}
-                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-3xl text-white transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }}
+                  className="flex-1 flex items-center justify-center gap-2 text-xs font-medium px-3 py-2.5 rounded-xl text-white transition-all duration-200 hover:opacity-90 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(180deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 1px 3px rgba(0,0,0,0.10)' }}
                 >
                   {deleting ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Trinama...</> : <><Trash2 className="w-3.5 h-3.5" /> Ištrinti</>}
                 </button>
@@ -3788,21 +4618,21 @@ export default function PaklausimoKortelePage() {
 
   return (
     <div className="h-screen flex items-center justify-center p-6 overflow-hidden bg-base-100">
-      <div className="w-full flex flex-col bg-base-100 rounded-xl overflow-hidden border border-base-content/10 shadow-xl" style={{ maxWidth: '960px', height: 'min(90vh, 860px)' }}>
+      <div className="w-full flex flex-col bg-base-100 rounded-2xl overflow-hidden border border-base-content/10 shadow-xl" style={{ maxWidth: '960px', height: 'min(90vh, 860px)', boxShadow: '0 18px 48px rgba(17,24,39,0.16)' }}>
         {/* Accent strip */}
-        <div className="h-1 shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
+        <div className="h-[2px] shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
 
         {/* Header */}
-        <div className="px-6 pt-5 pb-4 shrink-0 border-b border-base-content/10">
-          <div className="flex items-start justify-between gap-4">
+        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/10">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[17px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.02em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h2 className="text-[15px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.01em' }}>{record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}</h2>
                 {record.klientas && (
-                  <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">{record.klientas}</span>
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">{record.klientas}</span>
                 )}
                 <span
-                  className="text-xs font-medium px-2.5 py-0.5 rounded-full shrink-0"
+                  className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
                   style={record.status
                     ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
                     : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
@@ -3810,12 +4640,12 @@ export default function PaklausimoKortelePage() {
                   {record.status ? 'Aktyvus' : 'Neaktyvus'}
                 </span>
               </div>
-              <p className="text-sm mt-1 text-base-content/40">
+              <p className="text-xs mt-0.5 text-base-content/45">
                 Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
                 {products.length > 1 && ` · ${products.length} talpos`}
               </p>
               {getSantraukaFromMetadata(record.metadata) && (
-                <p className="text-sm mt-1.5 text-base-content/60 leading-snug" style={{ maxWidth: '480px' }}>
+                <p className="text-xs mt-1 text-base-content/60 leading-snug" style={{ maxWidth: '620px' }}>
                   {getSantraukaFromMetadata(record.metadata)}
                 </p>
               )}
@@ -3825,7 +4655,7 @@ export default function PaklausimoKortelePage() {
 
         {/* Body */}
         <div className="flex flex-1 min-h-0">
-          <div className="w-[160px] shrink-0 py-3 px-2 border-r border-base-content/10 bg-base-200/40">
+          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/10 bg-base-200/25">
             {readOnlyTabs.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -3833,7 +4663,7 @@ export default function PaklausimoKortelePage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-sm transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/60 hover:bg-base-content/5'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-sm transition-all duration-200 mb-1 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/65 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>

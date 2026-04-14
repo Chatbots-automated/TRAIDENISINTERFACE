@@ -456,6 +456,32 @@ export const updateTalposField = async (id: string, field: string, value: any): 
 };
 
 /**
+ * One-time migration: move derva_musu from talpos.json to dedicated column.
+ * Safe to call multiple times — only touches rows that still have the value in json.
+ */
+export const migrateDervaMusuToColumn = async (): Promise<number> => {
+  try {
+    const rows = await fetchTalpos();
+    let migrated = 0;
+    for (const row of rows) {
+      const jsonObj = row.json && typeof row.json === 'object'
+        ? row.json
+        : (() => { try { return JSON.parse(row.json); } catch { return null; } })();
+      if (!jsonObj || !('derva_musu' in jsonObj) || !jsonObj.derva_musu) continue;
+      // Only migrate if dedicated column is empty
+      if (row.derva_musu && String(row.derva_musu).trim()) continue;
+      const { derva_musu: val, ...cleanJson } = jsonObj;
+      await db.from('talpos').update({ derva_musu: val, json: cleanJson }).eq('id', row.id);
+      migrated++;
+    }
+    return migrated;
+  } catch (e) {
+    console.error('derva_musu migration error:', e);
+    return 0;
+  }
+};
+
+/**
  * Create a new talpos row. Returns the created row (including its generated UUID).
  */
 export const createTalpa = async (data: Record<string, any>): Promise<any> => {

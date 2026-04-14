@@ -627,10 +627,17 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
 
       if (isTalpos) {
-        rows = rows.filter(row => {
-          const blob = Object.values(row).map(v => String(v ?? '')).join(' ').toLowerCase();
-          return keywords.every(kw => blob.includes(kw));
-        });
+        // Exact ID match: if the query matches a row id exactly, return only that row
+        const trimmedQuery = searchQuery.trim();
+        const exactIdMatch = rows.find(row => String(row.id) === trimmedQuery);
+        if (exactIdMatch) {
+          rows = [exactIdMatch];
+        } else {
+          rows = rows.filter(row => {
+            const blob = Object.values(row).map(v => String(v ?? '')).join(' ').toLowerCase();
+            return keywords.every(kw => blob.includes(kw));
+          });
+        }
       } else if (isNestandartiniai) {
         rows = rows.filter((row: NestandartiniaiRecord) => {
           // Build a searchable text blob from all record fields
@@ -1394,22 +1401,35 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </td>
                     {orderedColsStand.map(col => {
                       const val = row[col.key];
-                      // docx_file_id — show download button
+                      // docx_file_id — show preview + download buttons
                       if (col.key === 'docx_file_id') {
                         // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
                         const fileId = typeof val === 'object' && val !== null ? val.id : val;
                         return (
                           <td key={col.key} className="px-3 py-2.5">
                             {fileId ? (
-                              <a
-                                href={getDirectusFileUrl(fileId)}
-                                download
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
-                                style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                                Atsisiųsti
-                              </a>
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(fileId))}&embedded=true`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
+                                  style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
+                                  title="Peržiūrėti"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  Peržiūra
+                                </a>
+                                <a
+                                  href={getDirectusFileUrl(fileId)}
+                                  download
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
+                                  style={{ background: 'rgba(0,0,0,0.04)', color: '#8a857f' }}
+                                  title="Atsisiųsti"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </a>
+                              </div>
                             ) : (
                               <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>
                             )}
