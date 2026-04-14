@@ -18,12 +18,21 @@ export default function NotificationToast({
   onClose,
   duration = 5000
 }: NotificationToastProps) {
+  const [isClosing, setIsClosing] = React.useState(false);
+  const [isPaused, setIsPaused] = React.useState(false);
+
+  const requestClose = React.useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    window.setTimeout(() => onClose(), 180);
+  }, [isClosing, onClose]);
+
   useEffect(() => {
-    if (duration > 0) {
-      const timer = setTimeout(onClose, duration);
+    if (duration > 0 && !isPaused) {
+      const timer = setTimeout(requestClose, duration);
       return () => clearTimeout(timer);
     }
-  }, [duration, onClose]);
+  }, [duration, isPaused, requestClose]);
 
   const config = {
     success: {
@@ -54,6 +63,8 @@ export default function NotificationToast({
   return (
     <div
       className="notification-toast"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
       style={{
         width: '340px',
         minHeight: '64px',
@@ -67,7 +78,8 @@ export default function NotificationToast({
         alignItems: 'center',
         justifyContent: 'space-around',
         gap: '15px',
-        animation: 'slideInRight 0.3s ease-out'
+        animation: `${isClosing ? 'fadeOutRight' : 'slideInRight'} 0.2s ease-out`,
+        opacity: isClosing ? 0 : 1
       }}
     >
       <svg
@@ -153,7 +165,7 @@ export default function NotificationToast({
       </div>
 
       <button
-        onClick={onClose}
+        onClick={requestClose}
         style={{
           background: 'none',
           border: 'none',
@@ -173,6 +185,17 @@ export default function NotificationToast({
           to {
             transform: translateX(0);
             opacity: 1;
+          }
+        }
+
+        @keyframes fadeOutRight {
+          from {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          to {
+            transform: translateX(24px);
+            opacity: 0;
           }
         }
       `}</style>

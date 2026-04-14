@@ -14,6 +14,8 @@ interface NotificationContainerProps {
 }
 
 export default function NotificationContainer({ notifications, onRemove }: NotificationContainerProps) {
+  const orderedNotifications = [...notifications].reverse();
+
   return (
     <div
       style={{
@@ -24,10 +26,13 @@ export default function NotificationContainer({ notifications, onRemove }: Notif
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
-        pointerEvents: 'none'
+        pointerEvents: 'none',
+        maxHeight: 'calc(100vh - 48px)',
+        overflowY: 'auto',
+        paddingRight: '4px'
       }}
     >
-      {notifications.map((notification) => (
+      {orderedNotifications.map((notification) => (
         <div key={notification.id} style={{ pointerEvents: 'auto' }}>
           <NotificationToast
             type={notification.type}
