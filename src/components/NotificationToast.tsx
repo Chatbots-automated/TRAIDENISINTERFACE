@@ -55,10 +55,10 @@ export default function NotificationToast({
     <div
       className="notification-toast"
       style={{
-        width: '330px',
-        height: '80px',
-        borderRadius: '8px',
-        padding: '10px 15px',
+        width: '340px',
+        minHeight: '64px',
+        borderRadius: '10px',
+        padding: '8px 12px',
         backgroundColor: '#ffffff',
         boxShadow: 'rgba(149, 157, 165, 0.2) 0px 8px 24px',
         position: 'relative',
@@ -92,10 +92,10 @@ export default function NotificationToast({
       <div
         className="icon-container"
         style={{
-          width: '35px',
-          height: '35px',
-          minWidth: '35px',
-          minHeight: '35px',
+          width: '32px',
+          height: '32px',
+          minWidth: '32px',
+          minHeight: '32px',
           flexShrink: 0,
           display: 'flex',
           justifyContent: 'center',
@@ -105,7 +105,7 @@ export default function NotificationToast({
           marginLeft: '8px'
         }}
       >
-        <Icon style={{ width: '17px', height: '17px', color: iconColor }} />
+        <Icon style={{ width: '16px', height: '16px', color: iconColor }} />
       </div>
 
       <div
@@ -123,9 +123,10 @@ export default function NotificationToast({
           style={{
             margin: 0,
             color: titleColor,
-            fontSize: '17px',
+            fontSize: '15px',
             fontWeight: 700,
-            cursor: 'default'
+            cursor: 'default',
+            lineHeight: 1.2
           }}
         >
           {title}
@@ -134,9 +135,17 @@ export default function NotificationToast({
           className="sub-text"
           style={{
             margin: 0,
-            fontSize: '14px',
+            fontSize: '13px',
             color: '#555',
-            cursor: 'default'
+            cursor: 'default',
+            lineHeight: 1.35,
+            maxWidth: '220px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            wordBreak: 'break-word'
           }}
         >
           {message}

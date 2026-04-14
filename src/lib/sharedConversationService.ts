@@ -71,6 +71,13 @@ export const shareConversation = async (
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in shareConversation:', error);
+    await appLogger.logError({
+      action: 'conversation_share_failed',
+      error: error as any,
+      userId: sharedByUserId,
+      userEmail: sharedByEmail,
+      metadata: { conversation_id: conversationId, shared_with_users: userIds }
+    });
     return { data: false, error };
   }
 };
@@ -133,6 +140,11 @@ export const getSharedConversations = async (
     return { data: transformedData, error: null };
   } catch (error) {
     console.error('Error in getSharedConversations:', error);
+    await appLogger.logError({
+      action: 'shared_conversations_fetch_failed',
+      error: error as any,
+      metadata: { user_id: userId }
+    });
     return { data: null, error };
   }
 };
@@ -199,6 +211,11 @@ export const getSharedConversationDetails = async (
     return { data: details, error: null };
   } catch (error) {
     console.error('Error in getSharedConversationDetails:', error);
+    await appLogger.logError({
+      action: 'shared_conversation_details_fetch_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId, user_id: userId }
+    });
     return { data: null, error };
   }
 };
@@ -219,9 +236,22 @@ export const markSharedAsRead = async (
 
     if (error) throw error;
 
+    await appLogger.logDocument({
+      action: 'shared_conversation_read',
+      metadata: {
+        conversation_id: conversationId,
+        shared_with_user_id: userId
+      }
+    });
+
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in markSharedAsRead:', error);
+    await appLogger.logError({
+      action: 'shared_conversation_update_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId, shared_with_user_id: userId, operation: 'mark_read' }
+    });
     return { data: false, error };
   }
 };
@@ -257,6 +287,13 @@ export const unshareConversation = async (
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in unshareConversation:', error);
+    await appLogger.logError({
+      action: 'conversation_unshare_failed',
+      error: error as any,
+      userId: removedByUserId,
+      userEmail: removedByEmail,
+      metadata: { conversation_id: conversationId, unshared_user_id: userId }
+    });
     return { data: false, error };
   }
 };
@@ -295,6 +332,11 @@ export const checkConversationAccess = async (
     return { hasAccess: false, isOwner: false, isShared: false };
   } catch (error) {
     console.error('Error in checkConversationAccess:', error);
+    await appLogger.logError({
+      action: 'conversation_access_check_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId, user_id: userId }
+    });
     return { hasAccess: false, isOwner: false, isShared: false };
   }
 };
@@ -320,6 +362,11 @@ export const getUnreadSharedCount = async (
     return { data: count, error: null };
   } catch (error) {
     console.error('Error in getUnreadSharedCount:', error);
+    await appLogger.logError({
+      action: 'shared_conversations_unread_count_failed',
+      error: error as any,
+      metadata: { user_id: userId }
+    });
     return { data: 0, error };
   }
 };

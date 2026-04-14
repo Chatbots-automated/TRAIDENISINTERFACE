@@ -4,6 +4,7 @@ import { appLogger } from '../lib/appLogger';
 import { getWebhookUrl } from '../lib/webhooksService';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
+import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
@@ -33,7 +34,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
 
   const addNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
     const id = `notification-${Date.now()}-${Math.random()}`;
-    setNotifications(prev => [...prev, { id, type, title, message }]);
+    setNotifications(prev => [...prev, { id, type, title: formatToastMessage(title, 50), message: formatToastMessage(message) }]);
   };
 
   const removeNotification = (id: string) => {
@@ -187,7 +188,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
       }, 1500);
     } catch (error: any) {
       console.error('Upload error:', error);
-      addNotification('error', 'Klaida', `Operacija nepavyko: ${error.message}`);
+      addNotification('error', 'Klaida', formatErrorForToast(error, 'Operacija nepavyko'));
       setUploadSuccess(false);
       setUploading(false);
     }
