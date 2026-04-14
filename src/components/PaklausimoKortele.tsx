@@ -3710,6 +3710,24 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
     }
   };
 
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const waitForTalposDervaAi = async (talposId: string, timeoutMs = 12000): Promise<string | null> => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const rows = await fetchTalposByIds([talposId]);
+      const row = rows?.[0];
+      const value = row?.derva_ai;
+      if (value != null && String(value).trim() !== '') {
+        const normalized = String(value);
+        onTalposRowUpdated?.(talposId, 'derva_ai', normalized);
+        return normalized;
+      }
+      await sleep(1000);
+    }
+    return null;
+  };
+
   const triggerDervaSelect = async () => {
     setDervaError(null);
     setSuccess(false);
@@ -3769,17 +3787,23 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
         throw new Error(`Serverio klaida (${resp.status})${errText ? `: ${errText}` : ''}`);
       }
 
-      // Fetch updated record — webhook may have written to derva column
+      // Poll talpos row first: n8n may write derva_ai asynchronously after webhook returns 200.
+      let polledTalposResult: string | null = null;
+      if (currentTalposId) {
+        polledTalposResult = await waitForTalposDervaAi(currentTalposId);
+      }
+
+      // Fetch updated record — webhook may have written to derva column (legacy fallback path)
       const updated = await fetchNestandartiniaiById(record.id);
       if (updated) {
         const freshDerva = updated.derva || '';
         // Check if webhook wrote a per-tank JSON or a plain string
         const parsed = parseDervaPerTank(freshDerva);
-        let resultText: string | null = null;
+        let resultText: string | null = polledTalposResult;
         if (Object.keys(parsed).length > 0 && parsed[tankKey]) {
           // Webhook already wrote per-tank format — use as-is
           setDervaPerTank(parsed);
-          resultText = parsed[tankKey];
+          if (!resultText) resultText = parsed[tankKey];
         } else {
           // Webhook wrote a plain string — merge it into our per-tank structure
           const plainResult = freshDerva || '';
@@ -3788,7 +3812,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             setDervaPerTank(merged);
             // Save merged per-tank structure back to the derva column
             await updateNestandartiniaiField(record.id, 'derva', JSON.stringify(merged));
-            resultText = plainResult;
+            if (!resultText) resultText = plainResult;
           }
         }
         // Save AI result to talpos.derva_ai column
