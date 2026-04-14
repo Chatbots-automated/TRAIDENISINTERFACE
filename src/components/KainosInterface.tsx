@@ -572,7 +572,6 @@ function SablonaiTab() {
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(52,199,89,0.1)', color: '#34C759' }}>JSON</span>
                       )}
                     </div>
-                    <p className="text-xs mt-0.5 text-base-content/45">{s.raw_text.split('\n')[0] || 'Tuščias'}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
