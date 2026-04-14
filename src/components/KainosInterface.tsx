@@ -575,9 +575,9 @@ function SablonaiTab() {
                   background: '#fff',
                 }}
               >
-                <div className={`flex items-center gap-3 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
-                  <div className={`min-w-0 flex-1 ${isExpanded ? '' : 'text-center'}`}>
-                    <h4 className={`text-sm font-semibold truncate ${isExpanded ? '' : 'mx-auto'}`} style={{ color: '#3d3935' }}>{s.name}</h4>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1 text-left">
+                    <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
                   </div>
                   <div className="flex items-center gap-1">
                     {!s.structured_json && isExpanded && (
