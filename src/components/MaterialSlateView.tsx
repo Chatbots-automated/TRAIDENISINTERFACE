@@ -39,6 +39,24 @@ const hasUsableValue = (value: any): boolean => {
   return true;
 };
 
+const tryParseStructuredString = (value: unknown): Record<string, any> | any[] | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (
+    !(trimmed.startsWith('{') && trimmed.endsWith('}')) &&
+    !(trimmed.startsWith('[') && trimmed.endsWith(']'))
+  ) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {
+    return null;
+  }
+  return null;
+};
+
 // ---------------------------------------------------------------------------
 // Subcomponents
 // ---------------------------------------------------------------------------
@@ -536,6 +554,13 @@ function PanelValue({ value, depth = 0 }: { value: any; depth?: number }) {
   }
 
   if (typeof value === 'string') {
+    const parsed = tryParseStructuredString(value);
+    if (parsed) {
+      if (Array.isArray(parsed)) {
+        return <PanelValue value={parsed} depth={depth + 1} />;
+      }
+      return <PanelObject obj={parsed} depth={depth + 1} />;
+    }
     return <p className="text-sm font-medium text-base-content/80 whitespace-pre-wrap break-words">{cleanStr(value)}</p>;
   }
 
@@ -616,7 +641,23 @@ function PanelSection({ label, value }: { label: string; value: any }) {
 }
 
 function PremiumPanelView({ data }: { data: Record<string, any> }) {
-  const entries = Object.entries(data).filter(([k, v]) => !k.startsWith('_') && hasUsableValue(v));
+  const entries = Object.entries(data).flatMap(([k, v]) => {
+    if (k.startsWith('_') || !hasUsableValue(v)) return [];
+
+    const parsedText = (k.toLowerCase() === 'text' || k.toLowerCase() === 'raw_text')
+      ? tryParseStructuredString(v)
+      : null;
+
+    if (parsedText && !Array.isArray(parsedText)) {
+      return Object.entries(parsedText).filter(([pk, pv]) => !pk.startsWith('_') && hasUsableValue(pv));
+    }
+
+    if (parsedText && Array.isArray(parsedText)) {
+      return [['items', parsedText] as [string, any]];
+    }
+
+    return [[k, v] as [string, any]];
+  });
   if (entries.length === 0) {
     return <p className="text-xs italic text-base-content/40">Nėra struktūrizuotų duomenų</p>;
   }
