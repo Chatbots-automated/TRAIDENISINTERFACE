@@ -273,6 +273,7 @@ function SablonaiTab() {
   const [error, setError] = useState<string | null>(null);
 
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [capacityFilter, setCapacityFilter] = useState('');
   const [draftCard, setDraftCard] = useState<{
     localId: string;
     id: number | null;
@@ -327,20 +328,43 @@ function SablonaiTab() {
   }, [draftCard?.localId]);
 
   const toggleCard = (id: string) => {
-    setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
+    setExpandedCards(prev => {
+      const willExpand = !prev[id];
+      if (!willExpand) return { ...prev, [id]: false };
+      const collapsed: Record<string, boolean> = {};
+      for (const key of Object.keys(prev)) collapsed[key] = false;
+      collapsed[id] = true;
+      return collapsed;
+    });
   };
 
   const startNew = () => {
     if (draftCard) {
-      setExpandedCards(prev => ({ ...prev, [draftCard.localId]: true }));
+      setExpandedCards(prev => {
+        const collapsed: Record<string, boolean> = {};
+        for (const key of Object.keys(prev)) collapsed[key] = false;
+        collapsed[draftCard.localId] = true;
+        return collapsed;
+      });
       draftTextareaRef.current?.focus();
       return;
     }
 
     const localId = `new-${Date.now()}`;
     setDraftCard({ localId, id: null, name: '', rawText: '', isSaving: false, saveError: null });
-    setExpandedCards(prev => ({ ...prev, [localId]: true }));
+    setExpandedCards(prev => {
+      const collapsed: Record<string, boolean> = {};
+      for (const key of Object.keys(prev)) collapsed[key] = false;
+      collapsed[localId] = true;
+      return collapsed;
+    });
   };
+
+  const filteredSablonai = useMemo(() => {
+    const normalized = capacityFilter.trim();
+    if (!normalized) return sablonai;
+    return sablonai.filter(s => s.name.toLowerCase().includes(`v-${normalized.toLowerCase()}`));
+  }, [sablonai, capacityFilter]);
 
   useEffect(() => {
     if (!draftCard) return;
@@ -421,7 +445,20 @@ function SablonaiTab() {
 
       {/* Header */}
       <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
-        <p className="text-sm text-base-content/60">{sablonai.length} šablonai</p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-base-content/60">{filteredSablonai.length} / {sablonai.length} šablonai</p>
+          <label className="inline-flex items-center gap-1.5 text-xs text-base-content/55 rounded-lg border border-base-content/10 px-2 py-1 bg-white/70">
+            <span className="font-medium">V-</span>
+            <input
+              value={capacityFilter}
+              onChange={e => setCapacityFilter(e.target.value.replace(/[^\d]/g, ''))}
+              inputMode="numeric"
+              placeholder="talpa"
+              className="w-14 bg-transparent outline-none"
+              aria-label="Filtruoti pagal talpą"
+            />
+          </label>
+        </div>
         <button
           onClick={startNew}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80"
@@ -431,15 +468,15 @@ function SablonaiTab() {
       </div>
 
       {/* Templates list */}
-      {sablonai.length === 0 && !draftCard ? (
+      {filteredSablonai.length === 0 && !draftCard ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <FileText className="w-10 h-10 mb-3" style={{ color: '#d1cdc7' }} />
-          <p className="text-sm font-medium" style={{ color: '#8a857f' }}>Nėra medžiagų šablonų</p>
-          <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>Sukurkite pirmą šabloną paspaudę „Naujas šablonas"</p>
+          <p className="text-sm font-medium" style={{ color: '#8a857f' }}>{capacityFilter ? 'Nėra šablonų pagal šį V- filtrą' : 'Nėra medžiagų šablonų'}</p>
+          <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>{capacityFilter ? 'Pakeiskite V- filtro reikšmę' : 'Sukurkite pirmą šabloną paspaudę „Naujas šablonas"'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,320px))] justify-center gap-3">
-          {sablonai.map(s => {
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,320px))] justify-center items-start gap-3">
+          {filteredSablonai.map(s => {
             const cardKey = String(s.id);
             const isExpanded = !!expandedCards[cardKey];
 
