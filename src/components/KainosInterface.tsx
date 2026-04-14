@@ -375,8 +375,18 @@ function SablonaiTab() {
   const filteredSablonai = useMemo(() => {
     const normalized = capacityFilter.trim();
     if (!normalized) return sablonai;
-    const pattern = new RegExp(`\\bV\\s*[-–]?\\s*${normalized}(?=\\D|$)`, 'i');
-    return sablonai.filter(s => pattern.test(s.name));
+    return sablonai.filter(s => {
+      const title = s.name
+        .normalize('NFKC')
+        .replace(/[–—]/g, '-');
+
+      // Primary: V + capacity in any spacing/hyphen format (e.g. V-230, V - 230, V- 230, V230)
+      const vMatches = Array.from(title.matchAll(/v\s*[-]?\s*(\d+)/gi)).map(m => m[1]);
+      if (vMatches.includes(normalized)) return true;
+
+      // Fallback: plain numeric token match, if title was entered without V prefix
+      return new RegExp(`\\b${normalized}\\b`).test(title);
+    });
   }, [sablonai, capacityFilter]);
 
   useEffect(() => {
