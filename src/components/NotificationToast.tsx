@@ -20,12 +20,17 @@ export default function NotificationToast({
 }: NotificationToastProps) {
   const [isClosing, setIsClosing] = React.useState(false);
   const [isPaused, setIsPaused] = React.useState(false);
+  const closeHandlerRef = React.useRef(onClose);
+
+  useEffect(() => {
+    closeHandlerRef.current = onClose;
+  }, [onClose]);
 
   const requestClose = React.useCallback(() => {
     if (isClosing) return;
     setIsClosing(true);
-    window.setTimeout(() => onClose(), 180);
-  }, [isClosing, onClose]);
+    window.setTimeout(() => closeHandlerRef.current(), 180);
+  }, [isClosing]);
 
   useEffect(() => {
     if (duration > 0 && !isPaused) {
