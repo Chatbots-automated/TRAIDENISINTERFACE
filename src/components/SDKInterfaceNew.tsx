@@ -142,7 +142,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [streamingContent, setStreamingContent] = useState('');
   const [isToolUse, setIsToolUse] = useState(false);
   const [toolUseName, setToolUseName] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [promptTemplate, setPromptTemplate] = useState<string>('');
   const [templateFromDB, setTemplateFromDB] = useState<string>(''); // Template variable from instruction_variables
@@ -440,7 +439,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('Template variable from DB loaded, length:', templateVar.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
-      setError('Nepavyko užkrauti sistemos instrukcijų');
+      addErrorNotification('Klaida', err, 'Nepavyko užkrauti sistemos instrukcijų');
     } finally {
       setLoadingPrompt(false);
     }
@@ -552,7 +551,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('success', 'Sukurta', 'Naujas pokalbis sukurtas.');
     } catch (err) {
       console.error('Error creating conversation:', err);
-      setError('Nepavyko sukurti pokalbio');
       addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
     } finally {
       setCreatingConversation(false);
@@ -581,7 +579,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
 
       setCurrentConversation(data);
-      setError(null);
 
       // Load linked standartiniai_projektai record (if any) for docx download
       setStandartiniaiRecordId(null);
@@ -782,7 +779,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setShowArtifact(!!data.artifact);
       setStandartiniaiRecordId(null);
       setSavedDocxFileId(null);
-      setError(null);
 
       // Load linked standartiniai record for shared conversations too
       if (data?.artifact) {
@@ -833,13 +829,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         );
         if (createError || !conversationId) {
           console.error('Error creating conversation:', createError);
-          setError('Nepavyko sukurti pokalbio');
+          addErrorNotification('Klaida', createError, 'Nepavyko sukurti pokalbio');
           return;
         }
 
         const { data: newConversation } = await getSDKConversation(conversationId);
         if (!newConversation) {
-          setError('Nepavyko sukurti pokalbio');
+          addNotification('error', 'Klaida', 'Nepavyko sukurti pokalbio');
           return;
         }
 
@@ -848,7 +844,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
         console.error('Error creating conversation:', err);
-        setError(err.message || 'Nepavyko sukurti pokalbio');
+        addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
         return;
       } finally {
         setCreatingConversation(false);
@@ -902,7 +898,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Start loading
     setLoading(true);
     setStreamingContent('');
-    setError(null);
 
     try {
       if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
@@ -965,7 +960,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           button_id: buttonId
         }
       });
-      setError(`Klaida: ${err.message || 'Nežinoma klaida'}`);
       addErrorNotification('Klaida', err, 'Nepavyko gauti atsakymo iš AI');
       setLoading(false);
     }
@@ -1538,7 +1532,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
         console.error('Error creating conversation:', err);
-        setError(err.message || 'Nepavyko sukurti pokalbio');
+        addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
         return;
       } finally {
         setCreatingConversation(false);
@@ -1566,7 +1560,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setInputValue('');
     setLoading(true);
     setStreamingContent('');
-    setError(null);
 
     try {
       if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
@@ -1773,7 +1766,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           message_length: messageText.length
         }
       });
-      setError(err.message || 'Įvyko klaida');
+      addErrorNotification('Klaida', err, 'Nepavyko išsiųsti žinutės');
       setStreamingContent('');
     } finally {
       setLoading(false);
@@ -3213,18 +3206,6 @@ Vartotojo instrukcija: ${instruction}`;
           >
             <ChevronDown className="w-5 h-5" />
           </button>
-        )}
-
-        {/* Error Display - Always visible when error exists */}
-        {error && (
-          <div className="px-4 pb-2">
-            <div className="max-w-3xl mx-auto">
-              <div className="alert alert-soft alert-error text-sm">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span className="flex-1">{error}</span>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Input Box or Read-Only info */}
