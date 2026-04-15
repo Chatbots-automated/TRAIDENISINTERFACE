@@ -75,6 +75,7 @@ import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
+import { formatToastMessage } from '../lib/notificationUtils';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -624,7 +625,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
       console.error('[Delete] Exception:', err);
-      addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
+      addNotification('error', 'Klaida', formatToastMessage('Nepavyko ištrinti pokalbio', err, 'nežinoma klaida'));
     }
   };
 
@@ -2255,7 +2256,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
-      addNotification('error', 'Klaida', `Nepavyko išsaugoti dokumento: ${err instanceof Error ? err.message : err}`);
+      addNotification('error', 'Klaida', formatToastMessage('Nepavyko išsaugoti dokumento', err));
     } finally {
       setIsSavingToStandartiniai(false);
     }
@@ -4215,7 +4216,7 @@ Vartotojo instrukcija: ${instruction}`;
                         getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
                       } catch (err) {
-                        addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
+                        addNotification('error', 'Klaida', formatToastMessage('Nepavyko įkelti DOCX', err));
                       } finally {
                         setDocxUploading(false);
                         e.target.value = '';
