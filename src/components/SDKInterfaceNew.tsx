@@ -75,7 +75,7 @@ import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
-import { formatToastMessage } from '../lib/notificationUtils';
+import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -4233,7 +4233,7 @@ Vartotojo instrukcija: ${instruction}`;
                         getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
                       } catch (err) {
-                        addNotification('error', 'Klaida', formatToastMessage('Nepavyko įkelti DOCX', err));
+                        addNotification('error', 'Klaida', formatToastMessage('Nepavyko įkelti DOCX', formatErrorForToast(err)));
                       } finally {
                         setDocxUploading(false);
                         e.target.value = '';
