@@ -246,7 +246,7 @@ const DEFAULT_STANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'id', label: 'ID', width: 'w-16' },
   { key: 'projekto_kodas', label: 'Projekto kodas' },
   { key: 'hnv', label: 'HNV' },
-  { key: 'docx_file_id', label: 'DOCX' },
+  { key: 'document', label: 'DOCX' },
   { key: 'date_created', label: 'Sukūrimo data', width: 'w-36' },
   { key: 'date_updated', label: 'Atnaujinimo data', width: 'w-36' },
   { key: 'status', label: 'Būsena', width: 'w-24' },
@@ -821,7 +821,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       } else {
         const toDelete = standartiniaiData.filter((r: any) => selectedIds.has(r.id));
         for (const record of toDelete) {
-          await deleteStandartinisProjektas({ id: record.id, docx_file_id: extractDirectusFileId(record.docx_file_id) });
+          await deleteStandartinisProjektas({ id: record.id, document: extractDirectusFileId(record.document ?? record.docx_file_id) });
         }
         setSelectedIds(new Set());
         setShowBulkDeleteConfirm(false);
@@ -1411,9 +1411,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     </td>
                     {orderedColsStand.map(col => {
                       const val = row[col.key];
-                      // docx_file_id — show preview + download buttons
-                      if (col.key === 'docx_file_id') {
-                        const fileId = extractDirectusFileId(val);
+                      // document (Directus file relation) — show preview + download buttons
+                      if (col.key === 'document' || col.key === 'docx_file_id') {
+                        const fileId = extractDirectusFileId(row.document ?? row.docx_file_id ?? val);
                         return (
                           <td key={col.key} className="px-3 py-2.5">
                             {fileId ? (

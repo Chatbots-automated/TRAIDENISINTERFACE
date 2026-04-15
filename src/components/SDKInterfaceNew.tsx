@@ -611,7 +611,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const spRecord = await getStandartinisByConversationId(conversationId);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
-            const fid = extractDirectusFileId(spRecord.docx_file_id);
+            const fid = extractDirectusFileId(spRecord.document ?? spRecord.docx_file_id);
             if (fid) setSavedDocxFileId(fid);
           }
         } catch (spErr) {
@@ -804,7 +804,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const spRecord = await getStandartinisByConversationId(sharedConv.conversation_id);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
-            const fid = extractDirectusFileId(spRecord.docx_file_id);
+            const fid = extractDirectusFileId(spRecord.document ?? spRecord.docx_file_id);
             if (fid) setSavedDocxFileId(fid);
             if (spRecord.html_content) setSavedHtmlFromDb(spRecord.html_content);
           }
@@ -2062,7 +2062,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const docxBlob = await buildDocxBlob(vars);
           const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
           await updateStandartinisProjektas(linkedStandartiniaiId, {
-            docx_file_id: newFileId,
+            document: newFileId,
           });
           setSavedDocxFileId(newFileId);
         }
@@ -2318,12 +2318,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const hnv = vars['economy_HNV'] || '';
         if (standartiniaiRecordId) {
           await updateStandartinisProjektas(standartiniaiRecordId, {
-            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, docx_file_id: newFileId,
+            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
           });
         } else {
           const created = await createStandartinisProjektas({
             conversation_id: currentConversation!.id,
-            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, docx_file_id: newFileId,
+            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
           });
           if (!cancelled) setStandartiniaiRecordId(created.id);
         }
@@ -2370,7 +2370,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
-          docx_file_id: newFileId,
+          document: newFileId,
         });
       } else {
         const created = await createStandartinisProjektas({
@@ -2378,7 +2378,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
-          docx_file_id: newFileId,
+          document: newFileId,
         });
         setStandartiniaiRecordId(created.id);
       }
@@ -2618,7 +2618,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             const filename = `${(projektoKodas || 'komercinis-pasiulymas').replace(/\//g, '-')}.docx`;
             const docxBlob = await buildDocxBlob(vars);
             const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
-            await updateStandartinisProjektas(linkedStandartiniaiId, { docx_file_id: newFileId });
+            await updateStandartinisProjektas(linkedStandartiniaiId, { document: newFileId });
             setSavedDocxFileId(newFileId);
           }
 

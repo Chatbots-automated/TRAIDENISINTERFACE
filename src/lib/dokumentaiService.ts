@@ -59,7 +59,7 @@ export const createStandartinisProjektas = async (record: {
   yaml_content: string;
   projekto_kodas: string;
   hnv: string;
-  docx_file_id?: string;
+  document?: string;
 }): Promise<any> => {
   try {
     const { data, error } = await db
@@ -104,7 +104,7 @@ export const updateStandartinisProjektas = async (
     yaml_content?: string;
     projekto_kodas?: string;
     hnv?: string;
-    docx_file_id?: string;
+    document?: string;
   }
 ): Promise<any> => {
   try {
@@ -182,16 +182,16 @@ export const getStandartinisByConversationId = async (
 /**
  * Delete a standartiniai_projektai record and its associated Directus .docx file.
  */
-export const deleteStandartinisProjektas = async (record: { id: number; docx_file_id?: string | null }): Promise<void> => {
+export const deleteStandartinisProjektas = async (record: { id: number; document?: string | null }): Promise<void> => {
   // 1. Delete associated .docx file from Directus storage
-  if (record.docx_file_id) {
+  if (record.document) {
     try {
-      await fetch(`${DIRECTUS_URL}/files/${record.docx_file_id}`, {
+      await fetch(`${DIRECTUS_URL}/files/${record.document}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       });
     } catch (err) {
-      console.warn(`Failed to delete Directus file ${record.docx_file_id}:`, err);
+      console.warn(`Failed to delete Directus file ${record.document}:`, err);
     }
   }
 
@@ -206,14 +206,14 @@ export const deleteStandartinisProjektas = async (record: { id: number; docx_fil
     await appLogger.logError({
       action: 'standartinis_delete_failed',
       error,
-      metadata: { id: record.id, docx_file_id: record.docx_file_id }
+      metadata: { id: record.id, document: record.document }
     });
     throw error;
   }
 
   await appLogger.logDocument({
     action: 'standartinis_deleted',
-    metadata: { id: record.id, docx_file_id: record.docx_file_id }
+    metadata: { id: record.id, document: record.document }
   });
 };
 
