@@ -74,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
+import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
 import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 interface SDKInterfaceNewProps {
@@ -274,6 +274,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Check if a DOCX template exists
     getDocxTemplateFileId().then(id => { setHasDocxTemplate(!!id); setGlobalDocxFileId(id); });
   }, []);
+
+  // Re-hydrate current global template pointer when opening viewers/panels.
+  // This avoids stale "null" state in long-lived sessions after template updates.
+  useEffect(() => {
+    if (!showTemplateEditor && !(showArtifact && currentConversation?.artifact)) return;
+    getDocxTemplateFileId().then(id => {
+      setHasDocxTemplate(!!id);
+      setGlobalDocxFileId(id);
+    });
+  }, [showTemplateEditor, showArtifact, currentConversation?.artifact]);
 
   // Sync URL ↔ currentConversation
   useEffect(() => {
@@ -628,7 +638,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
       console.error('[Delete] Exception:', err);
-      addErrorNotification('Klaida', err, 'Nepavyko ištrinti pokalbio');
+      addNotification('error', 'Klaida', formatToastMessage('Nepavyko ištrinti pokalbio', err, 'nežinoma klaida'));
     }
   };
 
@@ -2247,6 +2257,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
+    setDocxViewerUrl(null);
+    setDocxPreviewLoading(false);
+    setDocxPreviewError(null);
 
     setTplEditMode(false);
     setTplSelectedImage(null);
@@ -2352,14 +2365,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
-      await appLogger.logError({
-        action: 'sdk_docx_save_failed',
-        error: err as any,
-        userId: user.id,
-        userEmail: user.email,
-        metadata: { conversation_id: currentConversation.id, standartiniai_record_id: standartiniaiRecordId }
-      });
-      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti dokumento');
+      addNotification('error', 'Klaida', formatToastMessage('Nepavyko išsaugoti dokumento', err));
     } finally {
       setIsSavingToStandartiniai(false);
     }
@@ -2507,6 +2513,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const assetUrl = getDocxTemplateUrl(fileId);
         setDocxViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
       });
+    } else if (!showTemplateEditor) {
+      setDocxPreviewLoading(false);
+      setDocxPreviewError(null);
+      setDocxViewerUrl(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
@@ -3373,7 +3383,7 @@ Vartotojo instrukcija: ${instruction}`;
             <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
               {savedDocxFileId ? (
                 <iframe
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(savedDocxFileId))}&embedded=true`}
+                  src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusAssetUrl(savedDocxFileId))}&embedded=true`}
                   className="flex-1 w-full border-0"
                   title="DOCX peržiūra"
                 />
@@ -4307,7 +4317,7 @@ Vartotojo instrukcija: ${instruction}`;
                         getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
                       } catch (err) {
-                        addErrorNotification('Klaida', err, 'Nepavyko įkelti DOCX');
+                        addNotification('error', 'Klaida', formatToastMessage('Nepavyko įkelti DOCX', formatErrorForToast(err)));
                       } finally {
                         setDocxUploading(false);
                         e.target.value = '';
@@ -4486,10 +4496,15 @@ Vartotojo instrukcija: ${instruction}`;
                     )}
                     {docxViewerUrl && !docxPreviewError && (
                       <iframe
+                        key={docxViewerUrl}
                         src={docxViewerUrl}
                         className="flex-1 w-full border-none"
                         title="DOCX peržiūra"
                         onLoad={() => setDocxPreviewLoading(false)}
+                        onError={() => {
+                          setDocxPreviewLoading(false);
+                          setDocxPreviewError('Nepavyko užkrauti DOCX peržiūros. Pabandykite atidaryti iš naujo.');
+                        }}
                       />
                     )}
                   </div>
