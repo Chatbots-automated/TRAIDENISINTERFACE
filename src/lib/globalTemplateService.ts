@@ -303,10 +303,12 @@ export async function buildDocxBlob(variables: Record<string, string>): Promise<
     paragraphLoop: true,
     linebreaks: true,
     delimiters: { start: '{{', end: '}}' },
+    nullGetter: () => '',
   });
   const cleanedVars: Record<string, string> = {};
   for (const [k, v] of Object.entries(variables)) {
-    cleanedVars[k] = typeof v === 'string' ? v.replace(/\\n/g, '\n') : v;
+    const normalized = v === undefined || v === null ? '' : String(v);
+    cleanedVars[k] = normalized.replace(/\\n/g, '\n');
   }
   docx.render(cleanedVars);
   return docx.getZip().generate({

@@ -2201,6 +2201,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const mergeAllVariables = (yamlContentOverride?: string): Record<string, string> => {
     const yamlSource = yamlContentOverride ?? currentConversation?.artifact?.content ?? '';
     const yamlVars: Record<string, string> = yamlSource ? parseYAMLContent(yamlSource) : {};
+    const safeOfferParameters: Record<string, string> = Object.fromEntries(
+      Object.entries(offerParameters).filter(([, v]) => v !== undefined && v !== null)
+    ) as Record<string, string>;
 
     // Lithuanian date: "2026 m. vasario mėn. 12 d."
     const LITHUANIAN_MONTHS_GENITIVE = [
@@ -2221,7 +2224,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     return {
       ...yamlVars,
-      ...offerParameters,
+      ...safeOfferParameters,
       'date_yyyy-month_men.-dd': ltDate,
       'code_yy/mm/dd': compositeCode,
       technologist: user.full_name || user.email,
@@ -2297,9 +2300,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [standartiniaiRecordId, setStandartiniaiRecordId] = useState<number | null>(null);
   // Directus file ID of the saved .docx — enables download button
   const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
+  const [docxPreviewTick, setDocxPreviewTick] = useState(0);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
+  useEffect(() => {
+    if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
+  }, [savedDocxFileId]);
+
   useEffect(() => {
     if (savedDocxFileId || !globalDocxFileId || autoSaving) return;
     if (!currentConversation?.artifact) return;
@@ -3437,7 +3445,8 @@ Vartotojo instrukcija: ${instruction}`;
             <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
               {savedDocxFileId ? (
                 <iframe
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusAssetUrl(savedDocxFileId))}&embedded=true`}
+                  key={`${savedDocxFileId}-${docxPreviewTick}`}
+                  src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
                   className="flex-1 w-full border-0"
                   title="DOCX peržiūra"
                 />
