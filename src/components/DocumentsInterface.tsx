@@ -821,7 +821,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       } else {
         const toDelete = standartiniaiData.filter((r: any) => selectedIds.has(r.id));
         for (const record of toDelete) {
-          await deleteStandartinisProjektas({ id: record.id, document: extractDirectusFileId(record.document ?? record.docx_file_id) });
+          await deleteStandartinisProjektas(
+            { id: record.id, document: extractDirectusFileId(record.document ?? record.docx_file_id) },
+            { userId: user.id, userEmail: user.email }
+          );
         }
         setSelectedIds(new Set());
         setShowBulkDeleteConfirm(false);
@@ -1419,7 +1422,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                             {fileId ? (
                               <div className="flex items-center gap-1.5">
                                 <a
-                                  href={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusAssetUrl(fileId))}&embedded=true`}
+                                  href={getDirectusAssetUrl(fileId)}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"

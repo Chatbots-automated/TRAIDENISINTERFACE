@@ -2044,7 +2044,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-          });
+          }, { userId: user.id, userEmail: user.email });
           linkedStandartiniaiId = created.id;
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
@@ -2053,7 +2053,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-          });
+          }, { userId: user.id, userEmail: user.email });
           console.log('[Standartiniai] Updated record after AI edit:', linkedStandartiniaiId);
         }
 
@@ -2063,7 +2063,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
           await updateStandartinisProjektas(linkedStandartiniaiId, {
             document: newFileId,
-          });
+          }, { userId: user.id, userEmail: user.email });
           setSavedDocxFileId(newFileId);
         }
       } catch (spErr) {
@@ -2319,12 +2319,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (standartiniaiRecordId) {
           await updateStandartinisProjektas(standartiniaiRecordId, {
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
-          });
+          }, { userId: user.id, userEmail: user.email });
         } else {
           const created = await createStandartinisProjektas({
             conversation_id: currentConversation!.id,
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
-          });
+          }, { userId: user.id, userEmail: user.email });
           if (!cancelled) setStandartiniaiRecordId(created.id);
         }
         if (!cancelled) setSavedDocxFileId(newFileId);
@@ -2371,7 +2371,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           document: newFileId,
-        });
+        }, { userId: user.id, userEmail: user.email });
       } else {
         const created = await createStandartinisProjektas({
           conversation_id: currentConversation.id,
@@ -2379,7 +2379,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           document: newFileId,
-        });
+        }, { userId: user.id, userEmail: user.email });
         setStandartiniaiRecordId(created.id);
       }
 
@@ -2602,14 +2602,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               yaml_content: updatedContent,
               projekto_kodas: projektoKodas,
               hnv,
-            });
+            }, { userId: user.id, userEmail: user.email });
           } else {
             const created = await createStandartinisProjektas({
               conversation_id: currentConversation.id,
               yaml_content: updatedContent,
               projekto_kodas: projektoKodas,
               hnv,
-            });
+            }, { userId: user.id, userEmail: user.email });
             linkedStandartiniaiId = created.id;
             setStandartiniaiRecordId(created.id);
           }
@@ -2618,7 +2618,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             const filename = `${(projektoKodas || 'komercinis-pasiulymas').replace(/\//g, '-')}.docx`;
             const docxBlob = await buildDocxBlob(vars);
             const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
-            await updateStandartinisProjektas(linkedStandartiniaiId, { document: newFileId });
+            await updateStandartinisProjektas(linkedStandartiniaiId, { document: newFileId }, { userId: user.id, userEmail: user.email });
             setSavedDocxFileId(newFileId);
           }
 
