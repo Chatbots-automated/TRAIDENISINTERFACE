@@ -12,6 +12,7 @@ import PizZip from 'pizzip';
 // Directus instance credentials
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+const ENV_DOCX_TEMPLATE_FILE_ID = (import.meta.env.VITE_SDK_TEMPLATE_FILE_ID || '').trim() || null;
 const DOCX_TEMPLATE_TITLE = '__docx_global_template__';
 const SDK_TEMPLATE_COLLECTION = 'sdk_template';
 const DOCX_TEMPLATE_LOCAL_KEY = 'docx_template_file_id';
@@ -53,22 +54,38 @@ function normalizeFileId(value: SdkTemplateRow['file']): string | null {
 }
 
 async function getSdkTemplateRow(): Promise<SdkTemplateRow | null> {
+  // Preferred: singleton-like read without list params (works across more Directus setups)
+  const primaryUrl = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}?fields=id,file,file.id`;
+  const primaryResp = await fetch(primaryUrl, { headers: getAuthHeaders() });
+  if (primaryResp.ok) {
+    const primaryJson = await primaryResp.json();
+    const data = primaryJson?.data;
+    return Array.isArray(data) ? (data[0] || null) : (data || null);
+  }
+
+  // If the token can't read this collection, don't keep probing noisy fallbacks.
+  if (primaryResp.status === 401 || primaryResp.status === 403) {
+    return null;
+  }
+
+  // Backward-compatible fallback for Directus setups that expose /singleton path
   const singletonUrl = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/singleton?fields=id,file,file.id`;
   const singletonResp = await fetch(singletonUrl, { headers: getAuthHeaders() });
-  if (singletonResp.ok) {
-    const singletonJson = await singletonResp.json();
-    return singletonJson?.data || null;
-  }
-  // Backward-compatible fallback if singleton endpoint is unavailable
-  const url = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}?limit=1&sort=-id&fields=id,file,file.id`;
-  const resp = await fetch(url, { headers: getAuthHeaders() });
-  if (!resp.ok) return null;
-  const json = await resp.json();
-  return json?.data?.[0] || null;
+  if (!singletonResp.ok) return null;
+  const singletonJson = await singletonResp.json();
+  return singletonJson?.data || null;
 }
 
 async function upsertSdkTemplateFile(fileId: string | null): Promise<void> {
-  // Preferred path for Directus singleton collections
+  // Preferred path for singleton collections in Directus
+  const primaryResp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}`, {
+    method: 'PATCH',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: fileId }),
+  });
+  if (primaryResp.ok) return;
+
+  // Backward-compatible fallback for /singleton style endpoints
   const singletonResp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/singleton`, {
     method: 'PATCH',
     headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -76,7 +93,7 @@ async function upsertSdkTemplateFile(fileId: string | null): Promise<void> {
   });
   if (singletonResp.ok) return;
 
-  // Backward-compatible fallback for non-singleton tables
+  // Final fallback for non-singleton tables
   const row = await getSdkTemplateRow();
   if (row?.id) {
     const resp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${row.id}`, {
@@ -146,6 +163,12 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
 export async function getDocxTemplateFileId(): Promise<string | null> {
   if (_docxCacheLoaded) return _cachedDocxFileId;
 
+  // -1) Optional hard override via environment (useful when API role can't read sdk_template)
+  if (ENV_DOCX_TEMPLATE_FILE_ID && await fileExists(ENV_DOCX_TEMPLATE_FILE_ID)) {
+    cacheTemplateId(ENV_DOCX_TEMPLATE_FILE_ID);
+    return ENV_DOCX_TEMPLATE_FILE_ID;
+  }
+
   // 0) Fast local fallback (survives refresh if DB pointer write fails)
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -174,7 +197,7 @@ export async function getDocxTemplateFileId(): Promise<string | null> {
   // 2) Legacy fallback: by title marker in Directus files collection
   try {
     const resp = await fetch(
-      `${DIRECTUS_URL}/files?filter[title][_eq]=${encodeURIComponent(DOCX_TEMPLATE_TITLE)}&limit=1&sort=-date_created&fields=id`,
+      `${DIRECTUS_URL}/files?filter[title][_eq]=${encodeURIComponent(DOCX_TEMPLATE_TITLE)}&limit=1&fields=id`,
       { headers: getAuthHeaders() },
     );
     if (!resp.ok) {
