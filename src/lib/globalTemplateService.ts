@@ -127,6 +127,8 @@ async function fileExists(fileId: string): Promise<boolean> {
  * later.  Replaces any previously uploaded docx template.
  */
 export async function uploadDocxTemplate(file: File): Promise<string> {
+  const oldId = await getDocxTemplateFileId();
+
   // 1. Upload file to Directus /files with a known title marker
   const form = new FormData();
   form.append('file', file);
@@ -141,8 +143,11 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
   const json = await resp.json();
   const newFileId: string = json.data.id;
 
-  // 2. Delete the old file from Directus if one existed
-  const oldId = await getDocxTemplateFileId();
+  // 2. Point sdk_template to the new file and refresh cache immediately.
+  cacheTemplateId(newFileId);
+  await upsertSdkTemplateFile(newFileId);
+
+  // 3. Delete the old file from Directus if one existed
   if (oldId && oldId !== newFileId) {
     await fetch(`${DIRECTUS_URL}/files/${oldId}`, {
       method: 'DELETE',
@@ -150,8 +155,6 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
     }).catch(() => { /* best-effort cleanup */ });
   }
 
-  cacheTemplateId(newFileId);
-  await upsertSdkTemplateFile(newFileId);
   return newFileId;
 }
 

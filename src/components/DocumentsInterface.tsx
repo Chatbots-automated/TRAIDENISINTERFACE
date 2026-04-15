@@ -48,6 +48,19 @@ interface ColumnDef {
   toggle?: boolean;
 }
 
+function extractDirectusFileId(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const record = value as Record<string, any>;
+    if (typeof record.id === 'string' && record.id) return record.id;
+    if (record.data && typeof record.data === 'object' && typeof record.data.id === 'string' && record.data.id) {
+      return record.data.id;
+    }
+  }
+  return null;
+}
+
 function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): ColumnDef[] {
   if (!savedOrder) return allCols;
   const byKey = new Map(allCols.map(c => [c.key, c]));
@@ -808,7 +821,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       } else {
         const toDelete = standartiniaiData.filter((r: any) => selectedIds.has(r.id));
         for (const record of toDelete) {
-          await deleteStandartinisProjektas({ id: record.id, docx_file_id: record.docx_file_id });
+          await deleteStandartinisProjektas({ id: record.id, docx_file_id: extractDirectusFileId(record.docx_file_id) });
         }
         setSelectedIds(new Set());
         setShowBulkDeleteConfirm(false);
@@ -1400,8 +1413,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       const val = row[col.key];
                       // docx_file_id — show preview + download buttons
                       if (col.key === 'docx_file_id') {
-                        // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
-                        const fileId = typeof val === 'object' && val !== null ? val.id : val;
+                        const fileId = extractDirectusFileId(val);
                         return (
                           <td key={col.key} className="px-3 py-2.5">
                             {fileId ? (

@@ -128,6 +128,19 @@ function saveSession(patch: Record<string, unknown>) {
   } catch { /* ignore */ }
 }
 
+function extractDirectusFileId(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const record = value as Record<string, any>;
+    if (typeof record.id === 'string' && record.id) return record.id;
+    if (record.data && typeof record.data === 'object' && typeof record.data.id === 'string' && record.data.id) {
+      return record.data.id;
+    }
+  }
+  return null;
+}
+
 export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
   const { conversationId: urlConversationId } = useParams<{ conversationId?: string }>();
   const navigate = useNavigate();
@@ -598,13 +611,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const spRecord = await getStandartinisByConversationId(conversationId);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
-            if (spRecord.docx_file_id) {
-              // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
-              const fid = typeof spRecord.docx_file_id === 'object' && spRecord.docx_file_id !== null
-                ? spRecord.docx_file_id.id
-                : spRecord.docx_file_id;
-              if (fid) setSavedDocxFileId(fid);
-            }
+            const fid = extractDirectusFileId(spRecord.docx_file_id);
+            if (fid) setSavedDocxFileId(fid);
           }
         } catch (spErr) {
           console.warn('[Standartiniai] Failed to load linked record:', spErr);
@@ -796,6 +804,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const spRecord = await getStandartinisByConversationId(sharedConv.conversation_id);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
+            const fid = extractDirectusFileId(spRecord.docx_file_id);
+            if (fid) setSavedDocxFileId(fid);
             if (spRecord.html_content) setSavedHtmlFromDb(spRecord.html_content);
           }
         } catch { /* non-fatal */ }
@@ -2006,8 +2016,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
-      // Clear saved HTML so the fresh AI-generated content renders (not stale saved edits)
-      setSavedDocxFileId(null);
+      // Keep the currently linked DOCX ID. YAML save flow below will replace the
+      // existing Directus file (no orphan file clutter).
       localStorage.removeItem('doc_edit_' + conversation.id);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
@@ -2020,11 +2030,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         autoGenerateTechDescription(bulletlist, conversation.id);
       }
 
-      // Auto-create or update standartiniai_projektai record (YAML only — .docx is saved on manual Išsaugoti)
+      // Auto-create or update standartiniai_projektai record and replace linked DOCX
+      // so each YAML save keeps a single up-to-date Directus file.
       try {
         const vars = mergeAllVariables();
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
+        let linkedStandartiniaiId: number | null = standartiniaiRecordId;
 
         if (isNewArtifact) {
           const created = await createStandartinisProjektas({
@@ -2033,15 +2045,26 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             projekto_kodas: projektoKodas,
             hnv: hnv,
           });
+          linkedStandartiniaiId = created.id;
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
-        } else if (standartiniaiRecordId) {
-          await updateStandartinisProjektas(standartiniaiRecordId, {
+        } else if (linkedStandartiniaiId) {
+          await updateStandartinisProjektas(linkedStandartiniaiId, {
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
           });
-          console.log('[Standartiniai] Updated record after AI edit:', standartiniaiRecordId);
+          console.log('[Standartiniai] Updated record after AI edit:', linkedStandartiniaiId);
+        }
+
+        if (linkedStandartiniaiId && globalDocxFileId) {
+          const filename = `${(projektoKodas || 'komercinis-pasiulymas').replace(/\//g, '-')}.docx`;
+          const docxBlob = await buildDocxBlob(vars);
+          const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
+          await updateStandartinisProjektas(linkedStandartiniaiId, {
+            docx_file_id: newFileId,
+          });
+          setSavedDocxFileId(newFileId);
         }
       } catch (spErr) {
         console.warn('[Standartiniai] Failed to sync record (non-fatal):', spErr);
