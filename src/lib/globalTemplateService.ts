@@ -14,6 +14,7 @@ const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 const DOCX_TEMPLATE_TITLE = '__docx_global_template__';
 const SDK_TEMPLATE_COLLECTION = 'sdk_template';
+const DOCX_TEMPLATE_LOCAL_KEY = 'docx_template_file_id';
 
 // ---------------------------------------------------------------------------
 // DOCX Template (stored as a Directus file, found by title marker)
@@ -30,6 +31,14 @@ function getAuthHeaders(): HeadersInit {
 function cacheTemplateId(fileId: string | null) {
   _cachedDocxFileId = fileId;
   _docxCacheLoaded = true;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (fileId) localStorage.setItem(DOCX_TEMPLATE_LOCAL_KEY, fileId);
+      else localStorage.removeItem(DOCX_TEMPLATE_LOCAL_KEY);
+    }
+  } catch {
+    // best-effort only
+  }
 }
 
 type SdkTemplateRow = {
@@ -54,18 +63,20 @@ async function getSdkTemplateRow(): Promise<SdkTemplateRow | null> {
 async function upsertSdkTemplateFile(fileId: string | null): Promise<void> {
   const row = await getSdkTemplateRow();
   if (row?.id) {
-    await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${row.id}`, {
+    const resp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${row.id}`, {
       method: 'PATCH',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ file: fileId }),
-    }).catch(() => {});
+    });
+    if (!resp.ok) throw new Error(`Nepavyko atnaujinti sdk_template įrašo: ${resp.status}`);
     return;
   }
-  await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}`, {
+  const resp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}`, {
     method: 'POST',
     headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ file: fileId }),
-  }).catch(() => {});
+  });
+  if (!resp.ok) throw new Error(`Nepavyko sukurti sdk_template įrašo: ${resp.status}`);
 }
 
 async function fileExists(fileId: string): Promise<boolean> {
@@ -118,6 +129,19 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
 export async function getDocxTemplateFileId(): Promise<string | null> {
   if (_docxCacheLoaded) return _cachedDocxFileId;
 
+  // 0) Fast local fallback (survives refresh if DB pointer write fails)
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const localId = localStorage.getItem(DOCX_TEMPLATE_LOCAL_KEY);
+      if (localId && await fileExists(localId)) {
+        cacheTemplateId(localId);
+        return localId;
+      }
+    }
+  } catch {
+    // continue
+  }
+
   // 1) Source of truth: sdk_template table pointer
   try {
     const row = await getSdkTemplateRow();
@@ -153,6 +177,13 @@ export async function getDocxTemplateFileId(): Promise<string | null> {
  * Build the Directus asset URL for the .docx template file.
  */
 export function getDocxTemplateUrl(fileId: string): string {
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+}
+
+/**
+ * Build a Directus asset URL for preview/opening.
+ */
+export function getDirectusAssetUrl(fileId: string): string {
   return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
 }
 

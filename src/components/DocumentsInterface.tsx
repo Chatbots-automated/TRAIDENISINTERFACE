@@ -3,7 +3,7 @@ import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, File
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos, TALPOS_TABLE_FIELDS } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
-import { getDirectusFileUrl } from '../lib/globalTemplateService';
+import { getDirectusAssetUrl, getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -1407,7 +1407,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                             {fileId ? (
                               <div className="flex items-center gap-1.5">
                                 <a
-                                  href={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusFileUrl(fileId))}&embedded=true`}
+                                  href={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusAssetUrl(fileId))}&embedded=true`}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
