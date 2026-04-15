@@ -2198,10 +2198,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    * Merge all variable sources into a single Record for the document preview.
    * Sources: YAML artifact content + offer parameters + team info.
    */
-  const mergeAllVariables = (): Record<string, string> => {
-    const yamlVars: Record<string, string> = currentConversation?.artifact
-      ? parseYAMLContent(currentConversation.artifact.content)
-      : {};
+  const mergeAllVariables = (yamlContentOverride?: string): Record<string, string> => {
+    const yamlSource = yamlContentOverride ?? currentConversation?.artifact?.content ?? '';
+    const yamlVars: Record<string, string> = yamlSource ? parseYAMLContent(yamlSource) : {};
 
     // Lithuanian date: "2026 m. vasario mėn. 12 d."
     const LITHUANIAN_MONTHS_GENITIVE = [
@@ -2591,6 +2590,38 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           };
           await updateConversationArtifact(currentConversation.id, newArtifact);
           setCurrentConversation({ ...currentConversation, artifact: newArtifact });
+
+          // Keep standartiniai_projektai + DOCX file in sync with manual YAML edits.
+          const vars = mergeAllVariables(updatedContent);
+          const projektoKodas = vars['code_yy/mm/dd'] || '';
+          const hnv = vars['economy_HNV'] || '';
+          let linkedStandartiniaiId: number | null = standartiniaiRecordId;
+
+          if (linkedStandartiniaiId) {
+            await updateStandartinisProjektas(linkedStandartiniaiId, {
+              yaml_content: updatedContent,
+              projekto_kodas: projektoKodas,
+              hnv,
+            });
+          } else {
+            const created = await createStandartinisProjektas({
+              conversation_id: currentConversation.id,
+              yaml_content: updatedContent,
+              projekto_kodas: projektoKodas,
+              hnv,
+            });
+            linkedStandartiniaiId = created.id;
+            setStandartiniaiRecordId(created.id);
+          }
+
+          if (linkedStandartiniaiId && globalDocxFileId) {
+            const filename = `${(projektoKodas || 'komercinis-pasiulymas').replace(/\//g, '-')}.docx`;
+            const docxBlob = await buildDocxBlob(vars);
+            const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
+            await updateStandartinisProjektas(linkedStandartiniaiId, { docx_file_id: newFileId });
+            setSavedDocxFileId(newFileId);
+          }
+
           addNotification('success', 'Kintamasis atnaujintas', `„${key}" reikšmė pakeista.`);
         } catch (err) {
           console.error('[Surgical Edit] Error:', err);
