@@ -53,6 +53,13 @@ function normalizeFileId(value: SdkTemplateRow['file']): string | null {
 }
 
 async function getSdkTemplateRow(): Promise<SdkTemplateRow | null> {
+  const singletonUrl = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/singleton?fields=id,file,file.id`;
+  const singletonResp = await fetch(singletonUrl, { headers: getAuthHeaders() });
+  if (singletonResp.ok) {
+    const singletonJson = await singletonResp.json();
+    return singletonJson?.data || null;
+  }
+  // Backward-compatible fallback if singleton endpoint is unavailable
   const url = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}?limit=1&sort=-id&fields=id,file,file.id`;
   const resp = await fetch(url, { headers: getAuthHeaders() });
   if (!resp.ok) return null;
@@ -60,22 +67,19 @@ async function getSdkTemplateRow(): Promise<SdkTemplateRow | null> {
   return json?.data?.[0] || null;
 }
 
-async function listSdkTemplateRowIds(): Promise<number[]> {
-  const url = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}?limit=-1&sort=id&fields=id`;
-  const resp = await fetch(url, { headers: getAuthHeaders() });
-  if (!resp.ok) return [];
-  const json = await resp.json();
-  return Array.isArray(json?.data)
-    ? json.data.map((row: { id?: number }) => row.id).filter((id: number | undefined): id is number => typeof id === 'number')
-    : [];
-}
-
 async function upsertSdkTemplateFile(fileId: string | null): Promise<void> {
-  const ids = await listSdkTemplateRowIds();
+  // Preferred path for Directus singleton collections
+  const singletonResp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/singleton`, {
+    method: 'PATCH',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: fileId }),
+  });
+  if (singletonResp.ok) return;
 
-  // Preferred path: exactly one row exists -> PATCH only (no new row creation)
-  if (ids.length === 1) {
-    const resp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${ids[0]}`, {
+  // Backward-compatible fallback for non-singleton tables
+  const row = await getSdkTemplateRow();
+  if (row?.id) {
+    const resp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${row.id}`, {
       method: 'PATCH',
       headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ file: fileId }),
@@ -84,27 +88,6 @@ async function upsertSdkTemplateFile(fileId: string | null): Promise<void> {
     return;
   }
 
-  // Recovery path: multiple rows exist -> keep the oldest, PATCH it, delete the rest
-  if (ids.length > 1) {
-    const [keepId, ...extraIds] = ids;
-    const patchResp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${keepId}`, {
-      method: 'PATCH',
-      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ file: fileId }),
-    });
-    if (!patchResp.ok) throw new Error(`Nepavyko atnaujinti sdk_template įrašo: ${patchResp.status}`);
-    await Promise.all(
-      extraIds.map((id) =>
-        fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${id}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-        }).catch(() => {})
-      ),
-    );
-    return;
-  }
-
-  // Bootstrap path: no rows exist -> create first (and only) row
   const createResp = await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}`, {
     method: 'POST',
     headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
