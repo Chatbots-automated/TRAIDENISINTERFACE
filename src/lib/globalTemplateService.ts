@@ -24,6 +24,7 @@ const DOCX_TEMPLATE_LOCAL_KEY = 'docx_template_file_id';
 /** In-memory cache for the docx template file ID. */
 let _cachedDocxFileId: string | null = null;
 let _docxCacheLoaded = false;
+let _cachedTemplateVars: { fileId: string; vars: string[] } | null = null;
 
 function getAuthHeaders(): HeadersInit {
   return { Authorization: `Bearer ${DIRECTUS_TOKEN}` };
@@ -315,4 +316,36 @@ export async function buildDocxBlob(variables: Record<string, string>): Promise<
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   });
+}
+
+/**
+ * Extract template variable placeholders used in the current DOCX template.
+ * Looks for {{variable_name}} patterns inside DOCX XML parts.
+ */
+export async function extractDocxTemplateVariables(): Promise<string[]> {
+  const fileId = await getDocxTemplateFileId();
+  if (!fileId) return [];
+  if (_cachedTemplateVars?.fileId === fileId) return _cachedTemplateVars.vars;
+
+  const response = await fetch(getDocxTemplateUrl(fileId));
+  if (!response.ok) return [];
+  const arrayBuffer = await response.arrayBuffer();
+  const zip = new PizZip(arrayBuffer);
+
+  const vars = new Set<string>();
+  const placeholderRegex = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (!name.endsWith('.xml') || entry.dir) continue;
+    const content = entry.asText();
+    let match: RegExpExecArray | null = null;
+    while ((match = placeholderRegex.exec(content)) !== null) {
+      const key = match[1]?.trim();
+      if (key) vars.add(key);
+    }
+  }
+
+  const discovered = [...vars].sort((a, b) => a.localeCompare(b));
+  _cachedTemplateVars = { fileId, vars: discovered };
+  return discovered;
 }

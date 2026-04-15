@@ -74,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
+import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob, extractDocxTemplateVariables } from '../lib/globalTemplateService';
 import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 interface SDKInterfaceNewProps {
@@ -2236,6 +2236,33 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     };
   };
 
+  const yamlVarsForUi = useMemo<Record<string, string>>(
+    () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
+    [currentConversation?.artifact?.content]
+  );
+
+  const unresolvedTemplateVariables = useMemo<string[]>(() => {
+    if (!templateVariables.length) return [];
+    const merged = mergeAllVariables();
+    return templateVariables.filter((key) => {
+      const value = merged[key];
+      if (value === undefined || value === null) return true;
+      const normalized = String(value).trim();
+      return normalized === '' || normalized.toLowerCase() === 'undefined';
+    });
+  }, [
+    templateVariables,
+    currentConversation?.artifact?.content,
+    offerParameters,
+    selectedManager?.id,
+    selectedEconomist?.id,
+    user.full_name,
+    user.email,
+    user.phone,
+    user.kodas,
+    currentConversation?.title,
+  ]);
+
   /**
    * Categorize a variable key to determine which edit control to show.
    * - 'offer'            → offer parameter (BDS, SM, N, P, object, cleaned water, etc.)
@@ -2301,12 +2328,30 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Directus file ID of the saved .docx — enables download button
   const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
   const [docxPreviewTick, setDocxPreviewTick] = useState(0);
+  const [templateVariables, setTemplateVariables] = useState<string[]>([]);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
   useEffect(() => {
     if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
   }, [savedDocxFileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!globalDocxFileId) {
+        if (!cancelled) setTemplateVariables([]);
+        return;
+      }
+      try {
+        const vars = await extractDocxTemplateVariables();
+        if (!cancelled) setTemplateVariables(vars);
+      } catch {
+        if (!cancelled) setTemplateVariables([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [globalDocxFileId]);
 
   useEffect(() => {
     if (savedDocxFileId || !globalDocxFileId || autoSaving) return;
@@ -4055,6 +4100,18 @@ Vartotojo instrukcija: ${instruction}`;
 
                 {!sectionCollapsed.offerData && (
                   <div>
+                    {!isStreamingArtifact && currentConversation?.artifact && (
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
+                          Aptikta YAML kintamųjų: {Object.keys(yamlVarsForUi).length}
+                        </span>
+                        {templateVariables.length > 0 && (
+                          <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
+                            Šablono kintamųjų: {templateVariables.length}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {isStreamingArtifact ? (
                       <div>
                         <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
@@ -4073,6 +4130,21 @@ Vartotojo instrukcija: ${instruction}`;
                       <p className="text-xs py-4 text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                         Pasiūlymo duomenys bus rodomi po generavimo.
                       </p>
+                    )}
+
+                    {!isStreamingArtifact && unresolvedTemplateVariables.length > 0 && (
+                      <div className="mt-3 rounded-lg border px-3 py-2" style={{ borderColor: '#fbbf24', background: '#fffbeb' }}>
+                        <p className="text-[12px] font-medium" style={{ color: '#92400e' }}>
+                          Kai kurie DOCX šablono kintamieji neturi reikšmės ({unresolvedTemplateVariables.length}).
+                        </p>
+                        <p className="text-[11px] mt-1" style={{ color: '#92400e', opacity: 0.9 }}>
+                          Jei reikšmė neateina iš YAML arba objekto parametrų, dokumente ji bus tuščia (anksčiau galėjo rodytis „undefined“).
+                        </p>
+                        <p className="text-[11px] mt-1 break-all" style={{ color: '#b45309' }}>
+                          {unresolvedTemplateVariables.slice(0, 8).join(', ')}
+                          {unresolvedTemplateVariables.length > 8 ? ` ir dar ${unresolvedTemplateVariables.length - 8}...` : ''}
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
