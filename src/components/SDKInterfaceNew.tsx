@@ -272,6 +272,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     getDocxTemplateFileId().then(id => { setHasDocxTemplate(!!id); setGlobalDocxFileId(id); });
   }, []);
 
+  // Re-hydrate current global template pointer when opening viewers/panels.
+  // This avoids stale "null" state in long-lived sessions after template updates.
+  useEffect(() => {
+    if (!showTemplateEditor && !(showArtifact && currentConversation?.artifact)) return;
+    getDocxTemplateFileId().then(id => {
+      setHasDocxTemplate(!!id);
+      setGlobalDocxFileId(id);
+    });
+  }, [showTemplateEditor, showArtifact, currentConversation?.artifact]);
+
   // Sync URL ↔ currentConversation
   useEffect(() => {
     const id = currentConversation?.id;
@@ -2158,6 +2168,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
+    setDocxViewerUrl(null);
+    setDocxPreviewLoading(false);
+    setDocxPreviewError(null);
 
     setTplEditMode(false);
     setTplSelectedImage(null);
@@ -2404,6 +2417,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const assetUrl = getDocxTemplateUrl(fileId);
         setDocxViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
       });
+    } else if (!showTemplateEditor) {
+      setDocxPreviewLoading(false);
+      setDocxPreviewError(null);
+      setDocxViewerUrl(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
@@ -4395,10 +4412,15 @@ Vartotojo instrukcija: ${instruction}`;
                     )}
                     {docxViewerUrl && !docxPreviewError && (
                       <iframe
+                        key={docxViewerUrl}
                         src={docxViewerUrl}
                         className="flex-1 w-full border-none"
                         title="DOCX peržiūra"
                         onLoad={() => setDocxPreviewLoading(false)}
+                        onError={() => {
+                          setDocxPreviewLoading(false);
+                          setDocxPreviewError('Nepavyko užkrauti DOCX peržiūros. Pabandykite atidaryti iš naujo.');
+                        }}
                       />
                     )}
                   </div>

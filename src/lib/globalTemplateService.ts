@@ -161,7 +161,10 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
  * Returns null if no template has been uploaded.
  */
 export async function getDocxTemplateFileId(): Promise<string | null> {
-  if (_docxCacheLoaded) return _cachedDocxFileId;
+  // Positive cache hit: safe to return immediately.
+  // Do NOT short-circuit on cached null, because template can be linked later
+  // during the same app session (without a full page refresh).
+  if (_docxCacheLoaded && _cachedDocxFileId) return _cachedDocxFileId;
 
   // -1) Optional hard override via environment (useful when API role can't read sdk_template)
   if (ENV_DOCX_TEMPLATE_FILE_ID && await fileExists(ENV_DOCX_TEMPLATE_FILE_ID)) {
