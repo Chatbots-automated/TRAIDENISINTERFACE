@@ -18,12 +18,26 @@ export default function NotificationToast({
   onClose,
   duration = 5000
 }: NotificationToastProps) {
+  const [isClosing, setIsClosing] = React.useState(false);
+  const [isPaused, setIsPaused] = React.useState(false);
+  const closeHandlerRef = React.useRef(onClose);
+
   useEffect(() => {
-    if (duration > 0) {
-      const timer = setTimeout(onClose, duration);
+    closeHandlerRef.current = onClose;
+  }, [onClose]);
+
+  const requestClose = React.useCallback(() => {
+    if (isClosing) return;
+    setIsClosing(true);
+    window.setTimeout(() => closeHandlerRef.current(), 180);
+  }, [isClosing]);
+
+  useEffect(() => {
+    if (duration > 0 && !isPaused) {
+      const timer = setTimeout(requestClose, duration);
       return () => clearTimeout(timer);
     }
-  }, [duration, onClose]);
+  }, [duration, isPaused, requestClose]);
 
   const config = {
     success: {
@@ -54,11 +68,13 @@ export default function NotificationToast({
   return (
     <div
       className="notification-toast"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
       style={{
-        width: '330px',
-        height: '80px',
-        borderRadius: '8px',
-        padding: '10px 15px',
+        width: '340px',
+        minHeight: '64px',
+        borderRadius: '10px',
+        padding: '8px 12px',
         backgroundColor: '#ffffff',
         boxShadow: 'rgba(149, 157, 165, 0.2) 0px 8px 24px',
         position: 'relative',
@@ -67,7 +83,8 @@ export default function NotificationToast({
         alignItems: 'center',
         justifyContent: 'space-around',
         gap: '15px',
-        animation: 'slideInRight 0.3s ease-out'
+        animation: `${isClosing ? 'fadeOutRight' : 'slideInRight'} 0.2s ease-out`,
+        opacity: isClosing ? 0 : 1
       }}
     >
       <svg
@@ -92,10 +109,10 @@ export default function NotificationToast({
       <div
         className="icon-container"
         style={{
-          width: '35px',
-          height: '35px',
-          minWidth: '35px',
-          minHeight: '35px',
+          width: '32px',
+          height: '32px',
+          minWidth: '32px',
+          minHeight: '32px',
           flexShrink: 0,
           display: 'flex',
           justifyContent: 'center',
@@ -105,7 +122,7 @@ export default function NotificationToast({
           marginLeft: '8px'
         }}
       >
-        <Icon style={{ width: '17px', height: '17px', color: iconColor }} />
+        <Icon style={{ width: '16px', height: '16px', color: iconColor }} />
       </div>
 
       <div
@@ -123,9 +140,10 @@ export default function NotificationToast({
           style={{
             margin: 0,
             color: titleColor,
-            fontSize: '17px',
+            fontSize: '15px',
             fontWeight: 700,
-            cursor: 'default'
+            cursor: 'default',
+            lineHeight: 1.2
           }}
         >
           {title}
@@ -134,9 +152,17 @@ export default function NotificationToast({
           className="sub-text"
           style={{
             margin: 0,
-            fontSize: '14px',
+            fontSize: '13px',
             color: '#555',
-            cursor: 'default'
+            cursor: 'default',
+            lineHeight: 1.35,
+            maxWidth: '220px',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            wordBreak: 'break-word'
           }}
         >
           {message}
@@ -144,7 +170,7 @@ export default function NotificationToast({
       </div>
 
       <button
-        onClick={onClose}
+        onClick={requestClose}
         style={{
           background: 'none',
           border: 'none',
@@ -164,6 +190,17 @@ export default function NotificationToast({
           to {
             transform: translateX(0);
             opacity: 1;
+          }
+        }
+
+        @keyframes fadeOutRight {
+          from {
+            transform: translateX(0);
+            opacity: 1;
+          }
+          to {
+            transform: translateX(24px);
+            opacity: 0;
           }
         }
       `}</style>

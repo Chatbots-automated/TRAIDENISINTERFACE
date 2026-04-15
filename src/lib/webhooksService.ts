@@ -1,5 +1,6 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db, dbAdmin } from './database';
+import { appLogger } from './appLogger';
 
 export interface Webhook {
   id: string;
@@ -30,6 +31,10 @@ export async function getWebhooks(): Promise<Webhook[]> {
 
   if (error) {
     console.error('Error fetching webhooks:', error);
+    await appLogger.logError({
+      action: 'webhooks_fetch_failed',
+      error
+    });
     throw error;
   }
 
@@ -54,6 +59,11 @@ export async function getWebhookUrl(webhookKey: string): Promise<string | null> 
 
   if (error) {
     console.error(`[getWebhookUrl] DB error for "${webhookKey}":`, error);
+    await appLogger.logError({
+      action: 'webhook_url_fetch_failed',
+      error,
+      metadata: { webhook_key: webhookKey }
+    });
     return null;
   }
 
@@ -61,11 +71,23 @@ export async function getWebhookUrl(webhookKey: string): Promise<string | null> 
 
   if (!row) {
     console.warn(`[getWebhookUrl] No row found for key "${webhookKey}" — insert it into the webhooks table`);
+    await appLogger.logSystem({
+      action: 'webhook_url_missing',
+      level: 'warn',
+      message: `Webhook row not found for key: ${webhookKey}`,
+      metadata: { webhook_key: webhookKey }
+    });
     return null;
   }
 
   if (!row.is_active) {
     console.warn(`[getWebhookUrl] Webhook "${webhookKey}" exists but is_active=false`);
+    await appLogger.logSystem({
+      action: 'webhook_inactive',
+      level: 'warn',
+      message: `Webhook inactive for key: ${webhookKey}`,
+      metadata: { webhook_key: webhookKey }
+    });
     return null;
   }
 
@@ -98,9 +120,21 @@ export async function updateWebhook(
     // Clear cache for this webhook
     webhookCache.delete(webhookKey);
 
+    await appLogger.logAPI({
+      action: 'webhook_updated',
+      endpoint: webhookKey,
+      method: 'UPDATE',
+      metadata: { webhook_key: webhookKey, url }
+    });
+
     return { success: true };
   } catch (error: any) {
     console.error('Error updating webhook:', error);
+    await appLogger.logError({
+      action: 'webhook_update_failed',
+      error,
+      metadata: { webhook_key: webhookKey, url }
+    });
     return { success: false, error: error.message };
   }
 }
@@ -122,9 +156,20 @@ export async function updateWebhookCategory(
       .eq('webhook_key', webhookKey);
 
     if (error) throw error;
+    await appLogger.logAPI({
+      action: 'webhook_category_updated',
+      endpoint: webhookKey,
+      method: 'UPDATE',
+      metadata: { webhook_key: webhookKey, category }
+    });
     return { success: true };
   } catch (error: any) {
     console.error('Error updating webhook category:', error);
+    await appLogger.logError({
+      action: 'webhook_category_update_failed',
+      error,
+      metadata: { webhook_key: webhookKey, category }
+    });
     return { success: false, error: error.message };
   }
 }
@@ -152,9 +197,21 @@ export async function toggleWebhookActive(
     // Clear cache for this webhook
     webhookCache.delete(webhookKey);
 
+    await appLogger.logAPI({
+      action: 'webhook_toggled',
+      endpoint: webhookKey,
+      method: 'UPDATE',
+      metadata: { webhook_key: webhookKey, is_active: isActive }
+    });
+
     return { success: true };
   } catch (error: any) {
     console.error('Error toggling webhook:', error);
+    await appLogger.logError({
+      action: 'webhook_toggle_failed',
+      error,
+      metadata: { webhook_key: webhookKey, is_active: isActive }
+    });
     return { success: false, error: error.message };
   }
 }
@@ -167,6 +224,7 @@ export async function testWebhook(
   url: string
 ): Promise<{ success: boolean; status: number; error?: string }> {
   try {
+    const startedAt = Date.now();
     const testPayload = {
       test: true,
       timestamp: new Date().toISOString(),
@@ -191,12 +249,26 @@ export async function testWebhook(
       })
       .eq('webhook_key', webhookKey);
 
+    await appLogger.logAPI({
+      action: 'webhook_test',
+      endpoint: url,
+      method: 'POST',
+      statusCode: response.status,
+      responseTimeMs: Date.now() - startedAt,
+      metadata: { webhook_key: webhookKey }
+    });
+
     return {
       success: response.ok,
       status: response.status
     };
   } catch (error: any) {
     console.error('Error testing webhook:', error);
+    await appLogger.logError({
+      action: 'webhook_test_failed',
+      error,
+      metadata: { webhook_key: webhookKey, url }
+    });
 
     // Update test status as failed
     await dbAdmin

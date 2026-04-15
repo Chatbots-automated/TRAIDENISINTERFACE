@@ -16,6 +16,7 @@ import {
   Webhook
 } from '../lib/webhooksService';
 import NotificationContainer, { Notification } from './NotificationContainer';
+import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 interface WebhooksModalProps {
   isOpen: boolean;
@@ -42,7 +43,10 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const addNotification = (type: Notification['type'], title: string, message: string) => {
     const id = `wh-${Date.now()}-${Math.random()}`;
-    setNotifications(prev => [...prev, { id, type, title, message }]);
+    setNotifications(prev => [...prev, { id, type, title: formatToastMessage(title, 50), message: formatToastMessage(message) }]);
+  };
+  const addErrorNotification = (title: string, error: unknown, fallback: string) => {
+    addNotification('error', title, formatErrorForToast(error, fallback));
   };
   const removeNotification = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
@@ -79,7 +83,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
       const data = await getWebhooks();
       setWebhooks(data);
     } catch (err: any) {
-      addNotification('error', 'Klaida', 'Nepavyko įkelti webhook\'ų');
+      addErrorNotification('Klaida', err, 'Nepavyko įkelti webhook\'ų');
       console.error(err);
     } finally {
       setLoading(false);
@@ -112,10 +116,10 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
         setEditUrl('');
         await loadWebhooks();
       } else {
-        addNotification('error', 'Klaida', result.error || 'Nepavyko išsaugoti');
+        addNotification('error', 'Klaida', formatErrorForToast(result.error, 'Nepavyko išsaugoti'));
       }
     } catch (err: any) {
-      addNotification('error', 'Klaida', err.message);
+      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti');
     } finally {
       setSaving(false);
     }
@@ -138,10 +142,10 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
         setEditCategory('');
         await loadWebhooks();
       } else {
-        addNotification('error', 'Klaida', result.error || 'Nepavyko išsaugoti');
+        addNotification('error', 'Klaida', formatErrorForToast(result.error, 'Nepavyko išsaugoti'));
       }
     } catch (err: any) {
-      addNotification('error', 'Klaida', err.message);
+      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti');
     }
   };
 
@@ -172,7 +176,7 @@ export default function WebhooksModal({ isOpen, onClose, user }: WebhooksModalPr
 
       await loadWebhooks();
     } catch (err: any) {
-      addNotification('error', 'Klaida', err.message);
+      addErrorNotification('Klaida', err, 'Webhook testas nepavyko');
     } finally {
       setTesting(null);
     }

@@ -103,7 +103,7 @@ class AppLogger {
   }
 
   async logDocument(params: {
-    action: 'upload_started' | 'upload_success' | 'upload_failed' | 'create' | 'update' | 'delete' | 'search';
+    action: string;
     userId?: string;
     userEmail?: string;
     documentId?: string;
@@ -159,7 +159,7 @@ class AppLogger {
   }
 
   async logAPI(params: {
-    action: 'webhook_call' | 'api_request' | 'api_response';
+    action: string;
     userId?: string;
     userEmail?: string;
     endpoint: string;
