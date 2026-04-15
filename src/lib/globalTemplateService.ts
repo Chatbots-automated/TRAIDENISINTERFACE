@@ -12,6 +12,8 @@ import PizZip from 'pizzip';
 // Directus instance credentials
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+const DOCX_TEMPLATE_TITLE = '__docx_global_template__';
+const SDK_TEMPLATE_COLLECTION = 'sdk_template';
 
 // ---------------------------------------------------------------------------
 // DOCX Template (stored as a Directus file, found by title marker)
@@ -21,6 +23,60 @@ const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
 let _cachedDocxFileId: string | null = null;
 let _docxCacheLoaded = false;
 
+function getAuthHeaders(): HeadersInit {
+  return { Authorization: `Bearer ${DIRECTUS_TOKEN}` };
+}
+
+function cacheTemplateId(fileId: string | null) {
+  _cachedDocxFileId = fileId;
+  _docxCacheLoaded = true;
+}
+
+type SdkTemplateRow = {
+  id: number;
+  file?: string | { id?: string | null } | null;
+};
+
+function normalizeFileId(value: SdkTemplateRow['file']): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  return typeof value.id === 'string' && value.id ? value.id : null;
+}
+
+async function getSdkTemplateRow(): Promise<SdkTemplateRow | null> {
+  const url = `${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}?limit=1&sort=-id&fields=id,file,file.id`;
+  const resp = await fetch(url, { headers: getAuthHeaders() });
+  if (!resp.ok) return null;
+  const json = await resp.json();
+  return json?.data?.[0] || null;
+}
+
+async function upsertSdkTemplateFile(fileId: string | null): Promise<void> {
+  const row = await getSdkTemplateRow();
+  if (row?.id) {
+    await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}/${row.id}`, {
+      method: 'PATCH',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file: fileId }),
+    }).catch(() => {});
+    return;
+  }
+  await fetch(`${DIRECTUS_URL}/items/${SDK_TEMPLATE_COLLECTION}`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ file: fileId }),
+  }).catch(() => {});
+}
+
+async function fileExists(fileId: string): Promise<boolean> {
+  try {
+    const resp = await fetch(`${DIRECTUS_URL}/files/${fileId}?fields=id`, { headers: getAuthHeaders() });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Upload a .docx template file to Directus and tag it so we can find it
  * later.  Replaces any previously uploaded docx template.
@@ -29,10 +85,11 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
   // 1. Upload file to Directus /files with a known title marker
   const form = new FormData();
   form.append('file', file);
-  form.append('title', '__docx_global_template__');
+  form.append('title', DOCX_TEMPLATE_TITLE);
+  form.append('filename_download', `${DOCX_TEMPLATE_TITLE}.docx`);
   const resp = await fetch(`${DIRECTUS_URL}/files`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    headers: getAuthHeaders(),
     body: form,
   });
   if (!resp.ok) throw new Error(`DOCX šablono įkėlimas nepavyko: ${resp.status}`);
@@ -40,16 +97,16 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
   const newFileId: string = json.data.id;
 
   // 2. Delete the old file from Directus if one existed
-  const oldId = _cachedDocxFileId;
+  const oldId = await getDocxTemplateFileId();
   if (oldId && oldId !== newFileId) {
     await fetch(`${DIRECTUS_URL}/files/${oldId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      headers: getAuthHeaders(),
     }).catch(() => { /* best-effort cleanup */ });
   }
 
-  _cachedDocxFileId = newFileId;
-  _docxCacheLoaded = true;
+  cacheTemplateId(newFileId);
+  await upsertSdkTemplateFile(newFileId);
   return newFileId;
 }
 
@@ -60,21 +117,34 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
  */
 export async function getDocxTemplateFileId(): Promise<string | null> {
   if (_docxCacheLoaded) return _cachedDocxFileId;
+
+  // 1) Source of truth: sdk_template table pointer
+  try {
+    const row = await getSdkTemplateRow();
+    const sdkFileId = normalizeFileId(row?.file);
+    if (sdkFileId && await fileExists(sdkFileId)) {
+      cacheTemplateId(sdkFileId);
+      return sdkFileId;
+    }
+  } catch {
+    // ignore and continue with fallback lookup
+  }
+
+  // 2) Legacy fallback: by title marker in Directus files collection
   try {
     const resp = await fetch(
-      `${DIRECTUS_URL}/files?filter[title][_eq]=__docx_global_template__&limit=1&sort=-uploaded_on`,
-      { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` } },
+      `${DIRECTUS_URL}/files?filter[title][_eq]=${encodeURIComponent(DOCX_TEMPLATE_TITLE)}&limit=1&sort=-date_created&fields=id`,
+      { headers: getAuthHeaders() },
     );
     if (!resp.ok) {
-      _docxCacheLoaded = true;
       return null;
     }
     const json = await resp.json();
-    _cachedDocxFileId = json.data?.[0]?.id || null;
-    _docxCacheLoaded = true;
-    return _cachedDocxFileId;
+    const discovered = json.data?.[0]?.id || null;
+    cacheTemplateId(discovered);
+    if (discovered) await upsertSdkTemplateFile(discovered);
+    return discovered;
   } catch {
-    _docxCacheLoaded = true;
     return null;
   }
 }
@@ -91,14 +161,16 @@ export function getDocxTemplateUrl(fileId: string): string {
  */
 export async function deleteDocxTemplate(): Promise<void> {
   const fileId = await getDocxTemplateFileId();
-  if (!fileId) return;
+  if (fileId) {
+    await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    }).catch(() => {});
+  }
 
-  await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-  }).catch(() => {});
+  await upsertSdkTemplateFile(null);
 
-  _cachedDocxFileId = null;
+  cacheTemplateId(null);
 }
 
 /**
@@ -136,7 +208,7 @@ export async function uploadDocxBlobToDirectus(
  * Build a Directus asset download URL for any file ID.
  */
 export function getDirectusFileUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}&download`;
 }
 
 /**
