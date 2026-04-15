@@ -102,6 +102,13 @@ export const createSDKConversation = async (
     return { data: data.id, error: null };
   } catch (error) {
     console.error('Error in createSDKConversation:', error);
+    await appLogger.logError({
+      action: 'sdk_conversation_create_failed',
+      error: error as any,
+      userId,
+      userEmail,
+      metadata: { project_id: projectId, title }
+    });
     return { data: null, error };
   }
 };
@@ -127,6 +134,11 @@ export const getSDKConversations = async (
     return { data, error: null };
   } catch (error) {
     console.error('Error in getSDKConversations:', error);
+    await appLogger.logError({
+      action: 'sdk_conversations_fetch_failed',
+      error: error as any,
+      metadata: { project_id: projectId }
+    });
     return { data: null, error };
   }
 };
@@ -152,6 +164,11 @@ export const getSDKConversation = async (
     return { data, error: null };
   } catch (error) {
     console.error('Error in getSDKConversation:', error);
+    await appLogger.logError({
+      action: 'sdk_conversation_fetch_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId }
+    });
     return { data: null, error };
   }
 };
@@ -189,9 +206,24 @@ export const addMessageToConversation = async (
 
     if (updateError) throw updateError;
 
+    await appLogger.logDocument({
+      action: 'sdk_conversation_updated',
+      metadata: {
+        conversation_id: conversationId,
+        updated_field: 'messages',
+        message_count: updatedMessages.length,
+        message_role: message.role
+      }
+    });
+
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in addMessageToConversation:', error);
+    await appLogger.logError({
+      action: 'sdk_conversation_update_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId, operation: 'add_message' }
+    });
     return { data: false, error };
   }
 };
@@ -214,9 +246,24 @@ export const updateConversationArtifact = async (
 
     if (error) throw error;
 
+    await appLogger.logDocument({
+      action: 'sdk_artifact_updated',
+      metadata: {
+        conversation_id: conversationId,
+        artifact_id: artifact.id,
+        artifact_type: artifact.type,
+        artifact_version: artifact.version
+      }
+    });
+
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in updateConversationArtifact:', error);
+    await appLogger.logError({
+      action: 'sdk_artifact_update_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId, artifact_id: artifact?.id }
+    });
     return { data: false, error };
   }
 };
@@ -249,6 +296,13 @@ export const deleteSDKConversation = async (
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in deleteSDKConversation:', error);
+    await appLogger.logError({
+      action: 'sdk_conversation_delete_failed',
+      error: error as any,
+      userId,
+      userEmail,
+      metadata: { conversation_id: conversationId }
+    });
     return { data: false, error };
   }
 };
@@ -271,9 +325,22 @@ export const renameSDKConversation = async (
 
     if (error) throw error;
 
+    await appLogger.logDocument({
+      action: 'sdk_conversation_updated',
+      metadata: {
+        conversation_id: conversationId,
+        updated_field: 'title'
+      }
+    });
+
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in renameSDKConversation:', error);
+    await appLogger.logError({
+      action: 'sdk_conversation_update_failed',
+      error: error as any,
+      metadata: { conversation_id: conversationId, operation: 'rename' }
+    });
     return { data: false, error };
   }
 };
@@ -312,11 +379,29 @@ export const updateMessageButtonSelection = async (
         .eq('id', conversationId);
 
       if (updateError) throw updateError;
+
+      await appLogger.logDocument({
+        action: 'sdk_conversation_updated',
+        metadata: {
+          conversation_id: conversationId,
+          updated_field: 'selected_button_id',
+          message_index: messageIndex
+        }
+      });
     }
 
     return { data: true, error: null };
   } catch (error) {
     console.error('Error in updateMessageButtonSelection:', error);
+    await appLogger.logError({
+      action: 'sdk_conversation_update_failed',
+      error: error as any,
+      metadata: {
+        conversation_id: conversationId,
+        operation: 'update_message_button_selection',
+        message_index: messageIndex
+      }
+    });
     return { data: false, error };
   }
 };

@@ -1,5 +1,6 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
+import { appLogger } from './appLogger';
 
 const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
@@ -40,6 +41,10 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
     return data || [];
   } catch (error: any) {
     console.error('Error in fetchStandartiniaiProjektai:', error);
+    await appLogger.logError({
+      action: 'standartiniai_fetch_failed',
+      error,
+    });
     throw error;
   }
 };
@@ -68,9 +73,23 @@ export const createStandartinisProjektas = async (record: {
       throw error;
     }
 
+    await appLogger.logDocument({
+      action: 'standartinis_created',
+      metadata: {
+        id: data?.id,
+        conversation_id: record.conversation_id,
+        projekto_kodas: record.projekto_kodas
+      }
+    });
+
     return data;
   } catch (error: any) {
     console.error('Error in createStandartinisProjektas:', error);
+    await appLogger.logError({
+      action: 'standartinis_create_failed',
+      error,
+      metadata: { conversation_id: record.conversation_id, projekto_kodas: record.projekto_kodas }
+    });
     throw error;
   }
 };
@@ -101,9 +120,22 @@ export const updateStandartinisProjektas = async (
       throw error;
     }
 
+    await appLogger.logDocument({
+      action: 'standartinis_updated',
+      metadata: {
+        id: recordId,
+        updated_fields: Object.keys(fields)
+      }
+    });
+
     return data;
   } catch (error: any) {
     console.error('Error in updateStandartinisProjektas:', error);
+    await appLogger.logError({
+      action: 'standartinis_update_failed',
+      error,
+      metadata: { id: recordId, updated_fields: Object.keys(fields) }
+    });
     throw error;
   }
 };
@@ -138,6 +170,11 @@ export const getStandartinisByConversationId = async (
       return null;
     }
     console.error('Error in getStandartinisByConversationId:', error);
+    await appLogger.logError({
+      action: 'standartinis_fetch_by_conversation_failed',
+      error,
+      metadata: { conversation_id: conversationId }
+    });
     throw error;
   }
 };
@@ -166,8 +203,18 @@ export const deleteStandartinisProjektas = async (record: { id: number; docx_fil
 
   if (error) {
     console.error('Error deleting standartiniai_projektai record:', error);
+    await appLogger.logError({
+      action: 'standartinis_delete_failed',
+      error,
+      metadata: { id: record.id, docx_file_id: record.docx_file_id }
+    });
     throw error;
   }
+
+  await appLogger.logDocument({
+    action: 'standartinis_deleted',
+    metadata: { id: record.id, docx_file_id: record.docx_file_id }
+  });
 };
 
 /** Columns we display for nestandartiniai */
@@ -303,8 +350,18 @@ export const updateNestandartiniaiField = async (
 
   if (error) {
     console.error(`Error updating ${field}:`, error);
+    await appLogger.logError({
+      action: 'nestandartiniai_update_failed',
+      error,
+      metadata: { id, field }
+    });
     throw error;
   }
+
+  await appLogger.logDocument({
+    action: 'nestandartiniai_updated',
+    metadata: { id, field }
+  });
 };
 
 export const updateNestandartiniaiAtsakymas = async (

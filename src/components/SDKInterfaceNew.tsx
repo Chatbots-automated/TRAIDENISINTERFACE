@@ -75,6 +75,7 @@ import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
+import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -141,7 +142,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [streamingContent, setStreamingContent] = useState('');
   const [isToolUse, setIsToolUse] = useState(false);
   const [toolUseName, setToolUseName] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string>('');
   const [promptTemplate, setPromptTemplate] = useState<string>('');
   const [templateFromDB, setTemplateFromDB] = useState<string>(''); // Template variable from instruction_variables
@@ -251,7 +251,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Notification helper functions
   const addNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
     const id = `notification-${Date.now()}-${Math.random()}`;
-    setNotifications(prev => [...prev, { id, type, title, message }]);
+    setNotifications(prev => [...prev, { id, type, title: formatToastMessage(title, 50), message: formatToastMessage(message) }]);
+  };
+
+  const addErrorNotification = (title: string, error: unknown, fallback: string) => {
+    addNotification('error', title, formatErrorForToast(error, fallback));
   };
 
   const removeNotification = (id: string) => {
@@ -435,7 +439,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('Template variable from DB loaded, length:', templateVar.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
-      setError('Nepavyko užkrauti sistemos instrukcijų');
+      addErrorNotification('Klaida', err, 'Nepavyko užkrauti sistemos instrukcijų');
     } finally {
       setLoadingPrompt(false);
     }
@@ -544,9 +548,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setCurrentConversation(newConversation);
       // Optimistically add to conversations list to avoid flicker
       setConversations(prev => [newConversation!, ...prev]);
+      addNotification('success', 'Sukurta', 'Naujas pokalbis sukurtas.');
     } catch (err) {
       console.error('Error creating conversation:', err);
-      setError('Nepavyko sukurti pokalbio');
+      addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
     } finally {
       setCreatingConversation(false);
     }
@@ -574,7 +579,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
 
       setCurrentConversation(data);
-      setError(null);
 
       // Load linked standartiniai_projektai record (if any) for docx download
       setStandartiniaiRecordId(null);
@@ -609,7 +613,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       if (deleteError || !data) {
         console.error('[Delete] Error:', deleteError);
-        addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${deleteError?.message || 'nežinoma klaida'}`);
+        addNotification('error', 'Klaida', formatErrorForToast(deleteError, 'Nepavyko ištrinti pokalbio'));
         return;
       }
 
@@ -624,7 +628,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
       console.error('[Delete] Exception:', err);
-      addNotification('error', 'Klaida', `Nepavyko ištrinti pokalbio: ${err.message || 'nežinoma klaida'}`);
+      addErrorNotification('Klaida', err, 'Nepavyko ištrinti pokalbio');
     }
   };
 
@@ -643,8 +647,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation?.id === convId) {
         setCurrentConversation(prev => prev ? { ...prev, title: trimmed } : prev);
       }
+      addNotification('success', 'Atnaujinta', 'Pokalbio pavadinimas atnaujintas.');
     } catch (err) {
       console.error('Error renaming conversation:', err);
+      addErrorNotification('Klaida', err, 'Nepavyko atnaujinti pokalbio pavadinimo');
     }
     setRenamingConvId(null);
   };
@@ -704,7 +710,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       loadConversationDetails(currentConversation.id);
     } catch (err) {
       console.error('Error sharing conversation:', err);
-      addNotification('error', 'Klaida', 'Nepavyko pasidalinti pokalbiu');
+      addErrorNotification('Klaida', err, 'Nepavyko pasidalinti pokalbiu');
     } finally {
       setSharingConversation(false);
     }
@@ -773,7 +779,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setShowArtifact(!!data.artifact);
       setStandartiniaiRecordId(null);
       setSavedDocxFileId(null);
-      setError(null);
 
       // Load linked standartiniai record for shared conversations too
       if (data?.artifact) {
@@ -824,13 +829,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         );
         if (createError || !conversationId) {
           console.error('Error creating conversation:', createError);
-          setError('Nepavyko sukurti pokalbio');
+          addErrorNotification('Klaida', createError, 'Nepavyko sukurti pokalbio');
           return;
         }
 
         const { data: newConversation } = await getSDKConversation(conversationId);
         if (!newConversation) {
-          setError('Nepavyko sukurti pokalbio');
+          addNotification('error', 'Klaida', 'Nepavyko sukurti pokalbio');
           return;
         }
 
@@ -839,7 +844,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
         console.error('Error creating conversation:', err);
-        setError(err.message || 'Nepavyko sukurti pokalbio');
+        addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
         return;
       } finally {
         setCreatingConversation(false);
@@ -893,7 +898,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     // Start loading
     setLoading(true);
     setStreamingContent('');
-    setError(null);
 
     try {
       if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
@@ -932,7 +936,31 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     } catch (err: any) {
       console.error('[Silent Button] Error:', err);
-      setError(`Klaida: ${err.message || 'Nežinoma klaida'}`);
+      await appLogger.logAPI({
+        action: 'sdk_anthropic_request_failed',
+        userId: user.id,
+        userEmail: user.email,
+        endpoint: 'anthropic.messages.stream',
+        method: 'POST',
+        level: 'error',
+        metadata: {
+          conversation_id: conversation.id,
+          trigger: 'button_click',
+          button_id: buttonId
+        }
+      });
+      await appLogger.logError({
+        action: 'sdk_chat_api_error',
+        error: err,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: {
+          conversation_id: conversation.id,
+          trigger: 'button_click',
+          button_id: buttonId
+        }
+      });
+      addErrorNotification('Klaida', err, 'Nepavyko gauti atsakymo iš AI');
       setLoading(false);
     }
   };
@@ -1033,6 +1061,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('[API CALL] Total messages:', messages.length);
       console.log('[API CALL] Serialized messages:', JSON.stringify(messages, null, 2));
       console.log('───────────────────────────────────────────────────');
+
+      const apiStartedAt = Date.now();
+      await appLogger.logAPI({
+        action: 'sdk_anthropic_request_started',
+        userId: user.id,
+        userEmail: user.email,
+        endpoint: 'anthropic.messages.stream',
+        method: 'POST',
+        metadata: {
+          conversation_id: conversation.id,
+          message_count: messages.length
+        }
+      });
 
       const stream = await anthropic.messages.stream({
         model: 'claude-sonnet-4-20250514',
@@ -1135,6 +1176,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       // Get the complete final message to ensure we have all tool_use blocks correctly
       const finalMessage = await stream.finalMessage();
+      await appLogger.logAPI({
+        action: 'sdk_anthropic_response_received',
+        userId: user.id,
+        userEmail: user.email,
+        endpoint: 'anthropic.messages.stream',
+        method: 'POST',
+        statusCode: 200,
+        responseTimeMs: Date.now() - apiStartedAt,
+        metadata: {
+          conversation_id: conversation.id,
+          stop_reason: finalMessage.stop_reason,
+          content_blocks: finalMessage.content.length
+        }
+      });
       console.log('[Stream] Final message role:', finalMessage.role);
       console.log('[Stream] Final message content blocks:', finalMessage.content.length);
       console.log('[Stream] Final message stop_reason:', finalMessage.stop_reason);
@@ -1422,6 +1477,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
     } catch (err: any) {
       console.error('[processAIResponse] Error:', err);
+      await appLogger.logAPI({
+        action: 'sdk_anthropic_request_failed',
+        userId: user.id,
+        userEmail: user.email,
+        endpoint: 'anthropic.messages.stream',
+        method: 'POST',
+        level: 'error',
+        metadata: {
+          conversation_id: conversation.id,
+          message_count: messages.length
+        }
+      });
       setIsStreamingArtifact(false); // Reset on error too
       throw err;
     }
@@ -1465,7 +1532,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
         console.error('Error creating conversation:', err);
-        setError(err.message || 'Nepavyko sukurti pokalbio');
+        addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
         return;
       } finally {
         setCreatingConversation(false);
@@ -1493,7 +1560,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setInputValue('');
     setLoading(true);
     setStreamingContent('');
-    setError(null);
 
     try {
       if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
@@ -1690,7 +1756,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       await processAIResponse(anthropic, anthropicMessages, contextualSystemPrompt, conversation, updatedMessages);
     } catch (err: any) {
       console.error('Error sending message:', err);
-      setError(err.message || 'Įvyko klaida');
+      await appLogger.logError({
+        action: 'sdk_send_message_failed',
+        error: err,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: {
+          conversation_id: conversation.id,
+          message_length: messageText.length
+        }
+      });
+      addErrorNotification('Klaida', err, 'Nepavyko išsiųsti žinutės');
       setStreamingContent('');
     } finally {
       setLoading(false);
@@ -1959,11 +2035,25 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         }
       } catch (spErr) {
         console.warn('[Standartiniai] Failed to sync record (non-fatal):', spErr);
+        await appLogger.logError({
+          action: 'sdk_standartiniai_sync_failed',
+          error: spErr as any,
+          userId: user.id,
+          userEmail: user.email,
+          metadata: { conversation_id: conversation.id, standartiniai_record_id: standartiniaiRecordId }
+        });
       }
     } catch (err) {
       console.error('Error handling artifact:', err);
+      await appLogger.logError({
+        action: 'sdk_artifact_generation_failed',
+        error: err as any,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: { conversation_id: conversation.id }
+      });
       setShowArtifact(false); // Reset so floating buttons become visible again
-      addNotification('error', 'Klaida', 'Nepavyko išsaugoti komercinio pasiūlymo.');
+      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti komercinio pasiūlymo');
     }
   };
 
@@ -2205,6 +2295,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (!cancelled) setSavedDocxFileId(newFileId);
       } catch (err) {
         console.error('Auto-save DOCX error:', err);
+        await appLogger.logError({
+          action: 'sdk_docx_autosave_failed',
+          error: err as any,
+          userId: user.id,
+          userEmail: user.email,
+          metadata: { conversation_id: currentConversation?.id, standartiniai_record_id: standartiniaiRecordId }
+        });
       } finally {
         if (!cancelled) setAutoSaving(false);
       }
@@ -2255,7 +2352,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
       console.error('Error saving to standartiniai_projektai:', err);
-      addNotification('error', 'Klaida', `Nepavyko išsaugoti dokumento: ${err instanceof Error ? err.message : err}`);
+      await appLogger.logError({
+        action: 'sdk_docx_save_failed',
+        error: err as any,
+        userId: user.id,
+        userEmail: user.email,
+        metadata: { conversation_id: currentConversation.id, standartiniai_record_id: standartiniaiRecordId }
+      });
+      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti dokumento');
     } finally {
       setIsSavingToStandartiniai(false);
     }
@@ -3102,18 +3206,6 @@ Vartotojo instrukcija: ${instruction}`;
           >
             <ChevronDown className="w-5 h-5" />
           </button>
-        )}
-
-        {/* Error Display - Always visible when error exists */}
-        {error && (
-          <div className="px-4 pb-2">
-            <div className="max-w-3xl mx-auto">
-              <div className="alert alert-soft alert-error text-sm">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span className="flex-1">{error}</span>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Input Box or Read-Only info */}
@@ -4215,7 +4307,7 @@ Vartotojo instrukcija: ${instruction}`;
                         getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
                       } catch (err) {
-                        addNotification('error', 'Klaida', `Nepavyko įkelti DOCX: ${err instanceof Error ? err.message : err}`);
+                        addErrorNotification('Klaida', err, 'Nepavyko įkelti DOCX');
                       } finally {
                         setDocxUploading(false);
                         e.target.value = '';
