@@ -2236,33 +2236,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     };
   };
 
-  const yamlVarsForUi = useMemo<Record<string, string>>(
-    () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
-    [currentConversation?.artifact?.content]
-  );
-
-  const unresolvedTemplateVariables = useMemo<string[]>(() => {
-    if (!templateVariables.length) return [];
-    const merged = mergeAllVariables();
-    return templateVariables.filter((key) => {
-      const value = merged[key];
-      if (value === undefined || value === null) return true;
-      const normalized = String(value).trim();
-      return normalized === '' || normalized.toLowerCase() === 'undefined';
-    });
-  }, [
-    templateVariables,
-    currentConversation?.artifact?.content,
-    offerParameters,
-    selectedManager?.id,
-    selectedEconomist?.id,
-    user.full_name,
-    user.email,
-    user.phone,
-    user.kodas,
-    currentConversation?.title,
-  ]);
-
   /**
    * Categorize a variable key to determine which edit control to show.
    * - 'offer'            → offer parameter (BDS, SM, N, P, object, cleaned water, etc.)
@@ -2397,6 +2370,33 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedDocxFileId, globalDocxFileId, currentConversation?.artifact?.content]);
+
+  const yamlVarsForUi = useMemo<Record<string, string>>(
+    () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
+    [currentConversation?.artifact?.content]
+  );
+
+  const unresolvedTemplateVariables = useMemo<string[]>(() => {
+    if (!templateVariables.length) return [];
+    const merged = mergeAllVariables();
+    return templateVariables.filter((key) => {
+      const value = merged[key];
+      if (value === undefined || value === null) return true;
+      const normalized = String(value).trim();
+      return normalized === '' || normalized.toLowerCase() === 'undefined';
+    });
+  }, [
+    templateVariables,
+    currentConversation?.artifact?.content,
+    offerParameters,
+    selectedManager?.id,
+    selectedEconomist?.id,
+    user.full_name,
+    user.email,
+    user.phone,
+    user.kodas,
+    currentConversation?.title,
+  ]);
 
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
