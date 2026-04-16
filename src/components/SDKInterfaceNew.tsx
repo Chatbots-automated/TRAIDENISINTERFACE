@@ -2305,6 +2305,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
+  const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   useEffect(() => {
     if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
   }, [savedDocxFileId]);
@@ -2327,8 +2328,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   }, [globalDocxFileId]);
 
   useEffect(() => {
-    if (savedDocxFileId || !globalDocxFileId || autoSaving) return;
-    if (!currentConversation?.artifact) return;
+    if (!globalDocxFileId || autoSaving) return;
+    if (!currentConversation?.artifact || !currentConversation?.id) return;
+    const artifactContent = currentConversation.artifact.content || '';
+    const signature = `${currentConversation.id}::${artifactContent}`;
+    if (!artifactContent.trim()) return;
+    if (lastAutoSyncedArtifactSignatureRef.current === signature) return;
     let cancelled = false;
     (async () => {
       try {
@@ -2338,9 +2343,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (cancelled) return;
         const projektoKodas = vars['code_yy/mm/dd'] || 'komercinis-pasiulymas';
         const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
-        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, null);
+        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
         if (cancelled) return;
-        const yamlContent = currentConversation!.artifact!.content || '';
+        const yamlContent = artifactContent;
         const hnv = vars['economy_HNV'] || '';
         if (standartiniaiRecordId) {
           await updateStandartinisProjektas(standartiniaiRecordId, {
@@ -2348,12 +2353,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           }, { userId: user.id, userEmail: user.email });
         } else {
           const created = await createStandartinisProjektas({
-            conversation_id: currentConversation!.id,
+            conversation_id: currentConversation.id,
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
           }, { userId: user.id, userEmail: user.email });
           if (!cancelled) setStandartiniaiRecordId(created.id);
         }
-        if (!cancelled) setSavedDocxFileId(newFileId);
+        if (!cancelled) {
+          setSavedDocxFileId(newFileId);
+          lastAutoSyncedArtifactSignatureRef.current = signature;
+        }
       } catch (err) {
         console.error('Auto-save DOCX error:', err);
         await appLogger.logError({
@@ -2369,7 +2377,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedDocxFileId, globalDocxFileId, currentConversation?.artifact?.content]);
+  }, [globalDocxFileId, currentConversation?.id, currentConversation?.artifact?.content, savedDocxFileId]);
 
   const yamlVarsForUi = useMemo<Record<string, string>>(
     () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
