@@ -76,6 +76,14 @@ import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, ty
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob, extractDocxTemplateVariables } from '../lib/globalTemplateService';
 import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
+import {
+  formatLtDate,
+  loadSession,
+  saveSession,
+  loadTeamSelection,
+  saveTeamSelection,
+  extractDirectusFileId
+} from './sdk/sdkInterfaceUtils';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -83,62 +91,6 @@ interface SDKInterfaceNewProps {
   mainSidebarCollapsed: boolean;
   onUnreadCountChange?: (count: number) => void;
   onRequestMainSidebarCollapse?: (collapsed: boolean) => void;
-}
-
-// Lithuanian short month names for sidebar dates
-const LT_MONTHS_SHORT = ['Sau', 'Vas', 'Kov', 'Bal', 'Geg', 'Bir', 'Lie', 'Rgp', 'Rgs', 'Spa', 'Lap', 'Gru'];
-function formatLtDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  // If today, show relative time
-  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return 'Ką tik';
-    if (diffMin < 60) return `Prieš ${diffMin} min.`;
-    const diffHrs = Math.floor(diffMin / 60);
-    if (diffHrs === 1) return 'Prieš 1 valandą';
-    return `Prieš ${diffHrs} val.`;
-  }
-  return `${LT_MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
-}
-
-// Per-conversation team selection persistence
-const TEAM_STORAGE_PREFIX = 'traidenis_team_';
-function saveTeamSelection(conversationId: string, managerId: string | null, economistId: string | null) {
-  try { localStorage.setItem(`${TEAM_STORAGE_PREFIX}${conversationId}`, JSON.stringify({ managerId, economistId })); } catch {}
-}
-function loadTeamSelection(conversationId: string): { managerId: string | null; economistId: string | null } {
-  try {
-    const raw = localStorage.getItem(`${TEAM_STORAGE_PREFIX}${conversationId}`);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { managerId: null, economistId: null };
-}
-
-// Session persistence keys
-const SESSION_KEY = 'traidenis_sdk_session';
-function loadSession(): { showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}'); } catch { return {}; }
-}
-function saveSession(patch: Record<string, unknown>) {
-  try {
-    const current = loadSession();
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch }));
-  } catch { /* ignore */ }
-}
-
-function extractDirectusFileId(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    const record = value as Record<string, any>;
-    if (typeof record.id === 'string' && record.id) return record.id;
-    if (record.data && typeof record.data === 'object' && typeof record.data.id === 'string' && record.data.id) {
-      return record.data.id;
-    }
-  }
-  return null;
 }
 
 export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
   Send, MessageSquare, AlertCircle, CheckCircle, Loader2, Image,
-  Code, Type, FileJson, ChevronDown, Sparkles, Settings2, RefreshCw,
+  Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
   PanelRightClose, PanelRightOpen, Download, FlaskConical
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
@@ -17,6 +17,7 @@ import {
   fetchDocumentChats,
   saveDocumentChat,
 } from '../lib/analizeService';
+import SafeHtml from './SafeHtml';
 
 // ============================================================================
 // Constants
@@ -102,7 +103,7 @@ function renderMarkdown(md: string): string {
     // Horizontal rules
     .replace(/^---$/gm, '<hr class="my-4" style="border-color:rgba(0,0,0,0.08)" />')
     // Unordered lists
-    .replace(/^[\-\*]\s+(.+)$/gm, '<li class="ml-4 list-disc text-sm" style="color:#3d3935">$1</li>')
+    .replace(/^[-*]\s+(.+)$/gm, '<li class="ml-4 list-disc text-sm" style="color:#3d3935">$1</li>')
     // Ordered lists
     .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-4 list-decimal text-sm" style="color:#3d3935">$1</li>')
     // Links
@@ -140,12 +141,18 @@ function renderMarkdown(md: string): string {
 // JSON Detection & Rendering for Chat Responses
 // ============================================================================
 
-function tryParseJsonArray(text: string): any[] | null {
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function tryParseJsonArray(text: string): JsonRecord[] | null {
   const trimmed = text.trim();
   if (!trimmed.startsWith('[')) return null;
   try {
     const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
+    if (Array.isArray(parsed) && parsed.length > 0 && isJsonRecord(parsed[0])) {
       return parsed;
     }
   } catch {
@@ -161,7 +168,7 @@ function tryParseJsonArray(text: string): any[] | null {
   return null;
 }
 
-function renderTankCard(tank: Record<string, any>, index: number): string {
+function renderTankCard(tank: JsonRecord, index: number): string {
   const name = tank.pavadinimas || `Talpa ${index + 1}`;
   const pos = tank.pozicija ? ` (${tank.pozicija})` : '';
 
@@ -213,6 +220,7 @@ function renderChatContent(content: string): { html: string; isJson: boolean } {
 // ============================================================================
 
 export default function AnalizeInterface({ user, projectId }: AnalizeInterfaceProps) {
+  void projectId;
   // --- Document list ---
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(true);
@@ -262,11 +270,12 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       setDocsError('');
       const docs = await fetchParsedDocuments(user.id);
       setDocuments(docs);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load documents:', err);
-      const msg: string = err?.message || '';
+      const msg = err instanceof Error ? err.message : '';
+      const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code) : '';
       setDocsError(
-        msg.toLowerCase().includes('permission') || err?.code === '403'
+        msg.toLowerCase().includes('permission') || code === '403'
           ? 'Prieigos klaida (403) – patikrinkite VITE_DIRECTUS_TOKEN konfigūraciją Netlify aplinkoje.'
           : msg || 'Nepavyko įkelti dokumentų.'
       );
@@ -424,9 +433,9 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       const fullDoc = await getParsedDocument(doc.id);
       setSelectedDoc(fullDoc);
       setSelectedDocFull(fullDoc);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setParseStatus('error');
-      setParseError(err?.message || 'Apdorojimas nepavyko');
+      setParseError(err instanceof Error ? err.message : 'Apdorojimas nepavyko');
       setParseStatusText('');
     }
   };
@@ -528,13 +537,14 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
           created_at: new Date().toISOString(),
         }]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Chat error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Nepavyko gauti atsakymo';
       setChatMessages(prev => [...prev, {
         id: 'error-' + Date.now(),
         document_id: selectedDocFull.id,
         role: 'assistant' as const,
-        content: `Klaida: ${err?.message || 'Nepavyko gauti atsakymo'}`,
+        content: `Klaida: ${errorMessage}`,
         created_at: new Date().toISOString(),
       }]);
       setChatStreaming('');
@@ -899,7 +909,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                       style={{ maxWidth: '800px', border: '0.5px solid rgba(0,0,0,0.06)' }}
                     >
                       {pages[currentPage] ? (
-                        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(pages[currentPage]) }} />
+                        <SafeHtml html={renderMarkdown(pages[currentPage])} />
                       ) : (
                         <p className="text-sm text-center" style={{ color: '#8a857f' }}>Nėra turinio</p>
                       )}
@@ -1071,7 +1081,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                             }}
                           >
                             {rendered?.isJson ? (
-                              <div dangerouslySetInnerHTML={{ __html: rendered.html }} />
+                              <SafeHtml html={rendered.html} />
                             ) : isExtractionPrompt ? (
                               <div className="flex items-center gap-1.5">
                                 <FlaskConical className="w-3 h-3 shrink-0" />
