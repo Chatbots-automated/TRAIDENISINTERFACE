@@ -2033,7 +2033,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Auto-create or update standartiniai_projektai record and replace linked DOCX
       // so each YAML save keeps a single up-to-date Directus file.
       try {
-        const vars = mergeAllVariables();
+        // IMPORTANT: use the freshly parsed artifact content, not currentConversation state,
+        // because state updates are async and may still hold the previous artifact here.
+        const vars = mergeAllVariables(trimmedContent);
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
         let linkedStandartiniaiId: number | null = standartiniaiRecordId;
