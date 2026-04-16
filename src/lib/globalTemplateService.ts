@@ -24,6 +24,7 @@ const DOCX_TEMPLATE_LOCAL_KEY = 'docx_template_file_id';
 /** In-memory cache for the docx template file ID. */
 let _cachedDocxFileId: string | null = null;
 let _docxCacheLoaded = false;
+let _cachedTemplateVars: { fileId: string; vars: string[] } | null = null;
 
 function getAuthHeaders(): HeadersInit {
   return { Authorization: `Bearer ${DIRECTUS_TOKEN}` };
@@ -127,6 +128,8 @@ async function fileExists(fileId: string): Promise<boolean> {
  * later.  Replaces any previously uploaded docx template.
  */
 export async function uploadDocxTemplate(file: File): Promise<string> {
+  const oldId = await getDocxTemplateFileId();
+
   // 1. Upload file to Directus /files with a known title marker
   const form = new FormData();
   form.append('file', file);
@@ -141,8 +144,11 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
   const json = await resp.json();
   const newFileId: string = json.data.id;
 
-  // 2. Delete the old file from Directus if one existed
-  const oldId = await getDocxTemplateFileId();
+  // 2. Point sdk_template to the new file and refresh cache immediately.
+  cacheTemplateId(newFileId);
+  await upsertSdkTemplateFile(newFileId);
+
+  // 3. Delete the old file from Directus if one existed
   if (oldId && oldId !== newFileId) {
     await fetch(`${DIRECTUS_URL}/files/${oldId}`, {
       method: 'DELETE',
@@ -150,8 +156,6 @@ export async function uploadDocxTemplate(file: File): Promise<string> {
     }).catch(() => { /* best-effort cleanup */ });
   }
 
-  cacheTemplateId(newFileId);
-  await upsertSdkTemplateFile(newFileId);
   return newFileId;
 }
 
@@ -300,14 +304,59 @@ export async function buildDocxBlob(variables: Record<string, string>): Promise<
     paragraphLoop: true,
     linebreaks: true,
     delimiters: { start: '{{', end: '}}' },
+    nullGetter: () => '',
   });
   const cleanedVars: Record<string, string> = {};
   for (const [k, v] of Object.entries(variables)) {
-    cleanedVars[k] = typeof v === 'string' ? v.replace(/\\n/g, '\n') : v;
+    const normalized = v === undefined || v === null ? '' : String(v);
+    cleanedVars[k] = normalized.replace(/\\n/g, '\n');
   }
   docx.render(cleanedVars);
   return docx.getZip().generate({
     type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   });
+}
+
+/**
+ * Extract template variable placeholders used in the current DOCX template.
+ * Looks for {{variable_name}} patterns inside DOCX XML parts.
+ */
+export async function extractDocxTemplateVariables(): Promise<string[]> {
+  const fileId = await getDocxTemplateFileId();
+  if (!fileId) return [];
+  if (_cachedTemplateVars?.fileId === fileId) return _cachedTemplateVars.vars;
+
+  const response = await fetch(getDocxTemplateUrl(fileId));
+  if (!response.ok) return [];
+  const arrayBuffer = await response.arrayBuffer();
+  const zip = new PizZip(arrayBuffer);
+
+  const vars = new Set<string>();
+  const placeholderRegex = /\{\{\s*([^{}]+?)\s*\}\}/g;
+
+  for (const [name, entry] of Object.entries(zip.files)) {
+    if (!name.endsWith('.xml') || entry.dir) continue;
+    const content = entry.asText();
+    let match: RegExpExecArray | null = null;
+    while ((match = placeholderRegex.exec(content)) !== null) {
+      const raw = match[1]?.trim();
+      if (!raw) continue;
+      const cleaned = raw
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&[a-zA-Z0-9#]+;/g, ' ')
+        .trim();
+      const candidates = cleaned.split(/[\s,;]+/).map(part => part.trim()).filter(Boolean);
+      for (const key of candidates) {
+        if (!/^[A-Za-z0-9_./-]+$/.test(key)) continue;
+        if (key.length > 80) continue;
+        if (key.startsWith('w:')) continue;
+        vars.add(key);
+      }
+    }
+  }
+
+  const discovered = [...vars].sort((a, b) => a.localeCompare(b));
+  _cachedTemplateVars = { fileId, vars: discovered };
+  return discovered;
 }

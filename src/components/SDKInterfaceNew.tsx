@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowUp,
@@ -74,7 +74,7 @@ import {
 import NotificationContainer, { Notification } from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
-import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob } from '../lib/globalTemplateService';
+import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob, extractDocxTemplateVariables } from '../lib/globalTemplateService';
 import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
 interface SDKInterfaceNewProps {
@@ -126,6 +126,19 @@ function saveSession(patch: Record<string, unknown>) {
     const current = loadSession();
     localStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch }));
   } catch { /* ignore */ }
+}
+
+function extractDirectusFileId(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object') {
+    const record = value as Record<string, any>;
+    if (typeof record.id === 'string' && record.id) return record.id;
+    if (record.data && typeof record.data === 'object' && typeof record.data.id === 'string' && record.data.id) {
+      return record.data.id;
+    }
+  }
+  return null;
 }
 
 export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
@@ -598,13 +611,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const spRecord = await getStandartinisByConversationId(conversationId);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
-            if (spRecord.docx_file_id) {
-              // Directus may return a plain UUID string or an object { id: '...' } for M2O file relations
-              const fid = typeof spRecord.docx_file_id === 'object' && spRecord.docx_file_id !== null
-                ? spRecord.docx_file_id.id
-                : spRecord.docx_file_id;
-              if (fid) setSavedDocxFileId(fid);
-            }
+            const fid = extractDirectusFileId(spRecord.document ?? spRecord.docx_file_id);
+            if (fid) setSavedDocxFileId(fid);
           }
         } catch (spErr) {
           console.warn('[Standartiniai] Failed to load linked record:', spErr);
@@ -796,6 +804,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           const spRecord = await getStandartinisByConversationId(sharedConv.conversation_id);
           if (spRecord) {
             setStandartiniaiRecordId(spRecord.id);
+            const fid = extractDirectusFileId(spRecord.document ?? spRecord.docx_file_id);
+            if (fid) setSavedDocxFileId(fid);
             if (spRecord.html_content) setSavedHtmlFromDb(spRecord.html_content);
           }
         } catch { /* non-fatal */ }
@@ -2006,8 +2016,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
-      // Clear saved HTML so the fresh AI-generated content renders (not stale saved edits)
-      setSavedDocxFileId(null);
+      // Keep the currently linked DOCX ID. YAML save flow below will replace the
+      // existing Directus file (no orphan file clutter).
       localStorage.removeItem('doc_edit_' + conversation.id);
       console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
@@ -2020,11 +2030,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         autoGenerateTechDescription(bulletlist, conversation.id);
       }
 
-      // Auto-create or update standartiniai_projektai record (YAML only — .docx is saved on manual Išsaugoti)
+      // Auto-create or update standartiniai_projektai record and replace linked DOCX
+      // so each YAML save keeps a single up-to-date Directus file.
       try {
         const vars = mergeAllVariables();
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
+        let linkedStandartiniaiId: number | null = standartiniaiRecordId;
 
         if (isNewArtifact) {
           const created = await createStandartinisProjektas({
@@ -2032,16 +2044,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-          });
+          }, { userId: user.id, userEmail: user.email });
+          linkedStandartiniaiId = created.id;
           setStandartiniaiRecordId(created.id);
           console.log('[Standartiniai] Auto-created record:', created.id);
-        } else if (standartiniaiRecordId) {
-          await updateStandartinisProjektas(standartiniaiRecordId, {
+        } else if (linkedStandartiniaiId) {
+          await updateStandartinisProjektas(linkedStandartiniaiId, {
             yaml_content: trimmedContent,
             projekto_kodas: projektoKodas,
             hnv: hnv,
-          });
-          console.log('[Standartiniai] Updated record after AI edit:', standartiniaiRecordId);
+          }, { userId: user.id, userEmail: user.email });
+          console.log('[Standartiniai] Updated record after AI edit:', linkedStandartiniaiId);
+        }
+
+        if (linkedStandartiniaiId && globalDocxFileId) {
+          const filename = `${(projektoKodas || 'komercinis-pasiulymas').replace(/\//g, '-')}.docx`;
+          const docxBlob = await buildDocxBlob(vars);
+          const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
+          await updateStandartinisProjektas(linkedStandartiniaiId, {
+            document: newFileId,
+          }, { userId: user.id, userEmail: user.email });
+          setSavedDocxFileId(newFileId);
         }
       } catch (spErr) {
         console.warn('[Standartiniai] Failed to sync record (non-fatal):', spErr);
@@ -2175,10 +2198,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    * Merge all variable sources into a single Record for the document preview.
    * Sources: YAML artifact content + offer parameters + team info.
    */
-  const mergeAllVariables = (): Record<string, string> => {
-    const yamlVars: Record<string, string> = currentConversation?.artifact
-      ? parseYAMLContent(currentConversation.artifact.content)
-      : {};
+  const mergeAllVariables = (yamlContentOverride?: string): Record<string, string> => {
+    const yamlSource = yamlContentOverride ?? currentConversation?.artifact?.content ?? '';
+    const yamlVars: Record<string, string> = yamlSource ? parseYAMLContent(yamlSource) : {};
+    const safeOfferParameters: Record<string, string> = Object.fromEntries(
+      Object.entries(offerParameters).filter(([, v]) => v !== undefined && v !== null)
+    ) as Record<string, string>;
 
     // Lithuanian date: "2026 m. vasario mėn. 12 d."
     const LITHUANIAN_MONTHS_GENITIVE = [
@@ -2199,7 +2224,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     return {
       ...yamlVars,
-      ...offerParameters,
+      ...safeOfferParameters,
       'date_yyyy-month_men.-dd': ltDate,
       'code_yy/mm/dd': compositeCode,
       technologist: user.full_name || user.email,
@@ -2275,12 +2300,40 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [standartiniaiRecordId, setStandartiniaiRecordId] = useState<number | null>(null);
   // Directus file ID of the saved .docx — enables download button
   const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
+  const [docxPreviewTick, setDocxPreviewTick] = useState(0);
+  const [templateVariables, setTemplateVariables] = useState<string[]>([]);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
+  const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   useEffect(() => {
-    if (savedDocxFileId || !globalDocxFileId || autoSaving) return;
-    if (!currentConversation?.artifact) return;
+    if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
+  }, [savedDocxFileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!globalDocxFileId) {
+        if (!cancelled) setTemplateVariables([]);
+        return;
+      }
+      try {
+        const vars = await extractDocxTemplateVariables();
+        if (!cancelled) setTemplateVariables(vars);
+      } catch {
+        if (!cancelled) setTemplateVariables([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [globalDocxFileId]);
+
+  useEffect(() => {
+    if (!globalDocxFileId || autoSaving) return;
+    if (!currentConversation?.artifact || !currentConversation?.id) return;
+    const artifactContent = currentConversation.artifact.content || '';
+    const signature = `${currentConversation.id}::${artifactContent}`;
+    if (!artifactContent.trim()) return;
+    if (lastAutoSyncedArtifactSignatureRef.current === signature) return;
     let cancelled = false;
     (async () => {
       try {
@@ -2290,22 +2343,25 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (cancelled) return;
         const projektoKodas = vars['code_yy/mm/dd'] || 'komercinis-pasiulymas';
         const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
-        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, null);
+        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
         if (cancelled) return;
-        const yamlContent = currentConversation!.artifact!.content || '';
+        const yamlContent = artifactContent;
         const hnv = vars['economy_HNV'] || '';
         if (standartiniaiRecordId) {
           await updateStandartinisProjektas(standartiniaiRecordId, {
-            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, docx_file_id: newFileId,
-          });
+            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
+          }, { userId: user.id, userEmail: user.email });
         } else {
           const created = await createStandartinisProjektas({
-            conversation_id: currentConversation!.id,
-            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, docx_file_id: newFileId,
-          });
+            conversation_id: currentConversation.id,
+            yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
+          }, { userId: user.id, userEmail: user.email });
           if (!cancelled) setStandartiniaiRecordId(created.id);
         }
-        if (!cancelled) setSavedDocxFileId(newFileId);
+        if (!cancelled) {
+          setSavedDocxFileId(newFileId);
+          lastAutoSyncedArtifactSignatureRef.current = signature;
+        }
       } catch (err) {
         console.error('Auto-save DOCX error:', err);
         await appLogger.logError({
@@ -2321,7 +2377,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     })();
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedDocxFileId, globalDocxFileId, currentConversation?.artifact?.content]);
+  }, [globalDocxFileId, currentConversation?.id, currentConversation?.artifact?.content, savedDocxFileId]);
+
+  const yamlVarsForUi = useMemo<Record<string, string>>(
+    () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
+    [currentConversation?.artifact?.content]
+  );
+
+  const unresolvedTemplateVariables = useMemo<string[]>(() => {
+    if (!templateVariables.length) return [];
+    const merged = mergeAllVariables();
+    return templateVariables.filter((key) => {
+      const value = merged[key];
+      if (value === undefined || value === null) return true;
+      const normalized = String(value).trim();
+      return normalized === '' || normalized.toLowerCase() === 'undefined';
+    });
+  }, [
+    templateVariables,
+    currentConversation?.artifact?.content,
+    offerParameters,
+    selectedManager?.id,
+    selectedEconomist?.id,
+    user.full_name,
+    user.email,
+    user.phone,
+    user.kodas,
+    currentConversation?.title,
+  ]);
 
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
@@ -2348,16 +2431,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
-          docx_file_id: newFileId,
-        });
+          document: newFileId,
+        }, { userId: user.id, userEmail: user.email });
       } else {
         const created = await createStandartinisProjektas({
           conversation_id: currentConversation.id,
           yaml_content: yamlContent,
           projekto_kodas: projektoKodas,
           hnv: hnv,
-          docx_file_id: newFileId,
-        });
+          document: newFileId,
+        }, { userId: user.id, userEmail: user.email });
         setStandartiniaiRecordId(created.id);
       }
 
@@ -2568,6 +2651,38 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           };
           await updateConversationArtifact(currentConversation.id, newArtifact);
           setCurrentConversation({ ...currentConversation, artifact: newArtifact });
+
+          // Keep standartiniai_projektai + DOCX file in sync with manual YAML edits.
+          const vars = mergeAllVariables(updatedContent);
+          const projektoKodas = vars['code_yy/mm/dd'] || '';
+          const hnv = vars['economy_HNV'] || '';
+          let linkedStandartiniaiId: number | null = standartiniaiRecordId;
+
+          if (linkedStandartiniaiId) {
+            await updateStandartinisProjektas(linkedStandartiniaiId, {
+              yaml_content: updatedContent,
+              projekto_kodas: projektoKodas,
+              hnv,
+            }, { userId: user.id, userEmail: user.email });
+          } else {
+            const created = await createStandartinisProjektas({
+              conversation_id: currentConversation.id,
+              yaml_content: updatedContent,
+              projekto_kodas: projektoKodas,
+              hnv,
+            }, { userId: user.id, userEmail: user.email });
+            linkedStandartiniaiId = created.id;
+            setStandartiniaiRecordId(created.id);
+          }
+
+          if (linkedStandartiniaiId && globalDocxFileId) {
+            const filename = `${(projektoKodas || 'komercinis-pasiulymas').replace(/\//g, '-')}.docx`;
+            const docxBlob = await buildDocxBlob(vars);
+            const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
+            await updateStandartinisProjektas(linkedStandartiniaiId, { document: newFileId }, { userId: user.id, userEmail: user.email });
+            setSavedDocxFileId(newFileId);
+          }
+
           addNotification('success', 'Kintamasis atnaujintas', `„${key}" reikšmė pakeista.`);
         } catch (err) {
           console.error('[Surgical Edit] Error:', err);
@@ -3383,7 +3498,8 @@ Vartotojo instrukcija: ${instruction}`;
             <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
               {savedDocxFileId ? (
                 <iframe
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(getDirectusAssetUrl(savedDocxFileId))}&embedded=true`}
+                  key={`${savedDocxFileId}-${docxPreviewTick}`}
+                  src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
                   className="flex-1 w-full border-0"
                   title="DOCX peržiūra"
                 />
@@ -3992,6 +4108,18 @@ Vartotojo instrukcija: ${instruction}`;
 
                 {!sectionCollapsed.offerData && (
                   <div>
+                    {!isStreamingArtifact && currentConversation?.artifact && (
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
+                          Aptikta YAML kintamųjų: {Object.keys(yamlVarsForUi).length}
+                        </span>
+                        {templateVariables.length > 0 && (
+                          <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
+                            Šablono kintamųjų: {templateVariables.length}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {isStreamingArtifact ? (
                       <div>
                         <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
@@ -4010,6 +4138,21 @@ Vartotojo instrukcija: ${instruction}`;
                       <p className="text-xs py-4 text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                         Pasiūlymo duomenys bus rodomi po generavimo.
                       </p>
+                    )}
+
+                    {!isStreamingArtifact && unresolvedTemplateVariables.length > 0 && (
+                      <div className="mt-3 rounded-lg border px-3 py-2" style={{ borderColor: '#fbbf24', background: '#fffbeb' }}>
+                        <p className="text-[12px] font-medium" style={{ color: '#92400e' }}>
+                          Kai kurie DOCX šablono kintamieji neturi reikšmės ({unresolvedTemplateVariables.length}).
+                        </p>
+                        <p className="text-[11px] mt-1" style={{ color: '#92400e', opacity: 0.9 }}>
+                          Jei reikšmė neateina iš YAML arba objekto parametrų, dokumente ji bus tuščia (anksčiau galėjo rodytis „undefined“).
+                        </p>
+                        <p className="text-[11px] mt-1 break-all" style={{ color: '#b45309' }}>
+                          {unresolvedTemplateVariables.slice(0, 8).join(', ')}
+                          {unresolvedTemplateVariables.length > 8 ? ` ir dar ${unresolvedTemplateVariables.length - 8}...` : ''}
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}

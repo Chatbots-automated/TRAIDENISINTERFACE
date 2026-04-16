@@ -59,9 +59,21 @@ export const createStandartinisProjektas = async (record: {
   yaml_content: string;
   projekto_kodas: string;
   hnv: string;
-  docx_file_id?: string;
-}): Promise<any> => {
+  document?: string;
+}, actor?: { userId?: string; userEmail?: string }): Promise<any> => {
   try {
+    // Enforce one record per conversation: if record already exists, patch it instead of creating a duplicate.
+    const existing = await getStandartinisByConversationId(record.conversation_id);
+    if (existing?.id) {
+      return await updateStandartinisProjektas(existing.id, {
+        html_content: record.html_content,
+        yaml_content: record.yaml_content,
+        projekto_kodas: record.projekto_kodas,
+        hnv: record.hnv,
+        document: record.document,
+      }, actor);
+    }
+
     const { data, error } = await db
       .from('standartiniai_projektai')
       .insert([record])
@@ -75,6 +87,8 @@ export const createStandartinisProjektas = async (record: {
 
     await appLogger.logDocument({
       action: 'standartinis_created',
+      userId: actor?.userId,
+      userEmail: actor?.userEmail,
       metadata: {
         id: data?.id,
         conversation_id: record.conversation_id,
@@ -87,6 +101,8 @@ export const createStandartinisProjektas = async (record: {
     console.error('Error in createStandartinisProjektas:', error);
     await appLogger.logError({
       action: 'standartinis_create_failed',
+      userId: actor?.userId,
+      userEmail: actor?.userEmail,
       error,
       metadata: { conversation_id: record.conversation_id, projekto_kodas: record.projekto_kodas }
     });
@@ -104,8 +120,9 @@ export const updateStandartinisProjektas = async (
     yaml_content?: string;
     projekto_kodas?: string;
     hnv?: string;
-    docx_file_id?: string;
-  }
+    document?: string;
+  },
+  actor?: { userId?: string; userEmail?: string }
 ): Promise<any> => {
   try {
     const { data, error } = await db
@@ -122,6 +139,8 @@ export const updateStandartinisProjektas = async (
 
     await appLogger.logDocument({
       action: 'standartinis_updated',
+      userId: actor?.userId,
+      userEmail: actor?.userEmail,
       metadata: {
         id: recordId,
         updated_fields: Object.keys(fields)
@@ -133,6 +152,8 @@ export const updateStandartinisProjektas = async (
     console.error('Error in updateStandartinisProjektas:', error);
     await appLogger.logError({
       action: 'standartinis_update_failed',
+      userId: actor?.userId,
+      userEmail: actor?.userEmail,
       error,
       metadata: { id: recordId, updated_fields: Object.keys(fields) }
     });
@@ -182,16 +203,19 @@ export const getStandartinisByConversationId = async (
 /**
  * Delete a standartiniai_projektai record and its associated Directus .docx file.
  */
-export const deleteStandartinisProjektas = async (record: { id: number; docx_file_id?: string | null }): Promise<void> => {
+export const deleteStandartinisProjektas = async (
+  record: { id: number; document?: string | null },
+  actor?: { userId?: string; userEmail?: string }
+): Promise<void> => {
   // 1. Delete associated .docx file from Directus storage
-  if (record.docx_file_id) {
+  if (record.document) {
     try {
-      await fetch(`${DIRECTUS_URL}/files/${record.docx_file_id}`, {
+      await fetch(`${DIRECTUS_URL}/files/${record.document}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
       });
     } catch (err) {
-      console.warn(`Failed to delete Directus file ${record.docx_file_id}:`, err);
+      console.warn(`Failed to delete Directus file ${record.document}:`, err);
     }
   }
 
@@ -205,15 +229,19 @@ export const deleteStandartinisProjektas = async (record: { id: number; docx_fil
     console.error('Error deleting standartiniai_projektai record:', error);
     await appLogger.logError({
       action: 'standartinis_delete_failed',
+      userId: actor?.userId,
+      userEmail: actor?.userEmail,
       error,
-      metadata: { id: record.id, docx_file_id: record.docx_file_id }
+      metadata: { id: record.id, document: record.document }
     });
     throw error;
   }
 
   await appLogger.logDocument({
     action: 'standartinis_deleted',
-    metadata: { id: record.id, docx_file_id: record.docx_file_id }
+    userId: actor?.userId,
+    userEmail: actor?.userEmail,
+    metadata: { id: record.id, document: record.document }
   });
 };
 
