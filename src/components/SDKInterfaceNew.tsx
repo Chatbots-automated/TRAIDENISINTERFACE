@@ -153,6 +153,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
+  // Keep in-flight stream text by conversation so leaving/returning preserves progress.
+  const [streamingContentByConversation, setStreamingContentByConversation] = useState<Record<string, string>>({});
   const [isToolUse, setIsToolUse] = useState(false);
   const [toolUseName, setToolUseName] = useState('');
   const [systemPrompt, setSystemPrompt] = useState<string>('');
@@ -400,6 +402,25 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       scrollToBottom();
     }
   }, [streamingContent, userScrolledUp]);
+
+  // Sync global streamingContent from the selected conversation's in-flight stream.
+  useEffect(() => {
+    if (!currentConversation?.id) {
+      setStreamingContent('');
+      return;
+    }
+    setStreamingContent(streamingContentByConversation[currentConversation.id] || '');
+  }, [currentConversation?.id, streamingContentByConversation]);
+
+  const setConversationStreamingContent = (conversationId: string, content: string) => {
+    setStreamingContentByConversation(prev => {
+      if (content) return { ...prev, [conversationId]: content };
+      if (!(conversationId in prev)) return prev;
+      const next = { ...prev };
+      delete next[conversationId];
+      return next;
+    });
+  };
 
   useEffect(() => {
     // Reset scroll state when new response starts
@@ -917,7 +938,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     // Start loading
     setLoading(true);
-    setStreamingContent('');
+    setConversationStreamingContent(conversation.id, '');
 
     try {
       if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
@@ -1161,11 +1182,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               // Chat content is everything before the opening tag
               const beforeArtifact = fullResponseText.split('<commercial_offer')[0];
               chatContent = beforeArtifact;
-              setStreamingContent(accumulatedToolXml + chatContent);
+              setConversationStreamingContent(conversation.id, accumulatedToolXml + chatContent);
             } else {
               // Normal chat content
               chatContent = fullResponseText;
-              setStreamingContent(accumulatedToolXml + chatContent);
+              setConversationStreamingContent(conversation.id, accumulatedToolXml + chatContent);
             }
 
           } else if (event.delta.type === 'input_json_delta' && currentToolUse) {
@@ -1309,7 +1330,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         const newAccumulatedToolXml = accumulatedToolXml + (responseContent ? responseContent : '') + roundToolXml;
 
         // Update streaming content immediately so tool tree shows live during gap
-        setStreamingContent(newAccumulatedToolXml);
+        setConversationStreamingContent(conversation.id, newAccumulatedToolXml);
 
         // Check if any tool result contains display_buttons marker (should pause conversation)
         const buttonResult = toolResults.find(result => {
@@ -1579,7 +1600,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setCurrentConversation({ ...conversation, messages: updatedMessages });
     setInputValue('');
     setLoading(true);
-    setStreamingContent('');
+    setConversationStreamingContent(conversation.id, '');
 
     try {
       if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
@@ -1787,10 +1808,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         }
       });
       addErrorNotification('Klaida', err, 'Nepavyko išsiųsti žinutės');
-      setStreamingContent('');
+      setConversationStreamingContent(conversation.id, '');
     } finally {
       setLoading(false);
-      setStreamingContent('');
+      setConversationStreamingContent(conversation.id, '');
       setIsToolUse(false);
     }
   };
@@ -2033,7 +2054,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Auto-create or update standartiniai_projektai record and replace linked DOCX
       // so each YAML save keeps a single up-to-date Directus file.
       try {
-        const vars = mergeAllVariables();
+        // IMPORTANT: use the freshly parsed artifact content, not currentConversation state,
+        // because state updates are async and may still hold the previous artifact here.
+        const vars = mergeAllVariables(trimmedContent);
         const projektoKodas = vars['code_yy/mm/dd'] || '';
         const hnv = vars['economy_HNV'] || '';
         let linkedStandartiniaiId: number | null = standartiniaiRecordId;
