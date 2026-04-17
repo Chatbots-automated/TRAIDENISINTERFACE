@@ -30,7 +30,8 @@ import {
   Crop,
   MoveHorizontal,
   Save,
-  Upload
+  Upload,
+  Settings2
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
