@@ -59,7 +59,7 @@ import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
-import { OFFER_PARAMETER_DEFINITIONS, loadOfferParameters, saveOfferParameters, getDefaultOfferParameters } from '../lib/offerParametersService';
+import { OFFER_PARAMETER_DEFINITIONS } from '../lib/offerParametersService';
 import { getInstructionVariable } from '../lib/instructionsService';
 import {
   shareConversation,
@@ -84,6 +84,7 @@ import {
 import { useNotifications } from './sdk/useNotifications';
 import { useConversationStreaming } from './sdk/useConversationStreaming';
 import { useTeamSelection } from './sdk/useTeamSelection';
+import { useOfferParameters } from './sdk/useOfferParameters';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -152,10 +153,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     managers
   });
 
-  // Offer parameters (per-conversation, stored in localStorage)
-  const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
-  // Collapsible sections state
-  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: true, objectParams: true });
+  const {
+    offerParameters,
+    sectionCollapsed,
+    setSectionCollapsed,
+    persistOfferParameters,
+    updateOfferParameter
+  } = useOfferParameters(currentConversation?.id);
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
   const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>(session.artifactTab ?? 'preview');
   // Bump to force DocumentPreview to re-fetch the global template
@@ -355,14 +359,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   }, [loading]);
 
-  // Load offer parameters, team selection, and refresh template when conversation changes
+  // Refresh template when conversation changes
   useEffect(() => {
-    if (currentConversation?.id) {
-      setOfferParameters(loadOfferParameters(currentConversation.id));
-    } else {
-      setOfferParameters(getDefaultOfferParameters());
-    }
-    // Bump template version so DocumentPreview re-reads the current global template
     setTemplateVersion(v => v + 1);
   }, [currentConversation?.id]);
 
@@ -2540,9 +2538,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     if (category === 'offer') {
       if (currentConversation) {
-        const updated = { ...offerParameters, [key]: value };
-        setOfferParameters(updated);
-        saveOfferParameters(currentConversation.id, updated);
+        updateOfferParameter(currentConversation.id, key, value);
       }
     } else if (category === 'economist') {
       const match = economists.find((e) => e.full_name === value);
@@ -2553,9 +2549,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } else if (category === 'tech_description') {
       // Save technological description to offer parameters (persisted per conversation)
       if (currentConversation) {
-        const updated = { ...offerParameters, [key]: value };
-        setOfferParameters(updated);
-        saveOfferParameters(currentConversation.id, updated);
+        updateOfferParameter(currentConversation.id, key, value);
       }
     } else if (category === 'yaml') {
       // Surgical replacement: directly modify YAML without AI round-trip
@@ -2657,8 +2651,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (text) {
         // Auto-save to offerParameters
         const updated = { ...offerParameters, technological_description: text };
-        setOfferParameters(updated);
-        saveOfferParameters(conversationId, updated);
+        persistOfferParameters(conversationId, updated);
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
       }
@@ -4114,9 +4107,7 @@ Vartotojo instrukcija: ${instruction}`;
                           type="text"
                           value={offerParameters[param.key] || ''}
                           onChange={(e) => {
-                            const updated = { ...offerParameters, [param.key]: e.target.value };
-                            setOfferParameters(updated);
-                            if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                            updateOfferParameter(currentConversation?.id, param.key, e.target.value);
                           }}
                           className="w-full px-3 py-2 text-sm rounded-md transition-all focus:outline-none"
                           style={{
@@ -4157,9 +4148,7 @@ Vartotojo instrukcija: ${instruction}`;
                               type="text"
                               value={offerParameters[contKey] || ''}
                               onChange={(e) => {
-                                const updated = { ...offerParameters, [contKey]: e.target.value };
-                                setOfferParameters(updated);
-                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                                updateOfferParameter(currentConversation?.id, contKey, e.target.value);
                               }}
                               className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
                               style={{
@@ -4180,9 +4169,7 @@ Vartotojo instrukcija: ${instruction}`;
                               type="text"
                               value={offerParameters[afterKey] || ''}
                               onChange={(e) => {
-                                const updated = { ...offerParameters, [afterKey]: e.target.value };
-                                setOfferParameters(updated);
-                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                                updateOfferParameter(currentConversation?.id, afterKey, e.target.value);
                               }}
                               className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
                               style={{
