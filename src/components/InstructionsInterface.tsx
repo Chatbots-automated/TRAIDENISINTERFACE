@@ -72,12 +72,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const [schemaKey, setSchemaKey] = useState<'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas'>('sdk_chat_tool_schemas');
+  const [editorTab, setEditorTab] = useState<'sdk_schema' | 'kainos_prompt'>('sdk_schema');
   const [schemaContent, setSchemaContent] = useState('');
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaSaving, setSchemaSaving] = useState(false);
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [schemaSuccess, setSchemaSuccess] = useState<string | null>(null);
-  const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [kainosPromptContent, setKainosPromptContent] = useState('');
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptSaving, setPromptSaving] = useState(false);
@@ -95,11 +95,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     const params = new URLSearchParams(location.search);
     const schemaParam = params.get('schema');
     if (schemaParam === 'sdk') {
-      openSchemaEditor('sdk_chat_tool_schemas');
+      openCombinedEditor('sdk_schema');
     } else if (schemaParam === 'kainos') {
       openSchemaEditor('kainos_ai_tool_schemas');
     } else if (schemaParam === 'kainos-prompt') {
-      openKainosPromptEditor();
+      openCombinedEditor('kainos_prompt');
     }
   }, [location.search]);
 
@@ -244,6 +244,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const openSchemaEditor = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    setEditorTab('sdk_schema');
     setSchemaKey(targetKey);
     setSchemaSuccess(null);
     setShowSchemaEditor(true);
@@ -308,7 +309,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const openKainosPromptEditor = async () => {
-    setShowPromptEditor(true);
     setPromptLoading(true);
     setPromptError(null);
     setPromptSuccess(null);
@@ -321,6 +321,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       setKainosPromptContent(DEFAULT_KAINOS_AI_PROMPT);
     } finally {
       setPromptLoading(false);
+    }
+  };
+
+  const openCombinedEditor = async (tab: 'sdk_schema' | 'kainos_prompt') => {
+    setShowSchemaEditor(true);
+    setEditorTab(tab);
+    if (tab === 'sdk_schema') {
+      await openSchemaEditor('sdk_chat_tool_schemas');
+    } else {
+      await openKainosPromptEditor();
     }
   };
 
@@ -515,11 +525,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         <div className="p-3" style={{ borderTop: `1px solid ${colors.border.default}` }}>
           <div className="mb-2 space-y-2">
             <button
-              onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
+              onClick={() => openCombinedEditor('sdk_schema')}
               className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
-              SDK schemos
+              AI konfigūracija
             </button>
             <button
               onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
@@ -527,13 +537,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
               Žaliavų schemos
-            </button>
-            <button
-              onClick={openKainosPromptEditor}
-              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
-            >
-              Žaliavų prompt
             </button>
           </div>
           <VersionHistoryButton onClick={() => setView('versions')} />
@@ -703,36 +706,36 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
-              <h3 className="text-sm font-semibold shrink-0" style={{ color: colors.text.primary }}>
-                {getSchemaDisplayName(schemaKey)}
-              </h3>
+                <h3 className="text-sm font-semibold shrink-0" style={{ color: colors.text.primary }}>
+                  {editorTab === 'sdk_schema' ? getSchemaDisplayName('sdk_chat_tool_schemas') : 'Žaliavų AI prompt redaktorius'}
+                </h3>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
+                  onClick={() => openCombinedEditor('sdk_schema')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                   style={{
-                    color: schemaKey === 'sdk_chat_tool_schemas' ? colors.bg.white : colors.text.secondary,
-                    background: schemaKey === 'sdk_chat_tool_schemas' ? colors.interactive.accent : colors.bg.white,
-                    border: `1px solid ${schemaKey === 'sdk_chat_tool_schemas' ? colors.interactive.accent : colors.border.default}`
+                    color: editorTab === 'sdk_schema' ? colors.bg.white : colors.text.secondary,
+                    background: editorTab === 'sdk_schema' ? colors.interactive.accent : colors.bg.white,
+                    border: `1px solid ${editorTab === 'sdk_schema' ? colors.interactive.accent : colors.border.default}`
                   }}
                 >
-                  SDK
+                  SDK schema
                 </button>
                 <button
-                  onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
+                  onClick={() => openCombinedEditor('kainos_prompt')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                   style={{
-                    color: schemaKey === 'kainos_ai_tool_schemas' ? colors.bg.white : colors.text.secondary,
-                    background: schemaKey === 'kainos_ai_tool_schemas' ? colors.interactive.accent : colors.bg.white,
-                    border: `1px solid ${schemaKey === 'kainos_ai_tool_schemas' ? colors.interactive.accent : colors.border.default}`
+                    color: editorTab === 'kainos_prompt' ? colors.bg.white : colors.text.secondary,
+                    background: editorTab === 'kainos_prompt' ? colors.interactive.accent : colors.bg.white,
+                    border: `1px solid ${editorTab === 'kainos_prompt' ? colors.interactive.accent : colors.border.default}`
                   }}
                 >
-                  Žaliavos
+                  Žaliavų prompt
                 </button>
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-[11px] font-mono px-2 py-1 rounded" style={{ background: colors.bg.white, color: colors.text.tertiary, border: `1px solid ${colors.border.default}` }}>
-                  {schemaKey}
+                  {editorTab === 'sdk_schema' ? 'sdk_chat_tool_schemas' : 'kainos_ai_prediction_prompt'}
                 </span>
                 <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
                   <X className="w-5 h-5" />
@@ -741,78 +744,24 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-170px)]">
-              {schemaLoading ? (
-                <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
-              ) : (
-                <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
-                  <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
-                    JSON • UTF-8
-                  </div>
-                  <textarea
-                    value={schemaContent}
-                    onChange={(e) => setSchemaContent(e.target.value)}
-                    spellCheck={false}
-                    className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
-                    style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
-              <div className="flex-1 min-w-0">
-                {schemaError ? (
-                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
-                    {schemaError}
-                  </div>
-                ) : schemaSuccess ? (
-                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: colors.status.successBg, borderColor: colors.status.successBorder }}>
-                    {schemaSuccess}
-                  </div>
+              {editorTab === 'sdk_schema' ? (
+                schemaLoading ? (
+                  <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
                 ) : (
-                  <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
-                    Naudokite validų JSON masyvą. Išsaugojimas taikomas tik pasirinktai schemai.
+                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
+                    <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
+                      JSON • UTF-8
+                    </div>
+                    <textarea
+                      value={schemaContent}
+                      onChange={(e) => setSchemaContent(e.target.value)}
+                      spellCheck={false}
+                      className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
+                      style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                    />
                   </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  className="btn btn-soft btn-sm"
-                  onClick={() => loadSchemaContent(schemaKey)}
-                  disabled={schemaLoading || schemaSaving}
-                >
-                  Perkrauti
-                </button>
-                <button
-                  className="btn btn-primary btn-sm gap-1.5"
-                  disabled={schemaSaving || schemaLoading}
-                  onClick={saveSchema}
-                >
-                  {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
-                  Išsaugoti
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPromptEditor && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/55 backdrop-blur-[2px]"
-          onClick={() => setShowPromptEditor(false)}
-        >
-          <div
-            className="w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden border shadow-2xl"
-            style={{ background: colors.bg.white, borderColor: colors.border.default }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
-              <h3 className="text-sm font-semibold" style={{ color: colors.text.primary }}>Žaliavų AI prompt redaktorius</h3>
-              <button onClick={() => setShowPromptEditor(false)} className="btn btn-circle btn-text btn-sm"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-170px)]">
-              {promptLoading ? (
+                )
+              ) : promptLoading ? (
                 <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
               ) : (
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
@@ -828,9 +777,24 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </div>
               )}
             </div>
+
             <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
               <div className="flex-1 min-w-0">
-                {promptError ? (
+                {editorTab === 'sdk_schema' ? (
+                  schemaError ? (
+                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
+                      {schemaError}
+                    </div>
+                  ) : schemaSuccess ? (
+                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: colors.status.successBg, borderColor: colors.status.successBorder }}>
+                      {schemaSuccess}
+                    </div>
+                  ) : (
+                    <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
+                      Naudokite validų JSON masyvą. Išsaugojimas taikomas SDK schemai.
+                    </div>
+                  )
+                ) : promptError ? (
                   <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
                     {promptError}
                   </div>
@@ -845,13 +809,35 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <button className="btn btn-soft btn-sm" onClick={openKainosPromptEditor} disabled={promptLoading || promptSaving}>
-                  Perkrauti
-                </button>
-                <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving} onClick={saveKainosPrompt}>
-                  {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
-                  Išsaugoti
-                </button>
+                {editorTab === 'sdk_schema' ? (
+                  <>
+                    <button
+                      className="btn btn-soft btn-sm"
+                      onClick={() => loadSchemaContent('sdk_chat_tool_schemas')}
+                      disabled={schemaLoading || schemaSaving}
+                    >
+                      Perkrauti
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm gap-1.5"
+                      disabled={schemaSaving || schemaLoading}
+                      onClick={saveSchema}
+                    >
+                      {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                      Išsaugoti
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="btn btn-soft btn-sm" onClick={openKainosPromptEditor} disabled={promptLoading || promptSaving}>
+                      Perkrauti
+                    </button>
+                    <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving} onClick={saveKainosPrompt}>
+                      {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                      Išsaugoti
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
