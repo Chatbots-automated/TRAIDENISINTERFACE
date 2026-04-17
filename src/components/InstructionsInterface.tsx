@@ -30,12 +30,16 @@ import {
 } from '../lib/instructionsService';
 import { dbAdmin } from '../lib/database';
 import { colors } from '../lib/designSystem';
+import { tools as defaultSdkTools } from '../lib/toolDefinitions';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
 }
 
 type View = 'editor' | 'versions';
+const DEFAULT_KAINOS_TOOLS = [
+  { type: 'web_search_20260209', name: 'web_search' }
+];
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
   const location = useLocation();
@@ -207,12 +211,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         const parsed = JSON.parse(existing.content);
         setSchemaContent(JSON.stringify(parsed, null, 2));
       } else {
-        setSchemaContent('[]');
+        const fallback = targetKey === 'sdk_chat_tool_schemas' ? defaultSdkTools : DEFAULT_KAINOS_TOOLS;
+        setSchemaContent(JSON.stringify(fallback, null, 2));
       }
     } catch (err: any) {
       console.error('[SchemaEditor] Load failed:', err);
       setSchemaError('Nepavyko užkrauti schemos JSON');
-      setSchemaContent('[]');
+      const fallback = targetKey === 'sdk_chat_tool_schemas' ? defaultSdkTools : DEFAULT_KAINOS_TOOLS;
+      setSchemaContent(JSON.stringify(fallback, null, 2));
     } finally {
       setSchemaLoading(false);
     }
