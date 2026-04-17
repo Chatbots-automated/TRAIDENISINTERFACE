@@ -260,11 +260,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // ---- Load documents on mount ----
-  useEffect(() => {
-    loadDocuments();
-  }, [user.id]);
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
       setDocsLoading(true);
       setDocsError('');
@@ -282,18 +278,24 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     } finally {
       setDocsLoading(false);
     }
-  };
+  }, [user.id]);
+
+  useEffect(() => {
+    loadDocuments();
+  }, [loadDocuments]);
+
+  const selectedDocId = selectedDoc?.id;
 
   // ---- Load full document when selected ----
   useEffect(() => {
-    if (!selectedDoc) {
+    if (!selectedDocId) {
       setSelectedDocFull(null);
       setChatMessages([]);
       return;
     }
-    loadFullDocument(selectedDoc.id);
-    loadChats(selectedDoc.id);
-  }, [selectedDoc?.id]);
+    loadFullDocument(selectedDocId);
+    loadChats(selectedDocId);
+  }, [selectedDocId]);
 
   const loadFullDocument = async (id: string) => {
     try {
