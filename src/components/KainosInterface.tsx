@@ -25,6 +25,7 @@ import {
 } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
+import { getInstructionVariable } from '../lib/instructionsService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
@@ -716,6 +717,25 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const [aiToggle, setAiToggle] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
+  const [kainosTools, setKainosTools] = useState<any[] | null>(null);
+
+  useEffect(() => {
+    const loadKainosSchema = async () => {
+      try {
+        const schemaVar = await getInstructionVariable('kainos_ai_tool_schemas');
+        if (!schemaVar?.content?.trim()) {
+          setKainosTools(null);
+          return;
+        }
+        const parsed = JSON.parse(schemaVar.content);
+        setKainosTools(Array.isArray(parsed) ? parsed : null);
+      } catch (error) {
+        console.warn('[Kainos] Failed to load kainos_ai_tool_schemas, using no tools.', error);
+        setKainosTools(null);
+      }
+    };
+    loadKainosSchema();
+  }, []);
 
   // Close on outside click
   useEffect(() => {
@@ -771,6 +791,7 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
         max_tokens: 2000,
         system: `Medžiagų kainų prognozavimo ekspertas. Atsakykite TIK JSON formatu. Šiandien: ${today}.`,
         messages: msgs,
+        ...(kainosTools && kainosTools.length > 0 ? { tools: kainosTools as any } : {}),
       });
 
       const resultText = response.content
@@ -790,7 +811,7 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, analytics]);
+  }, [aiLoading, medziagas, istorija, analytics, kainosTools]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   FileText,
   Save,
@@ -19,6 +20,7 @@ import {
 import type { AppUser } from '../types';
 import {
   getInstructionVariables,
+  getInstructionVariable,
   saveInstructionVariable,
   verifyUserPassword,
   getVersionHistory,
@@ -26,6 +28,7 @@ import {
   InstructionVariable,
   InstructionVersion
 } from '../lib/instructionsService';
+import { dbAdmin } from '../lib/database';
 import { colors } from '../lib/designSystem';
 
 interface InstructionsInterfaceProps {
@@ -35,6 +38,7 @@ interface InstructionsInterfaceProps {
 type View = 'editor' | 'versions';
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
+  const location = useLocation();
   const [view, setView] = useState<View>('editor');
   const [variables, setVariables] = useState<InstructionVariable[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
@@ -51,6 +55,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [versions, setVersions] = useState<InstructionVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
+  const [showSchemaEditor, setShowSchemaEditor] = useState(false);
+  const [schemaKey, setSchemaKey] = useState<'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas'>('sdk_chat_tool_schemas');
+  const [schemaContent, setSchemaContent] = useState('');
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaSaving, setSchemaSaving] = useState(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [schemaSuccess, setSchemaSuccess] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const selectedVariable = variables[selectedIndex] || null;
@@ -58,6 +69,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   useEffect(() => {
     loadVariables();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const schemaParam = params.get('schema');
+    if (schemaParam === 'sdk') {
+      openSchemaEditor('sdk_chat_tool_schemas');
+    } else if (schemaParam === 'kainos') {
+      openSchemaEditor('kainos_ai_tool_schemas');
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (view === 'versions') {
@@ -175,6 +196,90 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
     setIsEditing(false);
     setIsAuthenticated(false);
+  };
+
+  const loadSchemaContent = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    setSchemaLoading(true);
+    setSchemaError(null);
+    try {
+      const existing = await getInstructionVariable(targetKey);
+      if (existing?.content?.trim()) {
+        const parsed = JSON.parse(existing.content);
+        setSchemaContent(JSON.stringify(parsed, null, 2));
+      } else {
+        setSchemaContent('[]');
+      }
+    } catch (err: any) {
+      console.error('[SchemaEditor] Load failed:', err);
+      setSchemaError('Nepavyko užkrauti schemos JSON');
+      setSchemaContent('[]');
+    } finally {
+      setSchemaLoading(false);
+    }
+  };
+
+  const openSchemaEditor = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    setSchemaKey(targetKey);
+    setSchemaSuccess(null);
+    setShowSchemaEditor(true);
+    await loadSchemaContent(targetKey);
+  };
+
+  const getSchemaDisplayName = (key: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => (
+    key === 'sdk_chat_tool_schemas' ? 'SDK pokalbių įrankių schema' : 'Žaliavų (Kainos) analizės įrankių schema'
+  );
+
+  const validateSchemaArray = (parsed: any): string | null => {
+    if (!Array.isArray(parsed)) return 'Schema turi būti JSON masyvas';
+    for (let i = 0; i < parsed.length; i += 1) {
+      const item = parsed[i];
+      if (!item || typeof item !== 'object') return `Įrašas #${i + 1} turi būti objektas`;
+      if (!item.name || typeof item.name !== 'string') return `Įrašas #${i + 1} neturi teisingo "name"`;
+      if (!item.input_schema || typeof item.input_schema !== 'object') return `Įrašas #${i + 1} neturi "input_schema" objekto`;
+    }
+    return null;
+  };
+
+  const saveSchema = async () => {
+    setSchemaSaving(true);
+    setSchemaError(null);
+    setSchemaSuccess(null);
+    try {
+      const parsed = JSON.parse(schemaContent);
+      const validationError = validateSchemaArray(parsed);
+      if (validationError) {
+        setSchemaError(validationError);
+        return;
+      }
+
+      const normalized = JSON.stringify(parsed, null, 2);
+      const existing = await getInstructionVariable(schemaKey);
+      if (existing) {
+        const result = await saveInstructionVariable(schemaKey, normalized, user.id, user.email, true);
+        if (!result.success) throw new Error(result.error || 'Nepavyko išsaugoti schemos');
+      } else {
+        const { error: insertError } = await dbAdmin
+          .from('instruction_variables')
+          .insert([{
+            variable_key: schemaKey,
+            variable_name: getSchemaDisplayName(schemaKey),
+            content: normalized,
+            display_order: 999,
+            updated_by: user.id
+          }]);
+        if (insertError) throw insertError;
+        await loadVariables();
+      }
+
+      setSchemaContent(normalized);
+      setSchemaSuccess('Schema išsaugota');
+      setTimeout(() => setSchemaSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('[SchemaEditor] Save failed:', err);
+      setSchemaError(err?.message || 'Nepavyko išsaugoti schemos');
+    } finally {
+      setSchemaSaving(false);
+    }
   };
 
   const getRelativeTime = (dateString: string) => {
@@ -330,6 +435,22 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
         {/* Sidebar Footer */}
         <div className="p-3" style={{ borderTop: `1px solid ${colors.border.default}` }}>
+          <div className="mb-2 space-y-2">
+            <button
+              onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
+              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+            >
+              SDK schemos
+            </button>
+            <button
+              onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
+              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+            >
+              Žaliavų schemos
+            </button>
+          </div>
           <VersionHistoryButton onClick={() => setView('versions')} />
         </div>
       </div>
@@ -485,6 +606,68 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         )}
       </div>
+
+      {showSchemaEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40"
+          onClick={() => setShowSchemaEditor(false)}
+        >
+          <div
+            className="w-full max-w-4xl max-h-[82vh] rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-base-content/10">
+              <h3 className="text-lg font-semibold text-base-content">{getSchemaDisplayName(schemaKey)}</h3>
+              <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(82vh-84px)]">
+              <p className="text-sm" style={{ color: colors.text.secondary }}>
+                Ši schema yra atskira nuo kitų modulų. SDK ir Žaliavų analizė naudoja skirtingus raktus.
+              </p>
+              {schemaLoading ? (
+                <div className="text-sm" style={{ color: colors.text.secondary }}>Kraunama...</div>
+              ) : (
+                <textarea
+                  value={schemaContent}
+                  onChange={(e) => setSchemaContent(e.target.value)}
+                  spellCheck={false}
+                  className="w-full min-h-[420px] font-mono text-xs rounded-xl p-4 focus:outline-none"
+                  style={{ border: `1px solid ${colors.border.default}`, background: colors.bg.secondary, color: colors.text.primary }}
+                />
+              )}
+              {schemaError && (
+                <div className="text-sm px-3 py-2 rounded-lg" style={{ color: colors.status.error, background: colors.status.errorBg }}>
+                  {schemaError}
+                </div>
+              )}
+              {schemaSuccess && (
+                <div className="text-sm px-3 py-2 rounded-lg" style={{ color: colors.status.success, background: colors.status.successBg }}>
+                  {schemaSuccess}
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button
+                  className="btn btn-soft btn-sm"
+                  onClick={() => loadSchemaContent(schemaKey)}
+                  disabled={schemaLoading || schemaSaving}
+                >
+                  Perkrauti
+                </button>
+                <button
+                  className="btn btn-primary btn-sm gap-1.5"
+                  disabled={schemaSaving || schemaLoading}
+                  onClick={saveSchema}
+                >
+                  {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                  Išsaugoti
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

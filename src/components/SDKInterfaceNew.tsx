@@ -30,8 +30,7 @@ import {
   Crop,
   MoveHorizontal,
   Save,
-  Upload,
-  Settings2
+  Upload
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
@@ -62,7 +61,6 @@ import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
 import { OFFER_PARAMETER_DEFINITIONS } from '../lib/offerParametersService';
 import { getInstructionVariable } from '../lib/instructionsService';
-import { dbAdmin } from '../lib/database';
 import {
   shareConversation,
   getSharedConversations,
@@ -115,7 +113,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateFromDB, setTemplateFromDB] = useState<string>(''); // Template variable from instruction_variables
   const [loadingPrompt, setLoadingPrompt] = useState(true);
   const [showPromptModal, setShowPromptModal] = useState(false);
-  const [showToolSchemasModal, setShowToolSchemasModal] = useState(false);
   const [showTemplateView, setShowTemplateView] = useState(false);
   const [showArtifact, setShowArtifact] = useState(session.showArtifact ?? false);
   const [showDiff, setShowDiff] = useState(false);
@@ -221,9 +218,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [aiVarEditLoading, setAiVarEditLoading] = useState(false);
   const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
   const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
-  const [sdkToolsConfigText, setSdkToolsConfigText] = useState<string>(JSON.stringify(tools, null, 2));
-  const [sdkToolsConfigError, setSdkToolsConfigError] = useState<string | null>(null);
-  const [sdkToolsConfigSaving, setSdkToolsConfigSaving] = useState(false);
   const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>(tools);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -246,7 +240,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   }, []);
 
   useEffect(() => {
-    loadSDKToolSchemas();
+    const loadActiveSdkTools = async () => {
+      try {
+        // Prefer new dedicated key, fallback to legacy key if still present
+        const schemaVar = await getInstructionVariable('sdk_chat_tool_schemas')
+          || await getInstructionVariable('sdk_tool_schemas');
+
+        if (!schemaVar?.content?.trim()) {
+          setActiveSdkTools(tools);
+          return;
+        }
+
+        const parsed = JSON.parse(schemaVar.content);
+        if (!Array.isArray(parsed)) throw new Error('Schema config must be an array');
+        setActiveSdkTools(parsed as Anthropic.Tool[]);
+      } catch (error) {
+        console.error('[SDK Tools] Failed to load schema. Falling back to defaults.', error);
+        setActiveSdkTools(tools);
+      }
+    };
+
+    loadActiveSdkTools();
   }, []);
 
   // Re-hydrate current global template pointer when opening viewers/panels.
@@ -402,71 +416,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addErrorNotification('Klaida', err, 'Nepavyko užkrauti sistemos instrukcijų');
     } finally {
       setLoadingPrompt(false);
-    }
-  };
-
-  const loadSDKToolSchemas = async () => {
-    try {
-      const schemaVar = await getInstructionVariable('sdk_tool_schemas');
-      if (!schemaVar?.content?.trim()) {
-        setSdkToolsConfigText(JSON.stringify(tools, null, 2));
-        setActiveSdkTools(tools);
-        return;
-      }
-
-      const parsed = JSON.parse(schemaVar.content);
-      if (!Array.isArray(parsed)) throw new Error('Schema config must be an array of tools');
-      setSdkToolsConfigText(JSON.stringify(parsed, null, 2));
-      setActiveSdkTools(parsed as Anthropic.Tool[]);
-      setSdkToolsConfigError(null);
-    } catch (error: any) {
-      console.error('[SDK Tool Schemas] Failed to load:', error);
-      setSdkToolsConfigError('Nepavyko užkrauti SDK schemų. Naudojamos numatytos schemos.');
-      setSdkToolsConfigText(JSON.stringify(tools, null, 2));
-      setActiveSdkTools(tools);
-    }
-  };
-
-  const handleSaveSDKToolSchemas = async () => {
-    if (!user.is_admin) return;
-    setSdkToolsConfigSaving(true);
-    setSdkToolsConfigError(null);
-    try {
-      const parsed = JSON.parse(sdkToolsConfigText);
-      if (!Array.isArray(parsed)) throw new Error('JSON turi būti masyvas');
-
-      const existing = await getInstructionVariable('sdk_tool_schemas');
-      if (existing) {
-        const { error } = await dbAdmin
-          .from('instruction_variables')
-          .update({
-            content: JSON.stringify(parsed, null, 2),
-            updated_at: new Date().toISOString(),
-            updated_by: user.id,
-          })
-          .eq('variable_key', 'sdk_tool_schemas');
-        if (error) throw error;
-      } else {
-        const { error } = await dbAdmin
-          .from('instruction_variables')
-          .insert([{
-            variable_key: 'sdk_tool_schemas',
-            variable_name: 'SDK Tool Schemas',
-            content: JSON.stringify(parsed, null, 2),
-            display_order: 999,
-            updated_by: user.id,
-          }]);
-        if (error) throw error;
-      }
-
-      setActiveSdkTools(parsed as Anthropic.Tool[]);
-      addNotification('success', 'Išsaugota', 'SDK įrankių schemos atnaujintos.');
-      setShowToolSchemasModal(false);
-    } catch (error: any) {
-      console.error('[SDK Tool Schemas] Save failed:', error);
-      setSdkToolsConfigError(error?.message || 'Nepavyko išsaugoti SDK schemų');
-    } finally {
-      setSdkToolsConfigSaving(false);
     }
   };
 
@@ -2936,26 +2885,6 @@ Vartotojo instrukcija: ${instruction}`;
           </p>
         </div>
 
-        {user.is_admin && (
-          <div
-            onClick={() => {
-              setSdkToolsConfigError(null);
-              setShowToolSchemasModal(true);
-            }}
-            className="mx-3 mb-3 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-base-content/40" />
-              <span className="text-sm font-medium text-base-content">
-                SDK schemos
-              </span>
-            </div>
-            <p className="text-xs text-base-content/40 mt-1 ml-6">
-              Administratoriaus valdymas įrankių JSON schemoms
-            </p>
-          </div>
-        )}
-
         {/* Conversations Section with Tabs */}
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
@@ -4739,6 +4668,18 @@ Vartotojo instrukcija: ${instruction}`;
                 >
                   {showTemplateView ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
                 </button>
+                {user.is_admin && (
+                  <button
+                    onClick={() => {
+                      setShowPromptModal(false);
+                      setShowTemplateView(false);
+                      navigate('/instrukcijos?schema=sdk');
+                    }}
+                    className="btn btn-xs btn-soft"
+                  >
+                    SDK schemos
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => {
@@ -4758,61 +4699,6 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
         </div>
       )}
-
-      {showToolSchemasModal && user.is_admin && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40"
-          onClick={() => setShowToolSchemasModal(false)}
-        >
-          <div
-            className="w-full max-w-4xl max-h-[82vh] rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-base-content/10">
-              <h3 className="text-lg font-semibold text-base-content">SDK įrankių schemų valdymas (Admin)</h3>
-              <button onClick={() => setShowToolSchemasModal(false)} className="btn btn-circle btn-text btn-sm">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(82vh-84px)]">
-              <p className="text-sm text-base-content/60">
-                Redaguokite Anthropic tool JSON masyvą. Klaidinga schema gali sustabdyti SDK pokalbio vykdymą.
-              </p>
-              <textarea
-                value={sdkToolsConfigText}
-                onChange={(e) => setSdkToolsConfigText(e.target.value)}
-                spellCheck={false}
-                className="w-full min-h-[420px] font-mono text-xs rounded-xl p-4 bg-base-200/40 border border-base-content/10 focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-              {sdkToolsConfigError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  {sdkToolsConfigError}
-                </div>
-              )}
-              <div className="flex justify-end gap-2">
-                <button
-                  className="btn btn-soft btn-sm"
-                  onClick={() => {
-                    setSdkToolsConfigText(JSON.stringify(activeSdkTools, null, 2));
-                    setSdkToolsConfigError(null);
-                  }}
-                >
-                  Atstatyti
-                </button>
-                <button
-                  className="btn btn-primary btn-sm gap-1.5"
-                  disabled={sdkToolsConfigSaving}
-                  onClick={handleSaveSDKToolSchemas}
-                >
-                  {sdkToolsConfigSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Išsaugoti
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
 
       {/* Notification Container */}
       <NotificationContainer
