@@ -72,7 +72,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const [schemaKey, setSchemaKey] = useState<'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas'>('sdk_chat_tool_schemas');
-  const [editorTab, setEditorTab] = useState<'sdk_schema' | 'kainos_prompt'>('sdk_schema');
+  const [editorTab, setEditorTab] = useState<'schema' | 'kainos_prompt'>('schema');
   const [schemaContent, setSchemaContent] = useState('');
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaSaving, setSchemaSaving] = useState(false);
@@ -95,7 +95,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     const params = new URLSearchParams(location.search);
     const schemaParam = params.get('schema');
     if (schemaParam === 'sdk') {
-      openCombinedEditor('sdk_schema');
+      openCombinedEditor('schema', 'sdk_chat_tool_schemas');
     } else if (schemaParam === 'kainos') {
       openSchemaEditor('kainos_ai_tool_schemas');
     } else if (schemaParam === 'kainos-prompt') {
@@ -244,7 +244,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const openSchemaEditor = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
-    setEditorTab('sdk_schema');
+    setEditorTab('schema');
     setSchemaKey(targetKey);
     setSchemaSuccess(null);
     setShowSchemaEditor(true);
@@ -324,11 +324,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   };
 
-  const openCombinedEditor = async (tab: 'sdk_schema' | 'kainos_prompt') => {
+  const openCombinedEditor = async (tab: 'schema' | 'kainos_prompt', schemaTarget?: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
     setShowSchemaEditor(true);
     setEditorTab(tab);
-    if (tab === 'sdk_schema') {
-      await openSchemaEditor('sdk_chat_tool_schemas');
+    if (tab === 'schema') {
+      await openSchemaEditor(schemaTarget || schemaKey);
     } else {
       await openKainosPromptEditor();
     }
@@ -525,7 +525,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         <div className="p-3" style={{ borderTop: `1px solid ${colors.border.default}` }}>
           <div className="mb-2 space-y-2">
             <button
-              onClick={() => openCombinedEditor('sdk_schema')}
+              onClick={() => openCombinedEditor('schema', 'sdk_chat_tool_schemas')}
               className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
@@ -707,19 +707,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           >
             <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
                 <h3 className="text-sm font-semibold shrink-0" style={{ color: colors.text.primary }}>
-                  {editorTab === 'sdk_schema' ? getSchemaDisplayName('sdk_chat_tool_schemas') : 'Žaliavų AI prompt redaktorius'}
+                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : 'Žaliavų AI prompt redaktorius'}
                 </h3>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => openCombinedEditor('sdk_schema')}
+                  onClick={() => openCombinedEditor('schema')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
                   style={{
-                    color: editorTab === 'sdk_schema' ? colors.bg.white : colors.text.secondary,
-                    background: editorTab === 'sdk_schema' ? colors.interactive.accent : colors.bg.white,
-                    border: `1px solid ${editorTab === 'sdk_schema' ? colors.interactive.accent : colors.border.default}`
+                    color: editorTab === 'schema' ? colors.bg.white : colors.text.secondary,
+                    background: editorTab === 'schema' ? colors.interactive.accent : colors.bg.white,
+                    border: `1px solid ${editorTab === 'schema' ? colors.interactive.accent : colors.border.default}`
                   }}
                 >
-                  SDK schema
+                  {schemaKey === 'sdk_chat_tool_schemas' ? 'SDK schema' : 'Žaliavų schema'}
                 </button>
                 <button
                   onClick={() => openCombinedEditor('kainos_prompt')}
@@ -735,7 +735,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-[11px] font-mono px-2 py-1 rounded" style={{ background: colors.bg.white, color: colors.text.tertiary, border: `1px solid ${colors.border.default}` }}>
-                  {editorTab === 'sdk_schema' ? 'sdk_chat_tool_schemas' : 'kainos_ai_prediction_prompt'}
+                  {editorTab === 'schema' ? schemaKey : 'kainos_ai_prediction_prompt'}
                 </span>
                 <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
                   <X className="w-5 h-5" />
@@ -744,7 +744,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-170px)]">
-              {editorTab === 'sdk_schema' ? (
+              {editorTab === 'schema' ? (
                 schemaLoading ? (
                   <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
                 ) : (
@@ -780,7 +780,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
             <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
               <div className="flex-1 min-w-0">
-                {editorTab === 'sdk_schema' ? (
+                {editorTab === 'schema' ? (
                   schemaError ? (
                     <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
                       {schemaError}
@@ -791,7 +791,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     </div>
                   ) : (
                     <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
-                      Naudokite validų JSON masyvą. Išsaugojimas taikomas SDK schemai.
+                      Naudokite validų JSON masyvą. Išsaugojimas taikomas pasirinktai schemai.
                     </div>
                   )
                 ) : promptError ? (
@@ -809,11 +809,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {editorTab === 'sdk_schema' ? (
+                {editorTab === 'schema' ? (
                   <>
                     <button
                       className="btn btn-soft btn-sm"
-                      onClick={() => loadSchemaContent('sdk_chat_tool_schemas')}
+                      onClick={() => loadSchemaContent(schemaKey)}
                       disabled={schemaLoading || schemaSaving}
                     >
                       Perkrauti
