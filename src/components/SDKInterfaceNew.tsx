@@ -79,12 +79,11 @@ import {
   formatLtDate,
   loadSession,
   saveSession,
-  loadTeamSelection,
-  saveTeamSelection,
   extractDirectusFileId
 } from './sdk/sdkInterfaceUtils';
 import { useNotifications } from './sdk/useNotifications';
 import { useConversationStreaming } from './sdk/useConversationStreaming';
+import { useTeamSelection } from './sdk/useTeamSelection';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -122,10 +121,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [isStreamingArtifact, setIsStreamingArtifact] = useState(false);
   const [artifactStreamContent, setArtifactStreamContent] = useState('');
   const [economists, setEconomists] = useState<AppUserData[]>([]);
-  const [selectedEconomist, setSelectedEconomist] = useState<AppUserData | null>(null);
   const [showEconomistDropdown, setShowEconomistDropdown] = useState(false);
   const [managers, setManagers] = useState<AppUserData[]>([]);
-  const [selectedManager, setSelectedManager] = useState<AppUserData | null>(null);
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
   // Rename state
   const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
@@ -144,6 +141,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Notifications
   const { notifications, addNotification, addErrorNotification, removeNotification } = useNotifications();
+  const {
+    selectedEconomist,
+    setSelectedEconomist,
+    selectedManager,
+    setSelectedManager
+  } = useTeamSelection({
+    currentConversationId: currentConversation?.id,
+    economists,
+    managers
+  });
 
   // Offer parameters (per-conversation, stored in localStorage)
   const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
@@ -352,30 +359,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   useEffect(() => {
     if (currentConversation?.id) {
       setOfferParameters(loadOfferParameters(currentConversation.id));
-      // Restore per-conversation team selection
-      const team = loadTeamSelection(currentConversation.id);
-      setSelectedEconomist(team.economistId ? economists.find(e => e.id === team.economistId) || null : null);
-      setSelectedManager(team.managerId ? managers.find(m => m.id === team.managerId) || null : null);
     } else {
       setOfferParameters(getDefaultOfferParameters());
-      setSelectedEconomist(null);
-      setSelectedManager(null);
     }
     // Bump template version so DocumentPreview re-reads the current global template
     setTemplateVersion(v => v + 1);
   }, [currentConversation?.id]);
-
-  // Persist team selection whenever manager/economist changes for current conversation
-  const skipTeamSave = useRef(true); // skip the initial load trigger
-  useEffect(() => {
-    if (skipTeamSave.current) { skipTeamSave.current = false; return; }
-    if (currentConversation?.id) {
-      saveTeamSelection(currentConversation.id, selectedManager?.id || null, selectedEconomist?.id || null);
-    }
-  }, [selectedManager?.id, selectedEconomist?.id]);
-
-  // Re-arm skip flag when conversation changes (the load useEffect above sets the values)
-  useEffect(() => { skipTeamSave.current = true; }, [currentConversation?.id]);
 
   // Auto-collapse both sidebars when artifact panel opens, restore when closed
   useEffect(() => {
