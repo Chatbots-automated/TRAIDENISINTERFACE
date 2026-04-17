@@ -615,45 +615,105 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
       {showSchemaEditor && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/40"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/55 backdrop-blur-[2px]"
           onClick={() => setShowSchemaEditor(false)}
         >
           <div
-            className="w-full max-w-4xl max-h-[82vh] rounded-xl overflow-hidden bg-base-100 border border-base-content/10 shadow-2xl"
+            className="w-full max-w-5xl max-h-[88vh] rounded-2xl overflow-hidden border shadow-2xl"
+            style={{ background: colors.bg.white, borderColor: colors.border.default }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4 border-b border-base-content/10">
-              <h3 className="text-lg font-semibold text-base-content">{getSchemaDisplayName(schemaKey)}</h3>
+            <div className="flex items-center justify-between px-6 py-5 border-b" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold truncate" style={{ color: colors.text.primary }}>
+                  Schema Editor
+                </h3>
+                <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
+                  Atskiras valdymas kiekvienam moduliui (SDK ir Žaliavos)
+                </p>
+              </div>
               <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(82vh-84px)]">
-              <p className="text-sm" style={{ color: colors.text.secondary }}>
-                Ši schema yra atskira nuo kitų modulų. SDK ir Žaliavų analizė naudoja skirtingus raktus.
-              </p>
+
+            <div className="px-6 py-4 border-b flex flex-wrap items-center gap-2" style={{ borderColor: colors.border.default }}>
+              <button
+                onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{
+                  color: schemaKey === 'sdk_chat_tool_schemas' ? colors.bg.white : colors.text.secondary,
+                  background: schemaKey === 'sdk_chat_tool_schemas' ? colors.interactive.accent : colors.bg.secondary,
+                  border: `1px solid ${schemaKey === 'sdk_chat_tool_schemas' ? colors.interactive.accent : colors.border.default}`
+                }}
+              >
+                SDK schema
+              </button>
+              <button
+                onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                style={{
+                  color: schemaKey === 'kainos_ai_tool_schemas' ? colors.bg.white : colors.text.secondary,
+                  background: schemaKey === 'kainos_ai_tool_schemas' ? colors.interactive.accent : colors.bg.secondary,
+                  border: `1px solid ${schemaKey === 'kainos_ai_tool_schemas' ? colors.interactive.accent : colors.border.default}`
+                }}
+              >
+                Žaliavų schema
+              </button>
+              <div className="ml-auto text-[11px] font-mono px-2 py-1 rounded" style={{ background: colors.bg.secondary, color: colors.text.tertiary }}>
+                {schemaKey}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(88vh-220px)]">
+              <div className="flex items-start justify-between gap-4 rounded-xl p-3 border" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+                <div>
+                  <p className="text-sm font-medium" style={{ color: colors.text.primary }}>
+                    {getSchemaDisplayName(schemaKey)}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
+                    Redaguokite JSON įrankių schemas. Pakeitimai taikomi pasirinktam moduliui.
+                  </p>
+                </div>
+                <div className="text-xs px-2 py-1 rounded" style={{ background: colors.bg.white, color: colors.text.secondary, border: `1px solid ${colors.border.default}` }}>
+                  {schemaLoading ? 'Kraunama…' : 'Paruošta'}
+                </div>
+              </div>
+
               {schemaLoading ? (
-                <div className="text-sm" style={{ color: colors.text.secondary }}>Kraunama...</div>
+                <div className="h-[420px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
               ) : (
-                <textarea
-                  value={schemaContent}
-                  onChange={(e) => setSchemaContent(e.target.value)}
-                  spellCheck={false}
-                  className="w-full min-h-[420px] font-mono text-xs rounded-xl p-4 focus:outline-none"
-                  style={{ border: `1px solid ${colors.border.default}`, background: colors.bg.secondary, color: colors.text.primary }}
-                />
-              )}
-              {schemaError && (
-                <div className="text-sm px-3 py-2 rounded-lg" style={{ color: colors.status.error, background: colors.status.errorBg }}>
-                  {schemaError}
+                <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
+                    JSON • UTF-8
+                  </div>
+                  <textarea
+                    value={schemaContent}
+                    onChange={(e) => setSchemaContent(e.target.value)}
+                    spellCheck={false}
+                    className="w-full min-h-[420px] font-mono text-xs p-4 focus:outline-none"
+                    style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                  />
                 </div>
               )}
+
               {schemaSuccess && (
-                <div className="text-sm px-3 py-2 rounded-lg" style={{ color: colors.status.success, background: colors.status.successBg }}>
+                <div className="text-sm px-3 py-2 rounded-lg border" style={{ color: colors.status.successText, background: colors.status.successBg, borderColor: colors.status.successBorder }}>
                   {schemaSuccess}
                 </div>
               )}
-              <div className="flex justify-end gap-2">
+              {schemaError && (
+                <div className="text-sm px-3 py-2 rounded-lg border" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
+                  {schemaError}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <div className="text-xs" style={{ color: colors.text.tertiary }}>
+                Patarimas: prieš saugant naudokite validų JSON masyvą.
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   className="btn btn-soft btn-sm"
                   onClick={() => loadSchemaContent(schemaKey)}
