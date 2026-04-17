@@ -40,6 +40,17 @@ type View = 'editor' | 'versions';
 const DEFAULT_KAINOS_TOOLS = [
   { type: 'web_search_20260209', name: 'web_search' }
 ];
+const DEFAULT_KAINOS_AI_PROMPT = `Šiandien yra {{today}}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
+
+ISTORINIAI KAINŲ DUOMENYS:
+{{priceData}}
+
+{{contextParts}}
+
+MEDŽIAGOS:
+{{materialList}}
+
+SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON.`;
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
   const location = useLocation();
@@ -66,6 +77,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [schemaSaving, setSchemaSaving] = useState(false);
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [schemaSuccess, setSchemaSuccess] = useState<string | null>(null);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [kainosPromptContent, setKainosPromptContent] = useState('');
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [promptSuccess, setPromptSuccess] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const selectedVariable = variables[selectedIndex] || null;
@@ -81,6 +98,8 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       openSchemaEditor('sdk_chat_tool_schemas');
     } else if (schemaParam === 'kainos') {
       openSchemaEditor('kainos_ai_tool_schemas');
+    } else if (schemaParam === 'kainos-prompt') {
+      openKainosPromptEditor();
     }
   }, [location.search]);
 
@@ -288,6 +307,59 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   };
 
+  const openKainosPromptEditor = async () => {
+    setShowPromptEditor(true);
+    setPromptLoading(true);
+    setPromptError(null);
+    setPromptSuccess(null);
+    try {
+      const promptVar = await getInstructionVariable('kainos_ai_prediction_prompt');
+      setKainosPromptContent(promptVar?.content?.trim() ? promptVar.content : DEFAULT_KAINOS_AI_PROMPT);
+    } catch (err: any) {
+      console.error('[KainosPrompt] Load failed:', err);
+      setPromptError('Nepavyko užkrauti Žaliavų prompt');
+      setKainosPromptContent(DEFAULT_KAINOS_AI_PROMPT);
+    } finally {
+      setPromptLoading(false);
+    }
+  };
+
+  const saveKainosPrompt = async () => {
+    setPromptSaving(true);
+    setPromptError(null);
+    setPromptSuccess(null);
+    try {
+      const content = kainosPromptContent.trim();
+      if (!content) {
+        setPromptError('Prompt negali būti tuščias');
+        return;
+      }
+      const existing = await getInstructionVariable('kainos_ai_prediction_prompt');
+      if (existing) {
+        const result = await saveInstructionVariable('kainos_ai_prediction_prompt', content, user.id, user.email, true);
+        if (!result.success) throw new Error(result.error || 'Nepavyko išsaugoti prompt');
+      } else {
+        const { error: insertError } = await dbAdmin
+          .from('instruction_variables')
+          .insert([{
+            variable_key: 'kainos_ai_prediction_prompt',
+            variable_name: 'Žaliavų AI prompt',
+            content,
+            display_order: 998,
+            updated_by: user.id
+          }]);
+        if (insertError) throw insertError;
+      }
+      setPromptSuccess('Prompt išsaugotas');
+      setTimeout(() => setPromptSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('[KainosPrompt] Save failed:', err);
+      setPromptError(err?.message || 'Nepavyko išsaugoti prompt');
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
   const getRelativeTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -455,6 +527,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
               Žaliavų schemos
+            </button>
+            <button
+              onClick={openKainosPromptEditor}
+              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+            >
+              Žaliavų prompt
             </button>
           </div>
           <VersionHistoryButton onClick={() => setView('versions')} />
@@ -710,6 +789,67 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   onClick={saveSchema}
                 >
                   {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                  Išsaugoti
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPromptEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/55 backdrop-blur-[2px]"
+          onClick={() => setShowPromptEditor(false)}
+        >
+          <div
+            className="w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden border shadow-2xl"
+            style={{ background: colors.bg.white, borderColor: colors.border.default }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <h3 className="text-sm font-semibold" style={{ color: colors.text.primary }}>Žaliavų AI prompt redaktorius</h3>
+              <button onClick={() => setShowPromptEditor(false)} className="btn btn-circle btn-text btn-sm"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-170px)]">
+              {promptLoading ? (
+                <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
+              ) : (
+                <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
+                    Prompt tekstas • Palaikomi placeholderiai: {'{{today}} {{priceData}} {{contextParts}} {{materialList}}'}
+                  </div>
+                  <textarea
+                    value={kainosPromptContent}
+                    onChange={(e) => setKainosPromptContent(e.target.value)}
+                    className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
+                    style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <div className="flex-1 min-w-0">
+                {promptError ? (
+                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
+                    {promptError}
+                  </div>
+                ) : promptSuccess ? (
+                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: colors.status.successBg, borderColor: colors.status.successBorder }}>
+                    {promptSuccess}
+                  </div>
+                ) : (
+                  <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
+                    Šis prompt naudojamas tik Žaliavų AI prognozei.
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button className="btn btn-soft btn-sm" onClick={openKainosPromptEditor} disabled={promptLoading || promptSaving}>
+                  Perkrauti
+                </button>
+                <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving} onClick={saveKainosPrompt}>
+                  {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
                   Išsaugoti
                 </button>
               </div>

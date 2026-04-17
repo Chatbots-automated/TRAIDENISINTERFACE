@@ -30,6 +30,22 @@ import { getInstructionVariable } from '../lib/instructionsService';
 interface KainosInterfaceProps { user: AppUser; }
 
 const MODEL = 'claude-opus-4-6';
+const DEFAULT_KAINOS_AI_PROMPT = `Šiandien yra {{today}}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
+
+ISTORINIAI KAINŲ DUOMENYS:
+{{priceData}}
+
+{{contextParts}}
+
+MEDŽIAGOS:
+{{materialList}}
+
+SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON. Formatas:
+[
+  {"artikulas": "CODE", "kaina": 1.23, "data": "YYYY-MM-DD", "reasoning": "Trumpas paaiškinimas lietuvių kalba (1-2 sakiniai)"}
+]
+
+Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kaina_min reikšmė. "data" yra prognozės data (3 mėn. nuo šiandien).`;
 
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
@@ -718,23 +734,35 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
   const [kainosTools, setKainosTools] = useState<any[] | null>(null);
+  const [kainosPromptTemplate, setKainosPromptTemplate] = useState<string>(DEFAULT_KAINOS_AI_PROMPT);
 
   useEffect(() => {
-    const loadKainosSchema = async () => {
+    const loadKainosConfig = async () => {
       try {
-        const schemaVar = await getInstructionVariable('kainos_ai_tool_schemas');
+        const [schemaVar, promptVar] = await Promise.all([
+          getInstructionVariable('kainos_ai_tool_schemas'),
+          getInstructionVariable('kainos_ai_prediction_prompt')
+        ]);
+
         if (!schemaVar?.content?.trim()) {
           setKainosTools(null);
-          return;
+        } else {
+          const parsed = JSON.parse(schemaVar.content);
+          setKainosTools(Array.isArray(parsed) ? parsed : null);
         }
-        const parsed = JSON.parse(schemaVar.content);
-        setKainosTools(Array.isArray(parsed) ? parsed : null);
+
+        if (promptVar?.content?.trim()) {
+          setKainosPromptTemplate(promptVar.content);
+        } else {
+          setKainosPromptTemplate(DEFAULT_KAINOS_AI_PROMPT);
+        }
       } catch (error) {
-        console.warn('[Kainos] Failed to load kainos_ai_tool_schemas, using no tools.', error);
+        console.warn('[Kainos] Failed to load AI config, using defaults.', error);
         setKainosTools(null);
+        setKainosPromptTemplate(DEFAULT_KAINOS_AI_PROMPT);
       }
     };
-    loadKainosSchema();
+    loadKainosConfig();
   }, []);
 
   // Close on outside click
@@ -765,25 +793,16 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       if (analytics?.content) contextParts.push(`ANKSTESNĖ ANALIZĖ:\n${truncatePromptSection(analytics.content, 6000)}`);
 
       const materialList = medziagas.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
+      const contextJoined = contextParts.join('\n\n');
+      const userPrompt = kainosPromptTemplate
+        .replaceAll('{{today}}', today)
+        .replaceAll('{{priceData}}', priceData)
+        .replaceAll('{{contextParts}}', contextJoined)
+        .replaceAll('{{materialList}}', materialList);
 
       const msgs: Anthropic.MessageParam[] = [{
         role: 'user',
-        content: `Šiandien yra ${today}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
-
-ISTORINIAI KAINŲ DUOMENYS:
-${priceData}
-
-${contextParts.join('\n\n')}
-
-MEDŽIAGOS:
-${materialList}
-
-SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON. Formatas:
-[
-  {"artikulas": "CODE", "kaina": 1.23, "data": "YYYY-MM-DD", "reasoning": "Trumpas paaiškinimas lietuvių kalba (1-2 sakiniai)"}
-]
-
-Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kaina_min reikšmė. "data" yra prognozės data (3 mėn. nuo šiandien).`,
+        content: userPrompt,
       }];
 
       const response = await client.messages.create({
@@ -811,7 +830,7 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, analytics, kainosTools]);
+  }, [aiLoading, medziagas, istorija, analytics, kainosTools, kainosPromptTemplate]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
