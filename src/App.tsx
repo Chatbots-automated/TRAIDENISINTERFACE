@@ -1,18 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { getCurrentUser, getOrCreateDefaultProject } from './lib/database';
 import Layout from './components/Layout';
-import DocumentsInterface from './components/DocumentsInterface';
-import AdminUsersInterface from './components/AdminUsersInterface';
-import InstructionsInterface from './components/InstructionsInterface';
-import NestandardiniaiInterface from './components/NestandardiniaiInterface';
-import DervaInterface from './components/DervaInterface';
-import KainosInterface from './components/KainosInterface';
-import AnalizeInterface from './components/AnalizeInterface';
-import SDKInterface from './components/SDKInterfaceNew';
-import PaklausimoKortelePage from './components/PaklausimoKortele';
 import AuthForm from './components/AuthForm';
 import type { AppUser } from './types';
+
+const DocumentsInterface = lazy(() => import('./components/DocumentsInterface'));
+const AdminUsersInterface = lazy(() => import('./components/AdminUsersInterface'));
+const InstructionsInterface = lazy(() => import('./components/InstructionsInterface'));
+const NestandardiniaiInterface = lazy(() => import('./components/NestandardiniaiInterface'));
+const DervaInterface = lazy(() => import('./components/DervaInterface'));
+const KainosInterface = lazy(() => import('./components/KainosInterface'));
+const AnalizeInterface = lazy(() => import('./components/AnalizeInterface'));
+const SDKInterface = lazy(() => import('./components/SDKInterfaceNew'));
+const PaklausimoKortelePage = lazy(() => import('./components/PaklausimoKortele'));
+
+const routeFallback = (
+  <div className="min-h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+      <p className="text-sm" style={{ color: '#8a857f' }}>Loading route...</p>
+    </div>
+  </div>
+);
 
 type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos';
 
@@ -40,7 +50,6 @@ function AppContent() {
 
   const [user, setUser] = useState<AppUser | null>(null);
   const [projectId, setProjectId] = useState<string>('');
-  const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
   // Derive viewMode from current route (/sdk/anything → 'sdk')
@@ -154,31 +163,24 @@ function AppContent() {
   // Render public route without Layout wrapper
   if (!user && isPublicRoute) {
     return (
-      <Routes>
-        <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
-        <Route path="*" element={<AuthForm onSuccess={handleAuthSuccess} />} />
-      </Routes>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
-          <p className="text-sm" style={{ color: '#8a857f' }}>Loading...</p>
-        </div>
-      </div>
+      <Suspense fallback={routeFallback}>
+        <Routes>
+          <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
+          <Route path="*" element={<AuthForm onSuccess={handleAuthSuccess} />} />
+        </Routes>
+      </Suspense>
     );
   }
 
   // Standalone card page – always rendered outside Layout (read-only, shareable)
   if (isPublicRoute) {
     return (
-      <Routes>
-        <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
-        <Route path="*" element={<Navigate to="/sdk" replace />} />
-      </Routes>
+      <Suspense fallback={routeFallback}>
+        <Routes>
+          <Route path="/paklausimas/:id" element={<PaklausimoKortelePage />} />
+          <Route path="*" element={<Navigate to="/sdk" replace />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -193,43 +195,45 @@ function AppContent() {
       forceCollapsed={forceMainSidebarCollapsed}
       sdkUnreadCount={sdkUnreadCount}
     >
-      <Routes>
-        <Route path="/" element={<Navigate to="/sdk" replace />} />
-        <Route
-          path="/documents"
-          element={<DocumentsInterface user={user} projectId={projectId} />}
-        />
-        <Route
-          path="/users"
-          element={<AdminUsersInterface user={user} />}
-        />
-        <Route
-          path="/instrukcijos"
-          element={<InstructionsInterface user={user} />}
-        />
-        <Route
-          path="/nestandartiniai"
-          element={<NestandardiniaiInterface user={user} projectId={projectId} />}
-        />
-        <Route
-          path="/analize"
-          element={<AnalizeInterface user={user} projectId={projectId} />}
-        />
-        <Route
-          path="/derva"
-          element={<DervaInterface user={user} />}
-        />
-        <Route
-          path="/sdk/:conversationId?"
-          element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} onRequestMainSidebarCollapse={setForceMainSidebarCollapsed} />}
-        />
-        <Route
-          path="/kainos"
-          element={<KainosInterface user={user} />}
-        />
-        {/* Catch-all redirect to sdk */}
-        <Route path="*" element={<Navigate to="/sdk" replace />} />
-      </Routes>
+      <Suspense fallback={routeFallback}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/sdk" replace />} />
+          <Route
+            path="/documents"
+            element={<DocumentsInterface user={user} projectId={projectId} />}
+          />
+          <Route
+            path="/users"
+            element={<AdminUsersInterface user={user} />}
+          />
+          <Route
+            path="/instrukcijos"
+            element={<InstructionsInterface user={user} />}
+          />
+          <Route
+            path="/nestandartiniai"
+            element={<NestandardiniaiInterface user={user} projectId={projectId} />}
+          />
+          <Route
+            path="/analize"
+            element={<AnalizeInterface user={user} projectId={projectId} />}
+          />
+          <Route
+            path="/derva"
+            element={<DervaInterface user={user} />}
+          />
+          <Route
+            path="/sdk/:conversationId?"
+            element={<SDKInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} onUnreadCountChange={setSdkUnreadCount} onRequestMainSidebarCollapse={setForceMainSidebarCollapsed} />}
+          />
+          <Route
+            path="/kainos"
+            element={<KainosInterface user={user} />}
+          />
+          {/* Catch-all redirect to sdk */}
+          <Route path="*" element={<Navigate to="/sdk" replace />} />
+        </Routes>
+      </Suspense>
     </Layout>
   );
 }

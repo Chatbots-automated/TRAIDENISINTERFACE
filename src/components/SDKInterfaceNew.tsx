@@ -59,7 +59,7 @@ import type { AppUser } from '../types';
 import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
-import { OFFER_PARAMETER_DEFINITIONS, loadOfferParameters, saveOfferParameters, getDefaultOfferParameters } from '../lib/offerParametersService';
+import { OFFER_PARAMETER_DEFINITIONS } from '../lib/offerParametersService';
 import { getInstructionVariable } from '../lib/instructionsService';
 import {
   shareConversation,
@@ -71,11 +71,20 @@ import {
   type SharedConversation,
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
-import NotificationContainer, { Notification } from './NotificationContainer';
+import NotificationContainer from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob, extractDocxTemplateVariables } from '../lib/globalTemplateService';
-import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
+import {
+  formatLtDate,
+  loadSession,
+  saveSession,
+  extractDirectusFileId
+} from './sdk/sdkInterfaceUtils';
+import { useNotifications } from './sdk/useNotifications';
+import { useConversationStreaming } from './sdk/useConversationStreaming';
+import { useTeamSelection } from './sdk/useTeamSelection';
+import { useOfferParameters } from './sdk/useOfferParameters';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -83,62 +92,6 @@ interface SDKInterfaceNewProps {
   mainSidebarCollapsed: boolean;
   onUnreadCountChange?: (count: number) => void;
   onRequestMainSidebarCollapse?: (collapsed: boolean) => void;
-}
-
-// Lithuanian short month names for sidebar dates
-const LT_MONTHS_SHORT = ['Sau', 'Vas', 'Kov', 'Bal', 'Geg', 'Bir', 'Lie', 'Rgp', 'Rgs', 'Spa', 'Lap', 'Gru'];
-function formatLtDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = new Date();
-  // If today, show relative time
-  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) {
-    const diffMs = now.getTime() - d.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return 'Ką tik';
-    if (diffMin < 60) return `Prieš ${diffMin} min.`;
-    const diffHrs = Math.floor(diffMin / 60);
-    if (diffHrs === 1) return 'Prieš 1 valandą';
-    return `Prieš ${diffHrs} val.`;
-  }
-  return `${LT_MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
-}
-
-// Per-conversation team selection persistence
-const TEAM_STORAGE_PREFIX = 'traidenis_team_';
-function saveTeamSelection(conversationId: string, managerId: string | null, economistId: string | null) {
-  try { localStorage.setItem(`${TEAM_STORAGE_PREFIX}${conversationId}`, JSON.stringify({ managerId, economistId })); } catch {}
-}
-function loadTeamSelection(conversationId: string): { managerId: string | null; economistId: string | null } {
-  try {
-    const raw = localStorage.getItem(`${TEAM_STORAGE_PREFIX}${conversationId}`);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { managerId: null, economistId: null };
-}
-
-// Session persistence keys
-const SESSION_KEY = 'traidenis_sdk_session';
-function loadSession(): { showArtifact?: boolean; artifactTab?: 'data' | 'preview'; sidebarCollapsed?: boolean } {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || '{}'); } catch { return {}; }
-}
-function saveSession(patch: Record<string, unknown>) {
-  try {
-    const current = loadSession();
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ ...current, ...patch }));
-  } catch { /* ignore */ }
-}
-
-function extractDirectusFileId(value: unknown): string | null {
-  if (!value) return null;
-  if (typeof value === 'string') return value;
-  if (typeof value === 'object') {
-    const record = value as Record<string, any>;
-    if (typeof record.id === 'string' && record.id) return record.id;
-    if (record.data && typeof record.data === 'object' && typeof record.data.id === 'string' && record.data.id) {
-      return record.data.id;
-    }
-  }
-  return null;
 }
 
 export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed, onUnreadCountChange, onRequestMainSidebarCollapse }: SDKInterfaceNewProps) {
@@ -152,9 +105,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
-  // Keep in-flight stream text by conversation so leaving/returning preserves progress.
-  const [streamingContentByConversation, setStreamingContentByConversation] = useState<Record<string, string>>({});
+  const { streamingContent, setConversationStreamingContent } = useConversationStreaming(currentConversation?.id);
   const [isToolUse, setIsToolUse] = useState(false);
   const [toolUseName, setToolUseName] = useState('');
   const [systemPrompt, setSystemPrompt] = useState<string>('');
@@ -171,10 +122,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [isStreamingArtifact, setIsStreamingArtifact] = useState(false);
   const [artifactStreamContent, setArtifactStreamContent] = useState('');
   const [economists, setEconomists] = useState<AppUserData[]>([]);
-  const [selectedEconomist, setSelectedEconomist] = useState<AppUserData | null>(null);
   const [showEconomistDropdown, setShowEconomistDropdown] = useState(false);
   const [managers, setManagers] = useState<AppUserData[]>([]);
-  const [selectedManager, setSelectedManager] = useState<AppUserData | null>(null);
   const [showManagerDropdown, setShowManagerDropdown] = useState(false);
   // Rename state
   const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
@@ -192,12 +141,25 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [isReadOnly, setIsReadOnly] = useState(false);
 
   // Notifications
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { notifications, addNotification, addErrorNotification, removeNotification } = useNotifications();
+  const {
+    selectedEconomist,
+    setSelectedEconomist,
+    selectedManager,
+    setSelectedManager
+  } = useTeamSelection({
+    currentConversationId: currentConversation?.id,
+    economists,
+    managers
+  });
 
-  // Offer parameters (per-conversation, stored in localStorage)
-  const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
-  // Collapsible sections state
-  const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: true, objectParams: true });
+  const {
+    offerParameters,
+    sectionCollapsed,
+    setSectionCollapsed,
+    persistOfferParameters,
+    updateOfferParameter
+  } = useOfferParameters(currentConversation?.id);
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
   const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>(session.artifactTab ?? 'preview');
   // Bump to force DocumentPreview to re-fetch the global template
@@ -262,20 +224,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const documentPreviewRef = useRef<DocumentPreviewHandle>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-
-  // Notification helper functions
-  const addNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
-    const id = `notification-${Date.now()}-${Math.random()}`;
-    setNotifications(prev => [...prev, { id, type, title: formatToastMessage(title, 50), message: formatToastMessage(message) }]);
-  };
-
-  const addErrorNotification = (title: string, error: unknown, fallback: string) => {
-    addNotification('error', title, formatErrorForToast(error, fallback));
-  };
-
-  const removeNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
 
   useEffect(() => {
     loadSystemPrompt();
@@ -403,25 +351,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   }, [streamingContent, userScrolledUp]);
 
-  // Sync global streamingContent from the selected conversation's in-flight stream.
-  useEffect(() => {
-    if (!currentConversation?.id) {
-      setStreamingContent('');
-      return;
-    }
-    setStreamingContent(streamingContentByConversation[currentConversation.id] || '');
-  }, [currentConversation?.id, streamingContentByConversation]);
-
-  const setConversationStreamingContent = (conversationId: string, content: string) => {
-    setStreamingContentByConversation(prev => {
-      if (content) return { ...prev, [conversationId]: content };
-      if (!(conversationId in prev)) return prev;
-      const next = { ...prev };
-      delete next[conversationId];
-      return next;
-    });
-  };
-
   useEffect(() => {
     // Reset scroll state when new response starts
     if (loading) {
@@ -430,34 +359,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   }, [loading]);
 
-  // Load offer parameters, team selection, and refresh template when conversation changes
+  // Refresh template when conversation changes
   useEffect(() => {
-    if (currentConversation?.id) {
-      setOfferParameters(loadOfferParameters(currentConversation.id));
-      // Restore per-conversation team selection
-      const team = loadTeamSelection(currentConversation.id);
-      setSelectedEconomist(team.economistId ? economists.find(e => e.id === team.economistId) || null : null);
-      setSelectedManager(team.managerId ? managers.find(m => m.id === team.managerId) || null : null);
-    } else {
-      setOfferParameters(getDefaultOfferParameters());
-      setSelectedEconomist(null);
-      setSelectedManager(null);
-    }
-    // Bump template version so DocumentPreview re-reads the current global template
     setTemplateVersion(v => v + 1);
   }, [currentConversation?.id]);
-
-  // Persist team selection whenever manager/economist changes for current conversation
-  const skipTeamSave = useRef(true); // skip the initial load trigger
-  useEffect(() => {
-    if (skipTeamSave.current) { skipTeamSave.current = false; return; }
-    if (currentConversation?.id) {
-      saveTeamSelection(currentConversation.id, selectedManager?.id || null, selectedEconomist?.id || null);
-    }
-  }, [selectedManager?.id, selectedEconomist?.id]);
-
-  // Re-arm skip flag when conversation changes (the load useEffect above sets the values)
-  useEffect(() => { skipTeamSave.current = true; }, [currentConversation?.id]);
 
   // Auto-collapse both sidebars when artifact panel opens, restore when closed
   useEffect(() => {
@@ -2633,9 +2538,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     if (category === 'offer') {
       if (currentConversation) {
-        const updated = { ...offerParameters, [key]: value };
-        setOfferParameters(updated);
-        saveOfferParameters(currentConversation.id, updated);
+        updateOfferParameter(currentConversation.id, key, value);
       }
     } else if (category === 'economist') {
       const match = economists.find((e) => e.full_name === value);
@@ -2646,9 +2549,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } else if (category === 'tech_description') {
       // Save technological description to offer parameters (persisted per conversation)
       if (currentConversation) {
-        const updated = { ...offerParameters, [key]: value };
-        setOfferParameters(updated);
-        saveOfferParameters(currentConversation.id, updated);
+        updateOfferParameter(currentConversation.id, key, value);
       }
     } else if (category === 'yaml') {
       // Surgical replacement: directly modify YAML without AI round-trip
@@ -2750,8 +2651,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (text) {
         // Auto-save to offerParameters
         const updated = { ...offerParameters, technological_description: text };
-        setOfferParameters(updated);
-        saveOfferParameters(conversationId, updated);
+        persistOfferParameters(conversationId, updated);
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
       }
@@ -4207,9 +4107,7 @@ Vartotojo instrukcija: ${instruction}`;
                           type="text"
                           value={offerParameters[param.key] || ''}
                           onChange={(e) => {
-                            const updated = { ...offerParameters, [param.key]: e.target.value };
-                            setOfferParameters(updated);
-                            if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                            updateOfferParameter(currentConversation?.id, param.key, e.target.value);
                           }}
                           className="w-full px-3 py-2 text-sm rounded-md transition-all focus:outline-none"
                           style={{
@@ -4250,9 +4148,7 @@ Vartotojo instrukcija: ${instruction}`;
                               type="text"
                               value={offerParameters[contKey] || ''}
                               onChange={(e) => {
-                                const updated = { ...offerParameters, [contKey]: e.target.value };
-                                setOfferParameters(updated);
-                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                                updateOfferParameter(currentConversation?.id, contKey, e.target.value);
                               }}
                               className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
                               style={{
@@ -4273,9 +4169,7 @@ Vartotojo instrukcija: ${instruction}`;
                               type="text"
                               value={offerParameters[afterKey] || ''}
                               onChange={(e) => {
-                                const updated = { ...offerParameters, [afterKey]: e.target.value };
-                                setOfferParameters(updated);
-                                if (currentConversation?.id) saveOfferParameters(currentConversation.id, updated);
+                                updateOfferParameter(currentConversation?.id, afterKey, e.target.value);
                               }}
                               className="w-full px-2 py-1.5 text-xs rounded transition-all focus:outline-none text-center"
                               style={{

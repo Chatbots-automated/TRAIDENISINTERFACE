@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
   Send, MessageSquare, AlertCircle, CheckCircle, Loader2, Image,
-  Code, Type, FileJson, ChevronDown, Sparkles, Settings2, RefreshCw,
+  Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
   PanelRightClose, PanelRightOpen, Download, FlaskConical
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
@@ -17,6 +17,8 @@ import {
   fetchDocumentChats,
   saveDocumentChat,
 } from '../lib/analizeService';
+import SafeHtml from './SafeHtml';
+import { renderMarkdown, renderChatContent } from './analize/markdownRenderer';
 
 // ============================================================================
 // Constants
@@ -71,148 +73,8 @@ interface AnalizeInterfaceProps {
   projectId: string;
 }
 
-// ============================================================================
-// Markdown renderer (simple but effective)
-// ============================================================================
-
-function renderMarkdown(md: string): string {
-  if (!md) return '';
-  let html = md
-    // Escape HTML (except for our own tags)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // Headers
-    .replace(/^######\s+(.+)$/gm, '<h6 class="text-xs font-semibold mt-4 mb-1" style="color:#3d3935">$1</h6>')
-    .replace(/^#####\s+(.+)$/gm, '<h5 class="text-sm font-semibold mt-4 mb-1" style="color:#3d3935">$1</h5>')
-    .replace(/^####\s+(.+)$/gm, '<h4 class="text-sm font-bold mt-5 mb-2" style="color:#3d3935">$1</h4>')
-    .replace(/^###\s+(.+)$/gm, '<h3 class="text-base font-bold mt-5 mb-2" style="color:#3d3935">$1</h3>')
-    .replace(/^##\s+(.+)$/gm, '<h2 class="text-lg font-bold mt-6 mb-2" style="color:#3d3935">$1</h2>')
-    .replace(/^#\s+(.+)$/gm, '<h1 class="text-xl font-bold mt-6 mb-3" style="color:#3d3935">$1</h1>')
-    // Bold & italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
-      `<pre class="rounded-lg p-3 my-3 text-xs overflow-x-auto" style="background:#f5f3f0;border:0.5px solid rgba(0,0,0,0.08)"><code>${code}</code></pre>`
-    )
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded text-xs" style="background:rgba(0,0,0,0.05)">$1</code>')
-    // Horizontal rules
-    .replace(/^---$/gm, '<hr class="my-4" style="border-color:rgba(0,0,0,0.08)" />')
-    // Unordered lists
-    .replace(/^[\-\*]\s+(.+)$/gm, '<li class="ml-4 list-disc text-sm" style="color:#3d3935">$1</li>')
-    // Ordered lists
-    .replace(/^\d+\.\s+(.+)$/gm, '<li class="ml-4 list-decimal text-sm" style="color:#3d3935">$1</li>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-500 underline">$1</a>')
-    // Images (markdown format)
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-lg my-2" />')
-    // Blockquotes
-    .replace(/^&gt;\s+(.+)$/gm, '<blockquote class="border-l-3 pl-3 my-2 italic" style="border-color:#007AFF;color:#5a5550">$1</blockquote>')
-    // Tables (basic)
-    .replace(/^\|(.+)\|$/gm, (match) => {
-      const cells = match.split('|').filter(c => c.trim());
-      if (cells.every(c => /^[\s\-:]+$/.test(c))) {
-        return '<!-- table separator -->';
-      }
-      const tds = cells.map(c => `<td class="px-3 py-2 text-sm" style="border:0.5px solid rgba(0,0,0,0.1)">${c.trim()}</td>`).join('');
-      return `<tr>${tds}</tr>`;
-    })
-    // Paragraphs (double newlines)
-    .replace(/\n\n/g, '</p><p class="text-sm my-2" style="color:#3d3935">')
-    // Single newlines
-    .replace(/\n/g, '<br/>');
-
-  // Wrap tables
-  html = html.replace(
-    /(<tr>[\s\S]*?<\/tr>(?:\s*(?:&lt;!-- table separator --&gt;)\s*<tr>[\s\S]*?<\/tr>)*)/g,
-    '<table class="w-full my-3 rounded-lg overflow-hidden" style="border:0.5px solid rgba(0,0,0,0.1)">$1</table>'
-  );
-  // Clean up table separators
-  html = html.replace(/&lt;!-- table separator --&gt;/g, '');
-
-  return `<div class="prose max-w-none"><p class="text-sm my-2" style="color:#3d3935">${html}</p></div>`;
-}
-
-// ============================================================================
-// JSON Detection & Rendering for Chat Responses
-// ============================================================================
-
-function tryParseJsonArray(text: string): any[] | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('[')) return null;
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object') {
-      return parsed;
-    }
-  } catch {
-    // Try extracting JSON from markdown code block
-    const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      try {
-        const inner = JSON.parse(codeBlockMatch[1].trim());
-        if (Array.isArray(inner) && inner.length > 0) return inner;
-      } catch { /* not valid JSON */ }
-    }
-  }
-  return null;
-}
-
-function renderTankCard(tank: Record<string, any>, index: number): string {
-  const name = tank.pavadinimas || `Talpa ${index + 1}`;
-  const pos = tank.pozicija ? ` (${tank.pozicija})` : '';
-
-  const fieldLabels: Record<string, string> = {
-    Talpa_m3: 'Talpa', Skersmuo_mm: 'Skersmuo', Aukštis_mm: 'Aukštis',
-    Orientacija: 'Orientacija', Dugno_tipas: 'Dugno tipas', Medžiaga: 'Medžiaga',
-    Vieta: 'Vieta', Cheminė_aplinka_Terpė: 'Terpė', Cheminė_aplinka_Koncentracija: 'Koncentracija',
-    Cheminė_aplinka_Tankis_kg_m3: 'Tankis', 'Cheminė_aplinka_Temperatūra_°C': 'Temperatūra',
-    Cheminė_aplinka_Slėgis_bar_g: 'Slėgis', Apšiltinimas: 'Apšiltinimas',
-    Elektrinis_šildymas: 'El. šildymas', Maišyklė: 'Maišyklė',
-    Maišyklė_aprašymas: 'Maišymo aprašymas', Jungtys: 'Jungtys', Pastabos: 'Pastabos',
-    projekto_kontekstas_Klientas: 'Klientas', projekto_kontekstas_Užsakovas: 'Užsakovas',
-  };
-
-  const units: Record<string, string> = {
-    Talpa_m3: ' m³', Skersmuo_mm: ' mm', Aukštis_mm: ' mm',
-    Cheminė_aplinka_Tankis_kg_m3: ' kg/m³', 'Cheminė_aplinka_Temperatūra_°C': ' °C',
-    Cheminė_aplinka_Slėgis_bar_g: ' bar(g)',
-  };
-
-  const skipKeys = new Set(['pavadinimas', 'pozicija', 'eilės_nr']);
-  const rows = Object.entries(tank)
-    .filter(([k, v]) => !skipKeys.has(k) && v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => {
-      const label = fieldLabels[k] || k.replace(/_/g, ' ');
-      const unit = units[k] || '';
-      return `<tr><td style="padding:3px 8px;font-weight:500;color:#5a5550;white-space:nowrap;font-size:11px">${label}</td><td style="padding:3px 8px;color:#3d3935;font-size:11px">${String(v)}${unit}</td></tr>`;
-    })
-    .join('');
-
-  return `<div style="margin-bottom:10px;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;overflow:hidden">
-    <div style="background:rgba(0,122,255,0.06);padding:6px 10px;font-size:11px;font-weight:600;color:#007AFF">${index + 1}. ${name}${pos}</div>
-    <table style="width:100%">${rows}</table>
-  </div>`;
-}
-
-function renderChatContent(content: string): { html: string; isJson: boolean } {
-  const tanks = tryParseJsonArray(content);
-  if (tanks) {
-    const cards = tanks.map((t, i) => renderTankCard(t, i)).join('');
-    const summary = `<div style="font-size:10px;color:#8a857f;margin-top:4px">Rasta talpų: ${tanks.length}</div>`;
-    return { html: cards + summary, isJson: true };
-  }
-  return { html: '', isJson: false };
-}
-
-// ============================================================================
-// Main Component
-// ============================================================================
-
 export default function AnalizeInterface({ user, projectId }: AnalizeInterfaceProps) {
+  void projectId;
   // --- Document list ---
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
   const [docsLoading, setDocsLoading] = useState(true);
@@ -252,39 +114,42 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // ---- Load documents on mount ----
-  useEffect(() => {
-    loadDocuments();
-  }, [user.id]);
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
       setDocsLoading(true);
       setDocsError('');
       const docs = await fetchParsedDocuments(user.id);
       setDocuments(docs);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load documents:', err);
-      const msg: string = err?.message || '';
+      const msg = err instanceof Error ? err.message : '';
+      const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code) : '';
       setDocsError(
-        msg.toLowerCase().includes('permission') || err?.code === '403'
+        msg.toLowerCase().includes('permission') || code === '403'
           ? 'Prieigos klaida (403) – patikrinkite VITE_DIRECTUS_TOKEN konfigūraciją Netlify aplinkoje.'
           : msg || 'Nepavyko įkelti dokumentų.'
       );
     } finally {
       setDocsLoading(false);
     }
-  };
+  }, [user.id]);
+
+  useEffect(() => {
+    loadDocuments();
+  }, [loadDocuments]);
+
+  const selectedDocId = selectedDoc?.id;
 
   // ---- Load full document when selected ----
   useEffect(() => {
-    if (!selectedDoc) {
+    if (!selectedDocId) {
       setSelectedDocFull(null);
       setChatMessages([]);
       return;
     }
-    loadFullDocument(selectedDoc.id);
-    loadChats(selectedDoc.id);
-  }, [selectedDoc?.id]);
+    loadFullDocument(selectedDocId);
+    loadChats(selectedDocId);
+  }, [selectedDocId]);
 
   const loadFullDocument = async (id: string) => {
     try {
@@ -424,9 +289,9 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       const fullDoc = await getParsedDocument(doc.id);
       setSelectedDoc(fullDoc);
       setSelectedDocFull(fullDoc);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setParseStatus('error');
-      setParseError(err?.message || 'Apdorojimas nepavyko');
+      setParseError(err instanceof Error ? err.message : 'Apdorojimas nepavyko');
       setParseStatusText('');
     }
   };
@@ -528,13 +393,14 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
           created_at: new Date().toISOString(),
         }]);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Chat error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Nepavyko gauti atsakymo';
       setChatMessages(prev => [...prev, {
         id: 'error-' + Date.now(),
         document_id: selectedDocFull.id,
         role: 'assistant' as const,
-        content: `Klaida: ${err?.message || 'Nepavyko gauti atsakymo'}`,
+        content: `Klaida: ${errorMessage}`,
         created_at: new Date().toISOString(),
       }]);
       setChatStreaming('');
@@ -899,7 +765,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                       style={{ maxWidth: '800px', border: '0.5px solid rgba(0,0,0,0.06)' }}
                     >
                       {pages[currentPage] ? (
-                        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(pages[currentPage]) }} />
+                        <SafeHtml html={renderMarkdown(pages[currentPage])} />
                       ) : (
                         <p className="text-sm text-center" style={{ color: '#8a857f' }}>Nėra turinio</p>
                       )}
@@ -1071,7 +937,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                             }}
                           >
                             {rendered?.isJson ? (
-                              <div dangerouslySetInnerHTML={{ __html: rendered.html }} />
+                              <SafeHtml html={rendered.html} />
                             ) : isExtractionPrompt ? (
                               <div className="flex items-center gap-1.5">
                                 <FlaskConical className="w-3 h-3 shrink-0" />

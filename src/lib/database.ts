@@ -18,6 +18,7 @@
 
 import { createClient } from './directus';
 import { appLogger } from './appLogger';
+import type { AppUser } from '../types';
 
 const directusUrl = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
 const directusToken = import.meta.env.VITE_DIRECTUS_TOKEN || '';
@@ -37,6 +38,38 @@ export const db = createClient(directusUrl, directusToken);
 export const dbAdmin = createClient(directusUrl, directusToken);
 
 console.log('[Directus] Client configured at:', directusUrl);
+
+const CURRENT_USER_STORAGE_KEY = 'currentUser';
+
+type AppUserRecord = Partial<AppUser> & { id?: unknown; email?: unknown; is_admin?: unknown };
+
+function normalizeAppUser(value: unknown): AppUser | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const record = value as AppUserRecord;
+  if (typeof record.id !== 'string' || !record.id.trim()) return null;
+  if (typeof record.email !== 'string' || !record.email.trim()) return null;
+
+  return {
+    id: record.id,
+    email: record.email,
+    display_name: typeof record.display_name === 'string' ? record.display_name : undefined,
+    is_admin: Boolean(record.is_admin),
+    created_at: typeof record.created_at === 'string' ? record.created_at : new Date().toISOString(),
+    full_name: typeof record.full_name === 'string' ? record.full_name : undefined,
+    phone: typeof record.phone === 'string' ? record.phone : undefined,
+    kodas: typeof record.kodas === 'string' ? record.kodas : undefined,
+    role: typeof record.role === 'string' ? record.role : undefined
+  };
+}
+
+function persistCurrentUser(rawUser: unknown): AppUser | null {
+  const normalized = normalizeAppUser(rawUser);
+  if (!normalized) return null;
+
+  localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(normalized));
+  return normalized;
+}
 
 // ============================================================================
 // Auth helpers (using local password-based authentication)
@@ -77,11 +110,16 @@ export const signUp = async (email: string, password: string, fullName?: string)
       metadata: { display_name: fullName }
     });
 
+    const safeUser = normalizeAppUser(appUserData);
+    if (!safeUser) {
+      return { data: null, error: { message: 'Invalid user data returned from API' } };
+    }
+
     // Return user data in expected format
     return {
       data: {
-        user: appUserData,
-        session: { user: appUserData }
+        user: safeUser,
+        session: { user: safeUser }
       },
       error: null
     };
@@ -96,7 +134,7 @@ export const signIn = async (email: string, password: string) => {
     // Query app_users table for email and password
     const { data: userData, error } = await db
       .from('app_users')
-      .select('*')
+      .select('id, email, display_name, is_admin, created_at, full_name, phone, kodas, role')
       .eq('email', email)
       .eq('password', password)
       .single()
@@ -111,8 +149,15 @@ export const signIn = async (email: string, password: string) => {
       return { data: null, error: { message: 'Invalid email or password' } };
     }
 
-    // Store user in localStorage for session persistence
-    localStorage.setItem('currentUser', JSON.stringify(userData));
+    const safeUser = persistCurrentUser(userData);
+    if (!safeUser) {
+      await appLogger.logAuth({
+        action: 'login_failed',
+        userEmail: email,
+        metadata: { error: 'Invalid user payload from API' }
+      });
+      return { data: null, error: { message: 'Login failed. Please try again.' } };
+    }
 
     await appLogger.logAuth({
       action: 'login_success',
@@ -124,8 +169,8 @@ export const signIn = async (email: string, password: string) => {
     // Return user data in the expected format
     return {
       data: {
-        user: userData,
-        session: { user: userData }
+        user: safeUser,
+        session: { user: safeUser }
       },
       error: null
     };
@@ -145,7 +190,7 @@ export const signOut = async () => {
   try {
     const { user } = await getCurrentUser();
     // Remove user from localStorage
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
     // Clear chat session state
     sessionStorage.removeItem('traidenis_chat_started');
 
@@ -167,9 +212,13 @@ export const signOut = async () => {
 export const getCurrentUser = async () => {
   try {
     // Check localStorage for current user
-    const storedUser = localStorage.getItem('currentUser');
+    const storedUser = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
     if (storedUser) {
-      const userData = JSON.parse(storedUser);
+      const userData = normalizeAppUser(JSON.parse(storedUser));
+      if (!userData) {
+        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+        return { user: null, error: null };
+      }
       return { user: userData, error: null };
     }
     return { user: null, error: null };
