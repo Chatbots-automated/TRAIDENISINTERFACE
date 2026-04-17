@@ -83,6 +83,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptSuccess, setPromptSuccess] = useState<string | null>(null);
+  const [editorUnlocked, setEditorUnlocked] = useState(false);
+  const [editorPassword, setEditorPassword] = useState('');
+  const [editorPasswordError, setEditorPasswordError] = useState('');
+  const [unlockingEditor, setUnlockingEditor] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const selectedVariable = variables[selectedIndex] || null;
@@ -248,6 +252,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     setSchemaKey(targetKey);
     setSchemaSuccess(null);
     setShowSchemaEditor(true);
+    setEditorUnlocked(false);
+    setEditorPassword('');
+    setEditorPasswordError('');
     await loadSchemaContent(targetKey);
   };
 
@@ -327,10 +334,29 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const openCombinedEditor = async (tab: 'schema' | 'kainos_prompt', schemaTarget?: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
     setShowSchemaEditor(true);
     setEditorTab(tab);
+    setEditorUnlocked(false);
+    setEditorPassword('');
+    setEditorPasswordError('');
     if (tab === 'schema') {
       await openSchemaEditor(schemaTarget || schemaKey);
     } else {
       await openKainosPromptEditor();
+    }
+  };
+
+  const handleUnlockEditor = async () => {
+    setEditorPasswordError('');
+    setUnlockingEditor(true);
+    try {
+      const isValid = await verifyUserPassword(user.email, editorPassword);
+      if (!isValid) {
+        setEditorPasswordError('Neteisingas slaptažodis');
+        return;
+      }
+      setEditorUnlocked(true);
+      setEditorPassword('');
+    } finally {
+      setUnlockingEditor(false);
     }
   };
 
@@ -529,14 +555,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
-              AI konfigūracija
+              SDK
             </button>
             <button
               onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
               className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
-              Žaliavų schemos
+              Žaliavos
             </button>
           </div>
           <VersionHistoryButton onClick={() => setView('versions')} />
@@ -705,11 +731,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             style={{ background: colors.bg.white, borderColor: colors.border.default }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-6 py-4 border-b flex items-center gap-3" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
-                <h3 className="text-sm font-semibold shrink-0" style={{ color: colors.text.primary }}>
-                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : 'Žaliavų AI prompt redaktorius'}
+            <div className="px-6 py-4 border-b flex items-center gap-4" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <div className="w-72 min-w-72">
+                <h3 className="text-sm font-semibold truncate" style={{ color: colors.text.primary }}>
+                  AI redaktorius
                 </h3>
-              <div className="flex items-center gap-2">
+                <p className="text-[11px] truncate" style={{ color: colors.text.tertiary }}>
+                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : 'Žaliavų AI prompt redaktorius'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-1">
                 <button
                   onClick={() => openCombinedEditor('schema')}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
@@ -758,6 +789,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       spellCheck={false}
                       className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
                       style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                      readOnly={!editorUnlocked}
                     />
                   </div>
                 )
@@ -773,6 +805,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     onChange={(e) => setKainosPromptContent(e.target.value)}
                     className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
                     style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                    readOnly={!editorUnlocked}
                   />
                 </div>
               )}
@@ -780,7 +813,28 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
             <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
               <div className="flex-1 min-w-0">
-                {editorTab === 'schema' ? (
+                {!editorUnlocked ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={editorPassword}
+                      onChange={(e) => setEditorPassword(e.target.value)}
+                      placeholder="Įveskite slaptažodį redagavimui"
+                      className="input input-sm w-64"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleUnlockEditor}
+                      disabled={unlockingEditor || !editorPassword.trim()}
+                    >
+                      {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
+                    </button>
+                    {editorPasswordError && (
+                      <span className="text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</span>
+                    )}
+                  </div>
+                ) : editorTab === 'schema' ? (
                   schemaError ? (
                     <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
                       {schemaError}
@@ -814,13 +868,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     <button
                       className="btn btn-soft btn-sm"
                       onClick={() => loadSchemaContent(schemaKey)}
-                      disabled={schemaLoading || schemaSaving}
+                      disabled={schemaLoading || schemaSaving || !editorUnlocked}
                     >
                       Perkrauti
                     </button>
                     <button
                       className="btn btn-primary btn-sm gap-1.5"
-                      disabled={schemaSaving || schemaLoading}
+                      disabled={schemaSaving || schemaLoading || !editorUnlocked}
                       onClick={saveSchema}
                     >
                       {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
@@ -829,10 +883,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </>
                 ) : (
                   <>
-                    <button className="btn btn-soft btn-sm" onClick={openKainosPromptEditor} disabled={promptLoading || promptSaving}>
+                    <button className="btn btn-soft btn-sm" onClick={openKainosPromptEditor} disabled={promptLoading || promptSaving || !editorUnlocked}>
                       Perkrauti
                     </button>
-                    <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving} onClick={saveKainosPrompt}>
+                    <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
                       {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
                       Išsaugoti
                     </button>
