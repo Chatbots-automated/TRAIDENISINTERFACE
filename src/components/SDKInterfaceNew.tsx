@@ -71,11 +71,10 @@ import {
   type SharedConversation,
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
-import NotificationContainer, { Notification } from './NotificationContainer';
+import NotificationContainer from './NotificationContainer';
 import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
 import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob, extractDocxTemplateVariables } from '../lib/globalTemplateService';
-import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 import {
   formatLtDate,
   loadSession,
@@ -84,6 +83,7 @@ import {
   saveTeamSelection,
   extractDirectusFileId
 } from './sdk/sdkInterfaceUtils';
+import { useNotifications } from './sdk/useNotifications';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -144,7 +144,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [isReadOnly, setIsReadOnly] = useState(false);
 
   // Notifications
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { notifications, addNotification, addErrorNotification, removeNotification } = useNotifications();
 
   // Offer parameters (per-conversation, stored in localStorage)
   const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
@@ -214,20 +214,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const documentPreviewRef = useRef<DocumentPreviewHandle>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-
-  // Notification helper functions
-  const addNotification = (type: 'success' | 'error' | 'info', title: string, message: string) => {
-    const id = `notification-${Date.now()}-${Math.random()}`;
-    setNotifications(prev => [...prev, { id, type, title: formatToastMessage(title, 50), message: formatToastMessage(message) }]);
-  };
-
-  const addErrorNotification = (title: string, error: unknown, fallback: string) => {
-    addNotification('error', title, formatErrorForToast(error, fallback));
-  };
-
-  const removeNotification = (id: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  };
 
   useEffect(() => {
     loadSystemPrompt();
