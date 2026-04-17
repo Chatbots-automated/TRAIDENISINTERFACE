@@ -283,10 +283,12 @@ interface AiPrediction {
   kaina: number;
   data: string;
   reasoning: string;
+  confidence?: number;
   currentPrice?: number;
   oilImpactPercent?: number;
   oilCurrentPrice?: number;
   oil3mForecastChangePercent?: number;
+  citations?: { title: string; url: string; citedText?: string }[];
 }
 
 interface AiMaterialForecastResponse {
@@ -300,6 +302,22 @@ interface AiForecastResponsePayload {
   oil_current_price?: number;
   oil_3m_forecast_change_percent?: number;
   materials?: AiMaterialForecastResponse[];
+}
+
+interface ExtractedCitation {
+  title: string;
+  url: string;
+  citedText?: string;
+}
+
+interface ExtractedResponseText {
+  text: string;
+  citations: ExtractedCitation[];
+}
+
+interface AnalysisSectionMeta {
+  confidence: number;
+  citations: ExtractedCitation[];
 }
 
 function normalizeName(value: string): string {
@@ -339,6 +357,30 @@ function extractJsonPayload(text: string): unknown {
   throw new Error('AI negrąžino atpažįstamo JSON');
 }
 
+function extractTextAndCitationsFromMessage(contentBlocks: any[]): ExtractedResponseText {
+  let text = '';
+  const citations: ExtractedCitation[] = [];
+
+  for (const block of contentBlocks || []) {
+    if (block?.type !== 'text') continue;
+    if (typeof block.text === 'string') {
+      text += `${block.text}\n`;
+    }
+    if (Array.isArray(block.citations)) {
+      for (const citation of block.citations) {
+        const title = citation?.title || citation?.document_title || 'Šaltinis';
+        const url = citation?.url || citation?.source_url;
+        const citedText = citation?.cited_text;
+        if (url && !citations.some(c => c.url === url && c.title === title)) {
+          citations.push({ title: String(title), url: String(url), citedText: citedText ? String(citedText) : undefined });
+        }
+      }
+    }
+  }
+
+  return { text: text.trim(), citations };
+}
+
 function normalizeAiPredictions(payload: unknown, medziagas: Medžiaga[], forecastDate: string): AiPrediction[] {
   if (Array.isArray(payload)) {
     return payload
@@ -348,6 +390,7 @@ function normalizeAiPredictions(payload: unknown, medziagas: Medžiaga[], foreca
         kaina: Number(item.kaina),
         data: item?.data || forecastDate,
         reasoning: item?.reasoning ? String(item.reasoning) : 'DI prognozė pagal pateiktą kontekstą.',
+        confidence: Number.isFinite(Number(item?.confidence)) ? Math.max(0, Math.min(100, Number(item.confidence))) : undefined,
       }));
   }
 
@@ -378,6 +421,9 @@ function normalizeAiPredictions(payload: unknown, medziagas: Medžiaga[], foreca
         kaina: forecast,
         data: forecastDate,
         reasoning: `3 mėn. prognozė pagal SDK web paiešką. ${impactLabel}`.trim(),
+        confidence: Number.isFinite(Number((item as any).confidence))
+          ? Math.max(0, Math.min(100, Number((item as any).confidence)))
+          : undefined,
         currentPrice: Number.isFinite(currentPrice) ? currentPrice : undefined,
         oilImpactPercent: Number.isFinite(oilImpactPercent) ? oilImpactPercent : undefined,
         oilCurrentPrice: Number.isFinite(Number(response.oil_current_price)) ? Number(response.oil_current_price) : undefined,
@@ -385,6 +431,21 @@ function normalizeAiPredictions(payload: unknown, medziagas: Medžiaga[], foreca
       } as AiPrediction;
     })
     .filter(Boolean) as AiPrediction[];
+}
+
+function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice: number): AiPrediction {
+  const MAX_CHANGE_PERCENT = 35;
+  const max = lastActualPrice * (1 + MAX_CHANGE_PERCENT / 100);
+  const min = lastActualPrice * (1 - MAX_CHANGE_PERCENT / 100);
+  const boundedPrice = Math.min(max, Math.max(min, aiPred.kaina));
+  if (boundedPrice === aiPred.kaina) return aiPred;
+
+  return {
+    ...aiPred,
+    kaina: boundedPrice,
+    reasoning: `${aiPred.reasoning} Prognozė apribota saugumo riba ±${MAX_CHANGE_PERCENT}% nuo paskutinės kainos.`,
+    confidence: Math.min(100, Math.max(0, (aiPred.confidence ?? 70) - 10)),
+  };
 }
 
 function computeAiAdjustedPrice(aiPred: AiPrediction, fallbackCurrent: number): number {
@@ -849,6 +910,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const [aiToggle, setAiToggle] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
+  const [aiResponseCitations, setAiResponseCitations] = useState<ExtractedCitation[]>([]);
   const [kainosTools, setKainosTools] = useState<any[] | null>(null);
   const [kainosPromptTemplate, setKainosPromptTemplate] = useState<string>(DEFAULT_KAINOS_AI_PROMPT);
 
@@ -906,7 +968,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       const contextParts: string[] = [];
       if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${truncatePromptSection(analytics.nafta, 4000)}`);
       if (analytics?.geoevents) contextParts.push(`GEOPOLITINIAI ĮVYKIAI:\n${truncatePromptSection(analytics.geoevents, 4000)}`);
-      if (analytics?.content) contextParts.push(`ANKSTESNĖ ANALIZĖ:\n${truncatePromptSection(analytics.content, 6000)}`);
 
       const materialList = medziagas.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
       const contextJoined = contextParts.join('\n\n');
@@ -929,17 +990,27 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         ...(kainosTools && kainosTools.length > 0 ? { tools: kainosTools as any } : {}),
       });
 
-      const resultText = response.content
-        .filter((block: any) => block.type === 'text')
-        .map((block: any) => block.text)
-        .join('\n');
+      const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
+      const resultText = extracted.text;
 
       const jsonPayload = extractJsonPayload(resultText);
-      const parsed = normalizeAiPredictions(jsonPayload, medziagas, addMonthsISO(today, 3));
+      const parsed = normalizeAiPredictions(jsonPayload, medziagas, addMonthsISO(today, 3)).map(p => ({
+        ...p,
+        confidence: typeof p.confidence === 'number' ? p.confidence : Math.min(90, 45 + extracted.citations.length * 8),
+        citations: extracted.citations,
+      }));
       if (!parsed.length) {
         throw new Error('AI grąžino JSON, bet nerasta tinkamų medžiagų prognozių');
       }
-      setAiPredictions(parsed);
+      const sanitized = parsed.map(pred => {
+        const historyEntries = istorija
+          .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
+          .sort((a, b) => b.data.localeCompare(a.data));
+        const lastActual = historyEntries[0]?.kaina_min;
+        return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
+      });
+      setAiPredictions(sanitized);
+      setAiResponseCitations(extracted.citations);
     } catch (err: any) {
       console.error('AI prediction error:', err);
       onError?.(err.message || 'Nepavyko gauti DI prognozės');
@@ -1009,13 +1080,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         const lastActual = [...points].reverse().find(p => p.kaina !== null);
         if (lastActual) {
           const adjustedAiValue = computeAiAdjustedPrice(aiPred, lastActual.kaina || aiPred.kaina);
-
-          if (prediction) {
-            const futurePoint = points.find(p => p.date === prediction.data && p.predicted !== undefined);
-            if (futurePoint) {
-              futurePoint.predicted = adjustedAiValue;
-            }
-          }
 
           // Bridge from last actual to AI prediction
           const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
@@ -1114,6 +1178,13 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
           )}
         </div>
       </div>
+      {aiToggle && aiResponseCitations.length > 0 && (
+        <div className="flex justify-center">
+          <span className="text-[11px] px-2 py-1 rounded-full" style={{ background: 'rgba(37,99,235,0.08)', color: '#1d4ed8' }}>
+            Šaltiniai: {aiResponseCitations.length}
+          </span>
+        </div>
+      )}
 
       {charts.map(({ material, entries, prediction, points, minY, maxY, aiPred }) => (
         <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
@@ -1141,6 +1212,9 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
                   title={aiPred.reasoning}>
                   AI {aiPred.data}: {aiPred.kaina.toFixed(2)}
+                  {typeof aiPred.confidence === 'number' && (
+                    <span className="ml-1 opacity-70">({Math.round(aiPred.confidence)}%)</span>
+                  )}
                 </span>
               )}
             </div>
@@ -1266,7 +1340,28 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
               <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11px]"
                 style={{ background: 'rgba(124,58,237,0.04)', border: '0.5px solid rgba(124,58,237,0.12)', color: '#6d28d9' }}>
                 <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
-                <span>{aiPred.reasoning}</span>
+                <div className="space-y-1">
+                  <span>{aiPred.reasoning}</span>
+                  {typeof aiPred.confidence === 'number' && (
+                    <div className="text-[10px] opacity-80">Modelio pasitikėjimas: {Math.round(aiPred.confidence)}%</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {aiPred?.citations && aiPred.citations.length > 0 && (
+            <div className="px-4 pb-3">
+              <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'rgba(37,99,235,0.04)', border: '0.5px solid rgba(37,99,235,0.15)' }}>
+                <div className="font-semibold mb-1" style={{ color: '#1d4ed8' }}>Naudoti šaltiniai</div>
+                <ul className="space-y-1">
+                  {aiPred.citations.map((c, i) => (
+                    <li key={`${c.url}-${i}`} className="truncate">
+                      <a href={c.url} target="_blank" rel="noreferrer" className="underline" style={{ color: '#1d4ed8' }}>
+                        {c.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}
@@ -1315,6 +1410,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
+  const [analysisMeta, setAnalysisMeta] = useState<{
+    nafta: AnalysisSectionMeta;
+    geo: AnalysisSectionMeta;
+    analysis: AnalysisSectionMeta;
+  }>({
+    nafta: { confidence: 0, citations: [] },
+    geo: { confidence: 0, citations: [] },
+    analysis: { confidence: 0, citations: [] },
+  });
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1351,7 +1455,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     } finally { setLoading(false); }
   }, []);
 
-  // ---- analytics generation (streams, uses web_search) ----
+  // ---- analytics generation (web search + citations + safety metadata) ----
   const generateAnalyticsFromData = useCallback(async (
     meds: Medžiaga[], hist: KainuIrašas[]
   ) => {
@@ -1366,14 +1470,53 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     });
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
+
+    const runWebStep = async (params: {
+      system: string;
+      user: string;
+      maxTokens: number;
+    }): Promise<ExtractedResponseText> => {
+      const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
+      let mergedText = '';
+      let mergedCitations: ExtractedCitation[] = [];
+
+      while (true) {
+        const response = await client.messages.create({
+          model: MODEL,
+          max_tokens: params.maxTokens,
+          system: params.system,
+          tools: webSearchTool,
+          messages: msgs,
+        });
+        const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
+        if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
+        if (extracted.citations.length > 0) {
+          const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
+          for (const citation of extracted.citations) {
+            const key = `${citation.title}|${citation.url}`;
+            if (!seen.has(key)) {
+              mergedCitations.push(citation);
+              seen.add(key);
+            }
+          }
+        }
+        if (response.stop_reason !== 'pause_turn') break;
+        msgs.push({ role: 'assistant', content: response.content as any });
+      }
+
+      return {
+        text: mergedText.trim(),
+        citations: mergedCitations,
+      };
+    };
+
     try {
       // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
       setGenStep('nafta');
-      let naftaText = '';
-      {
-        const msgs: Anthropic.MessageParam[] = [{
-          role: 'user',
-          content: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
+      const naftaResult = await runWebStep({
+        maxTokens: 1500,
+        system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
+        user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
 2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
@@ -1381,48 +1524,27 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 4. **Styreno kaina** — jei randama, dabartinė styreno (pagrindinis poliestetinės dervos komponentas) kaina Europoje
 
 Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`,
-        }];
-        while (true) {
-          const stream = client.messages.stream({
-            model: MODEL, max_tokens: 1500,
-            system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
-            tools: webSearchTool, messages: msgs,
-          });
-          stream.on('text', d => { naftaText += d; setStreamNafta(naftaText); });
-          const msg = await stream.finalMessage();
-          if (msg.stop_reason !== 'pause_turn') break;
-          msgs.push({ role: 'assistant', content: msg.content as any });
-        }
-      }
+      });
+      const naftaText = naftaResult.text;
+      setStreamNafta(naftaText);
 
       // -- Step 2: Geopolitical events --
       setGenStep('geo');
-      let geoText = '';
-      {
-        const msgs: Anthropic.MessageParam[] = [{
-          role: 'user',
-          content: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
-        }];
-        while (true) {
-          const stream = client.messages.stream({
-            model: MODEL, max_tokens: 1024,
-            system: `Rinkos žvalgybů analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
-            tools: webSearchTool, messages: msgs,
-          });
-          stream.on('text', d => { geoText += d; setStreamGeo(geoText); });
-          const msg = await stream.finalMessage();
-          if (msg.stop_reason !== 'pause_turn') break;
-          msgs.push({ role: 'assistant', content: msg.content as any });
-        }
-      }
+      const geoResult = await runWebStep({
+        maxTokens: 1024,
+        system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
+        user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
+      });
+      const geoText = geoResult.text;
+      setStreamGeo(geoText);
+
       // -- Step 3: Price analysis (enriched with oil context) --
       setGenStep('analysis');
-      let analysisText = '';
       const priceData = formatPriceDataForPrompt(meds, hist);
-      {
-        const msgs: Anthropic.MessageParam[] = [{
-          role: 'user',
-          content: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
+      const analysisResult = await runWebStep({
+        maxTokens: 3000,
+        system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
+        user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
 
 ISTORINIAI KAINŲ DUOMENYS:
 ${priceData}
@@ -1435,23 +1557,18 @@ Pateikite lietuvių kalba:
 2. **Kainų prognozė** – 3–6 mėnesių prognozė atsižvelgiant į naftos kainų tendencijas
 3. **Rinkos veiksniai** – nafta, styrenas, energija, tiekimo grandinė
 4. **Rekomendacijos** – pirkimo strategija (ar laukti, ar pirkti dabar)`,
-        }];
-        while (true) {
-          const stream = client.messages.stream({
-            model: MODEL, max_tokens: 3000,
-            thinking: { type: 'adaptive' },
-            system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
-            tools: webSearchTool, messages: msgs,
-          });
-          stream.on('text', d => { analysisText += d; setStreamAnalysis(analysisText); });
-          const msg = await stream.finalMessage();
-          if (msg.stop_reason !== 'pause_turn') break;
-          msgs.push({ role: 'assistant', content: msg.content as any });
-        }
-      }
+      });
+      const analysisText = analysisResult.text;
+      setStreamAnalysis(analysisText);
+
       await saveGeneralAnalysis(analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
+      setAnalysisMeta({
+        nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
+        geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
+        analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
+      });
 
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
@@ -1678,6 +1795,23 @@ Pateikite lietuvių kalba:
   const geoDisplay = genLoading ? streamGeo : (analytics?.geoevents ?? '');
   const analysisDisplay = genStep === 'analysis' ? streamAnalysis : (!genLoading ? (analytics?.content ?? '') : '');
   const lastUpdated = analytics?.atnaujinta ?? null;
+  const renderCitations = (meta: AnalysisSectionMeta) => {
+    if (!meta.citations.length) return null;
+    return (
+      <div className="mt-2 pt-2 border-t border-blue-100">
+        <p className="text-[10px] font-semibold mb-1" style={{ color: '#1d4ed8' }}>Šaltiniai ({meta.citations.length})</p>
+        <ul className="space-y-1">
+          {meta.citations.slice(0, 5).map((c, idx) => (
+            <li key={`${c.url}-${idx}`} className="truncate text-[10px]">
+              <a href={c.url} target="_blank" rel="noreferrer" className="underline" style={{ color: '#1d4ed8' }}>
+                {c.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
 
   // ---- render ----
   return (
@@ -1842,13 +1976,17 @@ Pateikite lietuvių kalba:
           <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
-          <div className="space-y-4 max-w-3xl">
+          <div className="space-y-4 max-w-4xl">
             {/* Controls row */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between rounded-xl border px-4 py-3 bg-white"
+              style={{ borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
               <div>
-                <span className="text-xs" style={{ color: '#8a857f' }}>
+                <span className="text-xs font-medium" style={{ color: '#6b7280' }}>
                   {lastUpdated ? `Atnaujinta: ${relativeTime(lastUpdated)}` : 'Analizė dar nesugeneruota'}
                 </span>
+                <div className="text-[11px] mt-1" style={{ color: '#8a857f' }}>
+                  Rodomi šaltiniai ir apytikslis patikimumas pagal citatų kiekį.
+                </div>
               </div>
               <button onClick={generateAnalytics} disabled={genLoading}
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
@@ -1866,7 +2004,10 @@ Pateikite lietuvių kalba:
                 style={{ background: 'linear-gradient(135deg,#78350f 0%,#b45309 100%)' }}>
                 <BarChart2 className="w-4 h-4 text-white opacity-90" />
                 <span className="text-xs font-semibold text-white">Naftos kainos &middot; Styrenas &middot; Dervos ryšys</span>
-                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
+                  Patikimumas ~{Math.round(analysisMeta.nafta.confidence)}%
+                </span>
+                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
                 {naftaDisplay ? (
@@ -1882,6 +2023,7 @@ Pateikite lietuvių kalba:
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
+                {renderCitations(analysisMeta.nafta)}
               </div>
             </div>
 
@@ -1892,7 +2034,10 @@ Pateikite lietuvių kalba:
                 style={{ background: 'linear-gradient(135deg,#1a3a5c 0%,#2563a8 100%)' }}>
                 <Globe className="w-4 h-4 text-white opacity-90" />
                 <span className="text-xs font-semibold text-white">Geopolitiniai įvykiai &middot; Rinkos sąlygos</span>
-                {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
+                  Patikimumas ~{Math.round(analysisMeta.geo.confidence)}%
+                </span>
+                {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
                 {geoDisplay ? (
@@ -1908,6 +2053,7 @@ Pateikite lietuvių kalba:
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
+                {renderCitations(analysisMeta.geo)}
               </div>
             </div>
 
@@ -1918,7 +2064,10 @@ Pateikite lietuvių kalba:
                 style={{ background: 'linear-gradient(135deg,#0f4c2a 0%,#166534 100%)' }}>
                 <TrendingUp className="w-4 h-4 text-white opacity-90" />
                 <span className="text-xs font-semibold text-white">Kainų analizė &middot; Prognozė</span>
-                {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
+                  Patikimumas ~{Math.round(analysisMeta.analysis.confidence)}%
+                </span>
+                {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
                 {analysisDisplay ? (
@@ -1934,6 +2083,7 @@ Pateikite lietuvių kalba:
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
+                {renderCitations(analysisMeta.analysis)}
               </div>
             </div>
 
