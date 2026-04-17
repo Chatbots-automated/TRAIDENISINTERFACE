@@ -84,6 +84,7 @@ import {
   extractDirectusFileId
 } from './sdk/sdkInterfaceUtils';
 import { useNotifications } from './sdk/useNotifications';
+import { useConversationStreaming } from './sdk/useConversationStreaming';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -104,9 +105,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
-  // Keep in-flight stream text by conversation so leaving/returning preserves progress.
-  const [streamingContentByConversation, setStreamingContentByConversation] = useState<Record<string, string>>({});
+  const { streamingContent, setConversationStreamingContent } = useConversationStreaming(currentConversation?.id);
   const [isToolUse, setIsToolUse] = useState(false);
   const [toolUseName, setToolUseName] = useState('');
   const [systemPrompt, setSystemPrompt] = useState<string>('');
@@ -340,25 +339,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       scrollToBottom();
     }
   }, [streamingContent, userScrolledUp]);
-
-  // Sync global streamingContent from the selected conversation's in-flight stream.
-  useEffect(() => {
-    if (!currentConversation?.id) {
-      setStreamingContent('');
-      return;
-    }
-    setStreamingContent(streamingContentByConversation[currentConversation.id] || '');
-  }, [currentConversation?.id, streamingContentByConversation]);
-
-  const setConversationStreamingContent = (conversationId: string, content: string) => {
-    setStreamingContentByConversation(prev => {
-      if (content) return { ...prev, [conversationId]: content };
-      if (!(conversationId in prev)) return prev;
-      const next = { ...prev };
-      delete next[conversationId];
-      return next;
-    });
-  };
 
   useEffect(() => {
     // Reset scroll state when new response starts
