@@ -15,6 +15,15 @@ const AnalizeInterface = lazy(() => import('./components/AnalizeInterface'));
 const SDKInterface = lazy(() => import('./components/SDKInterfaceNew'));
 const PaklausimoKortelePage = lazy(() => import('./components/PaklausimoKortele'));
 
+const routeFallback = (
+  <div className="min-h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
+      <p className="text-sm" style={{ color: '#8a857f' }}>Loading route...</p>
+    </div>
+  </div>
+);
+
 type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos';
 
 // localStorage keys for persistence
@@ -238,11 +247,3 @@ function App() {
 }
 
 export default App;
-  const routeFallback = (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#fdfcfb' }}>
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-blue-500 mx-auto mb-4"></div>
-        <p className="text-sm" style={{ color: '#8a857f' }}>Loading route...</p>
-      </div>
-    </div>
-  );
