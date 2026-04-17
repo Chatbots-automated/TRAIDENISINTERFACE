@@ -283,6 +283,122 @@ interface AiPrediction {
   kaina: number;
   data: string;
   reasoning: string;
+  currentPrice?: number;
+  oilImpactPercent?: number;
+  oilCurrentPrice?: number;
+  oil3mForecastChangePercent?: number;
+}
+
+interface AiMaterialForecastResponse {
+  name: string;
+  current_price?: number;
+  forecast_3m_price?: number;
+  oil_impact_percent?: number;
+}
+
+interface AiForecastResponsePayload {
+  oil_current_price?: number;
+  oil_3m_forecast_change_percent?: number;
+  materials?: AiMaterialForecastResponse[];
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function extractJsonPayload(text: string): unknown {
+  const stripped = text
+    .replace(/```json/gi, '```')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    // fallback to broad block extraction for partially wrapped responses
+  }
+
+  const objectMatch = stripped.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      return JSON.parse(objectMatch[0]);
+    } catch {
+      // continue
+    }
+  }
+
+  const arrayMatch = stripped.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    return JSON.parse(arrayMatch[0]);
+  }
+
+  throw new Error('AI negrąžino atpažįstamo JSON');
+}
+
+function normalizeAiPredictions(payload: unknown, medziagas: Medžiaga[], forecastDate: string): AiPrediction[] {
+  if (Array.isArray(payload)) {
+    return payload
+      .filter((item: any) => typeof item?.artikulas === 'string' && Number.isFinite(Number(item?.kaina)))
+      .map((item: any) => ({
+        artikulas: String(item.artikulas),
+        kaina: Number(item.kaina),
+        data: item?.data || forecastDate,
+        reasoning: item?.reasoning ? String(item.reasoning) : 'DI prognozė pagal pateiktą kontekstą.',
+      }));
+  }
+
+  const response = payload as AiForecastResponsePayload;
+  const materials = Array.isArray(response?.materials) ? response.materials : [];
+  const byName = new Map<string, Medžiaga>();
+  for (const m of medziagas) {
+    byName.set(normalizeName(m.artikulas), m);
+    byName.set(normalizeName(m.pavadinimas), m);
+  }
+
+  return materials
+    .map((item) => {
+      const matched = byName.get(normalizeName(item.name || ''));
+      if (!matched) return null;
+
+      const forecast = Number(item.forecast_3m_price);
+      if (!Number.isFinite(forecast)) return null;
+
+      const currentPrice = Number(item.current_price);
+      const oilImpactPercent = Number(item.oil_impact_percent);
+      const impactLabel = Number.isFinite(oilImpactPercent)
+        ? `Naftos įtaka ${oilImpactPercent >= 0 ? '+' : ''}${oilImpactPercent.toFixed(2)}%.`
+        : '';
+
+      return {
+        artikulas: matched.artikulas,
+        kaina: forecast,
+        data: forecastDate,
+        reasoning: `3 mėn. prognozė pagal SDK web paiešką. ${impactLabel}`.trim(),
+        currentPrice: Number.isFinite(currentPrice) ? currentPrice : undefined,
+        oilImpactPercent: Number.isFinite(oilImpactPercent) ? oilImpactPercent : undefined,
+        oilCurrentPrice: Number.isFinite(Number(response.oil_current_price)) ? Number(response.oil_current_price) : undefined,
+        oil3mForecastChangePercent: Number.isFinite(Number(response.oil_3m_forecast_change_percent)) ? Number(response.oil_3m_forecast_change_percent) : undefined,
+      } as AiPrediction;
+    })
+    .filter(Boolean) as AiPrediction[];
+}
+
+function computeAiAdjustedPrice(aiPred: AiPrediction, fallbackCurrent: number): number {
+  const current = Number.isFinite(aiPred.currentPrice) ? Number(aiPred.currentPrice) : fallbackCurrent;
+  const oilImpact = Number(aiPred.oilImpactPercent);
+  const oilAdjusted = Number.isFinite(oilImpact)
+    ? current * (1 + oilImpact / 100)
+    : null;
+
+  if (oilAdjusted !== null) {
+    return (aiPred.kaina * 0.7) + (oilAdjusted * 0.3);
+  }
+
+  return aiPred.kaina;
 }
 
 // ---------------------------------------------------------------------------
@@ -818,10 +934,11 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         .map((block: any) => block.text)
         .join('\n');
 
-      // Parse JSON from response (handle markdown code blocks)
-      const jsonMatch = resultText.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error('AI negrąžino JSON formato');
-      const parsed: AiPrediction[] = JSON.parse(jsonMatch[0]);
+      const jsonPayload = extractJsonPayload(resultText);
+      const parsed = normalizeAiPredictions(jsonPayload, medziagas, addMonthsISO(today, 3));
+      if (!parsed.length) {
+        throw new Error('AI grąžino JSON, bet nerasta tinkamų medžiagų prognozių');
+      }
       setAiPredictions(parsed);
     } catch (err: any) {
       console.error('AI prediction error:', err);
@@ -889,9 +1006,17 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       // Add AI prediction point if toggle is on
       const aiPred = aiToggle ? aiPredictions.find(p => p.artikulas === m.artikulas) : null;
       if (aiPred && aiPred.kaina > 0) {
-        const lastPoint = points.find(p => p.kaina !== null && p.aiPredicted === undefined);
         const lastActual = [...points].reverse().find(p => p.kaina !== null);
         if (lastActual) {
+          const adjustedAiValue = computeAiAdjustedPrice(aiPred, lastActual.kaina || aiPred.kaina);
+
+          if (prediction) {
+            const futurePoint = points.find(p => p.date === prediction.data && p.predicted !== undefined);
+            if (futurePoint) {
+              futurePoint.predicted = adjustedAiValue;
+            }
+          }
+
           // Bridge from last actual to AI prediction
           const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
           if (!bridgeExists) {
@@ -906,17 +1031,18 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
             date: aiPred.data,
             label: aiPred.data,
             kaina: null,
-            aiPredicted: aiPred.kaina,
+            aiPredicted: adjustedAiValue,
           });
         }
       }
 
       // Compute Y-axis domain
+      const lastActualForDomain = [...points].reverse().find(p => p.kaina !== null);
       const allValues = [
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
         ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
-        ...(aiPred ? [aiPred.kaina] : []),
+        ...(aiPred && lastActualForDomain ? [computeAiAdjustedPrice(aiPred, lastActualForDomain.kaina || aiPred.kaina)] : []),
       ];
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
