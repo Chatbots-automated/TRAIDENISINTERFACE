@@ -41,6 +41,11 @@ function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): stri
   }
   return lines.join('\n');
 }
+
+function truncatePromptSection(text: string, maxChars: number): string {
+  if (!text || text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
+}
 // ---------------------------------------------------------------------------
 // Modal: Add / Edit Material
 // ---------------------------------------------------------------------------
@@ -732,17 +737,15 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         dangerouslyAllowBrowser: true,
       });
       const today = new Date().toISOString().split('T')[0];
-      const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-      const priceData = formatPriceDataForPrompt(medziagas, istorija);
+      const priceData = truncatePromptSection(formatPriceDataForPrompt(medziagas, istorija), 14000);
 
       const contextParts: string[] = [];
-      if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${analytics.nafta}`);
-      if (analytics?.geoevents) contextParts.push(`GEOPOLITINIAI ĮVYKIAI:\n${analytics.geoevents}`);
-      if (analytics?.content) contextParts.push(`ANKSTESNĖ ANALIZĖ:\n${analytics.content}`);
+      if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${truncatePromptSection(analytics.nafta, 4000)}`);
+      if (analytics?.geoevents) contextParts.push(`GEOPOLITINIAI ĮVYKIAI:\n${truncatePromptSection(analytics.geoevents, 4000)}`);
+      if (analytics?.content) contextParts.push(`ANKSTESNĖ ANALIZĖ:\n${truncatePromptSection(analytics.content, 6000)}`);
 
       const materialList = medziagas.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
-      let resultText = '';
       const msgs: Anthropic.MessageParam[] = [{
         role: 'user',
         content: `Šiandien yra ${today}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
@@ -763,17 +766,17 @@ SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po J
 Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kaina_min reikšmė. "data" yra prognozės data (3 mėn. nuo šiandien).`,
       }];
 
-      while (true) {
-        const stream = client.messages.stream({
-          model: MODEL, max_tokens: 2000,
-          system: `Medžiagų kainų prognozavimo ekspertas. Atsakykite TIK JSON formatu. Šiandien: ${today}.`,
-          tools: webSearchTool, messages: msgs,
-        });
-        stream.on('text', d => { resultText += d; });
-        const msg = await stream.finalMessage();
-        if (msg.stop_reason !== 'pause_turn') break;
-        msgs.push({ role: 'assistant', content: msg.content as any });
-      }
+      const response = await client.messages.create({
+        model: MODEL,
+        max_tokens: 2000,
+        system: `Medžiagų kainų prognozavimo ekspertas. Atsakykite TIK JSON formatu. Šiandien: ${today}.`,
+        messages: msgs,
+      });
+
+      const resultText = response.content
+        .filter((block: any) => block.type === 'text')
+        .map((block: any) => block.text)
+        .join('\n');
 
       // Parse JSON from response (handle markdown code blocks)
       const jsonMatch = resultText.match(/\[[\s\S]*\]/);
