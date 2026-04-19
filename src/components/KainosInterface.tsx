@@ -138,7 +138,13 @@ function formatTrendDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): stri
       if (!Number.isFinite(first) || !Number.isFinite(last) || first === 0) return `- ${m.artikulas}: trendas nenustatytas`;
       const deltaPct = ((last - first) / first) * 100;
       const dir = deltaPct > 0.5 ? 'kylanti' : deltaPct < -0.5 ? 'krentanti' : 'stabili';
-      return `- ${m.artikulas}: ${dir}, pokytis ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}% (${entries[0].data} → ${entries[entries.length - 1].data})`;
+      const math = computePrediction(entries);
+      const mathMid = math ? (math.kaina_min + math.kaina_max) / 2 : null;
+      const mathDeltaPct = mathMid !== null && last !== 0 ? ((mathMid - last) / last) * 100 : null;
+      const mathText = math
+        ? `, matematinė 3 mėn. prognozė ${mathMid! > last ? 'aukštyn' : 'žemyn'} (${(mathDeltaPct ?? 0).toFixed(2)}%)`
+        : '';
+      return `- ${m.artikulas}: ${dir}, pokytis ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}% (${entries[0].data} → ${entries[entries.length - 1].data})${mathText}`;
     })
     .join('\n');
 }
@@ -1759,6 +1765,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         setGenStep('analysis');
         const boundedNaftaText = truncatePromptSection(naftaText, 2500);
         const boundedGeoText = truncatePromptSection(geoText, 2200);
+        const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 9000);
         const materialChunks = chunkArray(meds, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
         const fallbackDate = addMonthsISO(today, 3);
         let aggregatedForecasts: AiPrediction[] = [];
@@ -1774,7 +1781,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const chunkHist = hist.filter((h) => chunkCodes.has(h.artikulas));
           const priceData = truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 7000);
           const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 4500);
-          const trendData = truncatePromptSection(formatTrendDataForPrompt(chunkMeds, chunkHist), 4500);
+          const trendData = globalTrendData;
           const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
           const analysisResult = await runWebStep({
