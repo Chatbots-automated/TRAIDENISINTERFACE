@@ -27,6 +27,7 @@ import {
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
 import { getInstructionVariable } from '../lib/instructionsService';
+import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer';
 
 interface KainosInterfaceProps { user: AppUser; }
 
@@ -1547,7 +1548,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
 
         const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
-        if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
+        const isPauseTurn = response.stop_reason === 'pause_turn';
+        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) {
+          if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
+        }
         if (extracted.citations.length > 0) {
           const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
           for (const citation of extracted.citations) {
@@ -1558,7 +1562,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             }
           }
         }
-        if (response.stop_reason !== 'pause_turn' || turn >= MAX_TOOL_TURNS) break;
+        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) break;
         msgs.push({ role: 'assistant', content: response.content as any });
       }
 
@@ -1603,7 +1607,7 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
       const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
       const boundedNaftaText = truncatePromptSection(naftaText, 2500);
       const analysisResult = await runWebStep({
-        maxTokens: 1100,
+        maxTokens: 1700,
         system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
 
@@ -1847,18 +1851,12 @@ Pateikite lietuvių kalba:
     return <span className="flex flex-col items-center leading-tight"><span className="text-[10px]" style={{ color: '#b0aba4' }}>{y}</span><span>{m}-{dd}</span></span>;
   };
 
-  const renderMd = (text: string) =>
-    text.split('\n').map((line, i) => {
-      if (line.startsWith('## ')) return <h3 key={i} className="text-xs font-bold mt-3 mb-1" style={{ color: '#3d3935' }}>{line.slice(3)}</h3>;
-      if (line.startsWith('# ')) return <h2 key={i} className="text-sm font-bold mt-3 mb-1" style={{ color: '#3d3935' }}>{line.slice(2)}</h2>;
-      if (line.startsWith('- ') || line.startsWith('• '))
-        return <li key={i} className="text-xs ml-4 list-disc leading-relaxed" style={{ color: '#5a5550' }}>{line.slice(2)}</li>;
-      if (line.trim() === '') return <div key={i} className="h-1.5" />;
-      const parts = line.split(/\*\*(.*?)\*\*/g);
-      return <p key={i} className="text-xs leading-relaxed" style={{ color: '#5a5550' }}>
-        {parts.map((p, j) => j % 2 === 1 ? <strong key={j} style={{ color: '#3d3935' }}>{p}</strong> : p)}
-      </p>;
-    });
+  const renderMd = (text: string) => (
+    <div
+      className="text-xs"
+      dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(text || '') }}
+    />
+  );
 
   const naftaDisplay = streamNafta || analytics?.nafta || '';
   const geoDisplay = streamGeo || analytics?.geoevents || '';
