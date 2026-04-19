@@ -16,6 +16,7 @@ import {
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
+  fetchLatestMaterialForecasts, saveMaterialForecasts,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
@@ -25,11 +26,11 @@ import {
 } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
+import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer';
 
 interface KainosInterfaceProps { user: AppUser; }
 
-const MODEL = 'claude-opus-4-6';
-
+const ANALYTICS_MODEL = 'claude-sonnet-4-5';
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   const lines: string[] = [];
@@ -40,6 +41,48 @@ function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): stri
     lines.push(`${m.pavadinimas} [${m.artikulas}] (${m.vienetas}): ${row}`);
   }
   return lines.join('\n');
+}
+
+function truncatePromptSection(text: string, maxChars: number): string {
+  if (!text || text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
+}
+
+function formatLatestPricesForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
+  if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
+  return meds
+    .map((m) => {
+      const latest = hist
+        .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
+        .sort((a, b) => b.data.localeCompare(a.data))[0];
+      if (!latest) return `- ${m.artikulas} (${m.pavadinimas}): nėra kainos`;
+      return `- ${m.artikulas} (${m.pavadinimas}): ${formatPrice(latest)} @ ${latest.data}`;
+    })
+    .join('\n');
+}
+
+function formatTrendDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
+  if (!meds.length || !hist.length) return 'Tendencijai nepakanka duomenų.';
+  return meds
+    .map((m) => {
+      const entries = hist
+        .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
+        .sort((a, b) => a.data.localeCompare(b.data));
+      if (entries.length < 2) return `- ${m.artikulas}: nepakanka istorijos trendui`;
+      const first = Number(entries[0].kaina_min);
+      const last = Number(entries[entries.length - 1].kaina_min);
+      if (!Number.isFinite(first) || !Number.isFinite(last) || first === 0) return `- ${m.artikulas}: trendas nenustatytas`;
+      const deltaPct = ((last - first) / first) * 100;
+      const dir = deltaPct > 0.5 ? 'kylanti' : deltaPct < -0.5 ? 'krentanti' : 'stabili';
+      return `- ${m.artikulas}: ${dir}, pokytis ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}% (${entries[0].data} → ${entries[entries.length - 1].data})`;
+    })
+    .join('\n');
+}
+
+function addMonthsISO(dateIso: string, months: number): string {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, (m - 1) + months, d));
+  return dt.toISOString().split('T')[0];
 }
 // ---------------------------------------------------------------------------
 // Modal: Add / Edit Material
@@ -261,6 +304,176 @@ interface AiPrediction {
   kaina: number;
   data: string;
   reasoning: string;
+  confidence?: number;
+  currentPrice?: number;
+  oilImpactPercent?: number;
+  oilCurrentPrice?: number;
+  oil3mForecastChangePercent?: number;
+  citations?: { title: string; url: string; citedText?: string }[];
+}
+
+interface AiMaterialForecastResponse {
+  name: string;
+  current_price?: number;
+  forecast_3m_price?: number;
+  oil_impact_percent?: number;
+}
+
+interface AiForecastResponsePayload {
+  oil_current_price?: number;
+  oil_3m_forecast_change_percent?: number;
+  materials?: AiMaterialForecastResponse[];
+}
+
+interface AnalysisForecastResponsePayload {
+  analysis_markdown?: string;
+  forecasts?: Array<{
+    artikulas?: string;
+    kaina?: number;
+    data?: string;
+    confidence?: number;
+    reasoning?: string;
+  }>;
+}
+
+interface ExtractedCitation {
+  title: string;
+  url: string;
+  citedText?: string;
+}
+
+interface ExtractedResponseText {
+  text: string;
+  citations: ExtractedCitation[];
+}
+
+interface AnalysisSectionMeta {
+  confidence: number;
+  citations: ExtractedCitation[];
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function extractJsonPayload(text: string): unknown {
+  const stripped = text
+    .replace(/```json/gi, '```')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    // fallback to broad block extraction for partially wrapped responses
+  }
+
+  const objectMatch = stripped.match(/\{[\s\S]*\}/);
+  if (objectMatch) {
+    try {
+      return JSON.parse(objectMatch[0]);
+    } catch {
+      // continue
+    }
+  }
+
+  const arrayMatch = stripped.match(/\[[\s\S]*\]/);
+  if (arrayMatch) {
+    return JSON.parse(arrayMatch[0]);
+  }
+
+  throw new Error('AI negrąžino atpažįstamo JSON');
+}
+
+function extractTextAndCitationsFromMessage(contentBlocks: any[]): ExtractedResponseText {
+  let text = '';
+  const citations: ExtractedCitation[] = [];
+
+  for (const block of contentBlocks || []) {
+    if (block?.type !== 'text') continue;
+    if (typeof block.text === 'string') {
+      text += `${block.text}\n`;
+    }
+    if (Array.isArray(block.citations)) {
+      for (const citation of block.citations) {
+        const title = citation?.title || citation?.document_title || 'Šaltinis';
+        const url = citation?.url || citation?.source_url;
+        const citedText = citation?.cited_text;
+        if (url && !citations.some(c => c.url === url && c.title === title)) {
+          citations.push({ title: String(title), url: String(url), citedText: citedText ? String(citedText) : undefined });
+        }
+      }
+    }
+  }
+
+  return { text: text.trim(), citations };
+}
+
+function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
+  const byCode = new Map(medziagas.map(m => [m.artikulas.toLowerCase(), m.artikulas]));
+  const byName = new Map(medziagas.map(m => [normalizeName(m.pavadinimas), m.artikulas]));
+  const resolved = (value: string): string | null => {
+    const direct = byCode.get(value.toLowerCase());
+    if (direct) return direct;
+    return byName.get(normalizeName(value)) || null;
+  };
+
+  const toPred = (item: any): AiPrediction | null => {
+    const key = typeof item?.artikulas === 'string' ? item.artikulas : typeof item?.name === 'string' ? item.name : null;
+    if (!key) return null;
+    const artikulas = resolved(key);
+    if (!artikulas) return null;
+    const kaina = Number(item?.kaina);
+    if (!Number.isFinite(kaina)) return null;
+    const confidence = Number(item?.confidence);
+    return {
+      artikulas,
+      kaina,
+      data: typeof item?.data === 'string' ? item.data : fallbackDate,
+      reasoning: typeof item?.reasoning === 'string' ? item.reasoning : 'Prognozė pagal naftos ir geopolitinį kontekstą.',
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(100, confidence)) : undefined,
+    };
+  };
+
+  if (Array.isArray(payload)) {
+    return payload.map(toPred).filter(Boolean) as AiPrediction[];
+  }
+  const parsed = payload as AnalysisForecastResponsePayload;
+  const list = Array.isArray(parsed?.forecasts) ? parsed.forecasts : [];
+  return list.map(toPred).filter(Boolean) as AiPrediction[];
+}
+
+function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice: number): AiPrediction {
+  const MAX_CHANGE_PERCENT = 35;
+  const max = lastActualPrice * (1 + MAX_CHANGE_PERCENT / 100);
+  const min = lastActualPrice * (1 - MAX_CHANGE_PERCENT / 100);
+  const boundedPrice = Math.min(max, Math.max(min, aiPred.kaina));
+  if (boundedPrice === aiPred.kaina) return aiPred;
+
+  return {
+    ...aiPred,
+    kaina: boundedPrice,
+    reasoning: `${aiPred.reasoning} Prognozė apribota saugumo riba ±${MAX_CHANGE_PERCENT}% nuo paskutinės kainos.`,
+    confidence: Math.min(100, Math.max(0, (aiPred.confidence ?? 70) - 10)),
+  };
+}
+
+function computeAiAdjustedPrice(aiPred: AiPrediction, fallbackCurrent: number): number {
+  const current = Number.isFinite(aiPred.currentPrice) ? Number(aiPred.currentPrice) : fallbackCurrent;
+  const oilImpact = Number(aiPred.oilImpactPercent);
+  const oilAdjusted = Number.isFinite(oilImpact)
+    ? current * (1 + oilImpact / 100)
+    : null;
+
+  if (oilAdjusted !== null) {
+    return (aiPred.kaina * 0.7) + (oilAdjusted * 0.3);
+  }
+
+  return aiPred.kaina;
 }
 
 // ---------------------------------------------------------------------------
@@ -711,7 +924,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const [aiToggle, setAiToggle] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
-
+  const [aiResponseCitations, setAiResponseCitations] = useState<ExtractedCitation[]>([]);
   // Close on outside click
   useEffect(() => {
     if (!showInfo) return;
@@ -727,59 +940,40 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
-      const client = new Anthropic({
-        apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-        dangerouslyAllowBrowser: true,
-      });
-      const today = new Date().toISOString().split('T')[0];
-      const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-      const priceData = formatPriceDataForPrompt(medziagas, istorija);
+      const sharedForecasts = await fetchLatestMaterialForecasts();
+      const forecastMap = new Map(sharedForecasts.map(f => [f.artikulas, f]));
+      const loaded = medziagas
+        .map((m) => {
+          const row = forecastMap.get(m.artikulas);
+          if (!row) return null;
+          return {
+            artikulas: row.artikulas,
+            kaina: row.kaina_min,
+            data: row.data,
+            reasoning: 'Prognozė iš Analizė skilties',
+            confidence: row.pasitikejimas ?? undefined,
+            citations: [],
+          } as AiPrediction;
+        })
+        .filter(Boolean) as AiPrediction[];
 
-      const contextParts: string[] = [];
-      if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${analytics.nafta}`);
-      if (analytics?.geoevents) contextParts.push(`GEOPOLITINIAI ĮVYKIAI:\n${analytics.geoevents}`);
-      if (analytics?.content) contextParts.push(`ANKSTESNĖ ANALIZĖ:\n${analytics.content}`);
-
-      const materialList = medziagas.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
-
-      let resultText = '';
-      const msgs: Anthropic.MessageParam[] = [{
-        role: 'user',
-        content: `Šiandien yra ${today}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
-
-ISTORINIAI KAINŲ DUOMENYS:
-${priceData}
-
-${contextParts.join('\n\n')}
-
-MEDŽIAGOS:
-${materialList}
-
-SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON. Formatas:
-[
-  {"artikulas": "CODE", "kaina": 1.23, "data": "YYYY-MM-DD", "reasoning": "Trumpas paaiškinimas lietuvių kalba (1-2 sakiniai)"}
-]
-
-Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kaina_min reikšmė. "data" yra prognozės data (3 mėn. nuo šiandien).`,
-      }];
-
-      while (true) {
-        const stream = client.messages.stream({
-          model: MODEL, max_tokens: 2000,
-          system: `Medžiagų kainų prognozavimo ekspertas. Atsakykite TIK JSON formatu. Šiandien: ${today}.`,
-          tools: webSearchTool, messages: msgs,
-        });
-        stream.on('text', d => { resultText += d; });
-        const msg = await stream.finalMessage();
-        if (msg.stop_reason !== 'pause_turn') break;
-        msgs.push({ role: 'assistant', content: msg.content as any });
+      if (loaded.length === 0) {
+        onError?.('Nėra išsaugotų AI prognozių. Pirmiausia sugeneruokite analizę.');
+        setAiToggle(false);
+        return;
       }
 
-      // Parse JSON from response (handle markdown code blocks)
-      const jsonMatch = resultText.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error('AI negrąžino JSON formato');
-      const parsed: AiPrediction[] = JSON.parse(jsonMatch[0]);
-      setAiPredictions(parsed);
+      const normalizedPredictions = loaded;
+
+      const sanitized = normalizedPredictions.map(pred => {
+        const historyEntries = istorija
+          .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
+          .sort((a, b) => b.data.localeCompare(a.data));
+        const lastActual = historyEntries[0]?.kaina_min;
+        return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
+      });
+      setAiPredictions(sanitized);
+      setAiResponseCitations([]);
     } catch (err: any) {
       console.error('AI prediction error:', err);
       onError?.(err.message || 'Nepavyko gauti DI prognozės');
@@ -787,7 +981,7 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, analytics]);
+  }, [aiLoading, medziagas, istorija, onError]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
@@ -846,9 +1040,10 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
       // Add AI prediction point if toggle is on
       const aiPred = aiToggle ? aiPredictions.find(p => p.artikulas === m.artikulas) : null;
       if (aiPred && aiPred.kaina > 0) {
-        const lastPoint = points.find(p => p.kaina !== null && p.aiPredicted === undefined);
         const lastActual = [...points].reverse().find(p => p.kaina !== null);
         if (lastActual) {
+          const adjustedAiValue = computeAiAdjustedPrice(aiPred, lastActual.kaina || aiPred.kaina);
+
           // Bridge from last actual to AI prediction
           const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
           if (!bridgeExists) {
@@ -863,17 +1058,18 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
             date: aiPred.data,
             label: aiPred.data,
             kaina: null,
-            aiPredicted: aiPred.kaina,
+            aiPredicted: adjustedAiValue,
           });
         }
       }
 
       // Compute Y-axis domain
+      const lastActualForDomain = [...points].reverse().find(p => p.kaina !== null);
       const allValues = [
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
         ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
-        ...(aiPred ? [aiPred.kaina] : []),
+        ...(aiPred && lastActualForDomain ? [computeAiAdjustedPrice(aiPred, lastActualForDomain.kaina || aiPred.kaina)] : []),
       ];
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
@@ -945,6 +1141,13 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
           )}
         </div>
       </div>
+      {aiToggle && aiResponseCitations.length > 0 && (
+        <div className="flex justify-center">
+          <span className="text-[11px] px-2 py-1 rounded-full" style={{ background: 'rgba(37,99,235,0.08)', color: '#1d4ed8' }}>
+            Šaltiniai: {aiResponseCitations.length}
+          </span>
+        </div>
+      )}
 
       {charts.map(({ material, entries, prediction, points, minY, maxY, aiPred }) => (
         <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
@@ -972,6 +1175,9 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
                   style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
                   title={aiPred.reasoning}>
                   AI {aiPred.data}: {aiPred.kaina.toFixed(2)}
+                  {typeof aiPred.confidence === 'number' && (
+                    <span className="ml-1 opacity-70">({Math.round(aiPred.confidence)}%)</span>
+                  )}
                 </span>
               )}
             </div>
@@ -1091,16 +1297,6 @@ Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kain
               </LineChart>
             </ResponsiveContainer>
           </div>
-          {/* AI reasoning text below chart */}
-          {aiPred?.reasoning && (
-            <div className="px-4 pb-3">
-              <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11px]"
-                style={{ background: 'rgba(124,58,237,0.04)', border: '0.5px solid rgba(124,58,237,0.12)', color: '#6d28d9' }}>
-                <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
-                <span>{aiPred.reasoning}</span>
-              </div>
-            </div>
-          )}
         </div>
       ))}
     </div>
@@ -1146,6 +1342,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
+  const [analysisMeta, setAnalysisMeta] = useState<{
+    nafta: AnalysisSectionMeta;
+    geo: AnalysisSectionMeta;
+    analysis: AnalysisSectionMeta;
+  }>({
+    nafta: { confidence: 0, citations: [] },
+    geo: { confidence: 0, citations: [] },
+    analysis: { confidence: 0, citations: [] },
+  });
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1182,29 +1387,102 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     } finally { setLoading(false); }
   }, []);
 
-  // ---- analytics generation (streams, uses web_search) ----
+  // ---- analytics generation (web search + citations + safety metadata) ----
   const generateAnalyticsFromData = useCallback(async (
-    meds: Medžiaga[], hist: KainuIrašas[]
+    meds: Medžiaga[],
+    hist: KainuIrašas[],
+    sections: Array<'nafta' | 'geo' | 'analysis'> = ['nafta', 'geo', 'analysis']
   ) => {
     if (genLoading) return;
     setGenLoading(true);
-    setStreamNafta('');
-    setStreamGeo('');
-    setStreamAnalysis('');
+    const targetSections = new Set(sections);
+    if (targetSections.has('nafta')) setStreamNafta('');
+    if (targetSections.has('geo')) setStreamGeo('');
+    if (targetSections.has('analysis')) setStreamAnalysis('');
     const client = new Anthropic({
       apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       dangerouslyAllowBrowser: true,
     });
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
+    const ANALYTICS_RETRY_ATTEMPTS = 2;
+    const MAX_TOOL_TURNS = 2;
+    const BETWEEN_STEP_DELAY_MS = 1500;
+
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    const runWebStep = async (params: {
+      system: string;
+      user: string;
+      maxTokens: number;
+    }): Promise<ExtractedResponseText> => {
+      const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
+      let mergedText = '';
+      let mergedCitations: ExtractedCitation[] = [];
+
+      let turn = 0;
+      while (true) {
+        turn += 1;
+        let response: any = null;
+        let lastError: any = null;
+        for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
+          try {
+            response = await client.messages.create({
+              model: ANALYTICS_MODEL,
+              max_tokens: params.maxTokens,
+              system: params.system,
+              tools: webSearchTool,
+              messages: msgs,
+            });
+            break;
+          } catch (err: any) {
+            lastError = err;
+            const isRateLimited = err?.status === 429;
+            if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
+              throw err;
+            }
+            await sleep(2200 * (attempt + 1));
+          }
+        }
+        if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
+
+        const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
+        const isPauseTurn = response.stop_reason === 'pause_turn';
+        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) {
+          if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
+        }
+        if (extracted.citations.length > 0) {
+          const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
+          for (const citation of extracted.citations) {
+            const key = `${citation.title}|${citation.url}`;
+            if (!seen.has(key)) {
+              mergedCitations.push(citation);
+              seen.add(key);
+            }
+          }
+        }
+        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) break;
+        msgs.push({ role: 'assistant', content: response.content as any });
+      }
+
+      return {
+        text: mergedText.trim(),
+        citations: mergedCitations,
+      };
+    };
+
     try {
-      // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
-      setGenStep('nafta');
-      let naftaText = '';
-      {
-        const msgs: Anthropic.MessageParam[] = [{
-          role: 'user',
-          content: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
+      let naftaText = analytics?.nafta || '';
+      let geoText = analytics?.geoevents || '';
+      let analysisText = analytics?.content || '';
+
+      if (targetSections.has('nafta')) {
+        // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
+        setGenStep('nafta');
+        const naftaResult = await runWebStep({
+          maxTokens: 700,
+          system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
 2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
@@ -1212,74 +1490,158 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 4. **Styreno kaina** — jei randama, dabartinė styreno (pagrindinis poliestetinės dervos komponentas) kaina Europoje
 
 Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`,
-        }];
-        while (true) {
-          const stream = client.messages.stream({
-            model: MODEL, max_tokens: 1500,
-            system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
-            tools: webSearchTool, messages: msgs,
-          });
-          stream.on('text', d => { naftaText += d; setStreamNafta(naftaText); });
-          const msg = await stream.finalMessage();
-          if (msg.stop_reason !== 'pause_turn') break;
-          msgs.push({ role: 'assistant', content: msg.content as any });
+        });
+        naftaText = naftaResult.text;
+        setStreamNafta(naftaText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
+        }));
+        if (targetSections.has('geo') || targetSections.has('analysis')) {
+          await sleep(BETWEEN_STEP_DELAY_MS);
         }
       }
 
-      // -- Step 2: Geopolitical events --
-      setGenStep('geo');
-      let geoText = '';
-      {
-        const msgs: Anthropic.MessageParam[] = [{
-          role: 'user',
-          content: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
-        }];
-        while (true) {
-          const stream = client.messages.stream({
-            model: MODEL, max_tokens: 1024,
-            system: `Rinkos žvalgybů analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
-            tools: webSearchTool, messages: msgs,
-          });
-          stream.on('text', d => { geoText += d; setStreamGeo(geoText); });
-          const msg = await stream.finalMessage();
-          if (msg.stop_reason !== 'pause_turn') break;
-          msgs.push({ role: 'assistant', content: msg.content as any });
+      if (targetSections.has('geo')) {
+        // -- Step 2: Geopolitical events --
+        setGenStep('geo');
+        const geoResult = await runWebStep({
+          maxTokens: 550,
+          system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
+        });
+        geoText = geoResult.text;
+        setStreamGeo(geoText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
+        }));
+        if (targetSections.has('analysis')) {
+          await sleep(BETWEEN_STEP_DELAY_MS);
         }
       }
-      // -- Step 3: Price analysis (enriched with oil context) --
-      setGenStep('analysis');
-      let analysisText = '';
-      const priceData = formatPriceDataForPrompt(meds, hist);
-      {
-        const msgs: Anthropic.MessageParam[] = [{
-          role: 'user',
-          content: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
+
+      if (targetSections.has('analysis')) {
+        // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
+        setGenStep('analysis');
+        const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
+        const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 4500);
+        const trendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 4500);
+        const boundedNaftaText = truncatePromptSection(naftaText, 2500);
+        const boundedGeoText = truncatePromptSection(geoText, 2200);
+        const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
+        const analysisResult = await runWebStep({
+          maxTokens: 2200,
+          system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Įvertinkite žaliavų kainų prognozes remdamiesi:
+
+1) Geopolitika (karai, tarifai, sankcijos, tiekimo sutrikimai)
+2) Naftos kaina ir jos tendencijos
+3) Medžiagų istorinėmis kainomis ir jų trendu
+
+MEDŽIAGŲ SĄRAŠAS:
+${materialList}
+
+DABARTINĖS / PASKUTINĖS KAINOS:
+${latestPrices}
+
+KAINŲ TENDENCIJOS:
+${trendData}
 
 ISTORINIAI KAINŲ DUOMENYS:
 ${priceData}
 
 NAFTOS KAINŲ KONTEKSTAS:
-${naftaText}
+${boundedNaftaText}
 
-Pateikite lietuvių kalba:
-1. **Kainų tendencijos** – kiekvienos medžiagos kainos pokytis
-2. **Kainų prognozė** – 3–6 mėnesių prognozė atsižvelgiant į naftos kainų tendencijas
-3. **Rinkos veiksniai** – nafta, styrenas, energija, tiekimo grandinė
-4. **Rekomendacijos** – pirkimo strategija (ar laukti, ar pirkti dabar)`,
-        }];
-        while (true) {
-          const stream = client.messages.stream({
-            model: MODEL, max_tokens: 3000,
-            thinking: { type: 'adaptive' },
-            system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
-            tools: webSearchTool, messages: msgs,
-          });
-          stream.on('text', d => { analysisText += d; setStreamAnalysis(analysisText); });
-          const msg = await stream.finalMessage();
-          if (msg.stop_reason !== 'pause_turn') break;
-          msgs.push({ role: 'assistant', content: msg.content as any });
+GEOPOLITINIS KONTEKSTAS:
+${boundedGeoText}
+
+Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
+{
+  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais.",
+  "forecasts": [
+    {
+      "artikulas": "MEDZIAGOS_KODAS",
+      "kaina": 1.23,
+      "data": "YYYY-MM-DD",
+      "confidence": 0-100,
+      "reasoning": "Trumpas paaiškinimas."
+    }
+  ]
+}
+
+Taisyklės:
+- "forecasts" turi turėti po vieną įrašą kiekvienai medžiagai iš sąrašo.
+- "kaina" turi būti skaičius ir realistiška pagal trendą bei kontekstą.
+- "data" turi būti ~3 mėn. nuo šiandien.
+- Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`,
+        });
+        const fallbackDate = addMonthsISO(today, 3);
+        let parsedForecasts: AiPrediction[] = [];
+        try {
+          const analysisPayload = extractJsonPayload(analysisResult.text);
+          const parsed = analysisPayload as AnalysisForecastResponsePayload;
+          parsedForecasts = normalizeAnalysisForecasts(analysisPayload, meds, fallbackDate);
+          if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
+            analysisText = parsed.analysis_markdown.trim();
+          } else {
+            analysisText = analysisResult.text;
+          }
+        } catch {
+          analysisText = analysisResult.text;
+          parsedForecasts = [];
+        }
+
+        let mergedForecasts: AiPrediction[] = [];
+        if (parsedForecasts.length > 0) {
+          mergedForecasts = meds.map((m) => {
+            const aiPred = parsedForecasts.find(p => p.artikulas === m.artikulas);
+            if (aiPred) return aiPred;
+            const entries = hist
+              .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
+              .sort((a, b) => a.data.localeCompare(b.data));
+            const math = computePrediction(entries);
+            if (!math) return null;
+            return {
+              artikulas: m.artikulas,
+              kaina: (math.kaina_min + math.kaina_max) / 2,
+              data: math.data,
+              reasoning: 'Papildyta atsargine matematine prognoze (trūko DI įrašo).',
+              confidence: Math.round(math.confidence * 100),
+            } as AiPrediction;
+          }).filter(Boolean) as AiPrediction[];
+        } else {
+          addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Grafui nebus atnaujinta AI serija.');
+        }
+
+        const sanitized = mergedForecasts.map((pred) => {
+          const historyEntries = hist
+            .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
+            .sort((a, b) => b.data.localeCompare(a.data));
+          const lastActual = historyEntries[0]?.kaina_min;
+          return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
+        });
+
+        setStreamAnalysis(analysisText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
+        }));
+
+        if (sanitized.length > 0) {
+          await saveMaterialForecasts(
+            sanitized.map((item) => ({
+              artikulas: item.artikulas,
+              data: item.data,
+              kaina_min: item.kaina,
+              kaina_max: item.kaina,
+              pasitikejimas: item.confidence ?? null,
+            }))
+          );
         }
       }
+
       await saveGeneralAnalysis(analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
@@ -1287,12 +1649,22 @@ Pateikite lietuvių kalba:
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
       console.error('Analytics error:', err);
-      addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
+      if (err?.status === 429) {
+        addNotif(
+          'error',
+          'Viršytas DI limitas',
+          'Anthropic limitas viršytas. Sumažinome užklausos dydį ir bandome pakartotinai, bet šiuo metu reikia palaukti 1-2 min. arba sumažinti analizuojamų duomenų kiekį.'
+        );
+      } else {
+        addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
+      }
     } finally { setGenLoading(false); setGenStep('idle'); }
-  }, [genLoading]);
+  }, [genLoading, analytics]);
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
+  const regenerateAnalysisSection = useCallback((section: 'nafta' | 'geo' | 'analysis') =>
+    generateAnalyticsFromData(medziagas, istorija, [section]), [generateAnalyticsFromData, medziagas, istorija]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
@@ -1492,23 +1864,34 @@ Pateikite lietuvių kalba:
     return <span className="flex flex-col items-center leading-tight"><span className="text-[10px]" style={{ color: '#b0aba4' }}>{y}</span><span>{m}-{dd}</span></span>;
   };
 
-  const renderMd = (text: string) =>
-    text.split('\n').map((line, i) => {
-      if (line.startsWith('## ')) return <h3 key={i} className="text-xs font-bold mt-3 mb-1" style={{ color: '#3d3935' }}>{line.slice(3)}</h3>;
-      if (line.startsWith('# ')) return <h2 key={i} className="text-sm font-bold mt-3 mb-1" style={{ color: '#3d3935' }}>{line.slice(2)}</h2>;
-      if (line.startsWith('- ') || line.startsWith('• '))
-        return <li key={i} className="text-xs ml-4 list-disc leading-relaxed" style={{ color: '#5a5550' }}>{line.slice(2)}</li>;
-      if (line.trim() === '') return <div key={i} className="h-1.5" />;
-      const parts = line.split(/\*\*(.*?)\*\*/g);
-      return <p key={i} className="text-xs leading-relaxed" style={{ color: '#5a5550' }}>
-        {parts.map((p, j) => j % 2 === 1 ? <strong key={j} style={{ color: '#3d3935' }}>{p}</strong> : p)}
-      </p>;
-    });
+  const renderMd = (text: string) => (
+    <div
+      className="text-xs"
+      dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(text || '') }}
+    />
+  );
 
-  const naftaDisplay = genLoading ? streamNafta : (analytics?.nafta ?? '');
-  const geoDisplay = genLoading ? streamGeo : (analytics?.geoevents ?? '');
-  const analysisDisplay = genStep === 'analysis' ? streamAnalysis : (!genLoading ? (analytics?.content ?? '') : '');
-  const lastUpdated = analytics?.atnaujinta ?? null;
+  const naftaDisplay = streamNafta || analytics?.nafta || '';
+  const geoDisplay = streamGeo || analytics?.geoevents || '';
+  const analysisDisplay = streamAnalysis || analytics?.content || '';
+  const lastUpdated = analytics?.sukurta_at ?? null;
+  const renderCitations = (meta: AnalysisSectionMeta) => {
+    if (!meta.citations.length) return null;
+    return (
+      <div className="mt-2 pt-2 border-t border-blue-100">
+        <p className="text-[10px] font-semibold mb-1" style={{ color: '#1d4ed8' }}>Šaltiniai ({meta.citations.length})</p>
+        <ul className="space-y-1">
+          {meta.citations.slice(0, 5).map((c, idx) => (
+            <li key={`${c.url}-${idx}`} className="truncate text-[10px]">
+              <a href={c.url} target="_blank" rel="noreferrer" className="underline" style={{ color: '#1d4ed8' }}>
+                {c.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
 
   // ---- render ----
   return (
@@ -1673,13 +2056,17 @@ Pateikite lietuvių kalba:
           <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
-          <div className="space-y-4 max-w-3xl">
+          <div className="space-y-4 max-w-4xl">
             {/* Controls row */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between rounded-xl border px-4 py-3 bg-white"
+              style={{ borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
               <div>
-                <span className="text-xs" style={{ color: '#8a857f' }}>
+                <span className="text-xs font-medium" style={{ color: '#6b7280' }}>
                   {lastUpdated ? `Atnaujinta: ${relativeTime(lastUpdated)}` : 'Analizė dar nesugeneruota'}
                 </span>
+                <div className="text-[11px] mt-1" style={{ color: '#8a857f' }}>
+                  Rodomi šaltiniai ir apytikslis patikimumas pagal citatų kiekį.
+                </div>
               </div>
               <button onClick={generateAnalytics} disabled={genLoading}
                 className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
@@ -1697,7 +2084,17 @@ Pateikite lietuvių kalba:
                 style={{ background: 'linear-gradient(135deg,#78350f 0%,#b45309 100%)' }}>
                 <BarChart2 className="w-4 h-4 text-white opacity-90" />
                 <span className="text-xs font-semibold text-white">Naftos kainos &middot; Styrenas &middot; Dervos ryšys</span>
-                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
+                  Patikimumas ~{Math.round(analysisMeta.nafta.confidence)}%
+                </span>
+                <button
+                  onClick={() => regenerateAnalysisSection('nafta')}
+                  disabled={genLoading}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                >
+                  Regeneruoti
+                </button>
+                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
                 {naftaDisplay ? (
@@ -1713,6 +2110,7 @@ Pateikite lietuvių kalba:
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
+                {renderCitations(analysisMeta.nafta)}
               </div>
             </div>
 
@@ -1723,7 +2121,17 @@ Pateikite lietuvių kalba:
                 style={{ background: 'linear-gradient(135deg,#1a3a5c 0%,#2563a8 100%)' }}>
                 <Globe className="w-4 h-4 text-white opacity-90" />
                 <span className="text-xs font-semibold text-white">Geopolitiniai įvykiai &middot; Rinkos sąlygos</span>
-                {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
+                  Patikimumas ~{Math.round(analysisMeta.geo.confidence)}%
+                </span>
+                <button
+                  onClick={() => regenerateAnalysisSection('geo')}
+                  disabled={genLoading}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                >
+                  Regeneruoti
+                </button>
+                {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
                 {geoDisplay ? (
@@ -1739,6 +2147,7 @@ Pateikite lietuvių kalba:
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
+                {renderCitations(analysisMeta.geo)}
               </div>
             </div>
 
@@ -1749,7 +2158,17 @@ Pateikite lietuvių kalba:
                 style={{ background: 'linear-gradient(135deg,#0f4c2a 0%,#166534 100%)' }}>
                 <TrendingUp className="w-4 h-4 text-white opacity-90" />
                 <span className="text-xs font-semibold text-white">Kainų analizė &middot; Prognozė</span>
-                {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin ml-auto" />}
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
+                  Patikimumas ~{Math.round(analysisMeta.analysis.confidence)}%
+                </span>
+                <button
+                  onClick={() => regenerateAnalysisSection('analysis')}
+                  disabled={genLoading}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                >
+                  Regeneruoti
+                </button>
+                {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
                 {analysisDisplay ? (
@@ -1765,6 +2184,7 @@ Pateikite lietuvių kalba:
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
+                {renderCitations(analysisMeta.analysis)}
               </div>
             </div>
 

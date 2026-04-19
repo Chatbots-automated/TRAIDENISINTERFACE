@@ -218,6 +218,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [aiVarEditLoading, setAiVarEditLoading] = useState(false);
   const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
   const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
+  const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>(tools);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -236,6 +237,30 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     // Check if a DOCX template exists
     getDocxTemplateFileId().then(id => { setHasDocxTemplate(!!id); setGlobalDocxFileId(id); });
+  }, []);
+
+  useEffect(() => {
+    const loadActiveSdkTools = async () => {
+      try {
+        // Prefer new dedicated key, fallback to legacy key if still present
+        const schemaVar = await getInstructionVariable('sdk_chat_tool_schemas')
+          || await getInstructionVariable('sdk_tool_schemas');
+
+        if (!schemaVar?.content?.trim()) {
+          setActiveSdkTools(tools);
+          return;
+        }
+
+        const parsed = JSON.parse(schemaVar.content);
+        if (!Array.isArray(parsed)) throw new Error('Schema config must be an array');
+        setActiveSdkTools(parsed as Anthropic.Tool[]);
+      } catch (error) {
+        console.error('[SDK Tools] Failed to load schema. Falling back to defaults.', error);
+        setActiveSdkTools(tools);
+      }
+    };
+
+    loadActiveSdkTools();
   }, []);
 
   // Re-hydrate current global template pointer when opening viewers/panels.
@@ -392,6 +417,41 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } finally {
       setLoadingPrompt(false);
     }
+  };
+
+  const limitAnthropicContext = (
+    messages: Anthropic.MessageParam[],
+    maxChars = 90000,
+    maxMessages = 50
+  ): { messages: Anthropic.MessageParam[]; trimmed: boolean; originalCount: number } => {
+    let totalChars = 0;
+    const selected: Anthropic.MessageParam[] = [];
+
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
+      const contentChars = typeof msg.content === 'string'
+        ? msg.content.length
+        : JSON.stringify(msg.content).length;
+
+      const exceedsMessageLimit = selected.length >= maxMessages;
+      const exceedsCharLimit = totalChars + contentChars > maxChars;
+      if ((exceedsMessageLimit || exceedsCharLimit) && selected.length > 0) break;
+
+      selected.push(msg);
+      totalChars += contentChars;
+    }
+
+    const trimmedMessages = selected.reverse();
+
+    while (trimmedMessages.length > 0 && trimmedMessages[0].role !== 'user') {
+      trimmedMessages.shift();
+    }
+
+    return {
+      messages: trimmedMessages,
+      trimmed: trimmedMessages.length < messages.length,
+      originalCount: messages.length
+    };
   };
 
   const fetchTemplateVariable = async (): Promise<string> => {
@@ -875,7 +935,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const contextualSystemPrompt = systemPrompt + (promptTemplate ? `\n\n${promptTemplate}` : '');
 
       console.log('[Silent Button] Sending button value to API silently');
-      await processAIResponse(anthropic, anthropicMessages, contextualSystemPrompt, conversation, messagesWithSilentMessage);
+      const bounded = limitAnthropicContext(anthropicMessages);
+      await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, messagesWithSilentMessage);
 
       // After response, update conversation with both silent message and AI response
       setLoading(false);
@@ -1027,7 +1088,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         thinking: { type: 'enabled', budget_tokens: 5000 },
         system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
         messages: messages,
-        tools: tools
+        tools: activeSdkTools
       });
 
       let thinkingContent = '';
@@ -1699,7 +1760,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
 
       // Start recursive tool use loop
-      await processAIResponse(anthropic, anthropicMessages, contextualSystemPrompt, conversation, updatedMessages);
+      const bounded = limitAnthropicContext(anthropicMessages);
+      if (bounded.trimmed) {
+        addNotification('info', 'Kontekstas sutrumpintas', `Siunčiama ${bounded.messages.length}/${bounded.originalCount} paskutinių žinučių, kad neviršytume SDK limito.`);
+      }
+      await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, updatedMessages);
     } catch (err: any) {
       console.error('Error sending message:', err);
       await appLogger.logError({
@@ -1713,6 +1778,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         }
       });
       addErrorNotification('Klaida', err, 'Nepavyko išsiųsti žinutės');
+      if ((err?.message || '').toLowerCase().includes('prompt is too long')) {
+        addNotification('info', 'Per ilgas prompt', 'Kontekstas viršijo modelio limitą. Patikrinkite instrukcijas ir SDK schemų dydį.');
+      }
       setConversationStreamingContent(conversation.id, '');
     } finally {
       setLoading(false);
@@ -4600,6 +4668,18 @@ Vartotojo instrukcija: ${instruction}`;
                 >
                   {showTemplateView ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
                 </button>
+                {user.is_admin && (
+                  <button
+                    onClick={() => {
+                      setShowPromptModal(false);
+                      setShowTemplateView(false);
+                      navigate('/instrukcijos?schema=sdk');
+                    }}
+                    className="btn btn-xs btn-soft"
+                  >
+                    SDK schemos
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => {
@@ -4619,7 +4699,6 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
         </div>
       )}
-
 
       {/* Notification Container */}
       <NotificationContainer

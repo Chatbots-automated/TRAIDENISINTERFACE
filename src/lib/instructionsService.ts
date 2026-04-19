@@ -48,14 +48,15 @@ export async function getInstructionVariable(variableKey: string): Promise<Instr
     .from('instruction_variables')
     .select('*')
     .eq('variable_key', variableKey)
-    .single();
+    .limit(1);
 
   if (error) {
     console.error('Error fetching instruction variable:', error);
     return null;
   }
 
-  return data;
+  if (!data || (Array.isArray(data) && data.length === 0)) return null;
+  return Array.isArray(data) ? (data[0] as InstructionVariable) : (data as InstructionVariable);
 }
 
 /**

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   FileText,
   Save,
@@ -19,6 +20,7 @@ import {
 import type { AppUser } from '../types';
 import {
   getInstructionVariables,
+  getInstructionVariable,
   saveInstructionVariable,
   verifyUserPassword,
   getVersionHistory,
@@ -26,15 +28,32 @@ import {
   InstructionVariable,
   InstructionVersion
 } from '../lib/instructionsService';
+import { dbAdmin } from '../lib/database';
 import { colors } from '../lib/designSystem';
+import { tools as defaultSdkTools } from '../lib/toolDefinitions';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
 }
 
 type View = 'editor' | 'versions';
+const DEFAULT_KAINOS_TOOLS = [
+  { type: 'web_search_20260209', name: 'web_search' }
+];
+const DEFAULT_KAINOS_AI_PROMPT = `Šiandien yra {{today}}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
+
+ISTORINIAI KAINŲ DUOMENYS:
+{{priceData}}
+
+{{contextParts}}
+
+MEDŽIAGOS:
+{{materialList}}
+
+SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON.`;
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
+  const location = useLocation();
   const [view, setView] = useState<View>('editor');
   const [variables, setVariables] = useState<InstructionVariable[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
@@ -51,6 +70,23 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [versions, setVersions] = useState<InstructionVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
+  const [showSchemaEditor, setShowSchemaEditor] = useState(false);
+  const [schemaKey, setSchemaKey] = useState<'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas'>('sdk_chat_tool_schemas');
+  const [editorTab, setEditorTab] = useState<'schema' | 'kainos_prompt'>('schema');
+  const [schemaContent, setSchemaContent] = useState('');
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaSaving, setSchemaSaving] = useState(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [schemaSuccess, setSchemaSuccess] = useState<string | null>(null);
+  const [kainosPromptContent, setKainosPromptContent] = useState('');
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [promptSuccess, setPromptSuccess] = useState<string | null>(null);
+  const [editorUnlocked, setEditorUnlocked] = useState(false);
+  const [editorPassword, setEditorPassword] = useState('');
+  const [editorPasswordError, setEditorPasswordError] = useState('');
+  const [unlockingEditor, setUnlockingEditor] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const selectedVariable = variables[selectedIndex] || null;
@@ -58,6 +94,18 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   useEffect(() => {
     loadVariables();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const schemaParam = params.get('schema');
+    if (schemaParam === 'sdk') {
+      openCombinedEditor('schema', 'sdk_chat_tool_schemas');
+    } else if (schemaParam === 'kainos') {
+      openSchemaEditor('kainos_ai_tool_schemas');
+    } else if (schemaParam === 'kainos-prompt') {
+      openCombinedEditor('kainos_prompt');
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (view === 'versions') {
@@ -175,6 +223,177 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
     setIsEditing(false);
     setIsAuthenticated(false);
+  };
+
+  const loadSchemaContent = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    setSchemaLoading(true);
+    setSchemaError(null);
+    try {
+      const existing = await getInstructionVariable(targetKey);
+      if (existing?.content?.trim()) {
+        const parsed = JSON.parse(existing.content);
+        setSchemaContent(JSON.stringify(parsed, null, 2));
+      } else {
+        const fallback = targetKey === 'sdk_chat_tool_schemas' ? defaultSdkTools : DEFAULT_KAINOS_TOOLS;
+        setSchemaContent(JSON.stringify(fallback, null, 2));
+      }
+    } catch (err: any) {
+      console.error('[SchemaEditor] Load failed:', err);
+      setSchemaError('Nepavyko užkrauti schemos JSON');
+      const fallback = targetKey === 'sdk_chat_tool_schemas' ? defaultSdkTools : DEFAULT_KAINOS_TOOLS;
+      setSchemaContent(JSON.stringify(fallback, null, 2));
+    } finally {
+      setSchemaLoading(false);
+    }
+  };
+
+  const openSchemaEditor = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    setEditorTab('schema');
+    setSchemaKey(targetKey);
+    setSchemaSuccess(null);
+    setShowSchemaEditor(true);
+    setEditorUnlocked(false);
+    setEditorPassword('');
+    setEditorPasswordError('');
+    await loadSchemaContent(targetKey);
+  };
+
+  const getSchemaDisplayName = (key: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => (
+    key === 'sdk_chat_tool_schemas' ? 'SDK pokalbių įrankių schema' : 'Žaliavų (Kainos) analizės įrankių schema'
+  );
+
+  const validateSchemaArray = (parsed: any): string | null => {
+    if (!Array.isArray(parsed)) return 'Schema turi būti JSON masyvas';
+    for (let i = 0; i < parsed.length; i += 1) {
+      const item = parsed[i];
+      if (!item || typeof item !== 'object') return `Įrašas #${i + 1} turi būti objektas`;
+      if (!item.name || typeof item.name !== 'string') return `Įrašas #${i + 1} neturi teisingo "name"`;
+      if (!item.input_schema || typeof item.input_schema !== 'object') return `Įrašas #${i + 1} neturi "input_schema" objekto`;
+    }
+    return null;
+  };
+
+  const saveSchema = async () => {
+    setSchemaSaving(true);
+    setSchemaError(null);
+    setSchemaSuccess(null);
+    try {
+      const parsed = JSON.parse(schemaContent);
+      const validationError = validateSchemaArray(parsed);
+      if (validationError) {
+        setSchemaError(validationError);
+        return;
+      }
+
+      const normalized = JSON.stringify(parsed, null, 2);
+      const existing = await getInstructionVariable(schemaKey);
+      if (existing) {
+        const result = await saveInstructionVariable(schemaKey, normalized, user.id, user.email, true);
+        if (!result.success) throw new Error(result.error || 'Nepavyko išsaugoti schemos');
+      } else {
+        const { error: insertError } = await dbAdmin
+          .from('instruction_variables')
+          .insert([{
+            variable_key: schemaKey,
+            variable_name: getSchemaDisplayName(schemaKey),
+            content: normalized,
+            display_order: 999,
+            updated_by: user.id
+          }]);
+        if (insertError) throw insertError;
+        await loadVariables();
+      }
+
+      setSchemaContent(normalized);
+      setSchemaSuccess('Schema išsaugota');
+      setTimeout(() => setSchemaSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('[SchemaEditor] Save failed:', err);
+      setSchemaError(err?.message || 'Nepavyko išsaugoti schemos');
+    } finally {
+      setSchemaSaving(false);
+    }
+  };
+
+  const openPromptEditor = async () => {
+    setPromptLoading(true);
+    setPromptError(null);
+    setPromptSuccess(null);
+    try {
+      const promptVar = await getInstructionVariable('kainos_ai_prediction_prompt');
+      setKainosPromptContent(promptVar?.content?.trim() ? promptVar.content : DEFAULT_KAINOS_AI_PROMPT);
+    } catch (err: any) {
+      console.error('[KainosPrompt] Load failed:', err);
+      setPromptError('Nepavyko užkrauti Žaliavų prompt');
+      setKainosPromptContent(DEFAULT_KAINOS_AI_PROMPT);
+    } finally {
+      setPromptLoading(false);
+    }
+  };
+
+  const openCombinedEditor = async (tab: 'schema' | 'kainos_prompt', schemaTarget?: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    setShowSchemaEditor(true);
+    setEditorTab(tab);
+    setEditorUnlocked(false);
+    setEditorPassword('');
+    setEditorPasswordError('');
+    if (tab === 'schema') {
+      await openSchemaEditor(schemaTarget || schemaKey);
+    } else {
+      await openPromptEditor();
+    }
+  };
+
+  const handleUnlockEditor = async () => {
+    setEditorPasswordError('');
+    setUnlockingEditor(true);
+    try {
+      const isValid = await verifyUserPassword(user.email, editorPassword);
+      if (!isValid) {
+        setEditorPasswordError('Neteisingas slaptažodis');
+        return;
+      }
+      setEditorUnlocked(true);
+      setEditorPassword('');
+    } finally {
+      setUnlockingEditor(false);
+    }
+  };
+
+  const saveKainosPrompt = async () => {
+    setPromptSaving(true);
+    setPromptError(null);
+    setPromptSuccess(null);
+    try {
+      const content = kainosPromptContent.trim();
+      if (!content) {
+        setPromptError('Prompt negali būti tuščias');
+        return;
+      }
+      const existing = await getInstructionVariable('kainos_ai_prediction_prompt');
+      if (existing) {
+        const result = await saveInstructionVariable('kainos_ai_prediction_prompt', content, user.id, user.email, true);
+        if (!result.success) throw new Error(result.error || 'Nepavyko išsaugoti prompt');
+      } else {
+        const { error: insertError } = await dbAdmin
+          .from('instruction_variables')
+          .insert([{
+            variable_key: 'kainos_ai_prediction_prompt',
+            variable_name: 'Žaliavų AI prompt',
+            content,
+            display_order: 998,
+            updated_by: user.id
+          }]);
+        if (insertError) throw insertError;
+      }
+      setPromptSuccess('Prompt išsaugotas');
+      setTimeout(() => setPromptSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('[KainosPrompt] Save failed:', err);
+      setPromptError(err?.message || 'Nepavyko išsaugoti prompt');
+    } finally {
+      setPromptSaving(false);
+    }
   };
 
   const getRelativeTime = (dateString: string) => {
@@ -330,6 +549,22 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
         {/* Sidebar Footer */}
         <div className="p-3" style={{ borderTop: `1px solid ${colors.border.default}` }}>
+          <div className="mb-2 space-y-2">
+            <button
+              onClick={() => openCombinedEditor('schema', 'sdk_chat_tool_schemas')}
+              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+            >
+              SDK
+            </button>
+            <button
+              onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
+              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
+              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+            >
+              Žaliavos
+            </button>
+          </div>
           <VersionHistoryButton onClick={() => setView('versions')} />
         </div>
       </div>
@@ -485,6 +720,187 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         )}
       </div>
+
+      {showSchemaEditor && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-black/55 backdrop-blur-[2px]"
+          onClick={() => setShowSchemaEditor(false)}
+        >
+          <div
+            className="w-full max-w-5xl max-h-[90vh] rounded-2xl overflow-hidden border shadow-2xl"
+            style={{ background: colors.bg.white, borderColor: colors.border.default }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b flex items-center gap-4" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <div className="w-72 min-w-72">
+                <h3 className="text-sm font-semibold truncate" style={{ color: colors.text.primary }}>
+                  AI redaktorius
+                </h3>
+                <p className="text-[11px] truncate" style={{ color: colors.text.tertiary }}>
+                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : 'Žaliavų AI prompt redaktorius'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-1">
+                <button
+                  onClick={() => openCombinedEditor('schema')}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    color: editorTab === 'schema' ? colors.bg.white : colors.text.secondary,
+                    background: editorTab === 'schema' ? colors.interactive.accent : colors.bg.white,
+                    border: `1px solid ${editorTab === 'schema' ? colors.interactive.accent : colors.border.default}`
+                  }}
+                >
+                  {schemaKey === 'sdk_chat_tool_schemas' ? 'SDK schema' : 'Žaliavų schema'}
+                </button>
+                <button
+                  onClick={() => openCombinedEditor('kainos_prompt')}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    color: editorTab === 'kainos_prompt' ? colors.bg.white : colors.text.secondary,
+                    background: editorTab === 'kainos_prompt' ? colors.interactive.accent : colors.bg.white,
+                    border: `1px solid ${editorTab === 'kainos_prompt' ? colors.interactive.accent : colors.border.default}`
+                  }}
+                >
+                  Žaliavų prompt
+                </button>
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-[11px] font-mono px-2 py-1 rounded" style={{ background: colors.bg.white, color: colors.text.tertiary, border: `1px solid ${colors.border.default}` }}>
+                  {editorTab === 'schema' ? schemaKey : 'kainos_ai_prediction_prompt'}
+                </span>
+                <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-170px)]">
+              {editorTab === 'schema' ? (
+                schemaLoading ? (
+                  <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
+                ) : (
+                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
+                    <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
+                      JSON • UTF-8
+                    </div>
+                    <textarea
+                      value={schemaContent}
+                      onChange={(e) => setSchemaContent(e.target.value)}
+                      spellCheck={false}
+                      className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
+                      style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                      readOnly={!editorUnlocked}
+                    />
+                  </div>
+                )
+              ) : promptLoading ? (
+                <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
+              ) : (
+                <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
+                  <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
+                    Prompt tekstas • Palaikomi placeholderiai: {'{{today}} {{priceData}} {{contextParts}} {{materialList}}'}
+                  </div>
+                  <textarea
+                    value={kainosPromptContent}
+                    onChange={(e) => setKainosPromptContent(e.target.value)}
+                    className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
+                    style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+                    readOnly={!editorUnlocked}
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
+              <div className="flex-1 min-w-0">
+                {!editorUnlocked ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={editorPassword}
+                      onChange={(e) => setEditorPassword(e.target.value)}
+                      placeholder="Įveskite slaptažodį redagavimui"
+                      className="input input-sm w-64"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleUnlockEditor}
+                      disabled={unlockingEditor || !editorPassword.trim()}
+                    >
+                      {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
+                    </button>
+                    {editorPasswordError && (
+                      <span className="text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</span>
+                    )}
+                  </div>
+                ) : editorTab === 'schema' ? (
+                  schemaError ? (
+                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
+                      {schemaError}
+                    </div>
+                  ) : schemaSuccess ? (
+                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: colors.status.successBg, borderColor: colors.status.successBorder }}>
+                      {schemaSuccess}
+                    </div>
+                  ) : (
+                    <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
+                      Naudokite validų JSON masyvą. Išsaugojimas taikomas pasirinktai schemai.
+                    </div>
+                  )
+                ) : promptError ? (
+                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: colors.status.errorBg, borderColor: colors.status.errorBorder }}>
+                    {promptError}
+                  </div>
+                ) : promptSuccess ? (
+                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: colors.status.successBg, borderColor: colors.status.successBorder }}>
+                    {promptSuccess}
+                  </div>
+                ) : (
+                  <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
+                    Šis prompt naudojamas tik Žaliavų AI prognozei.
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {editorTab === 'schema' ? (
+                  <>
+                    <button
+                      className="btn btn-soft btn-sm"
+                      onClick={() => loadSchemaContent(schemaKey)}
+                      disabled={schemaLoading || schemaSaving || !editorUnlocked}
+                    >
+                      Perkrauti
+                    </button>
+                    <button
+                      className="btn btn-primary btn-sm gap-1.5"
+                      disabled={schemaSaving || schemaLoading || !editorUnlocked}
+                      onClick={saveSchema}
+                    >
+                      {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                      Išsaugoti
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-soft btn-sm"
+                      onClick={openPromptEditor}
+                      disabled={promptLoading || promptSaving || !editorUnlocked}
+                    >
+                      Perkrauti
+                    </button>
+                    <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
+                      {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                      Išsaugoti
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
