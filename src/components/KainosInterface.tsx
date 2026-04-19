@@ -957,23 +957,13 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         })
         .filter(Boolean) as AiPrediction[];
 
-      const normalizedPredictions = loaded.length > 0
-        ? loaded
-        : medziagas.map((m) => {
-          const entries = istorija
-            .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
-            .sort((a, b) => a.data.localeCompare(b.data));
-          const math = computePrediction(entries);
-          if (!math) return null;
-          return {
-            artikulas: m.artikulas,
-            kaina: (math.kaina_min + math.kaina_max) / 2,
-            data: math.data,
-            reasoning: 'Nėra AI prognozių DB, rodoma matematinė prognozė.',
-            confidence: Math.round(math.confidence * 100),
-            citations: [],
-          } as AiPrediction;
-        }).filter(Boolean) as AiPrediction[];
+      if (loaded.length === 0) {
+        onError?.('Nėra išsaugotų AI prognozių. Pirmiausia sugeneruokite analizę.');
+        setAiToggle(false);
+        return;
+      }
+
+      const normalizedPredictions = loaded;
 
       const sanitized = normalizedPredictions.map(pred => {
         const historyEntries = istorija
@@ -1307,37 +1297,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
               </LineChart>
             </ResponsiveContainer>
           </div>
-          {/* AI reasoning text below chart */}
-          {aiPred?.reasoning && (
-            <div className="px-4 pb-3">
-              <div className="flex items-start gap-2 rounded-lg px-3 py-2 text-[11px]"
-                style={{ background: 'rgba(124,58,237,0.04)', border: '0.5px solid rgba(124,58,237,0.12)', color: '#6d28d9' }}>
-                <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
-                <div className="space-y-1">
-                  <span>{aiPred.reasoning}</span>
-                  {typeof aiPred.confidence === 'number' && (
-                    <div className="text-[10px] opacity-80">Modelio pasitikėjimas: {Math.round(aiPred.confidence)}%</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          {aiPred?.citations && aiPred.citations.length > 0 && (
-            <div className="px-4 pb-3">
-              <div className="rounded-lg px-3 py-2 text-[11px]" style={{ background: 'rgba(37,99,235,0.04)', border: '0.5px solid rgba(37,99,235,0.15)' }}>
-                <div className="font-semibold mb-1" style={{ color: '#1d4ed8' }}>Naudoti šaltiniai</div>
-                <ul className="space-y-1">
-                  {aiPred.citations.map((c, i) => (
-                    <li key={`${c.url}-${i}`} className="truncate">
-                      <a href={c.url} target="_blank" rel="noreferrer" className="underline" style={{ color: '#1d4ed8' }}>
-                        {c.title}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
         </div>
       ))}
     </div>
@@ -1634,22 +1593,27 @@ Taisyklės:
           parsedForecasts = [];
         }
 
-        const mergedForecasts = meds.map((m) => {
-          const aiPred = parsedForecasts.find(p => p.artikulas === m.artikulas);
-          if (aiPred) return aiPred;
-          const entries = hist
-            .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
-            .sort((a, b) => a.data.localeCompare(b.data));
-          const math = computePrediction(entries);
-          if (!math) return null;
-          return {
-            artikulas: m.artikulas,
-            kaina: (math.kaina_min + math.kaina_max) / 2,
-            data: math.data,
-            reasoning: 'Pritaikyta matematinė atsarginė prognozė.',
-            confidence: Math.round(math.confidence * 100),
-          } as AiPrediction;
-        }).filter(Boolean) as AiPrediction[];
+        let mergedForecasts: AiPrediction[] = [];
+        if (parsedForecasts.length > 0) {
+          mergedForecasts = meds.map((m) => {
+            const aiPred = parsedForecasts.find(p => p.artikulas === m.artikulas);
+            if (aiPred) return aiPred;
+            const entries = hist
+              .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
+              .sort((a, b) => a.data.localeCompare(b.data));
+            const math = computePrediction(entries);
+            if (!math) return null;
+            return {
+              artikulas: m.artikulas,
+              kaina: (math.kaina_min + math.kaina_max) / 2,
+              data: math.data,
+              reasoning: 'Papildyta atsargine matematine prognoze (trūko DI įrašo).',
+              confidence: Math.round(math.confidence * 100),
+            } as AiPrediction;
+          }).filter(Boolean) as AiPrediction[];
+        } else {
+          addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Grafui nebus atnaujinta AI serija.');
+        }
 
         const sanitized = mergedForecasts.map((pred) => {
           const historyEntries = hist
