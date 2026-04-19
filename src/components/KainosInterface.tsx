@@ -17,7 +17,7 @@ import {
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
-  fetchLatestMaterialForecasts, saveMaterialForecasts,
+  saveMaterialForecasts,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
@@ -1170,22 +1170,19 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
-      const sharedForecasts = await fetchLatestMaterialForecasts();
-      const loaded = medziagas
-        .flatMap((m) => sharedForecasts
-          .filter((row) => row.artikulas === m.artikulas)
-          .map((row) => ({
-            artikulas: row.artikulas,
-            kaina: row.kaina_min,
-            data: row.data,
-            reasoning: 'Prognozė iš Analizė skilties',
-            confidence: row.pasitikejimas ?? undefined,
-            citations: [],
-          } as AiPrediction)))
-        .filter(Boolean) as AiPrediction[];
+      const fallbackDate = addMonthsISO(new Date().toISOString().slice(0, 10), 3);
+      const rawContent = analytics?.content || '';
+      if (!rawContent.trim()) {
+        onError?.('Nėra analizės turinio. Pirmiausia sugeneruokite analizę.');
+        setAiToggle(false);
+        return;
+      }
+
+      const payload = extractJsonPayload(rawContent);
+      const loaded = normalizeAnalysisForecasts(payload, medziagas, fallbackDate);
 
       if (loaded.length === 0) {
-        onError?.('Nėra išsaugotų AI prognozių. Pirmiausia sugeneruokite analizę.');
+        onError?.('Analizės content nerastos validžios AI prognozės grafui.');
         setAiToggle(false);
         return;
       }
@@ -1208,7 +1205,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, onError]);
+  }, [aiLoading, medziagas, istorija, onError, analytics]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
