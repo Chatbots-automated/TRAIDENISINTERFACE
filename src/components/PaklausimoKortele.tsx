@@ -2413,8 +2413,8 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
 // Tab: Failai
 // ---------------------------------------------------------------------------
 
-const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
-const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
+const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
 
 interface AttachedFile {
   directus_file_id: string;

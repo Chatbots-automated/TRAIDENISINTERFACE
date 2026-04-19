@@ -10,8 +10,8 @@ import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 
 // Directus instance credentials
-const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
-const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
+const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
 const ENV_DOCX_TEMPLATE_FILE_ID = (import.meta.env.VITE_SDK_TEMPLATE_FILE_ID || '').trim() || null;
 const DOCX_TEMPLATE_TITLE = '__docx_global_template__';
 const SDK_TEMPLATE_COLLECTION = 'sdk_template';

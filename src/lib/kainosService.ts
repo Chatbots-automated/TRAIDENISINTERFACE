@@ -304,14 +304,9 @@ export async function fetchLatestMaterialForecasts(): Promise<KainuPrognoze[]> {
 
   if (error) throw error;
   const rows = (data || []) as KainuPrognoze[];
-  const seen = new Set<string>();
-  const latest: KainuPrognoze[] = [];
-  for (const row of rows) {
-    if (seen.has(row.artikulas)) continue;
-    seen.add(row.artikulas);
-    latest.push(row);
-  }
-  return latest;
+  if (rows.length === 0) return [];
+  const latestBatchTs = rows[0].sukurta_at;
+  return rows.filter((row) => row.sukurta_at === latestBatchTs);
 }
 
 export async function saveMaterialForecasts(
