@@ -31,6 +31,7 @@ import { getInstructionVariable } from '../lib/instructionsService';
 interface KainosInterfaceProps { user: AppUser; }
 
 const MODEL = 'claude-opus-4-6';
+const ANALYTICS_MODEL = 'claude-sonnet-4-5';
 const DEFAULT_KAINOS_AI_PROMPT = `Šiandien yra {{today}}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
 
 ISTORINIAI KAINŲ DUOMENYS:
@@ -1505,7 +1506,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     });
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-    const ANALYTICS_RETRY_ATTEMPTS = 3;
+    const ANALYTICS_RETRY_ATTEMPTS = 2;
+    const MAX_TOOL_TURNS = 2;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1518,13 +1520,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       let mergedText = '';
       let mergedCitations: ExtractedCitation[] = [];
 
+      let turn = 0;
       while (true) {
+        turn += 1;
         let response: any = null;
         let lastError: any = null;
         for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
           try {
             response = await client.messages.create({
-              model: MODEL,
+              model: ANALYTICS_MODEL,
               max_tokens: params.maxTokens,
               system: params.system,
               tools: webSearchTool,
@@ -1537,7 +1541,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
               throw err;
             }
-            await sleep(1200 * (attempt + 1));
+            await sleep(2200 * (attempt + 1));
           }
         }
         if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
@@ -1554,7 +1558,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             }
           }
         }
-        if (response.stop_reason !== 'pause_turn') break;
+        if (response.stop_reason !== 'pause_turn' || turn >= MAX_TOOL_TURNS) break;
         msgs.push({ role: 'assistant', content: response.content as any });
       }
 
@@ -1568,7 +1572,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
       setGenStep('nafta');
       const naftaResult = await runWebStep({
-        maxTokens: 900,
+        maxTokens: 700,
         system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
@@ -1581,23 +1585,25 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
       });
       const naftaText = naftaResult.text;
       setStreamNafta(naftaText);
+      await saveGeneralAnalysis(analytics?.content || '', analytics?.geoevents || '', naftaText);
 
       // -- Step 2: Geopolitical events --
       setGenStep('geo');
       const geoResult = await runWebStep({
-        maxTokens: 700,
+        maxTokens: 550,
         system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
       });
       const geoText = geoResult.text;
       setStreamGeo(geoText);
+      await saveGeneralAnalysis(analytics?.content || '', geoText, naftaText);
 
       // -- Step 3: Price analysis (enriched with oil context) --
       setGenStep('analysis');
       const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
       const boundedNaftaText = truncatePromptSection(naftaText, 2500);
       const analysisResult = await runWebStep({
-        maxTokens: 1600,
+        maxTokens: 1100,
         system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
 
@@ -1638,7 +1644,7 @@ Pateikite lietuvių kalba:
         addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
       }
     } finally { setGenLoading(false); setGenStep('idle'); }
-  }, [genLoading]);
+  }, [genLoading, analytics]);
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
@@ -1854,9 +1860,9 @@ Pateikite lietuvių kalba:
       </p>;
     });
 
-  const naftaDisplay = genLoading ? streamNafta : (analytics?.nafta ?? '');
-  const geoDisplay = genLoading ? streamGeo : (analytics?.geoevents ?? '');
-  const analysisDisplay = genStep === 'analysis' ? streamAnalysis : (!genLoading ? (analytics?.content ?? '') : '');
+  const naftaDisplay = streamNafta || analytics?.nafta || '';
+  const geoDisplay = streamGeo || analytics?.geoevents || '';
+  const analysisDisplay = streamAnalysis || analytics?.content || '';
   const lastUpdated = analytics?.sukurta_at ?? null;
   const renderCitations = (meta: AnalysisSectionMeta) => {
     if (!meta.citations.length) return null;
