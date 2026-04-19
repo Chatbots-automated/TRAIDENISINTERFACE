@@ -48,7 +48,7 @@ export async function getInstructionVariable(variableKey: string): Promise<Instr
     .from('instruction_variables')
     .select('*')
     .eq('variable_key', variableKey)
-    .single();
+    .maybeSingle();
 
   if (error) {
     console.error('Error fetching instruction variable:', error);

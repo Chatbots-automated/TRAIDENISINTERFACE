@@ -1470,6 +1470,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     });
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
+    const ANALYTICS_RETRY_ATTEMPTS = 3;
+
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     const runWebStep = async (params: {
       system: string;
@@ -1481,13 +1484,29 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       let mergedCitations: ExtractedCitation[] = [];
 
       while (true) {
-        const response = await client.messages.create({
-          model: MODEL,
-          max_tokens: params.maxTokens,
-          system: params.system,
-          tools: webSearchTool,
-          messages: msgs,
-        });
+        let response: any = null;
+        let lastError: any = null;
+        for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
+          try {
+            response = await client.messages.create({
+              model: MODEL,
+              max_tokens: params.maxTokens,
+              system: params.system,
+              tools: webSearchTool,
+              messages: msgs,
+            });
+            break;
+          } catch (err: any) {
+            lastError = err;
+            const isRateLimited = err?.status === 429;
+            if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
+              throw err;
+            }
+            await sleep(1200 * (attempt + 1));
+          }
+        }
+        if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
+
         const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
         if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
         if (extracted.citations.length > 0) {
@@ -1514,7 +1533,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
       setGenStep('nafta');
       const naftaResult = await runWebStep({
-        maxTokens: 1500,
+        maxTokens: 900,
         system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
@@ -1531,7 +1550,7 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
       // -- Step 2: Geopolitical events --
       setGenStep('geo');
       const geoResult = await runWebStep({
-        maxTokens: 1024,
+        maxTokens: 700,
         system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
       });
@@ -1540,9 +1559,10 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
 
       // -- Step 3: Price analysis (enriched with oil context) --
       setGenStep('analysis');
-      const priceData = formatPriceDataForPrompt(meds, hist);
+      const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
+      const boundedNaftaText = truncatePromptSection(naftaText, 2500);
       const analysisResult = await runWebStep({
-        maxTokens: 3000,
+        maxTokens: 1600,
         system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
         user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
 
@@ -1550,7 +1570,7 @@ ISTORINIAI KAINŲ DUOMENYS:
 ${priceData}
 
 NAFTOS KAINŲ KONTEKSTAS:
-${naftaText}
+${boundedNaftaText}
 
 Pateikite lietuvių kalba:
 1. **Kainų tendencijos** – kiekvienos medžiagos kainos pokytis
@@ -1573,7 +1593,15 @@ Pateikite lietuvių kalba:
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
       console.error('Analytics error:', err);
-      addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
+      if (err?.status === 429) {
+        addNotif(
+          'error',
+          'Viršytas DI limitas',
+          'Anthropic limitas viršytas. Sumažinome užklausos dydį ir bandome pakartotinai, bet šiuo metu reikia palaukti 1-2 min. arba sumažinti analizuojamų duomenų kiekį.'
+        );
+      } else {
+        addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
+      }
     } finally { setGenLoading(false); setGenStep('idle'); }
   }, [genLoading]);
 
