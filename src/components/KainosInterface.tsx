@@ -26,50 +26,11 @@ import {
 } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
-import { getInstructionVariable } from '../lib/instructionsService';
 import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer';
 
 interface KainosInterfaceProps { user: AppUser; }
 
-const MODEL = 'claude-opus-4-6';
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const DEFAULT_DI_GRAFA_PROMPT = `Jūs esate medžiagų kainų prognozavimo ekspertas.
-Šiandien: {{today}}
-
-UŽDUOTIS:
-Pateikite kiekvienos medžiagos 3 mėn. prognozuojamą kainą, remiantis visais žemiau esančiais faktoriais.
-
-1) DABARTINĖS / PASKUTINĖS KAINOS:
-{{latestPrices}}
-
-2) KAINŲ TENDENCIJOS:
-{{trendData}}
-
-3) ISTORINIAI DUOMENYS:
-{{priceData}}
-
-4) NAFTOS ANALIZĖ:
-{{naftaContext}}
-
-5) GEOPOLITINIAI ĮVYKIAI:
-{{geopoliticalContext}}
-
-6) BENDRA MEDŽIAGŲ ANALIZĖ:
-{{analysisContent}}
-
-MEDŽIAGOS:
-{{materialList}}
-
-Atsakykite TIK JSON masyvu:
-[
-  {"artikulas":"CODE","kaina":1.23,"data":"YYYY-MM-DD","reasoning":"Trumpas paaiškinimas","confidence":0-100}
-]
-
-Svarbu:
-- "kaina" turi būti realistiška pagal paskutines kainas ir tendencijas.
-- "data" turi būti apie 3 mėn. nuo {{today}}.
-- "confidence" (0-100) nurodo prognozės patikimumą.`;
-
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   const lines: string[] = [];
@@ -364,6 +325,17 @@ interface AiForecastResponsePayload {
   materials?: AiMaterialForecastResponse[];
 }
 
+interface AnalysisForecastResponsePayload {
+  analysis_markdown?: string;
+  forecasts?: Array<{
+    artikulas?: string;
+    kaina?: number;
+    data?: string;
+    confidence?: number;
+    reasoning?: string;
+  }>;
+}
+
 interface ExtractedCitation {
   title: string;
   url: string;
@@ -441,56 +413,38 @@ function extractTextAndCitationsFromMessage(contentBlocks: any[]): ExtractedResp
   return { text: text.trim(), citations };
 }
 
-function normalizeAiPredictions(payload: unknown, medziagas: Medžiaga[], forecastDate: string): AiPrediction[] {
+function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
+  const byCode = new Map(medziagas.map(m => [m.artikulas.toLowerCase(), m.artikulas]));
+  const byName = new Map(medziagas.map(m => [normalizeName(m.pavadinimas), m.artikulas]));
+  const resolved = (value: string): string | null => {
+    const direct = byCode.get(value.toLowerCase());
+    if (direct) return direct;
+    return byName.get(normalizeName(value)) || null;
+  };
+
+  const toPred = (item: any): AiPrediction | null => {
+    const key = typeof item?.artikulas === 'string' ? item.artikulas : typeof item?.name === 'string' ? item.name : null;
+    if (!key) return null;
+    const artikulas = resolved(key);
+    if (!artikulas) return null;
+    const kaina = Number(item?.kaina);
+    if (!Number.isFinite(kaina)) return null;
+    const confidence = Number(item?.confidence);
+    return {
+      artikulas,
+      kaina,
+      data: typeof item?.data === 'string' ? item.data : fallbackDate,
+      reasoning: typeof item?.reasoning === 'string' ? item.reasoning : 'Prognozė pagal naftos ir geopolitinį kontekstą.',
+      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(100, confidence)) : undefined,
+    };
+  };
+
   if (Array.isArray(payload)) {
-    return payload
-      .filter((item: any) => typeof item?.artikulas === 'string' && Number.isFinite(Number(item?.kaina)))
-      .map((item: any) => ({
-        artikulas: String(item.artikulas),
-        kaina: Number(item.kaina),
-        data: item?.data || forecastDate,
-        reasoning: item?.reasoning ? String(item.reasoning) : 'DI prognozė pagal pateiktą kontekstą.',
-        confidence: Number.isFinite(Number(item?.confidence)) ? Math.max(0, Math.min(100, Number(item.confidence))) : undefined,
-      }));
+    return payload.map(toPred).filter(Boolean) as AiPrediction[];
   }
-
-  const response = payload as AiForecastResponsePayload;
-  const materials = Array.isArray(response?.materials) ? response.materials : [];
-  const byName = new Map<string, Medžiaga>();
-  for (const m of medziagas) {
-    byName.set(normalizeName(m.artikulas), m);
-    byName.set(normalizeName(m.pavadinimas), m);
-  }
-
-  return materials
-    .map((item) => {
-      const matched = byName.get(normalizeName(item.name || ''));
-      if (!matched) return null;
-
-      const forecast = Number(item.forecast_3m_price);
-      if (!Number.isFinite(forecast)) return null;
-
-      const currentPrice = Number(item.current_price);
-      const oilImpactPercent = Number(item.oil_impact_percent);
-      const impactLabel = Number.isFinite(oilImpactPercent)
-        ? `Naftos įtaka ${oilImpactPercent >= 0 ? '+' : ''}${oilImpactPercent.toFixed(2)}%.`
-        : '';
-
-      return {
-        artikulas: matched.artikulas,
-        kaina: forecast,
-        data: forecastDate,
-        reasoning: `3 mėn. prognozė pagal SDK web paiešką. ${impactLabel}`.trim(),
-        confidence: Number.isFinite(Number((item as any).confidence))
-          ? Math.max(0, Math.min(100, Number((item as any).confidence)))
-          : undefined,
-        currentPrice: Number.isFinite(currentPrice) ? currentPrice : undefined,
-        oilImpactPercent: Number.isFinite(oilImpactPercent) ? oilImpactPercent : undefined,
-        oilCurrentPrice: Number.isFinite(Number(response.oil_current_price)) ? Number(response.oil_current_price) : undefined,
-        oil3mForecastChangePercent: Number.isFinite(Number(response.oil_3m_forecast_change_percent)) ? Number(response.oil_3m_forecast_change_percent) : undefined,
-      } as AiPrediction;
-    })
-    .filter(Boolean) as AiPrediction[];
+  const parsed = payload as AnalysisForecastResponsePayload;
+  const list = Array.isArray(parsed?.forecasts) ? parsed.forecasts : [];
+  return list.map(toPred).filter(Boolean) as AiPrediction[];
 }
 
 function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice: number): AiPrediction {
@@ -971,41 +925,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const [aiLoading, setAiLoading] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
   const [aiResponseCitations, setAiResponseCitations] = useState<ExtractedCitation[]>([]);
-  const [kainosTools, setKainosTools] = useState<any[] | null>(null);
-  const [kainosPromptTemplate, setKainosPromptTemplate] = useState<string>(DEFAULT_DI_GRAFA_PROMPT);
-
-  useEffect(() => {
-    const loadKainosConfig = async () => {
-      try {
-        const [schemaVar, diGrafaPromptVar, legacyPromptVar] = await Promise.all([
-          getInstructionVariable('kainos_ai_tool_schemas'),
-          getInstructionVariable('kainos_ai_di_grafa_prompt'),
-          getInstructionVariable('kainos_ai_prediction_prompt'),
-        ]);
-
-        if (!schemaVar?.content?.trim()) {
-          setKainosTools(null);
-        } else {
-          const parsed = JSON.parse(schemaVar.content);
-          setKainosTools(Array.isArray(parsed) ? parsed : null);
-        }
-
-        if (diGrafaPromptVar?.content?.trim()) {
-          setKainosPromptTemplate(diGrafaPromptVar.content);
-        } else if (legacyPromptVar?.content?.trim()) {
-          setKainosPromptTemplate(legacyPromptVar.content);
-        } else {
-          setKainosPromptTemplate(DEFAULT_DI_GRAFA_PROMPT);
-        }
-      } catch (error) {
-        console.warn('[Kainos] Failed to load AI config, using defaults.', error);
-        setKainosTools(null);
-        setKainosPromptTemplate(DEFAULT_DI_GRAFA_PROMPT);
-      }
-    };
-    loadKainosConfig();
-  }, []);
-
   // Close on outside click
   useEffect(() => {
     if (!showInfo) return;
@@ -1022,102 +941,40 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     setAiLoading(true);
     try {
       const sharedForecasts = await fetchLatestMaterialForecasts();
-      if (sharedForecasts.length > 0) {
-        const forecastMap = new Map(sharedForecasts.map(f => [f.artikulas, f]));
-        const loaded = medziagas
-          .map((m) => {
-            const row = forecastMap.get(m.artikulas);
-            if (!row) return null;
-            return {
-              artikulas: row.artikulas,
-              kaina: row.kaina_min,
-              data: row.data,
-              reasoning: 'Bendra DI prognozė iš DB',
-              confidence: row.pasitikejimas ?? undefined,
-              citations: [],
-            } as AiPrediction;
-          })
-          .filter(Boolean) as AiPrediction[];
+      const forecastMap = new Map(sharedForecasts.map(f => [f.artikulas, f]));
+      const loaded = medziagas
+        .map((m) => {
+          const row = forecastMap.get(m.artikulas);
+          if (!row) return null;
+          return {
+            artikulas: row.artikulas,
+            kaina: row.kaina_min,
+            data: row.data,
+            reasoning: 'Prognozė iš Analizė skilties',
+            confidence: row.pasitikejimas ?? undefined,
+            citations: [],
+          } as AiPrediction;
+        })
+        .filter(Boolean) as AiPrediction[];
 
-        if (loaded.length === medziagas.length) {
-          setAiPredictions(loaded);
-          setAiResponseCitations([]);
-          return;
-        }
-      }
-
-      const client = new Anthropic({
-        apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-        dangerouslyAllowBrowser: true,
-      });
-      const today = new Date().toISOString().split('T')[0];
-      const priceData = truncatePromptSection(formatPriceDataForPrompt(medziagas, istorija), 14000);
-      const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(medziagas, istorija), 6000);
-      const trendData = truncatePromptSection(formatTrendDataForPrompt(medziagas, istorija), 6000);
-      const naftaContext = truncatePromptSection(analytics?.nafta || 'Nėra naftos analizės.', 5000);
-      const geopoliticalContext = truncatePromptSection(analytics?.geoevents || 'Nėra geopolitinio konteksto.', 5000);
-      const analysisContent = truncatePromptSection(analytics?.content || 'Nėra medžiagų analizės.', 7000);
-
-      const contextParts: string[] = [];
-      if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${truncatePromptSection(analytics.nafta, 4000)}`);
-      if (analytics?.geoevents) contextParts.push(`GEOPOLITINIAI ĮVYKIAI:\n${truncatePromptSection(analytics.geoevents, 4000)}`);
-
-      const materialList = medziagas.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
-      const contextJoined = contextParts.join('\n\n');
-      const userPrompt = kainosPromptTemplate
-        .replaceAll('{{today}}', today)
-        .replaceAll('{{latestPrices}}', latestPrices)
-        .replaceAll('{{trendData}}', trendData)
-        .replaceAll('{{priceData}}', priceData)
-        .replaceAll('{{naftaContext}}', naftaContext)
-        .replaceAll('{{geopoliticalContext}}', geopoliticalContext)
-        .replaceAll('{{analysisContent}}', analysisContent)
-        .replaceAll('{{contextParts}}', contextJoined)
-        .replaceAll('{{materialList}}', materialList);
-
-      const msgs: Anthropic.MessageParam[] = [{
-        role: 'user',
-        content: userPrompt,
-      }];
-
-      const response = await client.messages.create({
-        model: MODEL,
-        max_tokens: 2000,
-        system: `Medžiagų kainų prognozavimo ekspertas. Atsakykite TIK JSON formatu. Šiandien: ${today}.`,
-        messages: msgs,
-        ...(kainosTools && kainosTools.length > 0 ? { tools: kainosTools as any } : {}),
-      });
-
-      const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
-      const resultText = extracted.text;
-
-      const jsonPayload = extractJsonPayload(resultText);
-      const parsed = normalizeAiPredictions(jsonPayload, medziagas, addMonthsISO(today, 3)).map(p => ({
-        ...p,
-        confidence: typeof p.confidence === 'number' ? p.confidence : Math.min(90, 45 + extracted.citations.length * 8),
-        citations: extracted.citations,
-      }));
-      const normalizedPredictions = parsed.length
-        ? parsed
+      const normalizedPredictions = loaded.length > 0
+        ? loaded
         : medziagas.map((m) => {
-            const entries = istorija
-              .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
-              .sort((a, b) => a.data.localeCompare(b.data));
-            const math = computePrediction(entries);
-            if (!math) return null;
-            return {
-              artikulas: m.artikulas,
-              kaina: (math.kaina_min + math.kaina_max) / 2,
-              data: math.data,
-              reasoning: 'DI atsakymas neatitiko formato, pritaikyta deterministinė matematinė prognozė.',
-              confidence: Math.round(math.confidence * 100),
-              citations: extracted.citations,
-            } as AiPrediction;
-          }).filter(Boolean) as AiPrediction[];
+          const entries = istorija
+            .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
+            .sort((a, b) => a.data.localeCompare(b.data));
+          const math = computePrediction(entries);
+          if (!math) return null;
+          return {
+            artikulas: m.artikulas,
+            kaina: (math.kaina_min + math.kaina_max) / 2,
+            data: math.data,
+            reasoning: 'Nėra AI prognozių DB, rodoma matematinė prognozė.',
+            confidence: Math.round(math.confidence * 100),
+            citations: [],
+          } as AiPrediction;
+        }).filter(Boolean) as AiPrediction[];
 
-      if (!normalizedPredictions.length) {
-        throw new Error('AI grąžino JSON, bet nerasta tinkamų medžiagų prognozių');
-      }
       const sanitized = normalizedPredictions.map(pred => {
         const historyEntries = istorija
           .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
@@ -1126,16 +983,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
       });
       setAiPredictions(sanitized);
-      setAiResponseCitations(extracted.citations);
-      await saveMaterialForecasts(
-        sanitized.map((item) => ({
-          artikulas: item.artikulas,
-          data: item.data,
-          kaina_min: item.kaina,
-          kaina_max: item.kaina,
-          pasitikejimas: item.confidence ?? null,
-        }))
-      );
+      setAiResponseCitations([]);
     } catch (err: any) {
       console.error('AI prediction error:', err);
       onError?.(err.message || 'Nepavyko gauti DI prognozės');
@@ -1143,7 +991,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, analytics, kainosTools, kainosPromptTemplate]);
+  }, [aiLoading, medziagas, istorija, onError]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
@@ -1715,14 +1563,31 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
       }
 
       if (targetSections.has('analysis')) {
-        // -- Step 3: Price analysis (enriched with oil context) --
+        // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
         setGenStep('analysis');
         const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
+        const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 4500);
+        const trendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 4500);
         const boundedNaftaText = truncatePromptSection(naftaText, 2500);
+        const boundedGeoText = truncatePromptSection(geoText, 2200);
+        const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
         const analysisResult = await runWebStep({
-          maxTokens: 1700,
-          system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
-          user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
+          maxTokens: 2200,
+          system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Įvertinkite žaliavų kainų prognozes remdamiesi:
+
+1) Geopolitika (karai, tarifai, sankcijos, tiekimo sutrikimai)
+2) Naftos kaina ir jos tendencijos
+3) Medžiagų istorinėmis kainomis ir jų trendu
+
+MEDŽIAGŲ SĄRAŠAS:
+${materialList}
+
+DABARTINĖS / PASKUTINĖS KAINOS:
+${latestPrices}
+
+KAINŲ TENDENCIJOS:
+${trendData}
 
 ISTORINIAI KAINŲ DUOMENYS:
 ${priceData}
@@ -1730,45 +1595,92 @@ ${priceData}
 NAFTOS KAINŲ KONTEKSTAS:
 ${boundedNaftaText}
 
-Pateikite lietuvių kalba:
-1. **Kainų tendencijos** – kiekvienos medžiagos kainos pokytis
-2. **Kainų prognozė** – 3–6 mėnesių prognozė atsižvelgiant į naftos kainų tendencijas
-3. **Rinkos veiksniai** – nafta, styrenas, energija, tiekimo grandinė
-4. **Rekomendacijos** – pirkimo strategija (ar laukti, ar pirkti dabar)`,
+GEOPOLITINIS KONTEKSTAS:
+${boundedGeoText}
+
+Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
+{
+  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais.",
+  "forecasts": [
+    {
+      "artikulas": "MEDZIAGOS_KODAS",
+      "kaina": 1.23,
+      "data": "YYYY-MM-DD",
+      "confidence": 0-100,
+      "reasoning": "Trumpas paaiškinimas."
+    }
+  ]
+}
+
+Taisyklės:
+- "forecasts" turi turėti po vieną įrašą kiekvienai medžiagai iš sąrašo.
+- "kaina" turi būti skaičius ir realistiška pagal trendą bei kontekstą.
+- "data" turi būti ~3 mėn. nuo šiandien.
+- Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`,
         });
-        analysisText = analysisResult.text;
-        setStreamAnalysis(analysisText);
-        setAnalysisMeta((prev) => ({
-          ...prev,
-          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
-        }));
-      }
+        const fallbackDate = addMonthsISO(today, 3);
+        let parsedForecasts: AiPrediction[] = [];
+        try {
+          const analysisPayload = extractJsonPayload(analysisResult.text);
+          const parsed = analysisPayload as AnalysisForecastResponsePayload;
+          parsedForecasts = normalizeAnalysisForecasts(analysisPayload, meds, fallbackDate);
+          if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
+            analysisText = parsed.analysis_markdown.trim();
+          } else {
+            analysisText = analysisResult.text;
+          }
+        } catch {
+          analysisText = analysisResult.text;
+          parsedForecasts = [];
+        }
 
-      await saveGeneralAnalysis(analysisText, geoText, naftaText);
-      const freshAnalysis = await fetchGeneralAnalysis();
-      setAnalytics(freshAnalysis);
-
-      const deterministicForecasts = meds
-        .map((m) => {
+        const mergedForecasts = meds.map((m) => {
+          const aiPred = parsedForecasts.find(p => p.artikulas === m.artikulas);
+          if (aiPred) return aiPred;
           const entries = hist
             .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
             .sort((a, b) => a.data.localeCompare(b.data));
           const math = computePrediction(entries);
           if (!math) return null;
-          const value = (math.kaina_min + math.kaina_max) / 2;
           return {
             artikulas: m.artikulas,
+            kaina: (math.kaina_min + math.kaina_max) / 2,
             data: math.data,
-            kaina_min: value,
-            kaina_max: value,
-            pasitikejimas: Math.round(math.confidence * 100),
-          };
-        })
-        .filter(Boolean) as Array<{ artikulas: string; data: string; kaina_min: number; kaina_max: number; pasitikejimas: number }>;
+            reasoning: 'Pritaikyta matematinė atsarginė prognozė.',
+            confidence: Math.round(math.confidence * 100),
+          } as AiPrediction;
+        }).filter(Boolean) as AiPrediction[];
 
-      if (deterministicForecasts.length > 0) {
-        await saveMaterialForecasts(deterministicForecasts);
+        const sanitized = mergedForecasts.map((pred) => {
+          const historyEntries = hist
+            .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
+            .sort((a, b) => b.data.localeCompare(a.data));
+          const lastActual = historyEntries[0]?.kaina_min;
+          return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
+        });
+
+        setStreamAnalysis(analysisText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
+        }));
+
+        if (sanitized.length > 0) {
+          await saveMaterialForecasts(
+            sanitized.map((item) => ({
+              artikulas: item.artikulas,
+              data: item.data,
+              kaina_min: item.kaina,
+              kaina_max: item.kaina,
+              pasitikejimas: item.confidence ?? null,
+            }))
+          );
+        }
       }
+
+      await saveGeneralAnalysis(analysisText, geoText, naftaText);
+      const freshAnalysis = await fetchGeneralAnalysis();
+      setAnalytics(freshAnalysis);
 
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
