@@ -462,20 +462,6 @@ function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice:
   };
 }
 
-function computeAiAdjustedPrice(aiPred: AiPrediction, fallbackCurrent: number): number {
-  const current = Number.isFinite(aiPred.currentPrice) ? Number(aiPred.currentPrice) : fallbackCurrent;
-  const oilImpact = Number(aiPred.oilImpactPercent);
-  const oilAdjusted = Number.isFinite(oilImpact)
-    ? current * (1 + oilImpact / 100)
-    : null;
-
-  if (oilAdjusted !== null) {
-    return (aiPred.kaina * 0.7) + (oilAdjusted * 0.3);
-  }
-
-  return aiPred.kaina;
-}
-
 // ---------------------------------------------------------------------------
 // SablonaiTab â€“ CRUD for material slate templates
 // ---------------------------------------------------------------------------
@@ -1042,7 +1028,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
       if (aiPred && aiPred.kaina > 0) {
         const lastActual = [...points].reverse().find(p => p.kaina !== null);
         if (lastActual) {
-          const adjustedAiValue = computeAiAdjustedPrice(aiPred, lastActual.kaina || aiPred.kaina);
+          const adjustedAiValue = aiPred.kaina;
 
           // Bridge from last actual to AI prediction
           const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
@@ -1069,7 +1055,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
         ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
-        ...(aiPred && lastActualForDomain ? [computeAiAdjustedPrice(aiPred, lastActualForDomain.kaina || aiPred.kaina)] : []),
+        ...(aiPred && lastActualForDomain ? [aiPred.kaina] : []),
       ];
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
@@ -1663,8 +1649,10 @@ TaisyklÄ—s:
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
-  const regenerateAnalysisSection = useCallback((section: 'nafta' | 'geo' | 'analysis') =>
-    generateAnalyticsFromData(medziagas, istorija, [section]), [generateAnalyticsFromData, medziagas, istorija]);
+  const regenerateAnalysisSection = useCallback((section: 'nafta' | 'geo' | 'analysis') => {
+    const sections: Array<'nafta' | 'geo' | 'analysis'> = section === 'analysis' ? ['analysis'] : [section, 'analysis'];
+    return generateAnalyticsFromData(medziagas, istorija, sections);
+  }, [generateAnalyticsFromData, medziagas, istorija]);
 
   // ---- load data on mount (no auto-generation â€” manual button only) ----
   useEffect(() => { loadData(); }, []);
