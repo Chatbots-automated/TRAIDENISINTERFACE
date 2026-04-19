@@ -66,6 +66,12 @@ function truncatePromptSection(text: string, maxChars: number): string {
   if (!text || text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
 }
+
+function addMonthsISO(dateIso: string, months: number): string {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, (m - 1) + months, d));
+  return dt.toISOString().split('T')[0];
+}
 // ---------------------------------------------------------------------------
 // Modal: Add / Edit Material
 // ---------------------------------------------------------------------------
@@ -1494,13 +1500,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // ---- analytics generation (web search + citations + safety metadata) ----
   const generateAnalyticsFromData = useCallback(async (
-    meds: Medžiaga[], hist: KainuIrašas[]
+    meds: Medžiaga[],
+    hist: KainuIrašas[],
+    sections: Array<'nafta' | 'geo' | 'analysis'> = ['nafta', 'geo', 'analysis']
   ) => {
     if (genLoading) return;
     setGenLoading(true);
-    setStreamNafta('');
-    setStreamGeo('');
-    setStreamAnalysis('');
+    const targetSections = new Set(sections);
+    if (targetSections.has('nafta')) setStreamNafta('');
+    if (targetSections.has('geo')) setStreamGeo('');
+    if (targetSections.has('analysis')) setStreamAnalysis('');
     const client = new Anthropic({
       apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       dangerouslyAllowBrowser: true,
@@ -1573,12 +1582,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     };
 
     try {
-      // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
-      setGenStep('nafta');
-      const naftaResult = await runWebStep({
-        maxTokens: 700,
-        system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
-        user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
+      let naftaText = analytics?.nafta || '';
+      let geoText = analytics?.geoevents || '';
+      let analysisText = analytics?.content || '';
+
+      if (targetSections.has('nafta')) {
+        // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
+        setGenStep('nafta');
+        const naftaResult = await runWebStep({
+          maxTokens: 700,
+          system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
 2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
@@ -1586,30 +1600,40 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 4. **Styreno kaina** — jei randama, dabartinė styreno (pagrindinis poliestetinės dervos komponentas) kaina Europoje
 
 Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`,
-      });
-      const naftaText = naftaResult.text;
-      setStreamNafta(naftaText);
-      await saveGeneralAnalysis(analytics?.content || '', analytics?.geoevents || '', naftaText);
+        });
+        naftaText = naftaResult.text;
+        setStreamNafta(naftaText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
+        }));
+      }
 
-      // -- Step 2: Geopolitical events --
-      setGenStep('geo');
-      const geoResult = await runWebStep({
-        maxTokens: 550,
-        system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
-        user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
-      });
-      const geoText = geoResult.text;
-      setStreamGeo(geoText);
-      await saveGeneralAnalysis(analytics?.content || '', geoText, naftaText);
+      if (targetSections.has('geo')) {
+        // -- Step 2: Geopolitical events --
+        setGenStep('geo');
+        const geoResult = await runWebStep({
+          maxTokens: 550,
+          system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
+        });
+        geoText = geoResult.text;
+        setStreamGeo(geoText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
+        }));
+      }
 
-      // -- Step 3: Price analysis (enriched with oil context) --
-      setGenStep('analysis');
-      const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
-      const boundedNaftaText = truncatePromptSection(naftaText, 2500);
-      const analysisResult = await runWebStep({
-        maxTokens: 1700,
-        system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
-        user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
+      if (targetSections.has('analysis')) {
+        // -- Step 3: Price analysis (enriched with oil context) --
+        setGenStep('analysis');
+        const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
+        const boundedNaftaText = truncatePromptSection(naftaText, 2500);
+        const analysisResult = await runWebStep({
+          maxTokens: 1700,
+          system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite lietuvių kalba. Šiandien: ${today}.`,
+          user: `Šiandien yra ${today}. Esate medžiagų kainų analitikas įmonei Traidenis (Lietuva). Remiantis šiais istoriniais kainų duomenimis, naftos kainų analize ir ieškodami internete dabartinių rinkos sąlygų:
 
 ISTORINIAI KAINŲ DUOMENYS:
 ${priceData}
@@ -1622,18 +1646,18 @@ Pateikite lietuvių kalba:
 2. **Kainų prognozė** – 3–6 mėnesių prognozė atsižvelgiant į naftos kainų tendencijas
 3. **Rinkos veiksniai** – nafta, styrenas, energija, tiekimo grandinė
 4. **Rekomendacijos** – pirkimo strategija (ar laukti, ar pirkti dabar)`,
-      });
-      const analysisText = analysisResult.text;
-      setStreamAnalysis(analysisText);
+        });
+        analysisText = analysisResult.text;
+        setStreamAnalysis(analysisText);
+        setAnalysisMeta((prev) => ({
+          ...prev,
+          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
+        }));
+      }
 
       await saveGeneralAnalysis(analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
-      setAnalysisMeta({
-        nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
-        geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
-        analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
-      });
 
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
@@ -1652,6 +1676,8 @@ Pateikite lietuvių kalba:
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
+  const regenerateAnalysisSection = useCallback((section: 'nafta' | 'geo' | 'analysis') =>
+    generateAnalyticsFromData(medziagas, istorija, [section]), [generateAnalyticsFromData, medziagas, istorija]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
@@ -2074,6 +2100,13 @@ Pateikite lietuvių kalba:
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
                   Patikimumas ~{Math.round(analysisMeta.nafta.confidence)}%
                 </span>
+                <button
+                  onClick={() => regenerateAnalysisSection('nafta')}
+                  disabled={genLoading}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                >
+                  Regeneruoti
+                </button>
                 {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
@@ -2104,6 +2137,13 @@ Pateikite lietuvių kalba:
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
                   Patikimumas ~{Math.round(analysisMeta.geo.confidence)}%
                 </span>
+                <button
+                  onClick={() => regenerateAnalysisSection('geo')}
+                  disabled={genLoading}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                >
+                  Regeneruoti
+                </button>
                 {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
@@ -2134,6 +2174,13 @@ Pateikite lietuvių kalba:
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
                   Patikimumas ~{Math.round(analysisMeta.analysis.confidence)}%
                 </span>
+                <button
+                  onClick={() => regenerateAnalysisSection('analysis')}
+                  disabled={genLoading}
+                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                >
+                  Regeneruoti
+                </button>
                 {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
               <div className="px-4 py-3 bg-white min-h-[60px]">
