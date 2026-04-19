@@ -1605,6 +1605,9 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
         let aggregatedForecasts: AiPrediction[] = [];
         const analysisTexts: string[] = [];
         let allAnalysisCitations: ExtractedCitation[] = [];
+        let jsonChunkCount = 0;
+        let markdownChunkCount = 0;
+        let failedChunkCount = 0;
 
         for (let chunkIndex = 0; chunkIndex < materialChunks.length; chunkIndex += 1) {
           const chunkMeds = materialChunks[chunkIndex];
@@ -1669,6 +1672,7 @@ Taisyklės:
             const parsed = analysisPayload as AnalysisForecastResponsePayload;
             const parsedForecasts = normalizeAnalysisForecasts(analysisPayload, chunkMeds, fallbackDate);
             aggregatedForecasts = [...aggregatedForecasts, ...parsedForecasts];
+            jsonChunkCount += 1;
             if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
               analysisTexts.push(parsed.analysis_markdown.trim());
             }
@@ -1676,6 +1680,9 @@ Taisyklės:
             const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, chunkMeds, fallbackDate);
             if (markdownForecasts.length > 0) {
               aggregatedForecasts = [...aggregatedForecasts, ...markdownForecasts];
+              markdownChunkCount += 1;
+            } else {
+              failedChunkCount += 1;
             }
           }
           if (analysisResult.citations.length > 0) {
@@ -1690,9 +1697,15 @@ Taisyklės:
           }
         }
 
+        const parsingEvidence = `\n\n---\n**Parserio įrodymas:** JSON dalys ${jsonChunkCount}/${materialChunks.length}, markdown fallback ${markdownChunkCount}, nepavykusios dalys ${failedChunkCount}.`;
         analysisText = analysisTexts.length > 0
           ? analysisTexts.map((part, idx) => `### Medžiagų dalis ${idx + 1}\n${part}`).join('\n\n')
           : analysisText;
+        analysisText = `${analysisText}${parsingEvidence}`;
+
+        if (jsonChunkCount === 0 && markdownChunkCount > 0) {
+          addNotif('info', 'JSON negrąžintas', 'DI negrąžino valid JSON. Prognozės paimtos iš markdown lentelių fallback.');
+        }
 
         let mergedForecasts: AiPrediction[] = [];
         if (aggregatedForecasts.length > 0) {
