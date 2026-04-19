@@ -84,6 +84,30 @@ function addMonthsISO(dateIso: string, months: number): string {
   const dt = new Date(Date.UTC(y, (m - 1) + months, d));
   return dt.toISOString().split('T')[0];
 }
+
+
+function normalizeIsoDate(value: unknown, fallbackDate: string): string {
+  if (typeof value !== 'string') return fallbackDate;
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return fallbackDate;
+  const [_, y, m, d] = match;
+  const dt = new Date(`${y}-${m}-${d}T00:00:00.000Z`);
+  if (Number.isNaN(dt.getTime())) return fallbackDate;
+  if (dt.toISOString().slice(0, 10) !== `${y}-${m}-${d}`) return fallbackDate;
+  return `${y}-${m}-${d}`;
+}
+
+function coerceFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const normalized = value.replace(',', '.').trim();
+    if (!normalized) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 // ---------------------------------------------------------------------------
 // Modal: Add / Edit Material
 // ---------------------------------------------------------------------------
@@ -352,13 +376,6 @@ interface AnalysisSectionMeta {
   citations: ExtractedCitation[];
 }
 
-function normalizeName(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '');
-}
 
 function extractJsonPayload(text: string): unknown {
   const stripped = text
@@ -415,36 +432,43 @@ function extractTextAndCitationsFromMessage(contentBlocks: any[]): ExtractedResp
 
 function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
   const byCode = new Map(medziagas.map(m => [m.artikulas.toLowerCase(), m.artikulas]));
-  const byName = new Map(medziagas.map(m => [normalizeName(m.pavadinimas), m.artikulas]));
-  const resolved = (value: string): string | null => {
-    const direct = byCode.get(value.toLowerCase());
-    if (direct) return direct;
-    return byName.get(normalizeName(value)) || null;
-  };
 
   const toPred = (item: any): AiPrediction | null => {
-    const key = typeof item?.artikulas === 'string' ? item.artikulas : typeof item?.name === 'string' ? item.name : null;
-    if (!key) return null;
-    const artikulas = resolved(key);
+    if (!item || typeof item !== 'object') return null;
+    const rawCode = typeof item?.artikulas === 'string' ? item.artikulas.trim() : '';
+    if (!rawCode) return null;
+    const artikulas = byCode.get(rawCode.toLowerCase()) || null;
     if (!artikulas) return null;
-    const kaina = Number(item?.kaina);
-    if (!Number.isFinite(kaina)) return null;
-    const confidence = Number(item?.confidence);
+
+    const kaina = coerceFiniteNumber(item?.kaina);
+    if (kaina === null || kaina < 0) return null;
+
+    const confidenceRaw = coerceFiniteNumber(item?.confidence);
+    const confidence = confidenceRaw === null ? undefined : Math.max(0, Math.min(100, confidenceRaw));
+
     return {
       artikulas,
       kaina,
-      data: typeof item?.data === 'string' ? item.data : fallbackDate,
+      data: normalizeIsoDate(item?.data, fallbackDate),
       reasoning: typeof item?.reasoning === 'string' ? item.reasoning : 'Prognozė pagal naftos ir geopolitinį kontekstą.',
-      confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(100, confidence)) : undefined,
+      confidence,
     };
   };
 
-  if (Array.isArray(payload)) {
-    return payload.map(toPred).filter(Boolean) as AiPrediction[];
+  const parsed = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as AnalysisForecastResponsePayload)?.forecasts)
+      ? (payload as AnalysisForecastResponsePayload).forecasts!
+      : [];
+
+  const deduped = new Map<string, AiPrediction>();
+  for (const row of parsed) {
+    const pred = toPred(row);
+    if (!pred) continue;
+    if (!deduped.has(pred.artikulas)) deduped.set(pred.artikulas, pred);
   }
-  const parsed = payload as AnalysisForecastResponsePayload;
-  const list = Array.isArray(parsed?.forecasts) ? parsed.forecasts : [];
-  return list.map(toPred).filter(Boolean) as AiPrediction[];
+
+  return Array.from(deduped.values());
 }
 
 function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice: number): AiPrediction {
@@ -1558,9 +1582,10 @@ Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
 }
 
 Taisyklės:
-- "forecasts" turi turėti po vieną įrašą kiekvienai medžiagai iš sąrašo.
-- "kaina" turi būti skaičius ir realistiška pagal trendą bei kontekstą.
-- "data" turi būti ~3 mėn. nuo šiandien.
+- "forecasts" turi turėti po vieną įrašą kiekvienam artikului iš sąrašo (naudokite tik pateiktus artikulus, be sinonimų).
+- Kiekvienas "artikulas" turi būti unikalus, be dublių.
+- "kaina" turi būti skaičius (ne tekstas) ir realistiška pagal trendą bei kontekstą.
+- "data" turi būti griežtai YYYY-MM-DD formatu (~3 mėn. nuo šiandien).
 - Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`,
         });
         const fallbackDate = addMonthsISO(today, 3);
@@ -1581,22 +1606,42 @@ Taisyklės:
 
         let mergedForecasts: AiPrediction[] = [];
         if (parsedForecasts.length > 0) {
+          const parsedMap = new Map(parsedForecasts.map((p) => [p.artikulas, p]));
           mergedForecasts = meds.map((m) => {
-            const aiPred = parsedForecasts.find(p => p.artikulas === m.artikulas);
+            const aiPred = parsedMap.get(m.artikulas);
             if (aiPred) return aiPred;
+
             const entries = hist
               .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
               .sort((a, b) => a.data.localeCompare(b.data));
             const math = computePrediction(entries);
-            if (!math) return null;
-            return {
-              artikulas: m.artikulas,
-              kaina: (math.kaina_min + math.kaina_max) / 2,
-              data: math.data,
-              reasoning: 'Papildyta atsargine matematine prognoze (trūko DI įrašo).',
-              confidence: Math.round(math.confidence * 100),
-            } as AiPrediction;
+            if (math) {
+              return {
+                artikulas: m.artikulas,
+                kaina: (math.kaina_min + math.kaina_max) / 2,
+                data: normalizeIsoDate(math.data, fallbackDate),
+                reasoning: 'Papildyta atsargine matematine prognoze (trūko arba netiko DI įrašas).',
+                confidence: Math.round(math.confidence * 100),
+              } as AiPrediction;
+            }
+
+            const lastKnown = entries.length > 0 ? Number(entries[entries.length - 1].kaina_min) : null;
+            if (Number.isFinite(lastKnown) && Number(lastKnown) >= 0) {
+              return {
+                artikulas: m.artikulas,
+                kaina: Number(lastKnown),
+                data: fallbackDate,
+                reasoning: 'Papildyta deterministine atsargine reikšme (paskutinė žinoma kaina).',
+                confidence: 45,
+              } as AiPrediction;
+            }
+            return null;
           }).filter(Boolean) as AiPrediction[];
+
+          const missing = meds.filter((m) => !mergedForecasts.some((f) => f.artikulas === m.artikulas));
+          if (missing.length > 0) {
+            addNotif('error', 'AI prognozės formatas', `Negauta korektiškų prognozių visoms medžiagoms (${missing.length} trūksta).`);
+          }
         } else {
           addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Grafui nebus atnaujinta AI serija.');
         }
