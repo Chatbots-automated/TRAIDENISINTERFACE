@@ -1708,7 +1708,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     try {
       let naftaText = analytics?.nafta || '';
       let geoText = analytics?.geoevents || '';
-      let analysisText = analytics?.content || '';
+      let analysisText = '';
       const promptMissingVarsNotified = new Set<string>();
 
       const applyPrompt = (name: string, template: string, vars: Record<string, string>) => {
@@ -1769,6 +1769,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const fallbackDate = addMonthsISO(today, 3);
         let aggregatedForecasts: AiPrediction[] = [];
         const analysisTexts: string[] = [];
+        const rawAnalysisResponses: string[] = [];
         let allAnalysisCitations: ExtractedCitation[] = [];
         let jsonChunkCount = 0;
         let markdownChunkCount = 0;
@@ -1799,6 +1800,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               geoPoliticalContext: boundedGeoText,
             }),
           });
+          if (analysisResult.text.trim()) {
+            rawAnalysisResponses.push(analysisResult.text.trim());
+          }
 
           try {
             const analysisPayload = extractJsonPayload(analysisResult.text);
@@ -1839,7 +1843,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const parsingEvidence = `\n\n---\n**Parserio įrodymas:** JSON dalys ${jsonChunkCount}/${materialChunks.length}, markdown fallback ${markdownChunkCount}, nepavykusios dalys ${failedChunkCount}.`;
         analysisText = analysisTexts.length > 0
           ? analysisTexts.map((part, idx) => `### Medžiagų dalis ${idx + 1}\n${part}`).join('\n\n')
-          : analysisText;
+          : rawAnalysisResponses.map((part, idx) => `### Žalias atsakymas (dalis ${idx + 1})\n${part}`).join('\n\n');
         analysisText = `${analysisText}${parsingEvidence}`;
 
         if (jsonChunkCount === 0 && markdownChunkCount > 0) {
@@ -2148,7 +2152,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const naftaDisplay = streamNafta || analytics?.nafta || '';
   const geoDisplay = streamGeo || analytics?.geoevents || '';
-  const analysisDisplay = streamAnalysis || analytics?.content || '';
+  const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : (analytics?.content || ''));
   const lastUpdated = analytics?.sukurta_at ?? null;
   const renderCitations = (meta: AnalysisSectionMeta) => {
     if (!meta.citations.length) return null;
