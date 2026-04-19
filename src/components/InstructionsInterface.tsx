@@ -78,17 +78,17 @@ Atsakykite TIK JSON formatu su:
 type KainosPromptKey = 'kainos_ai_nafta_prompt' | 'kainos_ai_geo_prompt' | 'kainos_ai_analysis_prompt';
 const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; defaultContent: string }> = {
   kainos_ai_nafta_prompt: {
-    label: 'Naftos prompt',
+    label: 'Nafta',
     help: 'Placeholderiai: {{today}}',
     defaultContent: DEFAULT_KAINOS_OIL_PROMPT,
   },
   kainos_ai_geo_prompt: {
-    label: 'Geopolitikos prompt',
+    label: 'Ekonomika',
     help: 'Placeholderiai: {{today}}',
     defaultContent: DEFAULT_KAINOS_GEO_PROMPT,
   },
   kainos_ai_analysis_prompt: {
-    label: 'Medžiagų prognozės prompt',
+    label: 'Prognozė',
     help: 'Placeholderiai: {{today}} {{chunkInfo}} {{materialList}} {{latestPrices}} {{trendData}} {{priceData}} {{oilAnalysisContext}} {{geoPoliticalContext}} (alias: {{boundedNaftaText}} {{boundedGeoText}})',
     defaultContent: DEFAULT_KAINOS_ANALYSIS_PROMPT,
   },
