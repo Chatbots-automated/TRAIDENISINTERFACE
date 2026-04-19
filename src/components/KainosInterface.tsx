@@ -86,6 +86,12 @@ function addMonthsISO(dateIso: string, months: number): string {
   return dt.toISOString().split('T')[0];
 }
 
+function addDaysISO(dateIso: string, days: number): string {
+  const [y, m, d] = dateIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().split('T')[0];
+}
+
 function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   if (chunkSize <= 0) return [items];
   const chunks: T[][] = [];
@@ -93,6 +99,14 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
     chunks.push(items.slice(i, i + chunkSize));
   }
   return chunks;
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
 }
 
 
@@ -479,6 +493,44 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
   }
 
   return Array.from(deduped.values());
+}
+
+function parseForecastsFromMarkdownTable(text: string, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
+  if (!text) return [];
+  const byName = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
+  const byCode = new Map(medziagas.map((m) => [m.artikulas.toLowerCase(), m.artikulas]));
+  const rows = text.split('\n').map((r) => r.trim()).filter(Boolean);
+  const predictions: AiPrediction[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    if (!row.includes('EUR/kg')) continue;
+    const parts = row.includes('\t') ? row.split('\t').map((p) => p.trim()).filter(Boolean) : row.split(/\s{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length < 2) continue;
+    const rawName = parts[0];
+    const rangeMatch = row.match(/(\d+[.,]?\d*)\s*[–-]\s*(\d+[.,]?\d*)\s*EUR\/kg/);
+    const singleMatch = row.match(/(\d+[.,]?\d*)\s*EUR\/kg/);
+    const parsedMax = rangeMatch ? coerceFiniteNumber(rangeMatch[2]) : null;
+    const parsedMin = rangeMatch ? coerceFiniteNumber(rangeMatch[1]) : (singleMatch ? coerceFiniteNumber(singleMatch[1]) : null);
+    const kaina = parsedMin !== null && parsedMax !== null ? (parsedMin + parsedMax) / 2 : parsedMin;
+    if (kaina === null) continue;
+
+    const codeInName = rawName.match(/\[([A-Za-z0-9-]+)\]/)?.[1] || '';
+    const normalizedMaterialName = normalizeName(rawName.replace(/\[[^\]]+\]/g, '').trim());
+    const artikulas = byCode.get(codeInName.toLowerCase()) || byName.get(normalizedMaterialName) || null;
+    if (!artikulas || seen.has(artikulas)) continue;
+
+    predictions.push({
+      artikulas,
+      kaina,
+      data: fallbackDate,
+      reasoning: 'Prognozė išgauta iš markdown lentelės.',
+      confidence: undefined,
+    });
+    seen.add(artikulas);
+  }
+
+  return predictions;
 }
 
 function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice: number): AiPrediction {
@@ -1062,6 +1114,8 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       if (aiPred && aiPred.kaina > 0) {
         const lastActual = [...points].reverse().find(p => p.kaina !== null);
         if (lastActual) {
+          const mathPredictionDate = prediction?.data;
+          const aiPlotDate = mathPredictionDate && aiPred.data === mathPredictionDate ? addDaysISO(aiPred.data, 1) : aiPred.data;
           const adjustedAiValue = aiPred.kaina;
 
           // Bridge from last actual to AI prediction
@@ -1075,8 +1129,8 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
             });
           }
           points.push({
-            date: aiPred.data,
-            label: aiPred.data,
+            date: aiPlotDate,
+            label: aiPlotDate,
             kaina: null,
             aiPredicted: adjustedAiValue,
           });
@@ -1619,7 +1673,10 @@ Taisyklės:
               analysisTexts.push(parsed.analysis_markdown.trim());
             }
           } catch {
-            // ignore invalid chunk payload; deterministic fallback will fill later
+            const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, chunkMeds, fallbackDate);
+            if (markdownForecasts.length > 0) {
+              aggregatedForecasts = [...aggregatedForecasts, ...markdownForecasts];
+            }
           }
           if (analysisResult.citations.length > 0) {
             const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
@@ -1676,7 +1733,7 @@ Taisyklės:
             addNotif('error', 'AI prognozės formatas', `Negauta korektiškų prognozių visoms medžiagoms (${missing.length} trūksta).`);
           }
         } else {
-          addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Grafui nebus atnaujinta AI serija.');
+          addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Patikrinkite, kad DI grąžintų JSON forecasts.');
         }
 
         const sanitized = mergedForecasts.map((pred) => {
