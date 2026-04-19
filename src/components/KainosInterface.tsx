@@ -1234,6 +1234,11 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
       if (entries.length === 0) return null;
 
       const prediction = computePrediction(entries);
+      const aiPredSeries = aiToggle
+        ? aiPredictions
+          .filter(p => p.artikulas === m.artikulas && p.kaina > 0)
+          .sort((a, b) => a.data.localeCompare(b.data))
+        : [];
 
       // Build chart points from actual data
       const points: ChartPoint[] = entries.map(e => ({
@@ -1245,29 +1250,45 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
 
       // Add prediction point
       if (prediction) {
-        // Add a bridge point at the last real data point with predicted value to start the dashed line
         const lastPoint = points[points.length - 1];
+        const mathTargetValue = (prediction.kaina_min + prediction.kaina_max) / 2;
         points.push({
           date: lastPoint.date,
           label: lastPoint.date,
           kaina: lastPoint.kaina,
           predicted: lastPoint.kaina!,
         });
-        points.push({
-          date: prediction.data,
-          label: prediction.data,
-          kaina: null,
-          predicted: (prediction.kaina_min + prediction.kaina_max) / 2,
-        });
+
+        if (aiToggle && aiPredSeries.length > 0) {
+          aiPredSeries.forEach((aiPoint, idx) => {
+            const ratio = (idx + 1) / aiPredSeries.length;
+            const interpolated = lastPoint.kaina! + (mathTargetValue - lastPoint.kaina!) * ratio;
+            points.push({
+              date: aiPoint.data,
+              label: aiPoint.data,
+              kaina: null,
+              predicted: interpolated,
+            });
+          });
+        } else {
+          points.push({
+            date: prediction.data,
+            label: prediction.data,
+            kaina: null,
+            predicted: mathTargetValue,
+          });
+        }
       }
 
       // Add AI prediction point if toggle is on
-      const aiPredSeries = aiToggle
-        ? aiPredictions
-          .filter(p => p.artikulas === m.artikulas && p.kaina > 0)
-          .sort((a, b) => a.data.localeCompare(b.data))
-        : [];
       if (aiPredSeries.length > 0) {
+        const lastPoint = [...points].reverse().find((p) => p.kaina !== null) || points[points.length - 1];
+        points.push({
+          date: lastPoint.date,
+          label: lastPoint.date,
+          kaina: lastPoint.kaina,
+          aiPredicted: lastPoint.kaina!,
+        });
         for (const aiPred of aiPredSeries) {
           points.push({
             date: aiPred.data,
