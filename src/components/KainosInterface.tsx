@@ -1033,10 +1033,28 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         confidence: typeof p.confidence === 'number' ? p.confidence : Math.min(90, 45 + extracted.citations.length * 8),
         citations: extracted.citations,
       }));
-      if (!parsed.length) {
+      const normalizedPredictions = parsed.length
+        ? parsed
+        : medziagas.map((m) => {
+            const entries = istorija
+              .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
+              .sort((a, b) => a.data.localeCompare(b.data));
+            const math = computePrediction(entries);
+            if (!math) return null;
+            return {
+              artikulas: m.artikulas,
+              kaina: (math.kaina_min + math.kaina_max) / 2,
+              data: math.data,
+              reasoning: 'DI atsakymas neatitiko formato, pritaikyta deterministinė matematinė prognozė.',
+              confidence: Math.round(math.confidence * 100),
+              citations: extracted.citations,
+            } as AiPrediction;
+          }).filter(Boolean) as AiPrediction[];
+
+      if (!normalizedPredictions.length) {
         throw new Error('AI grąžino JSON, bet nerasta tinkamų medžiagų prognozių');
       }
-      const sanitized = parsed.map(pred => {
+      const sanitized = normalizedPredictions.map(pred => {
         const historyEntries = istorija
           .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
           .sort((a, b) => b.data.localeCompare(a.data));
@@ -1665,6 +1683,28 @@ Pateikite lietuvių kalba:
       await saveGeneralAnalysis(analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
+
+      const deterministicForecasts = meds
+        .map((m) => {
+          const entries = hist
+            .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
+            .sort((a, b) => a.data.localeCompare(b.data));
+          const math = computePrediction(entries);
+          if (!math) return null;
+          const value = (math.kaina_min + math.kaina_max) / 2;
+          return {
+            artikulas: m.artikulas,
+            data: math.data,
+            kaina_min: value,
+            kaina_max: value,
+            pasitikejimas: Math.round(math.confidence * 100),
+          };
+        })
+        .filter(Boolean) as Array<{ artikulas: string; data: string; kaina_min: number; kaina_max: number; pasitikejimas: number }>;
+
+      if (deterministicForecasts.length > 0) {
+        await saveMaterialForecasts(deterministicForecasts);
+      }
 
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
