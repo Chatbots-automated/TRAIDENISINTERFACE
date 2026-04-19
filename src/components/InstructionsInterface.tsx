@@ -144,7 +144,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     if (schemaParam === 'sdk') {
       openCombinedEditor('schema', 'sdk_chat_tool_schemas');
     } else if (schemaParam === 'kainos') {
-      openSchemaEditor('kainos_ai_tool_schemas');
+      openCombinedEditor('schema', 'kainos_ai_tool_schemas');
     } else if (schemaParam === 'kainos-prompt') {
       openCombinedEditor('kainos_prompt');
     }
@@ -294,6 +294,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     setEditorTab('schema');
     setSchemaKey(targetKey);
     setSchemaSuccess(null);
+    setSchemaError(null);
     setShowSchemaEditor(true);
     setEditorUnlocked(false);
     setEditorPassword('');
@@ -600,14 +601,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
-              SDK
+              Schemos
             </button>
             <button
-              onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
+              onClick={() => openCombinedEditor('kainos_prompt')}
               className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
               style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
             >
-              Žaliavos
+              Promptai
             </button>
           </div>
           <VersionHistoryButton onClick={() => setView('versions')} />
@@ -786,28 +787,57 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-1">
-                <button
-                  onClick={() => openCombinedEditor('schema')}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{
-                    color: editorTab === 'schema' ? colors.bg.white : colors.text.secondary,
-                    background: editorTab === 'schema' ? colors.interactive.accent : colors.bg.white,
-                    border: `1px solid ${editorTab === 'schema' ? colors.interactive.accent : colors.border.default}`
-                  }}
+                <div
+                  className="flex items-center gap-1 p-1 rounded-lg border"
+                  style={{ background: colors.bg.white, borderColor: colors.border.default }}
                 >
-                  {schemaKey === 'sdk_chat_tool_schemas' ? 'SDK schema' : 'Žaliavų schema'}
-                </button>
-                <button
-                  onClick={() => openCombinedEditor('kainos_prompt')}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{
-                    color: editorTab === 'kainos_prompt' ? colors.bg.white : colors.text.secondary,
-                    background: editorTab === 'kainos_prompt' ? colors.interactive.accent : colors.bg.white,
-                    border: `1px solid ${editorTab === 'kainos_prompt' ? colors.interactive.accent : colors.border.default}`
-                  }}
-                >
-                  Žaliavų prompt
-                </button>
+                  <button
+                    onClick={() => openCombinedEditor('schema')}
+                    className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                    style={{
+                      color: editorTab === 'schema' ? colors.bg.white : colors.text.secondary,
+                      background: editorTab === 'schema' ? colors.interactive.accent : 'transparent',
+                    }}
+                  >
+                    Schemos
+                  </button>
+                  <button
+                    onClick={() => openCombinedEditor('kainos_prompt')}
+                    className="px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                    style={{
+                      color: editorTab === 'kainos_prompt' ? colors.bg.white : colors.text.secondary,
+                      background: editorTab === 'kainos_prompt' ? colors.interactive.accent : 'transparent',
+                    }}
+                  >
+                    Promptai
+                  </button>
+                </div>
+                {editorTab === 'schema' && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
+                      className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+                      style={{
+                        color: schemaKey === 'sdk_chat_tool_schemas' ? colors.bg.white : colors.text.secondary,
+                        background: schemaKey === 'sdk_chat_tool_schemas' ? colors.interactive.accent : colors.bg.white,
+                        border: `1px solid ${schemaKey === 'sdk_chat_tool_schemas' ? colors.interactive.accent : colors.border.default}`
+                      }}
+                    >
+                      SDK chat schema
+                    </button>
+                    <button
+                      onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
+                      className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+                      style={{
+                        color: schemaKey === 'kainos_ai_tool_schemas' ? colors.bg.white : colors.text.secondary,
+                        background: schemaKey === 'kainos_ai_tool_schemas' ? colors.interactive.accent : colors.bg.white,
+                        border: `1px solid ${schemaKey === 'kainos_ai_tool_schemas' ? colors.interactive.accent : colors.border.default}`
+                      }}
+                    >
+                      Žaliavų web schema
+                    </button>
+                  </div>
+                )}
                 {editorTab === 'kainos_prompt' && (
                   <div className="flex items-center gap-1">
                     {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
