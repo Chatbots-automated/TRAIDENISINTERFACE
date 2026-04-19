@@ -16,6 +16,7 @@ import {
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
+  fetchLatestMaterialForecasts, saveMaterialForecasts,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
@@ -958,6 +959,31 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
+      const sharedForecasts = await fetchLatestMaterialForecasts();
+      if (sharedForecasts.length > 0) {
+        const forecastMap = new Map(sharedForecasts.map(f => [f.artikulas, f]));
+        const loaded = medziagas
+          .map((m) => {
+            const row = forecastMap.get(m.artikulas);
+            if (!row) return null;
+            return {
+              artikulas: row.artikulas,
+              kaina: row.kaina_min,
+              data: row.data,
+              reasoning: 'Bendra DI prognozė iš DB',
+              confidence: row.pasitikejimas ?? undefined,
+              citations: [],
+            } as AiPrediction;
+          })
+          .filter(Boolean) as AiPrediction[];
+
+        if (loaded.length === medziagas.length) {
+          setAiPredictions(loaded);
+          setAiResponseCitations([]);
+          return;
+        }
+      }
+
       const client = new Anthropic({
         apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
         dangerouslyAllowBrowser: true,
@@ -1011,6 +1037,15 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       });
       setAiPredictions(sanitized);
       setAiResponseCitations(extracted.citations);
+      await saveMaterialForecasts(
+        sanitized.map((item) => ({
+          artikulas: item.artikulas,
+          data: item.data,
+          kaina_min: item.kaina,
+          kaina_max: item.kaina,
+          pasitikejimas: item.confidence ?? null,
+        }))
+      );
     } catch (err: any) {
       console.error('AI prediction error:', err);
       onError?.(err.message || 'Nepavyko gauti DI prognozės');
@@ -1822,7 +1857,7 @@ Pateikite lietuvių kalba:
   const naftaDisplay = genLoading ? streamNafta : (analytics?.nafta ?? '');
   const geoDisplay = genLoading ? streamGeo : (analytics?.geoevents ?? '');
   const analysisDisplay = genStep === 'analysis' ? streamAnalysis : (!genLoading ? (analytics?.content ?? '') : '');
-  const lastUpdated = analytics?.atnaujinta ?? null;
+  const lastUpdated = analytics?.sukurta_at ?? null;
   const renderCitations = (meta: AnalysisSectionMeta) => {
     if (!meta.citations.length) return null;
     return (

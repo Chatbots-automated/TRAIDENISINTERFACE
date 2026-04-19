@@ -2,7 +2,8 @@
 // Tables used:
 //   medziagos                    – materials catalogue (artikulas PK, pavadinimas, vienetas, sukurta_at)
 //   medziagos_kainu_istorija     – price history       (id PK auto, artikulas, data, kaina_min, kaina_max, pastabos, sukurta_at)
-//   medziagos_prognoze_internetas – AI web analysis    (artikulas PK, content, geoevents, atnaujinta)
+//   medziagos_prognoze_internetas – AI web analysis    (artikulas PK, content, geoevents, nafta, sukurta_at)
+//   medziagos_kainu_prognozes     – shared forecasts    (id PK auto, artikulas, data, kaina_min, kaina_max, pasitikejimas, sukurta_at)
 
 import { db } from './database';
 
@@ -32,7 +33,17 @@ export interface PrognozėInternetas {
   content: string;     // markdown analysis
   geoevents: string;   // geopolitical events
   nafta: string;       // oil price analysis
-  atnaujinta: string;  // ISO timestamp
+  sukurta_at: string;  // ISO timestamp
+}
+
+export interface KainuPrognoze {
+  id: number;
+  artikulas: string;
+  data: string;
+  kaina_min: number;
+  kaina_max: number;
+  pasitikejimas: number | null;
+  sukurta_at: string;
 }
 
 /** Computed prediction (not stored in DB — calculated on-the-fly). */
@@ -217,13 +228,13 @@ export async function bulkInsertMedziagas(
 // Web analysis storage  (table: medziagos_prognoze_internetas)
 // ---------------------------------------------------------------------------
 
-const INTERNETAS_FIELDS = 'artikulas,content,geoevents,nafta,atnaujinta';
+const INTERNETAS_FIELDS = 'artikulas,content,geoevents,nafta,sukurta_at';
 
 export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]> {
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
     .select(INTERNETAS_FIELDS)
-    .order('atnaujinta', { ascending: false })
+    .order('sukurta_at', { ascending: false })
     .limit(-1);
 
   if (error) throw error;
@@ -234,7 +245,7 @@ export async function fetchLatestPrognozėInternetas(): Promise<PrognozėInterne
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
     .select(INTERNETAS_FIELDS)
-    .order('atnaujinta', { ascending: false })
+    .order('sukurta_at', { ascending: false })
     .limit(1);
 
   if (error) throw error;
@@ -256,13 +267,13 @@ export async function upsertPrognozėInternetas(
   if (existing && existing.length > 0) {
     const { error } = await db
       .from('medziagos_prognoze_internetas')
-      .update({ content, geoevents, nafta, atnaujinta: new Date().toISOString() })
+      .update({ content, geoevents, nafta, sukurta_at: new Date().toISOString() })
       .eq('artikulas', artikulas);
     if (error) throw error;
   } else {
     const { error } = await db
       .from('medziagos_prognoze_internetas')
-      .insert({ artikulas, content, geoevents, nafta, atnaujinta: new Date().toISOString() });
+      .insert({ artikulas, content, geoevents, nafta, sukurta_at: new Date().toISOString() });
     if (error) throw error;
   }
 }
@@ -280,6 +291,55 @@ export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null
 
   if (error) throw error;
   return (data && data.length > 0) ? data[0] : null;
+}
+
+const PROGNOZES_FIELDS = 'id,artikulas,data,kaina_min,kaina_max,pasitikejimas,sukurta_at';
+
+export async function fetchLatestMaterialForecasts(): Promise<KainuPrognoze[]> {
+  const { data, error } = await db
+    .from('medziagos_kainu_prognozes')
+    .select(PROGNOZES_FIELDS)
+    .order('sukurta_at', { ascending: false })
+    .limit(-1);
+
+  if (error) throw error;
+  const rows = (data || []) as KainuPrognoze[];
+  const seen = new Set<string>();
+  const latest: KainuPrognoze[] = [];
+  for (const row of rows) {
+    if (seen.has(row.artikulas)) continue;
+    seen.add(row.artikulas);
+    latest.push(row);
+  }
+  return latest;
+}
+
+export async function saveMaterialForecasts(
+  forecasts: Array<{ artikulas: string; data: string; kaina_min: number; kaina_max: number; pasitikejimas?: number | null }>
+): Promise<void> {
+  if (!forecasts.length) return;
+
+  const now = new Date().toISOString();
+  for (const f of forecasts) {
+    const { error: deleteError } = await db
+      .from('medziagos_kainu_prognozes')
+      .delete()
+      .eq('artikulas', f.artikulas)
+      .eq('data', f.data);
+    if (deleteError) throw deleteError;
+
+    const { error } = await db
+      .from('medziagos_kainu_prognozes')
+      .insert({
+        artikulas: f.artikulas,
+        data: f.data,
+        kaina_min: f.kaina_min,
+        kaina_max: f.kaina_max,
+        pasitikejimas: f.pasitikejimas ?? null,
+        sukurta_at: now,
+      });
+    if (error) throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------
