@@ -1241,7 +1241,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
         : [];
 
       // Build chart points from actual data
-      const points: ChartPoint[] = entries.map(e => ({
+      let points: ChartPoint[] = entries.map(e => ({
         date: e.data,
         label: e.data, // full YYYY-MM-DD for axis
         kaina: e.kaina_min,
@@ -1298,6 +1298,24 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
           });
         }
       }
+
+      // Merge duplicate dates and enforce chronological ordering so AI/maths
+      // overlays are layered on the same timeline, not appended inline.
+      const byDate = new Map<string, ChartPoint>();
+      for (const p of points) {
+        const existing = byDate.get(p.date);
+        if (!existing) {
+          byDate.set(p.date, { ...p });
+          continue;
+        }
+        byDate.set(p.date, {
+          ...existing,
+          kaina: p.kaina !== null && p.kaina !== undefined ? p.kaina : existing.kaina,
+          predicted: p.predicted !== undefined ? p.predicted : existing.predicted,
+          aiPredicted: p.aiPredicted !== undefined ? p.aiPredicted : existing.aiPredicted,
+        });
+      }
+      points = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 
       // Compute Y-axis domain
       const lastActualForDomain = [...points].reverse().find(p => p.kaina !== null);
