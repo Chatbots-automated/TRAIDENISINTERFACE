@@ -20,8 +20,8 @@ import { createClient } from './directus';
 import { appLogger } from './appLogger';
 import type { AppUser } from '../types';
 
-const directusUrl = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
-const directusToken = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+const directusUrl = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
+const directusToken = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
 
 if (!directusUrl) {
   throw new Error('Missing VITE_DIRECTUS_URL environment variable');
@@ -29,6 +29,8 @@ if (!directusUrl) {
 
 if (!directusToken) {
   console.warn('[Directus] No VITE_DIRECTUS_TOKEN found - API requests may fail. Set it in Netlify environment variables.');
+} else {
+  console.log('[Directus] Token loaded (trimmed), length:', directusToken.length);
 }
 
 // Main client

@@ -2,8 +2,8 @@
 import { db } from './database';
 import { appLogger } from './appLogger';
 
-const DIRECTUS_URL = import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org';
-const DIRECTUS_TOKEN = import.meta.env.VITE_DIRECTUS_TOKEN || '';
+const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
+const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
 export const TALPOS_TABLE_FIELDS = [
   'id',
   'pavadinimas',
