@@ -1271,26 +1271,13 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
           .sort((a, b) => a.data.localeCompare(b.data))
         : [];
       if (aiPredSeries.length > 0) {
-        const lastActual = [...points].reverse().find(p => p.kaina !== null);
-        if (lastActual) {
-          // Bridge from last actual to AI prediction
-          const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
-          if (!bridgeExists) {
-            points.push({
-              date: lastActual.date,
-              label: lastActual.date,
-              kaina: lastActual.kaina,
-              aiPredicted: lastActual.kaina!,
-            });
-          }
-          for (const aiPred of aiPredSeries) {
-            points.push({
-              date: aiPred.data,
-              label: aiPred.data,
-              kaina: null,
-              aiPredicted: aiPred.kaina,
-            });
-          }
+        for (const aiPred of aiPredSeries) {
+          points.push({
+            date: aiPred.data,
+            label: aiPred.data,
+            kaina: null,
+            aiPredicted: aiPred.kaina,
+          });
         }
       }
 
@@ -1858,42 +1845,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         let mergedForecasts: AiPrediction[] = [];
         if (aggregatedForecasts.length > 0) {
           mergedForecasts = [...aggregatedForecasts];
-          const predictedCodes = new Set(aggregatedForecasts.map((p) => p.artikulas));
-          const fallbackForecasts = meds.map((m) => {
-            if (predictedCodes.has(m.artikulas)) return null;
-
-            const entries = hist
-              .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
-              .sort((a, b) => a.data.localeCompare(b.data));
-            const math = computePrediction(entries);
-            if (math) {
-              return {
-                artikulas: m.artikulas,
-                kaina: (math.kaina_min + math.kaina_max) / 2,
-                data: normalizeIsoDate(math.data, fallbackDate),
-                reasoning: 'Papildyta atsargine matematine prognoze (trūko arba netiko DI įrašas).',
-                confidence: Math.round(math.confidence * 100),
-              } as AiPrediction;
-            }
-
-            const lastKnown = entries.length > 0 ? Number(entries[entries.length - 1].kaina_min) : null;
-            if (Number.isFinite(lastKnown) && Number(lastKnown) >= 0) {
-              return {
-                artikulas: m.artikulas,
-                kaina: Number(lastKnown),
-                data: fallbackDate,
-                reasoning: 'Papildyta deterministine atsargine reikšme (paskutinė žinoma kaina).',
-                confidence: 45,
-              } as AiPrediction;
-            }
-            return null;
-          }).filter(Boolean) as AiPrediction[];
-          mergedForecasts = [...mergedForecasts, ...fallbackForecasts];
-
-          const mergedCodes = new Set(mergedForecasts.map((f) => f.artikulas));
+          const mergedCodes = new Set(aggregatedForecasts.map((f) => f.artikulas));
           const missing = meds.filter((m) => !mergedCodes.has(m.artikulas));
           if (missing.length > 0) {
-            addNotif('error', 'AI prognozės formatas', `Negauta korektiškų prognozių visoms medžiagoms (${missing.length} trūksta).`);
+            addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta). Jos grafikuose nebus rodomos.`);
           }
         } else {
           addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Patikrinkite, kad DI grąžintų JSON forecasts.');
