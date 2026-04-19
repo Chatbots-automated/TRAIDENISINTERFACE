@@ -1518,6 +1518,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
     const MAX_TOOL_TURNS = 2;
+    const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -1607,6 +1608,9 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
           ...prev,
           nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
         }));
+        if (targetSections.has('geo') || targetSections.has('analysis')) {
+          await sleep(BETWEEN_STEP_DELAY_MS);
+        }
       }
 
       if (targetSections.has('geo')) {
@@ -1623,6 +1627,9 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
           ...prev,
           geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
         }));
+        if (targetSections.has('analysis')) {
+          await sleep(BETWEEN_STEP_DELAY_MS);
+        }
       }
 
       if (targetSections.has('analysis')) {
