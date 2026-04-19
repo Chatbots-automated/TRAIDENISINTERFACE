@@ -40,17 +40,59 @@ type View = 'editor' | 'versions';
 const DEFAULT_KAINOS_TOOLS = [
   { type: 'web_search_20260209', name: 'web_search' }
 ];
-const DEFAULT_KAINOS_AI_PROMPT = `Šiandien yra {{today}}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
+const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
+
+1. Brent žalia nafta — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
+2. Rytų Europos kontekstas — kaip naftos kainos veikia regioną
+3. Nafta → dervos ryšys
+4. Styreno kaina Europoje (jei randama)
+
+Pateikite trumpai ir struktūruotai lietuvių kalba.`;
+const DEFAULT_KAINOS_GEO_PROMPT = `Šiandien yra {{today}}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos dervų, stiklo pluošto ir kompozitinių medžiagų kainoms.
+
+Sutelkite dėmesį į: naftą, sankcijas, tarifus, energetiką, tiekimo grandines.
+Pateikite 4-6 konkrečius punktus lietuvių kalba.`;
+const DEFAULT_KAINOS_ANALYSIS_PROMPT = `Šiandien yra {{today}}. Įvertinkite žaliavų kainų prognozes.
+
+MEDŽIAGŲ SĄRAŠAS ({{chunkInfo}}):
+{{materialList}}
+
+DABARTINĖS / PASKUTINĖS KAINOS:
+{{latestPrices}}
+
+KAINŲ TENDENCIJOS:
+{{trendData}}
 
 ISTORINIAI KAINŲ DUOMENYS:
 {{priceData}}
 
-{{contextParts}}
+NAFTOS KAINŲ KONTEKSTAS:
+{{boundedNaftaText}}
 
-MEDŽIAGOS:
-{{materialList}}
+GEOPOLITINIS KONTEKSTAS:
+{{boundedGeoText}}
 
-SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON.`;
+Atsakykite TIK JSON formatu su:
+- analysis_markdown
+- forecasts[] (artikulas, kaina, data, confidence, reasoning).`;
+type KainosPromptKey = 'kainos_ai_nafta_prompt' | 'kainos_ai_geo_prompt' | 'kainos_ai_analysis_prompt';
+const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; defaultContent: string }> = {
+  kainos_ai_nafta_prompt: {
+    label: 'Naftos prompt',
+    help: 'Placeholderiai: {{today}}',
+    defaultContent: DEFAULT_KAINOS_OIL_PROMPT,
+  },
+  kainos_ai_geo_prompt: {
+    label: 'Geopolitikos prompt',
+    help: 'Placeholderiai: {{today}}',
+    defaultContent: DEFAULT_KAINOS_GEO_PROMPT,
+  },
+  kainos_ai_analysis_prompt: {
+    label: 'Medžiagų prognozės prompt',
+    help: 'Placeholderiai: {{today}} {{chunkInfo}} {{materialList}} {{latestPrices}} {{trendData}} {{priceData}} {{boundedNaftaText}} {{boundedGeoText}}',
+    defaultContent: DEFAULT_KAINOS_ANALYSIS_PROMPT,
+  },
+};
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
   const location = useLocation();
@@ -79,6 +121,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [schemaSuccess, setSchemaSuccess] = useState<string | null>(null);
   const [kainosPromptContent, setKainosPromptContent] = useState('');
+  const [kainosPromptKey, setKainosPromptKey] = useState<KainosPromptKey>('kainos_ai_analysis_prompt');
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
@@ -315,17 +358,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   };
 
-  const openPromptEditor = async () => {
+  const openPromptEditor = async (targetKey: KainosPromptKey = kainosPromptKey) => {
     setPromptLoading(true);
     setPromptError(null);
     setPromptSuccess(null);
+    setKainosPromptKey(targetKey);
     try {
-      const promptVar = await getInstructionVariable('kainos_ai_prediction_prompt');
-      setKainosPromptContent(promptVar?.content?.trim() ? promptVar.content : DEFAULT_KAINOS_AI_PROMPT);
+      const promptVar = await getInstructionVariable(targetKey);
+      const fallback = KAINOS_PROMPTS[targetKey].defaultContent;
+      setKainosPromptContent(promptVar?.content?.trim() ? promptVar.content : fallback);
     } catch (err: any) {
       console.error('[KainosPrompt] Load failed:', err);
       setPromptError('Nepavyko užkrauti Žaliavų prompt');
-      setKainosPromptContent(DEFAULT_KAINOS_AI_PROMPT);
+      setKainosPromptContent(KAINOS_PROMPTS[targetKey].defaultContent);
     } finally {
       setPromptLoading(false);
     }
@@ -340,7 +385,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     if (tab === 'schema') {
       await openSchemaEditor(schemaTarget || schemaKey);
     } else {
-      await openPromptEditor();
+      await openPromptEditor(kainosPromptKey);
     }
   };
 
@@ -370,16 +415,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         setPromptError('Prompt negali būti tuščias');
         return;
       }
-      const existing = await getInstructionVariable('kainos_ai_prediction_prompt');
+      const existing = await getInstructionVariable(kainosPromptKey);
       if (existing) {
-        const result = await saveInstructionVariable('kainos_ai_prediction_prompt', content, user.id, user.email, true);
+        const result = await saveInstructionVariable(kainosPromptKey, content, user.id, user.email, true);
         if (!result.success) throw new Error(result.error || 'Nepavyko išsaugoti prompt');
       } else {
         const { error: insertError } = await dbAdmin
           .from('instruction_variables')
           .insert([{
-            variable_key: 'kainos_ai_prediction_prompt',
-            variable_name: 'Žaliavų AI prompt',
+            variable_key: kainosPromptKey,
+            variable_name: KAINOS_PROMPTS[kainosPromptKey].label,
             content,
             display_order: 998,
             updated_by: user.id
@@ -737,7 +782,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   AI redaktorius
                 </h3>
                 <p className="text-[11px] truncate" style={{ color: colors.text.tertiary }}>
-                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : 'Žaliavų AI prompt redaktorius'}
+                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : `${KAINOS_PROMPTS[kainosPromptKey].label} redaktorius`}
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-1">
@@ -763,10 +808,28 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 >
                   Žaliavų prompt
                 </button>
+                {editorTab === 'kainos_prompt' && (
+                  <div className="flex items-center gap-1">
+                    {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
+                      <button
+                        key={key}
+                        onClick={() => openPromptEditor(key)}
+                        className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+                        style={{
+                          color: kainosPromptKey === key ? colors.bg.white : colors.text.secondary,
+                          background: kainosPromptKey === key ? colors.interactive.accent : colors.bg.white,
+                          border: `1px solid ${kainosPromptKey === key ? colors.interactive.accent : colors.border.default}`
+                        }}
+                      >
+                        {KAINOS_PROMPTS[key].label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-[11px] font-mono px-2 py-1 rounded" style={{ background: colors.bg.white, color: colors.text.tertiary, border: `1px solid ${colors.border.default}` }}>
-                  {editorTab === 'schema' ? schemaKey : 'kainos_ai_prediction_prompt'}
+                  {editorTab === 'schema' ? schemaKey : kainosPromptKey}
                 </span>
                 <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
                   <X className="w-5 h-5" />
@@ -798,7 +861,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               ) : (
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
                   <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
-                    Prompt tekstas • Palaikomi placeholderiai: {'{{today}} {{priceData}} {{contextParts}} {{materialList}}'}
+                    Prompt tekstas • {KAINOS_PROMPTS[kainosPromptKey].help}
                   </div>
                   <textarea
                     value={kainosPromptContent}
@@ -858,7 +921,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </div>
                 ) : (
                   <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
-                    Šis prompt naudojamas tik Žaliavų AI prognozei.
+                    Šis prompt naudojamas Žaliavų analizėje: {KAINOS_PROMPTS[kainosPromptKey].label.toLowerCase()}.
                   </div>
                 )}
               </div>
@@ -885,7 +948,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   <>
                     <button
                       className="btn btn-soft btn-sm"
-                      onClick={openPromptEditor}
+                      onClick={() => openPromptEditor(kainosPromptKey)}
                       disabled={promptLoading || promptSaving || !editorUnlocked}
                     >
                       Perkrauti

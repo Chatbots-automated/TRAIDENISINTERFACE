@@ -10,6 +10,7 @@ import {
 import Anthropic from '@anthropic-ai/sdk';
 import * as XLSX from 'xlsx';
 import type { AppUser } from '../types';
+import { getInstructionVariable } from '../lib/instructionsService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import {
   fetchMedziagas, fetchIstorija,
@@ -32,6 +33,68 @@ interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
 const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 15;
+const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
+
+1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
+2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
+3. **Nafta → dervos ryšys** — kaip dabartinės naftos kainos veikia poliestetinių ir epoksidinių dervų gamybos sąnaudas.
+4. **Styreno kaina** — jei randama, dabartinė styreno kaina Europoje
+
+Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`;
+const DEFAULT_KAINOS_GEO_PROMPT = `Šiandien yra {{today}}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms, stiklo pluštui ir kompozitinių medžiagų kainoms.
+
+Sutelkite dėmesį į:
+- naftos kainas
+- sankcijas
+- prekybos politiką
+- energijos kainas
+- tiekimo grandinės sutrikimus
+
+Pateikite 4-6 konkrečius biuletenų punktus lietuvių kalba.`;
+const DEFAULT_KAINOS_ANALYSIS_PROMPT = `Šiandien yra {{today}}. Įvertinkite žaliavų kainų prognozes remdamiesi:
+
+1) Geopolitika (karai, tarifai, sankcijos, tiekimo sutrikimai)
+2) Naftos kaina ir jos tendencijos
+3) Medžiagų istorinėmis kainomis ir jų trendu
+
+MEDŽIAGŲ SĄRAŠAS ({{chunkInfo}}):
+{{materialList}}
+
+DABARTINĖS / PASKUTINĖS KAINOS:
+{{latestPrices}}
+
+KAINŲ TENDENCIJOS:
+{{trendData}}
+
+ISTORINIAI KAINŲ DUOMENYS:
+{{priceData}}
+
+NAFTOS KAINŲ KONTEKSTAS:
+{{boundedNaftaText}}
+
+GEOPOLITINIS KONTEKSTAS:
+{{boundedGeoText}}
+
+Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
+{
+  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais (tik šiai medžiagų daliai).",
+  "forecasts": [
+    {
+      "artikulas": "MEDZIAGOS_KODAS",
+      "kaina": 1.23,
+      "data": "YYYY-MM-DD",
+      "confidence": 0-100,
+      "reasoning": "Trumpas paaiškinimas."
+    }
+  ]
+}
+
+Taisyklės:
+- "forecasts" turi turėti po vieną įrašą kiekvienam artikului iš sąrašo (naudokite tik pateiktus artikulus, be sinonimų).
+- Kiekvienas "artikulas" turi būti unikalus, be dublių.
+- "kaina" turi būti skaičius (ne tekstas) ir realistiška pagal trendą bei kontekstą.
+- "data" turi būti griežtai YYYY-MM-DD formatu (~3 mėn. nuo šiandien).
+- Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`;
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   const lines: string[] = [];
@@ -99,6 +162,14 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
     chunks.push(items.slice(i, i + chunkSize));
   }
   return chunks;
+}
+
+function injectPromptVars(template: string, vars: Record<string, string>): string {
+  let output = template;
+  for (const [key, value] of Object.entries(vars)) {
+    output = output.split(`{{${key}}}`).join(value);
+  }
+  return output;
 }
 
 function normalizeName(value: string): string {
@@ -1477,6 +1548,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       dangerouslyAllowBrowser: true,
     });
+    const [oilPromptVar, geoPromptVar, analysisPromptVar, legacyPromptVar] = await Promise.all([
+      getInstructionVariable('kainos_ai_nafta_prompt'),
+      getInstructionVariable('kainos_ai_geo_prompt'),
+      getInstructionVariable('kainos_ai_analysis_prompt'),
+      getInstructionVariable('kainos_ai_prediction_prompt'),
+    ]);
+    const oilPromptTemplate = oilPromptVar?.content?.trim() || DEFAULT_KAINOS_OIL_PROMPT;
+    const geoPromptTemplate = geoPromptVar?.content?.trim() || DEFAULT_KAINOS_GEO_PROMPT;
+    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || legacyPromptVar?.content?.trim() || DEFAULT_KAINOS_ANALYSIS_PROMPT;
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
@@ -1556,14 +1636,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const naftaResult = await runWebStep({
           maxTokens: 700,
           system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
-          user: `Šiandien yra ${today}. Ieškokite internete dabartinių naftos kainų ir pateikite:
-
-1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
-2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
-3. **Nafta → dervos ryšys** — kaip dabartinės naftos kainos veikia poliestetinių ir epoksidinių dervų gamybos sąnaudas. Dervos yra naftos perdirbimo produktai (styrenas, propileno glikolis, epichlorhidrinas), todėl naftos kainų pokyčiai tiesiogiai veikia dervų kainas su 1-3 mėnesių vėlavimu.
-4. **Styreno kaina** — jei randama, dabartinė styreno (pagrindinis poliestetinės dervos komponentas) kaina Europoje
-
-Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`,
+          user: injectPromptVars(oilPromptTemplate, { today }),
         });
         naftaText = naftaResult.text;
         setStreamNafta(naftaText);
@@ -1582,7 +1655,7 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
         const geoResult = await runWebStep({
           maxTokens: 550,
           system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
-          user: `Šiandien yra ${today}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms (Derakane, Atlac), stiklo pluštui ir kompozitinių medžiagų kainoms. Sutelkite dėmesį į: naftos kainas, sankcijas, prekybos politiką, energijos kainas, tiekimo grandinės sutrikimus. 4-6 konkretūs biuletenų punktai lietuvių kalba.`,
+          user: injectPromptVars(geoPromptTemplate, { today }),
         });
         geoText = geoResult.text;
         setStreamGeo(geoText);
@@ -1621,50 +1694,16 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
           const analysisResult = await runWebStep({
             maxTokens: 2200,
             system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
-            user: `Šiandien yra ${today}. Įvertinkite žaliavų kainų prognozes remdamiesi:
-
-1) Geopolitika (karai, tarifai, sankcijos, tiekimo sutrikimai)
-2) Naftos kaina ir jos tendencijos
-3) Medžiagų istorinėmis kainomis ir jų trendu
-
-MEDŽIAGŲ SĄRAŠAS (DALIS ${chunkIndex + 1}/${materialChunks.length}):
-${materialList}
-
-DABARTINĖS / PASKUTINĖS KAINOS:
-${latestPrices}
-
-KAINŲ TENDENCIJOS:
-${trendData}
-
-ISTORINIAI KAINŲ DUOMENYS:
-${priceData}
-
-NAFTOS KAINŲ KONTEKSTAS:
-${boundedNaftaText}
-
-GEOPOLITINIS KONTEKSTAS:
-${boundedGeoText}
-
-Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
-{
-  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais (tik šiai medžiagų daliai).",
-  "forecasts": [
-    {
-      "artikulas": "MEDZIAGOS_KODAS",
-      "kaina": 1.23,
-      "data": "YYYY-MM-DD",
-      "confidence": 0-100,
-      "reasoning": "Trumpas paaiškinimas."
-    }
-  ]
-}
-
-Taisyklės:
-- "forecasts" turi turėti po vieną įrašą kiekvienam artikului iš sąrašo (naudokite tik pateiktus artikulus, be sinonimų).
-- Kiekvienas "artikulas" turi būti unikalus, be dublių.
-- "kaina" turi būti skaičius (ne tekstas) ir realistiška pagal trendą bei kontekstą.
-- "data" turi būti griežtai YYYY-MM-DD formatu (~3 mėn. nuo šiandien).
-- Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`,
+            user: injectPromptVars(analysisPromptTemplate, {
+              today,
+              materialList,
+              chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
+              latestPrices,
+              trendData,
+              priceData,
+              boundedNaftaText,
+              boundedGeoText,
+            }),
           });
 
           try {
