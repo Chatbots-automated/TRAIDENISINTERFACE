@@ -31,6 +31,7 @@ import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
+const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 15;
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   const lines: string[] = [];
@@ -83,6 +84,15 @@ function addMonthsISO(dateIso: string, months: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, (m - 1) + months, d));
   return dt.toISOString().split('T')[0];
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    chunks.push(items.slice(i, i + chunkSize));
+  }
+  return chunks;
 }
 
 
@@ -1534,22 +1544,33 @@ Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skai�
       if (targetSections.has('analysis')) {
         // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
         setGenStep('analysis');
-        const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 7000);
-        const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 4500);
-        const trendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 4500);
         const boundedNaftaText = truncatePromptSection(naftaText, 2500);
         const boundedGeoText = truncatePromptSection(geoText, 2200);
-        const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
-        const analysisResult = await runWebStep({
-          maxTokens: 2200,
-          system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
-          user: `Šiandien yra ${today}. Įvertinkite žaliavų kainų prognozes remdamiesi:
+        const materialChunks = chunkArray(meds, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
+        const fallbackDate = addMonthsISO(today, 3);
+        let aggregatedForecasts: AiPrediction[] = [];
+        const analysisTexts: string[] = [];
+        let allAnalysisCitations: ExtractedCitation[] = [];
+
+        for (let chunkIndex = 0; chunkIndex < materialChunks.length; chunkIndex += 1) {
+          const chunkMeds = materialChunks[chunkIndex];
+          const chunkCodes = new Set(chunkMeds.map((m) => m.artikulas));
+          const chunkHist = hist.filter((h) => chunkCodes.has(h.artikulas));
+          const priceData = truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 7000);
+          const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 4500);
+          const trendData = truncatePromptSection(formatTrendDataForPrompt(chunkMeds, chunkHist), 4500);
+          const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
+
+          const analysisResult = await runWebStep({
+            maxTokens: 2200,
+            system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
+            user: `Šiandien yra ${today}. Įvertinkite žaliavų kainų prognozes remdamiesi:
 
 1) Geopolitika (karai, tarifai, sankcijos, tiekimo sutrikimai)
 2) Naftos kaina ir jos tendencijos
 3) Medžiagų istorinėmis kainomis ir jų trendu
 
-MEDŽIAGŲ SĄRAŠAS:
+MEDŽIAGŲ SĄRAŠAS (DALIS ${chunkIndex + 1}/${materialChunks.length}):
 ${materialList}
 
 DABARTINĖS / PASKUTINĖS KAINOS:
@@ -1569,7 +1590,7 @@ ${boundedGeoText}
 
 Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
 {
-  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais.",
+  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais (tik šiai medžiagų daliai).",
   "forecasts": [
     {
       "artikulas": "MEDZIAGOS_KODAS",
@@ -1587,26 +1608,38 @@ Taisyklės:
 - "kaina" turi būti skaičius (ne tekstas) ir realistiška pagal trendą bei kontekstą.
 - "data" turi būti griežtai YYYY-MM-DD formatu (~3 mėn. nuo šiandien).
 - Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`,
-        });
-        const fallbackDate = addMonthsISO(today, 3);
-        let parsedForecasts: AiPrediction[] = [];
-        try {
-          const analysisPayload = extractJsonPayload(analysisResult.text);
-          const parsed = analysisPayload as AnalysisForecastResponsePayload;
-          parsedForecasts = normalizeAnalysisForecasts(analysisPayload, meds, fallbackDate);
-          if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
-            analysisText = parsed.analysis_markdown.trim();
-          } else {
-            analysisText = analysisResult.text;
+          });
+
+          try {
+            const analysisPayload = extractJsonPayload(analysisResult.text);
+            const parsed = analysisPayload as AnalysisForecastResponsePayload;
+            const parsedForecasts = normalizeAnalysisForecasts(analysisPayload, chunkMeds, fallbackDate);
+            aggregatedForecasts = [...aggregatedForecasts, ...parsedForecasts];
+            if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
+              analysisTexts.push(parsed.analysis_markdown.trim());
+            }
+          } catch {
+            // ignore invalid chunk payload; deterministic fallback will fill later
           }
-        } catch {
-          analysisText = analysisResult.text;
-          parsedForecasts = [];
+          if (analysisResult.citations.length > 0) {
+            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
+            for (const citation of analysisResult.citations) {
+              const key = `${citation.title}|${citation.url}`;
+              if (!seen.has(key)) {
+                allAnalysisCitations.push(citation);
+                seen.add(key);
+              }
+            }
+          }
         }
 
+        analysisText = analysisTexts.length > 0
+          ? analysisTexts.map((part, idx) => `### Medžiagų dalis ${idx + 1}\n${part}`).join('\n\n')
+          : analysisText;
+
         let mergedForecasts: AiPrediction[] = [];
-        if (parsedForecasts.length > 0) {
-          const parsedMap = new Map(parsedForecasts.map((p) => [p.artikulas, p]));
+        if (aggregatedForecasts.length > 0) {
+          const parsedMap = new Map(aggregatedForecasts.map((p) => [p.artikulas, p]));
           mergedForecasts = meds.map((m) => {
             const aiPred = parsedMap.get(m.artikulas);
             if (aiPred) return aiPred;
@@ -1657,7 +1690,7 @@ Taisyklės:
         setStreamAnalysis(analysisText);
         setAnalysisMeta((prev) => ({
           ...prev,
-          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 8), citations: analysisResult.citations },
+          analysis: { confidence: Math.min(95, 35 + allAnalysisCitations.length * 6), citations: allAnalysisCitations },
         }));
 
         if (sanitized.length > 0) {
