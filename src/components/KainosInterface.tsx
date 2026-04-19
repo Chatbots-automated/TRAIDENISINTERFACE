@@ -459,6 +459,7 @@ interface AnalysisForecastResponsePayload {
   analysis_markdown?: string;
   forecasts?: Array<{
     artikulas?: string;
+    material?: string;
     kaina?: number;
     data?: string;
     confidence?: number;
@@ -543,42 +544,45 @@ function extractTextAndCitationsFromMessage(contentBlocks: any[]): ExtractedResp
 function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
   const byCode = new Map(medziagas.map(m => [m.artikulas.toLowerCase(), m.artikulas]));
 
-  const toPred = (item: any): AiPrediction | null => {
-    if (!item || typeof item !== 'object') return null;
-    const rawCode = typeof item?.artikulas === 'string' ? item.artikulas.trim() : '';
-    if (!rawCode) return null;
+  const toPredictions = (item: any): AiPrediction[] => {
+    if (!item || typeof item !== 'object') return [];
+    const rawCode = typeof item?.artikulas === 'string'
+      ? item.artikulas.trim()
+      : (typeof item?.material === 'string' ? item.material.trim() : '');
+    if (!rawCode) return [];
     const artikulas = byCode.get(rawCode.toLowerCase()) || null;
-    if (!artikulas) return null;
+    if (!artikulas) return [];
+
+    const confidenceRaw = coerceFiniteNumber(item?.confidence);
+    const confidence = confidenceRaw === null ? undefined : Math.max(0, Math.min(100, confidenceRaw));
+    const reasoning = typeof item?.reasoning === 'string'
+      ? item.reasoning
+      : 'Prognozė pagal naftos ir geopolitinį kontekstą.';
 
     let kaina = coerceFiniteNumber(item?.kaina);
     let data = normalizeIsoDate(item?.data, fallbackDate);
 
-    if ((kaina === null || kaina < 0) && Array.isArray(item?.points)) {
-      const normalizedPoints = item.points
+    if (Array.isArray(item?.points)) {
+      const normalizedPoints: AiPrediction[] = item.points
         .map((p: any) => ({
-          date: normalizeIsoDate(p?.date, fallbackDate),
-          price: coerceFiniteNumber(p?.price),
+          artikulas,
+          kaina: coerceFiniteNumber(p?.price),
+          data: normalizeIsoDate(p?.date, fallbackDate),
+          reasoning,
+          confidence,
         }))
-        .filter((p: any) => p.price !== null && p.price! >= 0) as Array<{ date: string; price: number }>;
-      if (normalizedPoints.length > 0) {
-        const sorted = normalizedPoints.sort((a, b) => a.date.localeCompare(b.date));
-        const target = sorted.find((p) => p.date >= fallbackDate) || sorted[Math.min(2, sorted.length - 1)] || sorted[0];
-        kaina = target.price;
-        data = target.date;
-      }
+        .filter((p: any) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
+      if (normalizedPoints.length > 0) return normalizedPoints;
     }
-    if (kaina === null || kaina < 0) return null;
+    if (kaina === null || kaina < 0) return [];
 
-    const confidenceRaw = coerceFiniteNumber(item?.confidence);
-    const confidence = confidenceRaw === null ? undefined : Math.max(0, Math.min(100, confidenceRaw));
-
-    return {
+    return [{
       artikulas,
       kaina,
       data,
-      reasoning: typeof item?.reasoning === 'string' ? item.reasoning : 'Prognozė pagal naftos ir geopolitinį kontekstą.',
+      reasoning,
       confidence,
-    };
+    }];
   };
 
   const parsed = Array.isArray(payload)
@@ -589,9 +593,11 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
 
   const deduped = new Map<string, AiPrediction>();
   for (const row of parsed) {
-    const pred = toPred(row);
-    if (!pred) continue;
-    if (!deduped.has(pred.artikulas)) deduped.set(pred.artikulas, pred);
+    const preds = toPredictions(row);
+    for (const pred of preds) {
+      const key = `${pred.artikulas}|${pred.data}`;
+      if (!deduped.has(key)) deduped.set(key, pred);
+    }
   }
 
   return Array.from(deduped.values());
@@ -1165,20 +1171,17 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     setAiLoading(true);
     try {
       const sharedForecasts = await fetchLatestMaterialForecasts();
-      const forecastMap = new Map(sharedForecasts.map(f => [f.artikulas, f]));
       const loaded = medziagas
-        .map((m) => {
-          const row = forecastMap.get(m.artikulas);
-          if (!row) return null;
-          return {
+        .flatMap((m) => sharedForecasts
+          .filter((row) => row.artikulas === m.artikulas)
+          .map((row) => ({
             artikulas: row.artikulas,
             kaina: row.kaina_min,
             data: row.data,
             reasoning: 'Prognozė iš Analizė skilties',
             confidence: row.pasitikejimas ?? undefined,
             citations: [],
-          } as AiPrediction;
-        })
+          } as AiPrediction)))
         .filter(Boolean) as AiPrediction[];
 
       if (loaded.length === 0) {
@@ -1262,14 +1265,14 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       }
 
       // Add AI prediction point if toggle is on
-      const aiPred = aiToggle ? aiPredictions.find(p => p.artikulas === m.artikulas) : null;
-      if (aiPred && aiPred.kaina > 0) {
+      const aiPredSeries = aiToggle
+        ? aiPredictions
+          .filter(p => p.artikulas === m.artikulas && p.kaina > 0)
+          .sort((a, b) => a.data.localeCompare(b.data))
+        : [];
+      if (aiPredSeries.length > 0) {
         const lastActual = [...points].reverse().find(p => p.kaina !== null);
         if (lastActual) {
-          const mathPredictionDate = prediction?.data;
-          const aiPlotDate = mathPredictionDate && aiPred.data === mathPredictionDate ? addDaysISO(aiPred.data, 1) : aiPred.data;
-          const adjustedAiValue = aiPred.kaina;
-
           // Bridge from last actual to AI prediction
           const bridgeExists = points.some(p => p.date === lastActual.date && p.aiPredicted !== undefined);
           if (!bridgeExists) {
@@ -1280,12 +1283,14 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
               aiPredicted: lastActual.kaina!,
             });
           }
-          points.push({
-            date: aiPlotDate,
-            label: aiPlotDate,
-            kaina: null,
-            aiPredicted: adjustedAiValue,
-          });
+          for (const aiPred of aiPredSeries) {
+            points.push({
+              date: aiPred.data,
+              label: aiPred.data,
+              kaina: null,
+              aiPredicted: aiPred.kaina,
+            });
+          }
         }
       }
 
@@ -1295,12 +1300,12 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
         ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
-        ...(aiPred && lastActualForDomain ? [aiPred.kaina] : []),
+        ...aiPredSeries.map((p) => p.kaina),
       ];
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
 
-      return { material: m, entries, prediction, points, minY, maxY, aiPred };
+      return { material: m, entries, prediction, points, minY, maxY, aiPredSeries };
     }).filter(Boolean) as NonNullable<ReturnType<typeof Array.prototype.map>[number]>[];
   }, [medziagas, byArt, aiToggle, aiPredictions]);
 
@@ -1375,7 +1380,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         </div>
       )}
 
-      {charts.map(({ material, entries, prediction, points, minY, maxY, aiPred }) => (
+      {charts.map(({ material, entries, prediction, points, minY, maxY, aiPredSeries }) => (
         <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
           style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           {/* Header */}
@@ -1396,13 +1401,13 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   <span className="ml-1 opacity-60">({Math.round(prediction.confidence * 100)}%)</span>
                 </span>
               )}
-              {aiPred && (
+              {aiPredSeries.length > 0 && (
                 <span className="prediction-badge text-[10px] px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
-                  title={aiPred.reasoning}>
-                  AI {aiPred.data}: {aiPred.kaina.toFixed(2)}
-                  {typeof aiPred.confidence === 'number' && (
-                    <span className="ml-1 opacity-70">({Math.round(aiPred.confidence)}%)</span>
+                  title={aiPredSeries[0].reasoning}>
+                  AI taškai: {aiPredSeries.length} ({aiPredSeries[0].data} → {aiPredSeries[aiPredSeries.length - 1].data})
+                  {typeof aiPredSeries[0].confidence === 'number' && (
+                    <span className="ml-1 opacity-70">(~{Math.round(aiPredSeries[0].confidence)}%)</span>
                   )}
                 </span>
               )}
@@ -1469,7 +1474,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   animationEasing="ease-out"
                 />
                 {/* AI prediction dashed line — purple */}
-                {aiPred && (
+                {aiPredSeries.length > 0 && (
                   <Line
                     type="monotone"
                     dataKey="aiPredicted"
@@ -1512,7 +1517,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   ) : null;
                 })()}
                 {/* AI prediction endpoint — purple dot */}
-                {aiPred && (() => {
+                {aiPredSeries.length > 0 && (() => {
                   const aiPoint = [...points].reverse().find(p => p.aiPredicted !== undefined && p.kaina === null);
                   return aiPoint ? (
                     <ReferenceDot x={aiPoint.label} y={aiPoint.aiPredicted!} r={0} fill="transparent" stroke="transparent">
@@ -1852,10 +1857,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
         let mergedForecasts: AiPrediction[] = [];
         if (aggregatedForecasts.length > 0) {
-          const parsedMap = new Map(aggregatedForecasts.map((p) => [p.artikulas, p]));
-          mergedForecasts = meds.map((m) => {
-            const aiPred = parsedMap.get(m.artikulas);
-            if (aiPred) return aiPred;
+          mergedForecasts = [...aggregatedForecasts];
+          const predictedCodes = new Set(aggregatedForecasts.map((p) => p.artikulas));
+          const fallbackForecasts = meds.map((m) => {
+            if (predictedCodes.has(m.artikulas)) return null;
 
             const entries = hist
               .filter(e => e.artikulas === m.artikulas && e.kaina_min != null)
@@ -1883,8 +1888,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             }
             return null;
           }).filter(Boolean) as AiPrediction[];
+          mergedForecasts = [...mergedForecasts, ...fallbackForecasts];
 
-          const missing = meds.filter((m) => !mergedForecasts.some((f) => f.artikulas === m.artikulas));
+          const mergedCodes = new Set(mergedForecasts.map((f) => f.artikulas));
+          const missing = meds.filter((m) => !mergedCodes.has(m.artikulas));
           if (missing.length > 0) {
             addNotif('error', 'AI prognozės formatas', `Negauta korektiškų prognozių visoms medžiagoms (${missing.length} trūksta).`);
           }
