@@ -1629,15 +1629,14 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       dangerouslyAllowBrowser: true,
     });
-    const [oilPromptVar, geoPromptVar, analysisPromptVar, legacyPromptVar] = await Promise.all([
+    const [oilPromptVar, geoPromptVar, analysisPromptVar] = await Promise.all([
       getInstructionVariable('kainos_ai_nafta_prompt'),
       getInstructionVariable('kainos_ai_geo_prompt'),
       getInstructionVariable('kainos_ai_analysis_prompt'),
-      getInstructionVariable('kainos_ai_prediction_prompt'),
     ]);
     const oilPromptTemplate = oilPromptVar?.content?.trim() || DEFAULT_KAINOS_OIL_PROMPT;
     const geoPromptTemplate = geoPromptVar?.content?.trim() || DEFAULT_KAINOS_GEO_PROMPT;
-    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || legacyPromptVar?.content?.trim() || DEFAULT_KAINOS_ANALYSIS_PROMPT;
+    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || DEFAULT_KAINOS_ANALYSIS_PROMPT;
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
