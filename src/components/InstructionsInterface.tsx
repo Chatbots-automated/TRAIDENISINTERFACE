@@ -51,6 +51,48 @@ MEDŽIAGOS:
 {{materialList}}
 
 SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON.`;
+const DEFAULT_DI_GRAFA_PROMPT = `Jūs esate medžiagų kainų prognozavimo ekspertas.
+Šiandien: {{today}}
+
+UŽDUOTIS:
+Remiantis žemiau pateiktais duomenimis pateikite kiekvienos medžiagos 3 mėn. kainos prognozę.
+
+1) DABARTINĖS / PASKUTINĖS KAINOS:
+{{latestPrices}}
+
+2) KAINŲ TENDENCIJOS (pagal istoriją):
+{{trendData}}
+
+3) PILNI ISTORINIAI KAINŲ DUOMENYS:
+{{priceData}}
+
+4) NAFTOS KONTEKSTAS:
+{{naftaContext}}
+
+5) GEOPOLITINIS KONTEKSTAS:
+{{geopoliticalContext}}
+
+6) MEDŽIAGŲ RINKOS ANALIZĖ:
+{{analysisContent}}
+
+MEDŽIAGOS:
+{{materialList}}
+
+Atsakykite TIKTAI JSON masyvu be papildomo teksto:
+[
+  {
+    "artikulas": "CODE",
+    "kaina": 1.23,
+    "data": "YYYY-MM-DD",
+    "reasoning": "Trumpas paaiškinimas lietuvių kalba (1-2 sakiniai).",
+    "confidence": 0-100
+  }
+]
+
+Taisyklės:
+- "kaina" turi būti realistiška pagal paskutinę kainą ir tendenciją.
+- "data" turi būti ~3 mėn. nuo {{today}}.
+- "confidence" turi atspindėti duomenų kiekį ir šaltinių aiškumą.`;
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
   const location = useLocation();
@@ -72,7 +114,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const [schemaKey, setSchemaKey] = useState<'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas'>('sdk_chat_tool_schemas');
-  const [editorTab, setEditorTab] = useState<'schema' | 'kainos_prompt'>('schema');
+  const [editorTab, setEditorTab] = useState<'schema' | 'kainos_prompt' | 'di_grafa_prompt'>('schema');
   const [schemaContent, setSchemaContent] = useState('');
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaSaving, setSchemaSaving] = useState(false);
@@ -83,6 +125,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptSuccess, setPromptSuccess] = useState<string | null>(null);
+  const [promptKey, setPromptKey] = useState<'kainos_ai_prediction_prompt' | 'kainos_ai_di_grafa_prompt'>('kainos_ai_prediction_prompt');
   const [editorUnlocked, setEditorUnlocked] = useState(false);
   const [editorPassword, setEditorPassword] = useState('');
   const [editorPasswordError, setEditorPasswordError] = useState('');
@@ -104,6 +147,8 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       openSchemaEditor('kainos_ai_tool_schemas');
     } else if (schemaParam === 'kainos-prompt') {
       openCombinedEditor('kainos_prompt');
+    } else if (schemaParam === 'di-grafa') {
+      openCombinedEditor('di_grafa_prompt');
     }
   }, [location.search]);
 
@@ -315,23 +360,25 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   };
 
-  const openKainosPromptEditor = async () => {
+  const openPromptEditor = async (key: 'kainos_ai_prediction_prompt' | 'kainos_ai_di_grafa_prompt') => {
     setPromptLoading(true);
     setPromptError(null);
     setPromptSuccess(null);
+    setPromptKey(key);
     try {
-      const promptVar = await getInstructionVariable('kainos_ai_prediction_prompt');
-      setKainosPromptContent(promptVar?.content?.trim() ? promptVar.content : DEFAULT_KAINOS_AI_PROMPT);
+      const promptVar = await getInstructionVariable(key);
+      const fallback = key === 'kainos_ai_di_grafa_prompt' ? DEFAULT_DI_GRAFA_PROMPT : DEFAULT_KAINOS_AI_PROMPT;
+      setKainosPromptContent(promptVar?.content?.trim() ? promptVar.content : fallback);
     } catch (err: any) {
       console.error('[KainosPrompt] Load failed:', err);
       setPromptError('Nepavyko užkrauti Žaliavų prompt');
-      setKainosPromptContent(DEFAULT_KAINOS_AI_PROMPT);
+      setKainosPromptContent(key === 'kainos_ai_di_grafa_prompt' ? DEFAULT_DI_GRAFA_PROMPT : DEFAULT_KAINOS_AI_PROMPT);
     } finally {
       setPromptLoading(false);
     }
   };
 
-  const openCombinedEditor = async (tab: 'schema' | 'kainos_prompt', schemaTarget?: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+  const openCombinedEditor = async (tab: 'schema' | 'kainos_prompt' | 'di_grafa_prompt', schemaTarget?: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
     setShowSchemaEditor(true);
     setEditorTab(tab);
     setEditorUnlocked(false);
@@ -339,8 +386,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     setEditorPasswordError('');
     if (tab === 'schema') {
       await openSchemaEditor(schemaTarget || schemaKey);
+    } else if (tab === 'di_grafa_prompt') {
+      await openPromptEditor('kainos_ai_di_grafa_prompt');
     } else {
-      await openKainosPromptEditor();
+      await openPromptEditor('kainos_ai_prediction_prompt');
     }
   };
 
@@ -370,18 +419,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         setPromptError('Prompt negali būti tuščias');
         return;
       }
-      const existing = await getInstructionVariable('kainos_ai_prediction_prompt');
+      const existing = await getInstructionVariable(promptKey);
       if (existing) {
-        const result = await saveInstructionVariable('kainos_ai_prediction_prompt', content, user.id, user.email, true);
+        const result = await saveInstructionVariable(promptKey, content, user.id, user.email, true);
         if (!result.success) throw new Error(result.error || 'Nepavyko išsaugoti prompt');
       } else {
+        const isDiGrafa = promptKey === 'kainos_ai_di_grafa_prompt';
         const { error: insertError } = await dbAdmin
           .from('instruction_variables')
           .insert([{
-            variable_key: 'kainos_ai_prediction_prompt',
-            variable_name: 'Žaliavų AI prompt',
+            variable_key: promptKey,
+            variable_name: isDiGrafa ? 'Žaliavų DI Grafa prompt' : 'Žaliavų AI prompt',
             content,
-            display_order: 998,
+            display_order: isDiGrafa ? 997 : 998,
             updated_by: user.id
           }]);
         if (insertError) throw insertError;
@@ -737,7 +787,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   AI redaktorius
                 </h3>
                 <p className="text-[11px] truncate" style={{ color: colors.text.tertiary }}>
-                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : 'Žaliavų AI prompt redaktorius'}
+                  {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : editorTab === 'di_grafa_prompt' ? 'Žaliavų DI Grafa prompt redaktorius' : 'Žaliavų AI prompt redaktorius'}
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-1">
@@ -763,10 +813,21 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 >
                   Žaliavų prompt
                 </button>
+                <button
+                  onClick={() => openCombinedEditor('di_grafa_prompt')}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    color: editorTab === 'di_grafa_prompt' ? colors.bg.white : colors.text.secondary,
+                    background: editorTab === 'di_grafa_prompt' ? colors.interactive.accent : colors.bg.white,
+                    border: `1px solid ${editorTab === 'di_grafa_prompt' ? colors.interactive.accent : colors.border.default}`
+                  }}
+                >
+                  DI Grafa
+                </button>
               </div>
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-[11px] font-mono px-2 py-1 rounded" style={{ background: colors.bg.white, color: colors.text.tertiary, border: `1px solid ${colors.border.default}` }}>
-                  {editorTab === 'schema' ? schemaKey : 'kainos_ai_prediction_prompt'}
+                  {editorTab === 'schema' ? schemaKey : promptKey}
                 </span>
                 <button onClick={() => setShowSchemaEditor(false)} className="btn btn-circle btn-text btn-sm">
                   <X className="w-5 h-5" />
@@ -798,7 +859,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               ) : (
                 <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
                   <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
-                    Prompt tekstas • Palaikomi placeholderiai: {'{{today}} {{priceData}} {{contextParts}} {{materialList}}'}
+                    Prompt tekstas • Palaikomi placeholderiai: {editorTab === 'di_grafa_prompt'
+                      ? '{{today}} {{latestPrices}} {{trendData}} {{priceData}} {{naftaContext}} {{geopoliticalContext}} {{analysisContent}} {{materialList}}'
+                      : '{{today}} {{priceData}} {{contextParts}} {{materialList}}'}
                   </div>
                   <textarea
                     value={kainosPromptContent}
@@ -858,7 +921,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </div>
                 ) : (
                   <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: colors.text.tertiary, borderColor: colors.border.default, background: colors.bg.white }}>
-                    Šis prompt naudojamas tik Žaliavų AI prognozei.
+                    {editorTab === 'di_grafa_prompt'
+                      ? 'Šis prompt naudojamas „DI Grafa“ prognozės užklausai.'
+                      : 'Šis prompt naudojamas tik Žaliavų AI prognozei.'}
                   </div>
                 )}
               </div>
@@ -883,7 +948,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </>
                 ) : (
                   <>
-                    <button className="btn btn-soft btn-sm" onClick={openKainosPromptEditor} disabled={promptLoading || promptSaving || !editorUnlocked}>
+                    <button
+                      className="btn btn-soft btn-sm"
+                      onClick={() => openPromptEditor(promptKey)}
+                      disabled={promptLoading || promptSaving || !editorUnlocked}
+                    >
                       Perkrauti
                     </button>
                     <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>

@@ -33,22 +33,42 @@ interface KainosInterfaceProps { user: AppUser; }
 
 const MODEL = 'claude-opus-4-6';
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const DEFAULT_KAINOS_AI_PROMPT = `Šiandien yra {{today}}. Esate medžiagų kainų ekspertas. Remiantis istoriniais duomenimis, naftos kainomis, geopolitine situacija ir ieškodami internete naujausių rinkos kainų, pateikite 3 mėnesių kainų prognozę kiekvienai medžiagai.
+const DEFAULT_DI_GRAFA_PROMPT = `Jūs esate medžiagų kainų prognozavimo ekspertas.
+Šiandien: {{today}}
 
-ISTORINIAI KAINŲ DUOMENYS:
+UŽDUOTIS:
+Pateikite kiekvienos medžiagos 3 mėn. prognozuojamą kainą, remiantis visais žemiau esančiais faktoriais.
+
+1) DABARTINĖS / PASKUTINĖS KAINOS:
+{{latestPrices}}
+
+2) KAINŲ TENDENCIJOS:
+{{trendData}}
+
+3) ISTORINIAI DUOMENYS:
 {{priceData}}
 
-{{contextParts}}
+4) NAFTOS ANALIZĖ:
+{{naftaContext}}
+
+5) GEOPOLITINIAI ĮVYKIAI:
+{{geopoliticalContext}}
+
+6) BENDRA MEDŽIAGŲ ANALIZĖ:
+{{analysisContent}}
 
 MEDŽIAGOS:
 {{materialList}}
 
-SVARBU: Atsakykite TIKTAI JSON formatu, be jokio papildomo teksto prieš ar po JSON. Formatas:
+Atsakykite TIK JSON masyvu:
 [
-  {"artikulas": "CODE", "kaina": 1.23, "data": "YYYY-MM-DD", "reasoning": "Trumpas paaiškinimas lietuvių kalba (1-2 sakiniai)"}
+  {"artikulas":"CODE","kaina":1.23,"data":"YYYY-MM-DD","reasoning":"Trumpas paaiškinimas","confidence":0-100}
 ]
 
-Kiekviena medžiaga turi turėti vieną įrašą. "kaina" yra prognozuojama kaina_min reikšmė. "data" yra prognozės data (3 mėn. nuo šiandien).`;
+Svarbu:
+- "kaina" turi būti realistiška pagal paskutines kainas ir tendencijas.
+- "data" turi būti apie 3 mėn. nuo {{today}}.
+- "confidence" (0-100) nurodo prognozės patikimumą.`;
 
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
@@ -65,6 +85,37 @@ function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): stri
 function truncatePromptSection(text: string, maxChars: number): string {
   if (!text || text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
+}
+
+function formatLatestPricesForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
+  if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
+  return meds
+    .map((m) => {
+      const latest = hist
+        .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
+        .sort((a, b) => b.data.localeCompare(a.data))[0];
+      if (!latest) return `- ${m.artikulas} (${m.pavadinimas}): nėra kainos`;
+      return `- ${m.artikulas} (${m.pavadinimas}): ${formatPrice(latest)} @ ${latest.data}`;
+    })
+    .join('\n');
+}
+
+function formatTrendDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
+  if (!meds.length || !hist.length) return 'Tendencijai nepakanka duomenų.';
+  return meds
+    .map((m) => {
+      const entries = hist
+        .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
+        .sort((a, b) => a.data.localeCompare(b.data));
+      if (entries.length < 2) return `- ${m.artikulas}: nepakanka istorijos trendui`;
+      const first = Number(entries[0].kaina_min);
+      const last = Number(entries[entries.length - 1].kaina_min);
+      if (!Number.isFinite(first) || !Number.isFinite(last) || first === 0) return `- ${m.artikulas}: trendas nenustatytas`;
+      const deltaPct = ((last - first) / first) * 100;
+      const dir = deltaPct > 0.5 ? 'kylanti' : deltaPct < -0.5 ? 'krentanti' : 'stabili';
+      return `- ${m.artikulas}: ${dir}, pokytis ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}% (${entries[0].data} → ${entries[entries.length - 1].data})`;
+    })
+    .join('\n');
 }
 
 function addMonthsISO(dateIso: string, months: number): string {
@@ -921,14 +972,15 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
   const [aiResponseCitations, setAiResponseCitations] = useState<ExtractedCitation[]>([]);
   const [kainosTools, setKainosTools] = useState<any[] | null>(null);
-  const [kainosPromptTemplate, setKainosPromptTemplate] = useState<string>(DEFAULT_KAINOS_AI_PROMPT);
+  const [kainosPromptTemplate, setKainosPromptTemplate] = useState<string>(DEFAULT_DI_GRAFA_PROMPT);
 
   useEffect(() => {
     const loadKainosConfig = async () => {
       try {
-        const [schemaVar, promptVar] = await Promise.all([
+        const [schemaVar, diGrafaPromptVar, legacyPromptVar] = await Promise.all([
           getInstructionVariable('kainos_ai_tool_schemas'),
-          getInstructionVariable('kainos_ai_prediction_prompt')
+          getInstructionVariable('kainos_ai_di_grafa_prompt'),
+          getInstructionVariable('kainos_ai_prediction_prompt'),
         ]);
 
         if (!schemaVar?.content?.trim()) {
@@ -938,15 +990,17 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
           setKainosTools(Array.isArray(parsed) ? parsed : null);
         }
 
-        if (promptVar?.content?.trim()) {
-          setKainosPromptTemplate(promptVar.content);
+        if (diGrafaPromptVar?.content?.trim()) {
+          setKainosPromptTemplate(diGrafaPromptVar.content);
+        } else if (legacyPromptVar?.content?.trim()) {
+          setKainosPromptTemplate(legacyPromptVar.content);
         } else {
-          setKainosPromptTemplate(DEFAULT_KAINOS_AI_PROMPT);
+          setKainosPromptTemplate(DEFAULT_DI_GRAFA_PROMPT);
         }
       } catch (error) {
         console.warn('[Kainos] Failed to load AI config, using defaults.', error);
         setKainosTools(null);
-        setKainosPromptTemplate(DEFAULT_KAINOS_AI_PROMPT);
+        setKainosPromptTemplate(DEFAULT_DI_GRAFA_PROMPT);
       }
     };
     loadKainosConfig();
@@ -998,6 +1052,11 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       });
       const today = new Date().toISOString().split('T')[0];
       const priceData = truncatePromptSection(formatPriceDataForPrompt(medziagas, istorija), 14000);
+      const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(medziagas, istorija), 6000);
+      const trendData = truncatePromptSection(formatTrendDataForPrompt(medziagas, istorija), 6000);
+      const naftaContext = truncatePromptSection(analytics?.nafta || 'Nėra naftos analizės.', 5000);
+      const geopoliticalContext = truncatePromptSection(analytics?.geoevents || 'Nėra geopolitinio konteksto.', 5000);
+      const analysisContent = truncatePromptSection(analytics?.content || 'Nėra medžiagų analizės.', 7000);
 
       const contextParts: string[] = [];
       if (analytics?.nafta) contextParts.push(`NAFTOS KAINOS:\n${truncatePromptSection(analytics.nafta, 4000)}`);
@@ -1007,7 +1066,12 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       const contextJoined = contextParts.join('\n\n');
       const userPrompt = kainosPromptTemplate
         .replaceAll('{{today}}', today)
+        .replaceAll('{{latestPrices}}', latestPrices)
+        .replaceAll('{{trendData}}', trendData)
         .replaceAll('{{priceData}}', priceData)
+        .replaceAll('{{naftaContext}}', naftaContext)
+        .replaceAll('{{geopoliticalContext}}', geopoliticalContext)
+        .replaceAll('{{analysisContent}}', analysisContent)
         .replaceAll('{{contextParts}}', contextJoined)
         .replaceAll('{{materialList}}', materialList);
 
