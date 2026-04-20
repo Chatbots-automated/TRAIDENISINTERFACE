@@ -774,6 +774,7 @@ function TabTalpos({
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
+  const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number } | null>>({});
 
   // Add / delete tank state
   const [addingTank, setAddingTank] = useState(false);
@@ -1075,6 +1076,15 @@ function TabTalpos({
 
       let materialPrices: MaterialPriceEstimatePayloadItem[] = [];
       try { materialPrices = await fetchMaterialPricesForEstimatePayload(predictionMode); } catch { /* non-fatal */ }
+      const sourceSummary = materialPrices.reduce((acc, item) => {
+        acc.total += 1;
+        const src = item.predicted_current_date?.source;
+        if (src === 'ai') acc.ai += 1;
+        else if (src === 'math') acc.math += 1;
+        else acc.none += 1;
+        return acc;
+      }, { ai: 0, math: 0, none: 0, total: 0 });
+      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: sourceSummary }));
 
       const resp = await fetch(webhookUrl, {
         method: 'POST',
@@ -1124,6 +1134,7 @@ function TabTalpos({
       }
     } catch (e: any) {
       setPriceEstimateError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
+      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: null }));
     } finally {
       setPriceEstimating(prev => ({ ...prev, [idx]: false }));
     }
@@ -1614,6 +1625,7 @@ function TabTalpos({
           priceEstimating={!!priceEstimating[idx]}
           priceEstimateError={priceEstimateError[idx] || null}
           localKainaAiText={localKainaAiText[idx] ?? null}
+          priceSourceBreakdown={priceSourceBreakdown[idx] ?? null}
           onTalposRowUpdated={(id, field, value) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
           }}
@@ -2992,6 +3004,7 @@ class SlateRenderErrorBoundary extends React.Component<
 function TabMedziagos({
   record, currentTalposId, currentTalposRow, idx, sablonai, sablonaiLoading,
   estimatePrice, priceEstimating, priceEstimateError, localKainaAiText,
+  priceSourceBreakdown,
   onTalposRowUpdated,
 }: {
   record: NestandartiniaiRecord;
@@ -3004,6 +3017,7 @@ function TabMedziagos({
   priceEstimating: boolean;
   priceEstimateError: string | null;
   localKainaAiText: string | null;
+  priceSourceBreakdown: { ai: number; math: number; none: number; total: number } | null;
   onTalposRowUpdated?: (id: string, field: string, value: any) => void;
 }) {
   const normalizeStructuredSlate = (input: unknown): Record<string, any> | null => {
@@ -3554,8 +3568,8 @@ function TabMedziagos({
           </div>
 
           {/* Prediction mode toggle */}
-          <div className="flex items-center gap-1 mb-2 shrink-0">
-            <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
+	          <div className="flex items-center gap-1 mb-2 shrink-0">
+	            <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
               {(['math', 'ai'] as const).map(m => (
                 <button
                   key={m}
@@ -3566,10 +3580,17 @@ function TabMedziagos({
                   {m === 'math' ? 'Matematinė' : 'Su DI'}
                 </button>
               ))}
-            </div>
-          </div>
+	            </div>
+	          </div>
+	          {predictionMode === 'ai' && priceSourceBreakdown && (
+	            <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
+	              Efektyvus šaltinis: AI {priceSourceBreakdown.ai}/{priceSourceBreakdown.total}
+	              {' · '}Math fallback {priceSourceBreakdown.math}/{priceSourceBreakdown.total}
+	              {' · '}Be prognozės {priceSourceBreakdown.none}/{priceSourceBreakdown.total}
+	            </div>
+	          )}
 
-          {/* Estimate button */}
+	          {/* Estimate button */}
           <button
             onClick={() => estimatePrice(predictionMode)}
             disabled={priceEstimating}
