@@ -33,7 +33,7 @@ import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 15;
+const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 10;
 const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
@@ -481,6 +481,8 @@ interface ExtractedCitation {
 interface ExtractedResponseText {
   text: string;
   citations: ExtractedCitation[];
+  stopReasons: string[];
+  hitTokenLimit: boolean;
 }
 
 interface AnalysisSectionMeta {
@@ -499,6 +501,33 @@ interface AnalysisDebugState {
   parser: { total: number; json: number; markdown: number; failed: number } | null;
   missingForecastCodes: string[];
   error: string | null;
+}
+
+type AnalysisSectionKey = 'nafta' | 'geo' | 'analysis';
+
+function extractUrlCitationsFromText(text: string): ExtractedCitation[] {
+  const links = new Map<string, ExtractedCitation>();
+  const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gim;
+  const rawUrlRegex = /(https?:\/\/[^\s)]+)(?!\))/gim;
+
+  let match: RegExpExecArray | null;
+  while ((match = markdownLinkRegex.exec(text)) !== null) {
+    const title = match[1]?.trim() || match[2];
+    const url = match[2]?.trim();
+    if (url && !links.has(url)) links.set(url, { title, url });
+  }
+  while ((match = rawUrlRegex.exec(text)) !== null) {
+    const url = match[1]?.trim();
+    if (!url || links.has(url)) continue;
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '');
+      links.set(url, { title: host, url });
+    } catch {
+      links.set(url, { title: url, url });
+    }
+  }
+
+  return Array.from(links.values());
 }
 
 
@@ -1652,6 +1681,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     missingForecastCodes: [],
     error: null,
   });
+  const [collapsedSections, setCollapsedSections] = useState<Record<AnalysisSectionKey, boolean>>({
+    nafta: false,
+    geo: false,
+    analysis: false,
+  });
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1758,7 +1792,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 4;
+    const MAX_TOOL_TURNS = 6;
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1767,10 +1801,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       system: string;
       user: string;
       maxTokens: number;
+      expectJson?: boolean;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
       let mergedText = '';
       let mergedCitations: ExtractedCitation[] = [];
+      const stopReasons: string[] = [];
 
       let turn = 0;
       while (true) {
@@ -1800,9 +1836,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
         const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
         const isPauseTurn = response.stop_reason === 'pause_turn';
-        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) {
-          if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
+        const isTokenLimit = response.stop_reason === 'max_tokens';
+        if (typeof response.stop_reason === 'string') {
+          stopReasons.push(response.stop_reason);
         }
+        if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
         if (extracted.citations.length > 0) {
           const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
           for (const citation of extracted.citations) {
@@ -1813,13 +1851,35 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             }
           }
         }
-        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) break;
-        msgs.push({ role: 'assistant', content: response.content as any });
+        const shouldContinue = (isPauseTurn || isTokenLimit) && turn < MAX_TOOL_TURNS;
+        if (!shouldContinue) break;
+
+        const textOnlyAssistantBlocks = Array.isArray(response.content)
+          ? (response.content as any[]).filter((block) => block?.type === 'text' && typeof block?.text === 'string')
+          : [];
+        const hasNonTextBlocks = Array.isArray(response.content)
+          ? (response.content as any[]).some((block) => block?.type !== 'text')
+          : false;
+
+        // IMPORTANT:
+        // If we feed back assistant tool_use blocks without corresponding tool_result blocks,
+        // Anthropic returns a 400 invalid_request_error. Keep continuation state text-only.
+        if (!hasNonTextBlocks && textOnlyAssistantBlocks.length > 0) {
+          msgs.push({ role: 'assistant', content: textOnlyAssistantBlocks as any });
+        }
+        msgs.push({
+          role: 'user',
+          content: params.expectJson
+            ? 'Tęskite tiksliai nuo paskutinio simbolio ir užbaikite TIK JSON (be paaiškinimų, be ``` blokų).'
+            : 'Tęskite nuo vietos, kur baigėte, be įžangos kartojimo.',
+        });
       }
 
       return {
         text: mergedText.trim(),
         citations: mergedCitations,
+        stopReasons,
+        hitTokenLimit: stopReasons.includes('max_tokens'),
       };
     };
 
@@ -1926,8 +1986,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const trendData = globalTrendData;
           const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
-          const analysisResult = await runWebStep({
-            maxTokens: 2200,
+          let analysisResult = await runWebStep({
+            maxTokens: 3200,
+            expectJson: true,
             system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
             user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
               today,
@@ -1942,10 +2003,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               geoPoliticalContext: boundedGeoText,
             }),
           });
-          if (analysisResult.text.trim()) {
-            rawAnalysisResponses.push(analysisResult.text.trim());
-          }
-
+          const appendCitations = (citations: ExtractedCitation[]) => {
+            if (citations.length <= 0) return;
+            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
+            for (const citation of citations) {
+              const key = `${citation.title}|${citation.url}`;
+              if (!seen.has(key)) {
+                allAnalysisCitations.push(citation);
+                seen.add(key);
+              }
+            }
+          };
+          appendCitations(analysisResult.citations);
           try {
             const analysisPayload = extractJsonPayload(analysisResult.text);
             const parsed = analysisPayload as AnalysisForecastResponsePayload;
@@ -1956,6 +2025,43 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               analysisTexts.push(parsed.analysis_markdown.trim());
             }
           } catch {
+            if (analysisResult.hitTokenLimit) {
+              const compactRetry = await runWebStep({
+                maxTokens: 2600,
+                expectJson: true,
+                system: `Patyrusi medžiagų kainų analitikė. Grąžinkite tik kompaktišką, validų JSON. Šiandien: ${today}.`,
+                user: `${applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
+                  today,
+                  materialList,
+                  chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
+                  latestPrices,
+                  trendData,
+                  priceData,
+                  boundedNaftaText,
+                  boundedGeoText,
+                  oilAnalysisContext: boundedNaftaText,
+                  geoPoliticalContext: boundedGeoText,
+                })}\n\nSVARBU: Jei trūksta vietos, trumpinkite "analysis_markdown" iki 3-5 sakinių, bet pilnai pateikite forecasts.`,
+              });
+              analysisResult = compactRetry;
+              appendCitations(compactRetry.citations);
+              try {
+                const retryPayload = extractJsonPayload(compactRetry.text);
+                const retryParsed = retryPayload as AnalysisForecastResponsePayload;
+                const retryForecasts = normalizeAnalysisForecasts(retryPayload, chunkMeds, fallbackDate);
+                aggregatedForecasts = [...aggregatedForecasts, ...retryForecasts];
+                jsonChunkCount += 1;
+                if (typeof retryParsed?.analysis_markdown === 'string' && retryParsed.analysis_markdown.trim()) {
+                  analysisTexts.push(retryParsed.analysis_markdown.trim());
+                }
+                if (compactRetry.text.trim()) {
+                  rawAnalysisResponses.push(compactRetry.text.trim());
+                }
+                continue;
+              } catch {
+                // continue to markdown/narrative fallback below
+              }
+            }
             const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, chunkMeds, fallbackDate);
             if (markdownForecasts.length > 0) {
               aggregatedForecasts = [...aggregatedForecasts, ...markdownForecasts];
@@ -1970,15 +2076,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               }
             }
           }
-          if (analysisResult.citations.length > 0) {
-            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
-            for (const citation of analysisResult.citations) {
-              const key = `${citation.title}|${citation.url}`;
-              if (!seen.has(key)) {
-                allAnalysisCitations.push(citation);
-                seen.add(key);
-              }
-            }
+          if (analysisResult.text.trim()) {
+            rawAnalysisResponses.push(analysisResult.text.trim());
           }
         }
 
@@ -2276,7 +2375,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const renderMd = (text: string) => (
     <div
-      className="text-xs"
+      className="text-[13px] leading-6"
       dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(text || '') }}
     />
   );
@@ -2289,13 +2388,23 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
   const sharedStep = sharedAnalysisLock?.step || 'idle';
   const isGenerationBlocked = genLoading || sharedGenerationActive;
-  const renderCitations = (meta: AnalysisSectionMeta) => {
-    if (!meta.citations.length) return null;
+  const renderCitations = (meta: AnalysisSectionMeta, displayText: string) => {
+    const fallbackCitations = extractUrlCitationsFromText(displayText || '');
+    const merged = [...meta.citations];
+    const seen = new Set(merged.map(c => `${c.title}|${c.url}`));
+    for (const citation of fallbackCitations) {
+      const key = `${citation.title}|${citation.url}`;
+      if (!seen.has(key)) {
+        merged.push(citation);
+        seen.add(key);
+      }
+    }
+    if (!merged.length) return null;
     return (
       <div className="mt-2 pt-2 border-t border-blue-100">
-        <p className="text-[10px] font-semibold mb-1" style={{ color: '#1d4ed8' }}>Šaltiniai ({meta.citations.length})</p>
+        <p className="text-[10px] font-semibold mb-1" style={{ color: '#1d4ed8' }}>Šaltiniai ({merged.length})</p>
         <ul className="space-y-1">
-          {meta.citations.slice(0, 5).map((c, idx) => (
+          {merged.slice(0, 8).map((c, idx) => (
             <li key={`${c.url}-${idx}`} className="truncate text-[10px]">
               <a href={c.url} target="_blank" rel="noreferrer" className="underline" style={{ color: '#1d4ed8' }}>
                 {c.title}
@@ -2499,7 +2608,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   </p>
                   <p className="text-xs" style={{ color: '#64748b' }}>
                     {genLoading
-                      ? (genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės')
+                      ? (genStep === 'nafta' ? '1/3 • Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? '2/3 • Renkami geopolitiniai įvykiai' : '3/3 • Skaičiuojamos medžiagų prognozės')
                       : `Analizę šiuo metu vykdo ${lockOwnerLabel}${sharedStep !== 'idle' ? ` (${sharedStep})` : ''}.`}
                   </p>
                 </div>
@@ -2512,6 +2621,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #ffedd5' }}>
                 <BarChart2 className="w-4 h-4" style={{ color: '#c2410c' }} />
                 <span className="text-xs font-semibold" style={{ color: '#9a3412' }}>Naftos kainos ir dervų ryšys</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#9a3412' }}>1 etapas</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#ffedd5', color: '#9a3412' }}>
                   ~{Math.round(analysisMeta.nafta.confidence)}%
                 </span>
@@ -2523,6 +2633,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 >
                   Regeneruoti
                 </button>
+                <button
+                  onClick={() => setCollapsedSections(prev => ({
+                    nafta: !prev.nafta,
+                    geo: prev.geo,
+                    analysis: prev.analysis,
+                  }))}
+                  className="text-[10px] px-2.5 py-1 rounded-lg"
+                  style={{ color: '#9a3412', background: '#fff' }}
+                >
+                  {collapsedSections.nafta ? 'Atverti' : 'Sutraukti'}
+                </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
                 {genLoading && genStep === 'nafta' ? (
@@ -2531,14 +2652,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#9a3412' }}>Atnaujinami naftos duomenys…</span>
                   </div>
                 ) : naftaDisplay ? (
-                  <>{renderMd(naftaDisplay)}</>
+                  collapsedSections.nafta ? (
+                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
+                  ) : (
+                    <div className="max-w-3xl">
+                      <>{renderMd(naftaDisplay)}</>
+                    </div>
+                  )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
-                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta)}
+                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta, naftaDisplay)}
               </div>
             </div>
 
@@ -2548,6 +2675,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#eff6ff', borderBottom: '1px solid #dbeafe' }}>
                 <Globe className="w-4 h-4" style={{ color: '#1d4ed8' }} />
                 <span className="text-xs font-semibold" style={{ color: '#1e40af' }}>Geopolitiniai įvykiai ir rinkos sąlygos</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#1e40af' }}>2 etapas</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#dbeafe', color: '#1e40af' }}>
                   ~{Math.round(analysisMeta.geo.confidence)}%
                 </span>
@@ -2559,6 +2687,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 >
                   Regeneruoti
                 </button>
+                <button
+                  onClick={() => setCollapsedSections(prev => ({
+                    nafta: prev.nafta,
+                    geo: !prev.geo,
+                    analysis: prev.analysis,
+                  }))}
+                  className="text-[10px] px-2.5 py-1 rounded-lg"
+                  style={{ color: '#1e40af', background: '#fff' }}
+                >
+                  {collapsedSections.geo ? 'Atverti' : 'Sutraukti'}
+                </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
                 {genLoading && genStep === 'geo' ? (
@@ -2567,14 +2706,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#1e40af' }}>Atnaujinami geopolitikos signalai…</span>
                   </div>
                 ) : geoDisplay ? (
-                  <>{renderMd(geoDisplay)}</>
+                  collapsedSections.geo ? (
+                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
+                  ) : (
+                    <div className="max-w-3xl">
+                      <>{renderMd(geoDisplay)}</>
+                    </div>
+                  )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
-                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo)}
+                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo, geoDisplay)}
               </div>
             </div>
 
@@ -2584,6 +2729,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#ecfdf5', borderBottom: '1px solid #d1fae5' }}>
                 <TrendingUp className="w-4 h-4" style={{ color: '#047857' }} />
                 <span className="text-xs font-semibold" style={{ color: '#065f46' }}>Kainų analizė ir prognozė</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#065f46' }}>3 etapas</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
                   ~{Math.round(analysisMeta.analysis.confidence)}%
                 </span>
@@ -2595,6 +2741,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 >
                   Regeneruoti
                 </button>
+                <button
+                  onClick={() => setCollapsedSections(prev => ({
+                    nafta: prev.nafta,
+                    geo: prev.geo,
+                    analysis: !prev.analysis,
+                  }))}
+                  className="text-[10px] px-2.5 py-1 rounded-lg"
+                  style={{ color: '#065f46', background: '#fff' }}
+                >
+                  {collapsedSections.analysis ? 'Atverti' : 'Sutraukti'}
+                </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
                 {genLoading && genStep === 'analysis' ? (
@@ -2603,14 +2760,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#065f46' }}>Perskaičiuojamos medžiagų prognozės…</span>
                   </div>
                 ) : analysisDisplay ? (
-                  <>{renderMd(analysisDisplay)}</>
+                  collapsedSections.analysis ? (
+                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
+                  ) : (
+                    <div className="max-w-3xl">
+                      <>{renderMd(analysisDisplay)}</>
+                    </div>
+                  )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
-                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis)}
+                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis, analysisDisplay)}
               </div>
             </div>
           </div>

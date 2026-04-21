@@ -5,6 +5,8 @@ import { getWebhookUrl } from './webhooksService';
 // Directus instance credentials (same as ./directus.ts)
 const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
 const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_ADMIN_TOKEN = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
+const DIRECTUS_EFFECTIVE_TOKEN = (DIRECTUS_ADMIN_TOKEN || DIRECTUS_TOKEN).trim();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,7 +41,7 @@ export const uploadFileToDirectus = async (file: File): Promise<string> => {
 
   const resp = await fetch(`${DIRECTUS_URL}/files`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
     body: form,
   });
 
@@ -104,7 +106,7 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
   if (directusFileId) {
     const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
     });
     if (!resp.ok && resp.status !== 404) {
       console.error('Directus file delete failed:', resp.status, resp.statusText);
@@ -208,9 +210,9 @@ export const triggerVectorization = async (
 // ---------------------------------------------------------------------------
 
 export const getFileViewUrl = (directusFileId: string): string => {
-  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${DIRECTUS_TOKEN}`;
+  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}`;
 };
 
 export const getFileDownloadUrl = (directusFileId: string): string => {
-  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${DIRECTUS_TOKEN}&download`;
+  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}&download`;
 };
