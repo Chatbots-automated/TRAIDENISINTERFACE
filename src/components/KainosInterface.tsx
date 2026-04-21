@@ -33,7 +33,7 @@ import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 10;
+const MAX_HISTORY_POINTS_PER_MATERIAL = 4;
 const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
@@ -102,7 +102,8 @@ function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): stri
   for (const m of meds) {
     const entries = hist.filter(e => e.artikulas === m.artikulas).sort((a, b) => a.data.localeCompare(b.data));
     if (!entries.length) continue;
-    const row = entries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ');
+    const compactEntries = entries.slice(-MAX_HISTORY_POINTS_PER_MATERIAL);
+    const row = compactEntries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ');
     lines.push(`${m.pavadinimas} [${m.artikulas}] (${m.vienetas}): ${row}`);
   }
   return lines.join('\n');
@@ -160,15 +161,6 @@ function addDaysISO(dateIso: string, days: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + days));
   return dt.toISOString().split('T')[0];
-}
-
-function chunkArray<T>(items: T[], chunkSize: number): T[][] {
-  if (chunkSize <= 0) return [items];
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    chunks.push(items.slice(i, i + chunkSize));
-  }
-  return chunks;
 }
 
 function injectPromptVars(template: string, vars: Record<string, string>): string {
@@ -1686,6 +1678,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     geo: false,
     analysis: false,
   });
+  const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1786,100 +1779,32 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       getInstructionVariable('kainos_ai_geo_prompt'),
       getInstructionVariable('kainos_ai_analysis_prompt'),
     ]);
-    const oilPromptTemplate = oilPromptVar?.content?.trim() || DEFAULT_KAINOS_OIL_PROMPT;
-    const geoPromptTemplate = geoPromptVar?.content?.trim() || DEFAULT_KAINOS_GEO_PROMPT;
-    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || DEFAULT_KAINOS_ANALYSIS_PROMPT;
+    const oilPromptTemplate = oilPromptVar?.content?.trim() || '';
+    const geoPromptTemplate = geoPromptVar?.content?.trim() || '';
+    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || '';
+    if (!oilPromptTemplate || !geoPromptTemplate || !analysisPromptTemplate) {
+      throw new Error('Trūksta promptų instruction_variables lentelėje. Užpildykite: kainos_ai_nafta_prompt, kainos_ai_geo_prompt, kainos_ai_analysis_prompt.');
+    }
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-    const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 6;
-    const BETWEEN_STEP_DELAY_MS = 1500;
-
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    const runWebStep = async (params: {
-      system: string;
+    const runStepRequest = async (params: {
       user: string;
       maxTokens: number;
-      expectJson?: boolean;
+      useWebSearch?: boolean;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
-      let mergedText = '';
-      let mergedCitations: ExtractedCitation[] = [];
-      const stopReasons: string[] = [];
-
-      let turn = 0;
-      while (true) {
-        turn += 1;
-        let response: any = null;
-        let lastError: any = null;
-        for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
-          try {
-            response = await client.messages.create({
-              model: ANALYTICS_MODEL,
-              max_tokens: params.maxTokens,
-              system: params.system,
-              tools: webSearchTool,
-              messages: msgs,
-            });
-            break;
-          } catch (err: any) {
-            lastError = err;
-            const isRateLimited = err?.status === 429;
-            if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
-              throw err;
-            }
-            await sleep(2200 * (attempt + 1));
-          }
-        }
-        if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
-
-        const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
-        const isPauseTurn = response.stop_reason === 'pause_turn';
-        const isTokenLimit = response.stop_reason === 'max_tokens';
-        if (typeof response.stop_reason === 'string') {
-          stopReasons.push(response.stop_reason);
-        }
-        if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
-        if (extracted.citations.length > 0) {
-          const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
-          for (const citation of extracted.citations) {
-            const key = `${citation.title}|${citation.url}`;
-            if (!seen.has(key)) {
-              mergedCitations.push(citation);
-              seen.add(key);
-            }
-          }
-        }
-        const shouldContinue = (isPauseTurn || isTokenLimit) && turn < MAX_TOOL_TURNS;
-        if (!shouldContinue) break;
-
-        const textOnlyAssistantBlocks = Array.isArray(response.content)
-          ? (response.content as any[]).filter((block) => block?.type === 'text' && typeof block?.text === 'string')
-          : [];
-        const hasNonTextBlocks = Array.isArray(response.content)
-          ? (response.content as any[]).some((block) => block?.type !== 'text')
-          : false;
-
-        // IMPORTANT:
-        // If we feed back assistant tool_use blocks without corresponding tool_result blocks,
-        // Anthropic returns a 400 invalid_request_error. Keep continuation state text-only.
-        if (!hasNonTextBlocks && textOnlyAssistantBlocks.length > 0) {
-          msgs.push({ role: 'assistant', content: textOnlyAssistantBlocks as any });
-        }
-        msgs.push({
-          role: 'user',
-          content: params.expectJson
-            ? 'Tęskite tiksliai nuo paskutinio simbolio ir užbaikite TIK JSON (be paaiškinimų, be ``` blokų).'
-            : 'Tęskite nuo vietos, kur baigėte, be įžangos kartojimo.',
-        });
-      }
-
+      const response = await client.messages.create({
+        model: ANALYTICS_MODEL,
+        max_tokens: params.maxTokens,
+        messages: msgs,
+        ...(params.useWebSearch ? { tools: webSearchTool } : {}),
+      });
+      const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
       return {
-        text: mergedText.trim(),
-        citations: mergedCitations,
-        stopReasons,
-        hitTokenLimit: stopReasons.includes('max_tokens'),
+        text: extracted.text.trim(),
+        citations: extracted.citations,
+        stopReasons: typeof response.stop_reason === 'string' ? [response.stop_reason] : [],
+        hitTokenLimit: response.stop_reason === 'max_tokens',
       };
     };
 
@@ -1915,9 +1840,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (targetSections.has('nafta')) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
         await setGenerationStep('nafta');
-        const naftaResult = await runWebStep({
+        const naftaResult = await runStepRequest({
           maxTokens: 700,
-          system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
+          useWebSearch: true,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
         });
         naftaText = naftaResult.text;
@@ -1927,28 +1852,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
         }));
         debugState.stepStatus.nafta = 'ok';
-        if (targetSections.has('geo') || targetSections.has('analysis')) {
-          await sleep(BETWEEN_STEP_DELAY_MS);
-        }
       }
 
       if (targetSections.has('geo')) {
         // -- Step 2: Geopolitical events --
         await setGenerationStep('geo');
-        let geoResult = await runWebStep({
+        const geoResult = await runStepRequest({
           maxTokens: 550,
-          system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
+          useWebSearch: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
-        const geoTrimmed = geoResult.text.trim();
-        const geoLooksLikeMetaResponse = /^ieškosiu\b/i.test(geoTrimmed) || geoTrimmed.length < 120;
-        if (geoLooksLikeMetaResponse) {
-          geoResult = await runWebStep({
-            maxTokens: 650,
-            system: `Rinkos žvalgybų analitikas. Pateikite tik galutinį atsakymą lietuvių kalba (be frazių apie tai, ką darysite). Šiandien: ${today}.`,
-            user: `${applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today })}\n\nSVARBU: Pateikite iškart galutinį 4-6 punktų rezultatą su konkrečiais faktais ir poveikiu medžiagų kainoms.`,
-          });
-        }
         geoText = geoResult.text;
         setStreamGeo(geoText);
         setAnalysisMeta((prev) => ({
@@ -1956,159 +1869,61 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
         }));
         debugState.stepStatus.geo = 'ok';
-        if (targetSections.has('analysis')) {
-          await sleep(BETWEEN_STEP_DELAY_MS);
-        }
       }
 
       if (targetSections.has('analysis')) {
-        // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
+        // -- Step 3: One prompt, one response --
         await setGenerationStep('analysis');
-        const boundedNaftaText = truncatePromptSection(naftaText, 2500);
-        const boundedGeoText = truncatePromptSection(geoText, 2200);
-        const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 9000);
-        const materialChunks = chunkArray(meds, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
+        const boundedNaftaText = truncatePromptSection(naftaText, 1200);
+        const boundedGeoText = truncatePromptSection(geoText, 1200);
+        const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 2200);
         const fallbackDate = addMonthsISO(today, 3);
-        let aggregatedForecasts: AiPrediction[] = [];
-        const analysisTexts: string[] = [];
-        const rawAnalysisResponses: string[] = [];
-        let allAnalysisCitations: ExtractedCitation[] = [];
-        let jsonChunkCount = 0;
-        let markdownChunkCount = 0;
-        let failedChunkCount = 0;
+        const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 2500);
+        const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 1800);
+        const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
-        for (let chunkIndex = 0; chunkIndex < materialChunks.length; chunkIndex += 1) {
-          const chunkMeds = materialChunks[chunkIndex];
-          const chunkCodes = new Set(chunkMeds.map((m) => m.artikulas));
-          const chunkHist = hist.filter((h) => chunkCodes.has(h.artikulas));
-          const priceData = truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 7000);
-          const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 4500);
-          const trendData = globalTrendData;
-          const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
+        const analysisResult = await runStepRequest({
+          maxTokens: 1800,
+          useWebSearch: false,
+          user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
+            today,
+            materialList,
+            chunkInfo: 'DALIS 1/1',
+            latestPrices,
+            trendData: globalTrendData,
+            priceData,
+            boundedNaftaText,
+            boundedGeoText,
+            oilAnalysisContext: boundedNaftaText,
+            geoPoliticalContext: boundedGeoText,
+          }),
+        });
 
-          let analysisResult = await runWebStep({
-            maxTokens: 3200,
-            expectJson: true,
-            system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
-            user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
-              today,
-              materialList,
-              chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
-              latestPrices,
-              trendData,
-              priceData,
-              boundedNaftaText,
-              boundedGeoText,
-              oilAnalysisContext: boundedNaftaText,
-              geoPoliticalContext: boundedGeoText,
-            }),
-          });
-          const appendCitations = (citations: ExtractedCitation[]) => {
-            if (citations.length <= 0) return;
-            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
-            for (const citation of citations) {
-              const key = `${citation.title}|${citation.url}`;
-              if (!seen.has(key)) {
-                allAnalysisCitations.push(citation);
-                seen.add(key);
-              }
-            }
-          };
-          appendCitations(analysisResult.citations);
-          try {
-            const analysisPayload = extractJsonPayload(analysisResult.text);
-            const parsed = analysisPayload as AnalysisForecastResponsePayload;
-            const parsedForecasts = normalizeAnalysisForecasts(analysisPayload, chunkMeds, fallbackDate);
-            aggregatedForecasts = [...aggregatedForecasts, ...parsedForecasts];
-            jsonChunkCount += 1;
-            if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
-              analysisTexts.push(parsed.analysis_markdown.trim());
-            }
-          } catch {
-            if (analysisResult.hitTokenLimit) {
-              const compactRetry = await runWebStep({
-                maxTokens: 2600,
-                expectJson: true,
-                system: `Patyrusi medžiagų kainų analitikė. Grąžinkite tik kompaktišką, validų JSON. Šiandien: ${today}.`,
-                user: `${applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
-                  today,
-                  materialList,
-                  chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
-                  latestPrices,
-                  trendData,
-                  priceData,
-                  boundedNaftaText,
-                  boundedGeoText,
-                  oilAnalysisContext: boundedNaftaText,
-                  geoPoliticalContext: boundedGeoText,
-                })}\n\nSVARBU: Jei trūksta vietos, trumpinkite "analysis_markdown" iki 3-5 sakinių, bet pilnai pateikite forecasts.`,
-              });
-              analysisResult = compactRetry;
-              appendCitations(compactRetry.citations);
-              try {
-                const retryPayload = extractJsonPayload(compactRetry.text);
-                const retryParsed = retryPayload as AnalysisForecastResponsePayload;
-                const retryForecasts = normalizeAnalysisForecasts(retryPayload, chunkMeds, fallbackDate);
-                aggregatedForecasts = [...aggregatedForecasts, ...retryForecasts];
-                jsonChunkCount += 1;
-                if (typeof retryParsed?.analysis_markdown === 'string' && retryParsed.analysis_markdown.trim()) {
-                  analysisTexts.push(retryParsed.analysis_markdown.trim());
-                }
-                if (compactRetry.text.trim()) {
-                  rawAnalysisResponses.push(compactRetry.text.trim());
-                }
-                continue;
-              } catch {
-                // continue to markdown/narrative fallback below
-              }
-            }
-            const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, chunkMeds, fallbackDate);
-            if (markdownForecasts.length > 0) {
-              aggregatedForecasts = [...aggregatedForecasts, ...markdownForecasts];
-              markdownChunkCount += 1;
-            } else {
-              const narrativeForecasts = parseForecastsFromNarrativeText(analysisResult.text, chunkMeds, fallbackDate);
-              if (narrativeForecasts.length > 0) {
-                aggregatedForecasts = [...aggregatedForecasts, ...narrativeForecasts];
-                markdownChunkCount += 1;
-              } else {
-                failedChunkCount += 1;
-              }
-            }
-          }
-          if (analysisResult.text.trim()) {
-            rawAnalysisResponses.push(analysisResult.text.trim());
-          }
-        }
-
-        const parsingEvidence = `\n\n---\n**Parserio įrodymas:** JSON dalys ${jsonChunkCount}/${materialChunks.length}, markdown fallback ${markdownChunkCount}, nepavykusios dalys ${failedChunkCount}.`;
-        analysisText = analysisTexts.length > 0
-          ? analysisTexts.map((part, idx) => `### Medžiagų dalis ${idx + 1}\n${part}`).join('\n\n')
-          : rawAnalysisResponses.map((part, idx) => `### Žalias atsakymas (dalis ${idx + 1})\n${part}`).join('\n\n');
-        analysisText = `${analysisText}${parsingEvidence}`;
-
-        if (jsonChunkCount === 0 && markdownChunkCount > 0) {
-          addNotif('info', 'JSON negrąžintas', 'DI negrąžino valid JSON. Prognozės paimtos iš markdown lentelių fallback.');
-        }
-
+        analysisText = analysisResult.text.trim();
         let mergedForecasts: AiPrediction[] = [];
-        if (aggregatedForecasts.length > 0) {
-          mergedForecasts = [...aggregatedForecasts];
-          const mergedCodes = new Set(aggregatedForecasts.map((f) => f.artikulas));
-          const missing = meds.filter((m) => !mergedCodes.has(m.artikulas));
-          if (missing.length > 0) {
-            debugState.missingForecastCodes = missing.map((m) => m.artikulas);
-            addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta). Jos grafikuose nebus rodomos.`);
+        try {
+          const analysisPayload = extractJsonPayload(analysisResult.text);
+          const parsed = analysisPayload as AnalysisForecastResponsePayload;
+          mergedForecasts = normalizeAnalysisForecasts(analysisPayload, meds, fallbackDate);
+          if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
+            analysisText = parsed.analysis_markdown.trim();
           }
-        } else {
-          addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Patikrinkite, kad DI grąžintų JSON forecasts.');
+          debugState.parser = { total: 1, json: 1, markdown: 0, failed: 0 };
+        } catch {
+          const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, meds, fallbackDate);
+          const narrativeForecasts = markdownForecasts.length > 0 ? [] : parseForecastsFromNarrativeText(analysisResult.text, meds, fallbackDate);
+          mergedForecasts = markdownForecasts.length > 0 ? markdownForecasts : narrativeForecasts;
+          debugState.parser = { total: 1, json: 0, markdown: mergedForecasts.length > 0 ? 1 : 0, failed: mergedForecasts.length > 0 ? 0 : 1 };
+          if (mergedForecasts.length <= 0) {
+            addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių.');
+          }
         }
-        debugState.parser = {
-          total: materialChunks.length,
-          json: jsonChunkCount,
-          markdown: markdownChunkCount,
-          failed: failedChunkCount,
-        };
+
+        const missing = meds.filter((m) => !new Set(mergedForecasts.map((f) => f.artikulas)).has(m.artikulas));
+        if (missing.length > 0) {
+          debugState.missingForecastCodes = missing.map((m) => m.artikulas);
+          addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta).`);
+        }
 
         const sanitized = mergedForecasts.map((pred) => {
           const historyEntries = hist
@@ -2121,7 +1936,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         setStreamAnalysis(analysisText);
         setAnalysisMeta((prev) => ({
           ...prev,
-          analysis: { confidence: Math.min(95, 35 + allAnalysisCitations.length * 6), citations: allAnalysisCitations },
+          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 6), citations: analysisResult.citations },
         }));
         debugState.stepStatus.analysis = 'ok';
 
@@ -2579,201 +2394,136 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
-          <div className="space-y-5 max-w-5xl">
-            <div className="rounded-2xl border bg-white px-5 py-4 flex items-center justify-between"
-              style={{ borderColor: '#e5e7eb', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
-              <div>
-                <p className="text-xs font-medium" style={{ color: '#64748b' }}>
-                  {lastUpdated ? `Atnaujinta: ${relativeTime(lastUpdated)}` : 'Analizė dar nesugeneruota'}
-                </p>
-                <p className="text-[11px] mt-1" style={{ color: '#94a3b8' }}>
-                  Nafta → Geopolitika → Kainų prognozė
-                </p>
-              </div>
-              <button onClick={generateAnalytics} disabled={isGenerationBlocked}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
-                {isGenerationBlocked ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {isGenerationBlocked ? 'Generuojama...' : 'Generuoti analizę'}
-              </button>
-            </div>
-
-            {isGenerationBlocked && (
-              <div className="rounded-2xl border bg-white px-5 py-6"
-                style={{ borderColor: '#dbeafe', boxShadow: '0 10px 30px rgba(37,99,235,0.12)' }}>
-                <div className="flex flex-col items-center justify-center text-center gap-3">
-                  <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#2563eb' }} />
-                  <p className="text-sm font-semibold" style={{ color: '#1e3a8a' }}>
-                    Vykdoma DI analizė…
+          <div className="space-y-5">
+            <div className="rounded-3xl overflow-hidden"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 14px 34px rgba(15,23,42,0.08)', background: 'linear-gradient(135deg,#ffffff 0%,#f8fafc 100%)' }}>
+              <div className="px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#64748b' }}>Web analizė • 3 etapų srautas</p>
+                  <h3 className="text-lg font-semibold mt-1" style={{ color: '#1f2937' }}>Žaliavų rinkos signalų valdymo centras</h3>
+                  <p className="text-xs mt-1.5" style={{ color: '#6b7280' }}>
+                    {lastUpdated ? `Paskutinį kartą atnaujinta ${relativeTime(lastUpdated)}.` : 'Dar nėra sugeneruotos analizės.'}
                   </p>
-                  <p className="text-xs" style={{ color: '#64748b' }}>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={generateAnalytics} disabled={isGenerationBlocked}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
+                    style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
+                    {isGenerationBlocked ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    {isGenerationBlocked ? 'Vykdoma...' : 'Paleisti pilną analizę'}
+                  </button>
+                </div>
+              </div>
+              {isGenerationBlocked && (
+                <div className="px-6 py-3" style={{ borderTop: '1px solid #dbeafe', background: '#eff6ff' }}>
+                  <p className="text-xs font-medium" style={{ color: '#1e40af' }}>
                     {genLoading
                       ? (genStep === 'nafta' ? '1/3 • Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? '2/3 • Renkami geopolitiniai įvykiai' : '3/3 • Skaičiuojamos medžiagų prognozės')
                       : `Analizę šiuo metu vykdo ${lockOwnerLabel}${sharedStep !== 'idle' ? ` (${sharedStep})` : ''}.`}
                   </p>
                 </div>
-              </div>
-            )}
-
-            {/* Oil prices box */}
-            <div className="rounded-2xl overflow-hidden bg-white"
-              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
-              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #ffedd5' }}>
-                <BarChart2 className="w-4 h-4" style={{ color: '#c2410c' }} />
-                <span className="text-xs font-semibold" style={{ color: '#9a3412' }}>Naftos kainos ir dervų ryšys</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#9a3412' }}>1 etapas</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#ffedd5', color: '#9a3412' }}>
-                  ~{Math.round(analysisMeta.nafta.confidence)}%
-                </span>
-                <button
-                  onClick={() => regenerateAnalysisSection('nafta')}
-                  disabled={isGenerationBlocked}
-                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
-                  style={{ color: '#9a3412', background: '#fff' }}
-                >
-                  Regeneruoti
-                </button>
-                <button
-                  onClick={() => setCollapsedSections(prev => ({
-                    nafta: !prev.nafta,
-                    geo: prev.geo,
-                    analysis: prev.analysis,
-                  }))}
-                  className="text-[10px] px-2.5 py-1 rounded-lg"
-                  style={{ color: '#9a3412', background: '#fff' }}
-                >
-                  {collapsedSections.nafta ? 'Atverti' : 'Sutraukti'}
-                </button>
-              </div>
-              <div className="px-5 py-4 bg-white min-h-[150px]">
-                {genLoading && genStep === 'nafta' ? (
-                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
-                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#c2410c' }} />
-                    <span className="text-xs" style={{ color: '#9a3412' }}>Atnaujinami naftos duomenys…</span>
-                  </div>
-                ) : naftaDisplay ? (
-                  collapsedSections.nafta ? (
-                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
-                  ) : (
-                    <div className="max-w-3xl">
-                      <>{renderMd(naftaDisplay)}</>
-                    </div>
-                  )
-                ) : (
-                  <div className="flex items-center gap-2 py-1">
-                    <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
-                  </div>
-                )}
-                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta, naftaDisplay)}
-              </div>
+              )}
             </div>
 
-            {/* Geopolitical events box */}
-            <div className="rounded-2xl overflow-hidden bg-white"
-              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
-              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#eff6ff', borderBottom: '1px solid #dbeafe' }}>
-                <Globe className="w-4 h-4" style={{ color: '#1d4ed8' }} />
-                <span className="text-xs font-semibold" style={{ color: '#1e40af' }}>Geopolitiniai įvykiai ir rinkos sąlygos</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#1e40af' }}>2 etapas</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#dbeafe', color: '#1e40af' }}>
-                  ~{Math.round(analysisMeta.geo.confidence)}%
-                </span>
-                <button
-                  onClick={() => regenerateAnalysisSection('geo')}
-                  disabled={isGenerationBlocked}
-                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
-                  style={{ color: '#1e40af', background: '#fff' }}
-                >
-                  Regeneruoti
-                </button>
-                <button
-                  onClick={() => setCollapsedSections(prev => ({
-                    nafta: prev.nafta,
-                    geo: !prev.geo,
-                    analysis: prev.analysis,
-                  }))}
-                  className="text-[10px] px-2.5 py-1 rounded-lg"
-                  style={{ color: '#1e40af', background: '#fff' }}
-                >
-                  {collapsedSections.geo ? 'Atverti' : 'Sutraukti'}
-                </button>
-              </div>
-              <div className="px-5 py-4 bg-white min-h-[150px]">
-                {genLoading && genStep === 'geo' ? (
-                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
-                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#1d4ed8' }} />
-                    <span className="text-xs" style={{ color: '#1e40af' }}>Atnaujinami geopolitikos signalai…</span>
-                  </div>
-                ) : geoDisplay ? (
-                  collapsedSections.geo ? (
-                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
-                  ) : (
-                    <div className="max-w-3xl">
-                      <>{renderMd(geoDisplay)}</>
-                    </div>
-                  )
-                ) : (
-                  <div className="flex items-center gap-2 py-1">
-                    <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
-                  </div>
-                )}
-                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo, geoDisplay)}
-              </div>
-            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
+              <aside className="rounded-2xl bg-white p-3"
+                style={{ border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
+                {([
+                  { key: 'nafta', label: 'Nafta ir dervos ryšys', sub: '1 etapas', icon: BarChart2, bg: '#fff7ed', color: '#9a3412', confBg: '#ffedd5', confidence: analysisMeta.nafta.confidence },
+                  { key: 'geo', label: 'Geopolitikos signalai', sub: '2 etapas', icon: Globe, bg: '#eff6ff', color: '#1e40af', confBg: '#dbeafe', confidence: analysisMeta.geo.confidence },
+                  { key: 'analysis', label: 'Kainų prognozė', sub: '3 etapas', icon: TrendingUp, bg: '#ecfdf5', color: '#065f46', confBg: '#d1fae5', confidence: analysisMeta.analysis.confidence },
+                ] as const).map((item) => {
+                  const active = analysisFocus === item.key;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      onClick={() => setAnalysisFocus(item.key)}
+                      className="w-full text-left rounded-xl px-3 py-3 mb-2 last:mb-0 transition-all"
+                      style={{
+                        background: active ? item.bg : '#fff',
+                        border: `1px solid ${active ? item.confBg : '#eef2f7'}`,
+                        boxShadow: active ? '0 4px 12px rgba(15,23,42,0.07)' : 'none',
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 rounded-lg" style={{ background: item.bg }}>
+                          <Icon className="w-4 h-4" style={{ color: item.color }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold truncate" style={{ color: '#1f2937' }}>{item.label}</p>
+                          <p className="text-[10px]" style={{ color: '#94a3b8' }}>{item.sub}</p>
+                        </div>
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: item.confBg, color: item.color }}>
+                          ~{Math.round(item.confidence)}%
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </aside>
 
-            {/* Price analysis box */}
-            <div className="rounded-2xl overflow-hidden bg-white"
-              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
-              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#ecfdf5', borderBottom: '1px solid #d1fae5' }}>
-                <TrendingUp className="w-4 h-4" style={{ color: '#047857' }} />
-                <span className="text-xs font-semibold" style={{ color: '#065f46' }}>Kainų analizė ir prognozė</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#065f46' }}>3 etapas</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
-                  ~{Math.round(analysisMeta.analysis.confidence)}%
-                </span>
-                <button
-                  onClick={() => regenerateAnalysisSection('analysis')}
-                  disabled={isGenerationBlocked}
-                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
-                  style={{ color: '#065f46', background: '#fff' }}
-                >
-                  Regeneruoti
-                </button>
-                <button
-                  onClick={() => setCollapsedSections(prev => ({
-                    nafta: prev.nafta,
-                    geo: prev.geo,
-                    analysis: !prev.analysis,
-                  }))}
-                  className="text-[10px] px-2.5 py-1 rounded-lg"
-                  style={{ color: '#065f46', background: '#fff' }}
-                >
-                  {collapsedSections.analysis ? 'Atverti' : 'Sutraukti'}
-                </button>
-              </div>
-              <div className="px-5 py-4 bg-white min-h-[150px]">
-                {genLoading && genStep === 'analysis' ? (
-                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
-                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#047857' }} />
-                    <span className="text-xs" style={{ color: '#065f46' }}>Perskaičiuojamos medžiagų prognozės…</span>
+              <div className="rounded-2xl overflow-hidden bg-white"
+                style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+                <div className="px-5 py-3 flex items-center justify-between"
+                  style={{
+                    background: analysisFocus === 'nafta' ? '#fff7ed' : analysisFocus === 'geo' ? '#eff6ff' : '#ecfdf5',
+                    borderBottom: analysisFocus === 'nafta' ? '1px solid #ffedd5' : analysisFocus === 'geo' ? '1px solid #dbeafe' : '1px solid #d1fae5',
+                  }}>
+                  <div className="flex items-center gap-2">
+                    {analysisFocus === 'nafta' ? <BarChart2 className="w-4 h-4" style={{ color: '#9a3412' }} /> : analysisFocus === 'geo' ? <Globe className="w-4 h-4" style={{ color: '#1e40af' }} /> : <TrendingUp className="w-4 h-4" style={{ color: '#065f46' }} />}
+                    <span className="text-xs font-semibold" style={{ color: analysisFocus === 'nafta' ? '#9a3412' : analysisFocus === 'geo' ? '#1e40af' : '#065f46' }}>
+                      {analysisFocus === 'nafta' ? 'Naftos kainos ir dervų ryšys' : analysisFocus === 'geo' ? 'Geopolitiniai įvykiai ir rinkos sąlygos' : 'Kainų analizė ir prognozė'}
+                    </span>
                   </div>
-                ) : analysisDisplay ? (
-                  collapsedSections.analysis ? (
-                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
-                  ) : (
-                    <div className="max-w-3xl">
-                      <>{renderMd(analysisDisplay)}</>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => regenerateAnalysisSection(analysisFocus)}
+                      disabled={isGenerationBlocked}
+                      className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                      style={{ color: '#334155', background: '#fff' }}
+                    >
+                      Regeneruoti etapą
+                    </button>
+                    <button
+                      onClick={() => setCollapsedSections(prev => ({ ...prev, [analysisFocus]: !prev[analysisFocus] }))}
+                      className="text-[10px] px-2.5 py-1 rounded-lg"
+                      style={{ color: '#334155', background: '#fff' }}
+                    >
+                      {collapsedSections[analysisFocus] ? 'Atverti tekstą' : 'Sutraukti tekstą'}
+                    </button>
+                  </div>
+                </div>
+                <div className="px-5 py-4 h-[520px] overflow-y-auto">
+                  {genLoading && genStep === analysisFocus ? (
+                    <div className="h-full min-h-[220px] flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#2563eb' }} />
+                      <span className="text-xs" style={{ color: '#64748b' }}>Atnaujinamas pasirinktas etapas…</span>
                     </div>
-                  )
-                ) : (
-                  <div className="flex items-center gap-2 py-1">
-                    <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
-                  </div>
-                )}
-                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis, analysisDisplay)}
+                  ) : (
+                    <>
+                      {(() => {
+                        const currentText = analysisFocus === 'nafta' ? naftaDisplay : analysisFocus === 'geo' ? geoDisplay : analysisDisplay;
+                        if (!currentText) {
+                          return (
+                            <div className="flex items-center gap-2 py-1">
+                              <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
+                              <span className="text-xs" style={{ color: '#8a857f' }}>Šio etapo analizė dar nesugeneruota.</span>
+                            </div>
+                          );
+                        }
+                        if (collapsedSections[analysisFocus]) {
+                          return <p className="text-xs italic" style={{ color: '#8a857f' }}>Turinys suskleistas. Paspauskite „Atverti tekstą“.</p>;
+                        }
+                        return <div className="max-w-4xl">{renderMd(currentText)}</div>;
+                      })()}
+                    </>
+                  )}
+                  {!isGenerationBlocked && genStep !== analysisFocus && renderCitations(
+                    analysisFocus === 'nafta' ? analysisMeta.nafta : analysisFocus === 'geo' ? analysisMeta.geo : analysisMeta.analysis,
+                    analysisFocus === 'nafta' ? naftaDisplay : analysisFocus === 'geo' ? geoDisplay : analysisDisplay
+                  )}
+                </div>
               </div>
             </div>
           </div>
