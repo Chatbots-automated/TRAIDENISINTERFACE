@@ -28,13 +28,16 @@ class AppLogger {
 
   private async log(entry: LogEntry): Promise<void> {
     try {
+      const safeMessage = typeof entry.message === 'string' && entry.message.trim()
+        ? entry.message.trim()
+        : `[${entry.category}] ${entry.action}`;
       const { error } = await dbAdmin
         .from('application_logs')
         .insert({
           level: entry.level,
           category: entry.category,
           action: entry.action,
-          message: entry.message,
+          message: safeMessage,
           session_id: entry.sessionId || this.sessionId,
           user_id: entry.userId || null,
           user_email: entry.userEmail || null,
@@ -218,7 +221,9 @@ class AppLogger {
 
   async logSystem(params: {
     action: string;
-    message: string;
+    message?: string;
+    userId?: string;
+    userEmail?: string;
     level?: LogLevel;
     metadata?: Record<string, any>;
   }): Promise<void> {
@@ -226,7 +231,9 @@ class AppLogger {
       level: params.level || 'info',
       category: 'system',
       action: params.action,
-      message: params.message,
+      message: params.message || `System action: ${params.action}`,
+      userId: params.userId,
+      userEmail: params.userEmail,
       metadata: params.metadata,
     });
   }
