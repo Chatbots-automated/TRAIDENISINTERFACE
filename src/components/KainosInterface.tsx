@@ -33,7 +33,6 @@ import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 10;
 const MAX_HISTORY_POINTS_PER_MATERIAL = 4;
 const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
@@ -162,15 +161,6 @@ function addDaysISO(dateIso: string, days: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + days));
   return dt.toISOString().split('T')[0];
-}
-
-function chunkArray<T>(items: T[], chunkSize: number): T[][] {
-  if (chunkSize <= 0) return [items];
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    chunks.push(items.slice(i, i + chunkSize));
-  }
-  return chunks;
 }
 
 function injectPromptVars(template: string, vars: Record<string, string>): string {
@@ -1797,51 +1787,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     }
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-    const ANALYTICS_RETRY_ATTEMPTS = 2;
     const BETWEEN_STEP_DELAY_MS = 1500;
-    const INPUT_TPM_SOFT_BUDGET = 24000;
-    const TOKEN_WINDOW_MS = 60_000;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const sdkPreview = (value: string, max = 700) => value.length > max ? `${value.slice(0, max)}…` : value;
-    let tokenWindowStart = Date.now();
-    let inputTokensInWindow = 0;
-    const estimateInputTokens = (text: string) => Math.max(1, Math.ceil(text.length / 4));
-    const reserveInputBudget = async (estimatedTokens: number, step: 'nafta' | 'geo' | 'analysis') => {
-      if (estimatedTokens > INPUT_TPM_SOFT_BUDGET) {
-        throw new Error(`Promptas per ilgas (${estimatedTokens} input tokenų estimate) ir viršija soft limitą ${INPUT_TPM_SOFT_BUDGET}/min.`);
-      }
-      while (true) {
-        const now = Date.now();
-        if (now - tokenWindowStart >= TOKEN_WINDOW_MS) {
-          tokenWindowStart = now;
-          inputTokensInWindow = 0;
-        }
-        if (inputTokensInWindow + estimatedTokens <= INPUT_TPM_SOFT_BUDGET) {
-          inputTokensInWindow += estimatedTokens;
-          sdkLog('TPM_BUDGET_RESERVED', {
-            step,
-            estimatedTokens,
-            inputTokensInWindow,
-            windowStartedAt: new Date(tokenWindowStart).toISOString(),
-          });
-          return;
-        }
-        const waitMs = Math.max(1000, TOKEN_WINDOW_MS - (now - tokenWindowStart));
-        sdkLog('TPM_THROTTLE_WAIT', {
-          step,
-          estimatedTokens,
-          inputTokensInWindow,
-          waitMs,
-        }, 'warn');
-        await sleep(waitMs);
-      }
-    };
-    const isGeoPlaceholderResponse = (text: string) => {
-      const t = text.trim().toLowerCase();
-      if (!t) return true;
-      return t.startsWith('atlieku paiešką') || t.startsWith('ieškau') || t.length < 220;
-    };
+    const sdkPreview = (value: string, max = 500) => value.length > max ? `${value.slice(0, max)}…` : value;
     const sdkLog = (
       phase: string,
       payload: Record<string, unknown>,
@@ -1858,69 +1807,29 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       maxTokens: number;
       useWebSearch?: boolean;
       step: 'nafta' | 'geo' | 'analysis';
-      chunkIndex?: number;
-      totalChunks?: number;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
       sdkLog('REQUEST_INIT', {
         step: params.step,
-        chunk: params.chunkIndex != null ? `${params.chunkIndex + 1}/${params.totalChunks || '?'}` : null,
         maxTokens: params.maxTokens,
         useWebSearch: Boolean(params.useWebSearch),
         promptChars: params.user.length,
-        promptTokensEstimate: estimateInputTokens(params.user),
         promptPreview: sdkPreview(params.user),
       });
 
-      let response: any = null;
-      let lastError: any = null;
-      for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
-        try {
-          const estimatedTokens = estimateInputTokens(params.user);
-          await reserveInputBudget(estimatedTokens, params.step);
-          const startedAt = Date.now();
-          response = await client.messages.create({
-            model: ANALYTICS_MODEL,
-            max_tokens: params.maxTokens,
-            messages: msgs,
-            ...(params.useWebSearch ? { tools: webSearchTool } : {}),
-          });
-          sdkLog('REQUEST_OK', {
-            step: params.step,
-            attempt: attempt + 1,
-            durationMs: Date.now() - startedAt,
-            stopReason: response?.stop_reason || null,
-            usage: response?.usage || null,
-            responseBlocks: Array.isArray(response?.content)
-              ? response.content.map((b: any) => b?.type).slice(0, 12)
-              : [],
-          });
-          break;
-        } catch (err: any) {
-          lastError = err;
-          const isRateLimited = err?.status === 429;
-          sdkLog('REQUEST_ERROR', {
-            step: params.step,
-            attempt: attempt + 1,
-            isRateLimited,
-            status: err?.status ?? null,
-            message: err?.message ?? String(err),
-            error: err?.error ?? null,
-          }, isRateLimited ? 'warn' : 'error');
-          if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
-            throw err;
-          }
-          const now = Date.now();
-          const waitToWindowReset = Math.max(12_000 * (attempt + 1), TOKEN_WINDOW_MS - (now - tokenWindowStart) + 500);
-          sdkLog('RATE_LIMIT_BACKOFF', {
-            step: params.step,
-            attempt: attempt + 1,
-            waitMs: waitToWindowReset,
-          }, 'warn');
-          await sleep(waitToWindowReset);
-        }
-      }
-      if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
+      const startedAt = Date.now();
+      const response = await client.messages.create({
+        model: ANALYTICS_MODEL,
+        max_tokens: params.maxTokens,
+        messages: msgs,
+        ...(params.useWebSearch ? { tools: webSearchTool } : {}),
+      });
+      sdkLog('REQUEST_OK', {
+        step: params.step,
+        durationMs: Date.now() - startedAt,
+        stopReason: response?.stop_reason || null,
+        usage: response?.usage || null,
+      });
       const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
       sdkLog('RESPONSE_PARSED', {
         step: params.step,
@@ -1989,26 +1898,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (targetSections.has('geo')) {
         // -- Step 2: Geopolitical events --
         await setGenerationStep('geo');
-        let geoResult = await runWebStep({
+        const geoResult = await runWebStep({
           step: 'geo',
           maxTokens: 550,
           useWebSearch: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
-        if (isGeoPlaceholderResponse(geoResult.text)) {
-          sdkLog('GEO_PLACEHOLDER_RETRY', {
-            reason: 'initial_geo_response_looked_like_placeholder_or_too_short',
-            firstChars: geoResult.text.length,
-            firstPreview: sdkPreview(geoResult.text),
-          }, 'warn');
-          await sleep(2500);
-          geoResult = await runWebStep({
-            step: 'geo',
-            maxTokens: 900,
-            useWebSearch: true,
-            user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
-          });
-        }
         geoText = geoResult.text;
         setStreamGeo(geoText);
         setAnalysisMeta((prev) => ({
@@ -2022,157 +1917,59 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       }
 
       if (targetSections.has('analysis')) {
-        // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
+        // -- Step 3: One prompt, one response --
         await setGenerationStep('analysis');
         const boundedNaftaText = truncatePromptSection(naftaText, 1200);
         const boundedGeoText = truncatePromptSection(geoText, 1200);
         const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 2200);
-        const materialChunks = chunkArray(meds, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
         const fallbackDate = addMonthsISO(today, 3);
-        let aggregatedForecasts: AiPrediction[] = [];
-        const analysisTexts: string[] = [];
-        const rawAnalysisResponses: string[] = [];
-        let allAnalysisCitations: ExtractedCitation[] = [];
-        let jsonChunkCount = 0;
-        let markdownChunkCount = 0;
-        let failedChunkCount = 0;
+        const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 2500);
+        const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 1800);
+        const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
-        for (let chunkIndex = 0; chunkIndex < materialChunks.length; chunkIndex += 1) {
-          const chunkMeds = materialChunks[chunkIndex];
-          const chunkCodes = new Set(chunkMeds.map((m) => m.artikulas));
-          const chunkHist = hist.filter((h) => chunkCodes.has(h.artikulas));
-          const priceData = truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 2500);
-          const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 1800);
-          const trendData = globalTrendData;
-          const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
+        const analysisResult = await runWebStep({
+          step: 'analysis',
+          maxTokens: 1800,
+          useWebSearch: false,
+          user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
+            today,
+            materialList,
+            chunkInfo: 'DALIS 1/1',
+            latestPrices,
+            trendData: globalTrendData,
+            priceData,
+            boundedNaftaText,
+            boundedGeoText,
+            oilAnalysisContext: boundedNaftaText,
+            geoPoliticalContext: boundedGeoText,
+          }),
+        });
 
-          let analysisResult = await runWebStep({
-            step: 'analysis',
-            chunkIndex,
-            totalChunks: materialChunks.length,
-            maxTokens: 1800,
-            useWebSearch: false,
-            user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
-              today,
-              materialList,
-              chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
-              latestPrices,
-              trendData,
-              priceData,
-              boundedNaftaText,
-              boundedGeoText,
-              oilAnalysisContext: boundedNaftaText,
-              geoPoliticalContext: boundedGeoText,
-            }),
-          });
-          const appendCitations = (citations: ExtractedCitation[]) => {
-            if (citations.length <= 0) return;
-            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
-            for (const citation of citations) {
-              const key = `${citation.title}|${citation.url}`;
-              if (!seen.has(key)) {
-                allAnalysisCitations.push(citation);
-                seen.add(key);
-              }
-            }
-          };
-          appendCitations(analysisResult.citations);
-          try {
-            const analysisPayload = extractJsonPayload(analysisResult.text);
-            const parsed = analysisPayload as AnalysisForecastResponsePayload;
-            const parsedForecasts = normalizeAnalysisForecasts(analysisPayload, chunkMeds, fallbackDate);
-            aggregatedForecasts = [...aggregatedForecasts, ...parsedForecasts];
-            jsonChunkCount += 1;
-            if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
-              analysisTexts.push(parsed.analysis_markdown.trim());
-            }
-          } catch {
-            if (analysisResult.hitTokenLimit) {
-              const compactRetry = await runWebStep({
-                step: 'analysis',
-                chunkIndex,
-                totalChunks: materialChunks.length,
-                maxTokens: 1400,
-                useWebSearch: false,
-                user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
-                  today,
-                  materialList,
-                  chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
-                  latestPrices,
-                  trendData,
-                  priceData,
-                  boundedNaftaText,
-                  boundedGeoText,
-                  oilAnalysisContext: boundedNaftaText,
-                  geoPoliticalContext: boundedGeoText,
-                }),
-              });
-              analysisResult = compactRetry;
-              appendCitations(compactRetry.citations);
-              try {
-                const retryPayload = extractJsonPayload(compactRetry.text);
-                const retryParsed = retryPayload as AnalysisForecastResponsePayload;
-                const retryForecasts = normalizeAnalysisForecasts(retryPayload, chunkMeds, fallbackDate);
-                aggregatedForecasts = [...aggregatedForecasts, ...retryForecasts];
-                jsonChunkCount += 1;
-                if (typeof retryParsed?.analysis_markdown === 'string' && retryParsed.analysis_markdown.trim()) {
-                  analysisTexts.push(retryParsed.analysis_markdown.trim());
-                }
-                if (compactRetry.text.trim()) {
-                  rawAnalysisResponses.push(compactRetry.text.trim());
-                }
-                continue;
-              } catch {
-                // continue to markdown/narrative fallback below
-              }
-            }
-            const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, chunkMeds, fallbackDate);
-            if (markdownForecasts.length > 0) {
-              aggregatedForecasts = [...aggregatedForecasts, ...markdownForecasts];
-              markdownChunkCount += 1;
-            } else {
-              const narrativeForecasts = parseForecastsFromNarrativeText(analysisResult.text, chunkMeds, fallbackDate);
-              if (narrativeForecasts.length > 0) {
-                aggregatedForecasts = [...aggregatedForecasts, ...narrativeForecasts];
-                markdownChunkCount += 1;
-              } else {
-                failedChunkCount += 1;
-              }
-            }
-          }
-          if (analysisResult.text.trim()) {
-            rawAnalysisResponses.push(analysisResult.text.trim());
-          }
-        }
-
-        const parsingEvidence = `\n\n---\n**Parserio įrodymas:** JSON dalys ${jsonChunkCount}/${materialChunks.length}, markdown fallback ${markdownChunkCount}, nepavykusios dalys ${failedChunkCount}.`;
-        analysisText = analysisTexts.length > 0
-          ? analysisTexts.map((part, idx) => `### Medžiagų dalis ${idx + 1}\n${part}`).join('\n\n')
-          : rawAnalysisResponses.map((part, idx) => `### Žalias atsakymas (dalis ${idx + 1})\n${part}`).join('\n\n');
-        analysisText = `${analysisText}${parsingEvidence}`;
-
-        if (jsonChunkCount === 0 && markdownChunkCount > 0) {
-          addNotif('info', 'JSON negrąžintas', 'DI negrąžino valid JSON. Prognozės paimtos iš markdown lentelių fallback.');
-        }
-
+        analysisText = analysisResult.text.trim();
         let mergedForecasts: AiPrediction[] = [];
-        if (aggregatedForecasts.length > 0) {
-          mergedForecasts = [...aggregatedForecasts];
-          const mergedCodes = new Set(aggregatedForecasts.map((f) => f.artikulas));
-          const missing = meds.filter((m) => !mergedCodes.has(m.artikulas));
-          if (missing.length > 0) {
-            debugState.missingForecastCodes = missing.map((m) => m.artikulas);
-            addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta). Jos grafikuose nebus rodomos.`);
+        try {
+          const analysisPayload = extractJsonPayload(analysisResult.text);
+          const parsed = analysisPayload as AnalysisForecastResponsePayload;
+          mergedForecasts = normalizeAnalysisForecasts(analysisPayload, meds, fallbackDate);
+          if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
+            analysisText = parsed.analysis_markdown.trim();
           }
-        } else {
-          addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Patikrinkite, kad DI grąžintų JSON forecasts.');
+          debugState.parser = { total: 1, json: 1, markdown: 0, failed: 0 };
+        } catch {
+          const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, meds, fallbackDate);
+          const narrativeForecasts = markdownForecasts.length > 0 ? [] : parseForecastsFromNarrativeText(analysisResult.text, meds, fallbackDate);
+          mergedForecasts = markdownForecasts.length > 0 ? markdownForecasts : narrativeForecasts;
+          debugState.parser = { total: 1, json: 0, markdown: mergedForecasts.length > 0 ? 1 : 0, failed: mergedForecasts.length > 0 ? 0 : 1 };
+          if (mergedForecasts.length <= 0) {
+            addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių.');
+          }
         }
-        debugState.parser = {
-          total: materialChunks.length,
-          json: jsonChunkCount,
-          markdown: markdownChunkCount,
-          failed: failedChunkCount,
-        };
+
+        const missing = meds.filter((m) => !new Set(mergedForecasts.map((f) => f.artikulas)).has(m.artikulas));
+        if (missing.length > 0) {
+          debugState.missingForecastCodes = missing.map((m) => m.artikulas);
+          addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta).`);
+        }
 
         const sanitized = mergedForecasts.map((pred) => {
           const historyEntries = hist
@@ -2185,7 +1982,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         setStreamAnalysis(analysisText);
         setAnalysisMeta((prev) => ({
           ...prev,
-          analysis: { confidence: Math.min(95, 35 + allAnalysisCitations.length * 6), citations: allAnalysisCitations },
+          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 6), citations: analysisResult.citations },
         }));
         debugState.stepStatus.analysis = 'ok';
 
