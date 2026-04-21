@@ -1002,16 +1002,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 )}
               </div>
 
-              <div className="mt-4 pt-4 border-t flex items-center justify-between gap-3" style={{ borderColor: '#e5e7eb' }}>
-                <div className="flex-1 min-w-0">
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   {!editorUnlocked ? (
-                    <div className="flex items-center gap-2">
+                    <>
                       <input
                         type="password"
                         value={editorPassword}
                         onChange={(e) => setEditorPassword(e.target.value)}
-                        placeholder="Įveskite slaptažodį redagavimui"
-                        className="input input-sm w-72"
+                        placeholder="Slaptažodis redagavimui"
+                        className="input input-sm w-64"
                         onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
                       />
                       <button
@@ -1021,40 +1021,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       >
                         {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
                       </button>
-                      {editorPasswordError && (
-                        <span className="text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</span>
-                      )}
-                    </div>
-                  ) : editorTab === 'schema' ? (
-                    schemaError ? (
-                      <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: '#fef2f2', borderColor: '#fecaca' }}>
-                        {schemaError}
-                      </div>
-                    ) : schemaSuccess ? (
-                      <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
-                        {schemaSuccess}
-                      </div>
-                    ) : (
-                      <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: '#64748b', borderColor: '#e2e8f0', background: '#f8fafc' }}>
-                        Naudokite validų JSON masyvą. Išsaugojimas taikomas pasirinktai schemai.
-                      </div>
-                    )
-                  ) : promptError ? (
-                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: '#fef2f2', borderColor: '#fecaca' }}>
-                      {promptError}
-                    </div>
-                  ) : promptSuccess ? (
-                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
-                      {promptSuccess}
-                    </div>
+                    </>
                   ) : (
-                    <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: '#64748b', borderColor: '#e2e8f0', background: '#f8fafc' }}>
-                      Šis prompt naudojamas Žaliavų analizėje: {KAINOS_PROMPTS[kainosPromptKey].label.toLowerCase()}.
-                    </div>
+                    <span className="text-[11px] px-2.5 py-1 rounded-lg"
+                      style={{ color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      {editorTab === 'schema' ? 'Schema aktyvi' : `Promptas: ${KAINOS_PROMPTS[kainosPromptKey].label}`}
+                    </span>
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   {editorTab === 'schema' ? (
                     <>
                       <button
@@ -1104,6 +1080,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   )}
                 </div>
               </div>
+              {(editorUnlocked && (schemaError || schemaSuccess || promptError || promptSuccess)) && (
+                <div className="mt-2">
+                  {schemaError && <p className="text-xs" style={{ color: colors.status.errorText }}>{schemaError}</p>}
+                  {schemaSuccess && <p className="text-xs" style={{ color: colors.status.successText }}>{schemaSuccess}</p>}
+                  {promptError && <p className="text-xs" style={{ color: colors.status.errorText }}>{promptError}</p>}
+                  {promptSuccess && <p className="text-xs" style={{ color: colors.status.successText }}>{promptSuccess}</p>}
+                </div>
+              )}
+              {!editorUnlocked && editorPasswordError && (
+                <p className="mt-2 text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>
+              )}
             </div>
 
             <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
