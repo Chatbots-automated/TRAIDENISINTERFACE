@@ -1837,6 +1837,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         await sleep(waitMs);
       }
     };
+    const isGeoPlaceholderResponse = (text: string) => {
+      const t = text.trim().toLowerCase();
+      if (!t) return true;
+      return t.startsWith('atlieku paiešką') || t.startsWith('ieškau') || t.length < 220;
+    };
     const sdkLog = (
       phase: string,
       payload: Record<string, unknown>,
@@ -1905,7 +1910,14 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
             throw err;
           }
-          await sleep(12_000 * (attempt + 1));
+          const now = Date.now();
+          const waitToWindowReset = Math.max(12_000 * (attempt + 1), TOKEN_WINDOW_MS - (now - tokenWindowStart) + 500);
+          sdkLog('RATE_LIMIT_BACKOFF', {
+            step: params.step,
+            attempt: attempt + 1,
+            waitMs: waitToWindowReset,
+          }, 'warn');
+          await sleep(waitToWindowReset);
         }
       }
       if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
@@ -1983,6 +1995,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           useWebSearch: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
+        if (isGeoPlaceholderResponse(geoResult.text)) {
+          sdkLog('GEO_PLACEHOLDER_RETRY', {
+            reason: 'initial_geo_response_looked_like_placeholder_or_too_short',
+            firstChars: geoResult.text.length,
+            firstPreview: sdkPreview(geoResult.text),
+          }, 'warn');
+          await sleep(2500);
+          geoResult = await runWebStep({
+            step: 'geo',
+            maxTokens: 900,
+            useWebSearch: true,
+            user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
+          });
+        }
         geoText = geoResult.text;
         setStreamGeo(geoText);
         setAnalysisMeta((prev) => ({
