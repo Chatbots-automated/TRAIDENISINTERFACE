@@ -430,10 +430,14 @@ class DirectusUpdateBuilder<T = any> {
 
   private async execute(): Promise<DirectusResponse<T[] | T>> {
     try {
-      // If filtering by a single _eq field, use direct item endpoint: PATCH /items/collection/<pk>
-      // This handles both .eq('id', val) and .eq('artikulas', val) for custom-PK tables.
-      const singlePkFilter = this.filters.length === 1 && this.filters[0].operator === '_eq'
-        ? this.filters[0] : null;
+      // Only use direct item endpoint when explicitly filtering by id.
+      // For all other fields (e.g. variable_key), use filtered update flow
+      // so Directus can resolve actual primary keys first.
+      const singlePkFilter = this.filters.length === 1
+        && this.filters[0].operator === '_eq'
+        && this.filters[0].field === 'id'
+        ? this.filters[0]
+        : null;
 
       let url: string;
       let method = 'PATCH';
@@ -597,11 +601,13 @@ class DirectusDeleteBuilder<T = any> {
 
   private async execute(): Promise<DirectusResponse<null>> {
     try {
-      // Check for a single _eq filter — treat it as a direct delete by primary key.
-      // This handles both .eq('id', val) and .eq('artikulas', val) for tables
-      // whose primary key is not named "id".
-      const singlePkFilter = this.filters.length === 1 && this.filters[0].operator === '_eq'
-        ? this.filters[0] : null;
+      // Only direct-delete when explicitly filtering by id.
+      // Otherwise resolve matching items first and bulk-delete by resolved IDs.
+      const singlePkFilter = this.filters.length === 1
+        && this.filters[0].operator === '_eq'
+        && this.filters[0].field === 'id'
+        ? this.filters[0]
+        : null;
 
       if (singlePkFilter) {
         // Direct delete by primary key value
