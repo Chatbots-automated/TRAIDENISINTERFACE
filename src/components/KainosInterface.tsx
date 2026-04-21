@@ -34,6 +34,7 @@ interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
 const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 10;
+const MAX_HISTORY_POINTS_PER_MATERIAL = 4;
 const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
@@ -102,7 +103,8 @@ function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): stri
   for (const m of meds) {
     const entries = hist.filter(e => e.artikulas === m.artikulas).sort((a, b) => a.data.localeCompare(b.data));
     if (!entries.length) continue;
-    const row = entries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ');
+    const compactEntries = entries.slice(-MAX_HISTORY_POINTS_PER_MATERIAL);
+    const row = compactEntries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ');
     lines.push(`${m.pavadinimas} [${m.artikulas}] (${m.vienetas}): ${row}`);
   }
   return lines.join('\n');
@@ -1793,7 +1795,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 6;
+    const MAX_TOOL_TURNS = 3;
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1803,6 +1805,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       user: string;
       maxTokens: number;
       expectJson?: boolean;
+      useWebSearch?: boolean;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
       let mergedText = '';
@@ -1820,8 +1823,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               model: ANALYTICS_MODEL,
               max_tokens: params.maxTokens,
               system: params.system,
-              tools: webSearchTool,
               messages: msgs,
+              ...(params.useWebSearch ? { tools: webSearchTool } : {}),
             });
             break;
           } catch (err: any) {
@@ -1918,6 +1921,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         await setGenerationStep('nafta');
         const naftaResult = await runWebStep({
           maxTokens: 700,
+          useWebSearch: true,
           system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
         });
@@ -1938,6 +1942,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         await setGenerationStep('geo');
         let geoResult = await runWebStep({
           maxTokens: 550,
+          useWebSearch: true,
           system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
@@ -1946,6 +1951,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         if (geoLooksLikeMetaResponse) {
           geoResult = await runWebStep({
             maxTokens: 650,
+            useWebSearch: true,
             system: `Rinkos žvalgybų analitikas. Pateikite tik galutinį atsakymą lietuvių kalba (be frazių apie tai, ką darysite). Šiandien: ${today}.`,
             user: `${applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today })}\n\nSVARBU: Pateikite iškart galutinį 4-6 punktų rezultatą su konkrečiais faktais ir poveikiu medžiagų kainoms.`,
           });
@@ -1965,9 +1971,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (targetSections.has('analysis')) {
         // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
         await setGenerationStep('analysis');
-        const boundedNaftaText = truncatePromptSection(naftaText, 2500);
-        const boundedGeoText = truncatePromptSection(geoText, 2200);
-        const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 9000);
+        const boundedNaftaText = truncatePromptSection(naftaText, 1200);
+        const boundedGeoText = truncatePromptSection(geoText, 1200);
+        const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 2200);
         const materialChunks = chunkArray(meds, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
         const fallbackDate = addMonthsISO(today, 3);
         let aggregatedForecasts: AiPrediction[] = [];
@@ -1982,14 +1988,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const chunkMeds = materialChunks[chunkIndex];
           const chunkCodes = new Set(chunkMeds.map((m) => m.artikulas));
           const chunkHist = hist.filter((h) => chunkCodes.has(h.artikulas));
-          const priceData = truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 7000);
-          const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 4500);
+          const priceData = truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 2500);
+          const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 1800);
           const trendData = globalTrendData;
           const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
           let analysisResult = await runWebStep({
-            maxTokens: 3200,
+            maxTokens: 1800,
             expectJson: true,
+            useWebSearch: false,
             system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
             user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
               today,
@@ -2028,8 +2035,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           } catch {
             if (analysisResult.hitTokenLimit) {
               const compactRetry = await runWebStep({
-                maxTokens: 2600,
+                maxTokens: 1400,
                 expectJson: true,
+                useWebSearch: false,
                 system: `Patyrusi medžiagų kainų analitikė. Grąžinkite tik kompaktišką, validų JSON. Šiandien: ${today}.`,
                 user: `${applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
                   today,
