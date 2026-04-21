@@ -481,6 +481,8 @@ interface ExtractedCitation {
 interface ExtractedResponseText {
   text: string;
   citations: ExtractedCitation[];
+  stopReasons: string[];
+  hitTokenLimit: boolean;
 }
 
 interface AnalysisSectionMeta {
@@ -1772,6 +1774,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
       let mergedText = '';
       let mergedCitations: ExtractedCitation[] = [];
+      const stopReasons: string[] = [];
 
       let turn = 0;
       while (true) {
@@ -1802,6 +1805,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
         const isPauseTurn = response.stop_reason === 'pause_turn';
         const isTokenLimit = response.stop_reason === 'max_tokens';
+        if (typeof response.stop_reason === 'string') {
+          stopReasons.push(response.stop_reason);
+        }
         if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
         if (extracted.citations.length > 0) {
           const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
@@ -1828,6 +1834,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       return {
         text: mergedText.trim(),
         citations: mergedCitations,
+        stopReasons,
+        hitTokenLimit: stopReasons.includes('max_tokens'),
       };
     };
 
@@ -1934,7 +1942,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const trendData = globalTrendData;
           const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
-          const analysisResult = await runWebStep({
+          let analysisResult = await runWebStep({
             maxTokens: 3200,
             expectJson: true,
             system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
@@ -1951,10 +1959,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               geoPoliticalContext: boundedGeoText,
             }),
           });
-          if (analysisResult.text.trim()) {
-            rawAnalysisResponses.push(analysisResult.text.trim());
-          }
-
+          const appendCitations = (citations: ExtractedCitation[]) => {
+            if (citations.length <= 0) return;
+            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
+            for (const citation of citations) {
+              const key = `${citation.title}|${citation.url}`;
+              if (!seen.has(key)) {
+                allAnalysisCitations.push(citation);
+                seen.add(key);
+              }
+            }
+          };
+          appendCitations(analysisResult.citations);
           try {
             const analysisPayload = extractJsonPayload(analysisResult.text);
             const parsed = analysisPayload as AnalysisForecastResponsePayload;
@@ -1965,6 +1981,43 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               analysisTexts.push(parsed.analysis_markdown.trim());
             }
           } catch {
+            if (analysisResult.hitTokenLimit) {
+              const compactRetry = await runWebStep({
+                maxTokens: 2600,
+                expectJson: true,
+                system: `Patyrusi medžiagų kainų analitikė. Grąžinkite tik kompaktišką, validų JSON. Šiandien: ${today}.`,
+                user: `${applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
+                  today,
+                  materialList,
+                  chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
+                  latestPrices,
+                  trendData,
+                  priceData,
+                  boundedNaftaText,
+                  boundedGeoText,
+                  oilAnalysisContext: boundedNaftaText,
+                  geoPoliticalContext: boundedGeoText,
+                })}\n\nSVARBU: Jei trūksta vietos, trumpinkite "analysis_markdown" iki 3-5 sakinių, bet pilnai pateikite forecasts.`,
+              });
+              analysisResult = compactRetry;
+              appendCitations(compactRetry.citations);
+              try {
+                const retryPayload = extractJsonPayload(compactRetry.text);
+                const retryParsed = retryPayload as AnalysisForecastResponsePayload;
+                const retryForecasts = normalizeAnalysisForecasts(retryPayload, chunkMeds, fallbackDate);
+                aggregatedForecasts = [...aggregatedForecasts, ...retryForecasts];
+                jsonChunkCount += 1;
+                if (typeof retryParsed?.analysis_markdown === 'string' && retryParsed.analysis_markdown.trim()) {
+                  analysisTexts.push(retryParsed.analysis_markdown.trim());
+                }
+                if (compactRetry.text.trim()) {
+                  rawAnalysisResponses.push(compactRetry.text.trim());
+                }
+                continue;
+              } catch {
+                // continue to markdown/narrative fallback below
+              }
+            }
             const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, chunkMeds, fallbackDate);
             if (markdownForecasts.length > 0) {
               aggregatedForecasts = [...aggregatedForecasts, ...markdownForecasts];
@@ -1979,15 +2032,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               }
             }
           }
-          if (analysisResult.citations.length > 0) {
-            const seen = new Set(allAnalysisCitations.map(c => `${c.title}|${c.url}`));
-            for (const citation of analysisResult.citations) {
-              const key = `${citation.title}|${citation.url}`;
-              if (!seen.has(key)) {
-                allAnalysisCitations.push(citation);
-                seen.add(key);
-              }
-            }
+          if (analysisResult.text.trim()) {
+            rawAnalysisResponses.push(analysisResult.text.trim());
           }
         }
 
