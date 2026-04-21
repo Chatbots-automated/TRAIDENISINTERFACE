@@ -39,7 +39,9 @@ export interface PrognozėInternetas {
 export interface AnalysisGenerationLock {
   runId: string;
   startedAt: string;
+  heartbeatAt?: string;
   startedBy: string;
+  step?: 'idle' | 'nafta' | 'geo' | 'analysis';
   sections: Array<'nafta' | 'geo' | 'analysis'>;
 }
 
@@ -238,7 +240,7 @@ export async function bulkInsertMedziagas(
 const INTERNETAS_FIELDS = 'artikulas,content,geoevents,nafta,sukurta_at';
 const GENERAL_ANALYSIS_ARTIKULAS = '__general__';
 const ANALYSIS_LOCK_ARTIKULAS = '__analysis_lock__';
-const ANALYSIS_LOCK_STALE_MS = 12 * 60 * 1000;
+const ANALYSIS_LOCK_STALE_MS = 45 * 1000;
 
 export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]> {
   const { data, error } = await db
@@ -315,7 +317,9 @@ function parseAnalysisLockRow(row: PrognozėInternetas | null): AnalysisGenerati
     return {
       runId: parsed.runId,
       startedAt: parsed.startedAt || row.sukurta_at,
+      heartbeatAt: parsed.heartbeatAt,
       startedBy: parsed.startedBy,
+      step: parsed.step,
       sections: sections.length > 0 ? sections : ['nafta', 'geo', 'analysis'],
     };
   } catch {
@@ -324,9 +328,9 @@ function parseAnalysisLockRow(row: PrognozėInternetas | null): AnalysisGenerati
 }
 
 function isLockStale(lock: AnalysisGenerationLock): boolean {
-  const startedAtMs = new Date(lock.startedAt).getTime();
-  if (!Number.isFinite(startedAtMs)) return true;
-  return (Date.now() - startedAtMs) > ANALYSIS_LOCK_STALE_MS;
+  const heartbeatMs = new Date(lock.heartbeatAt || lock.startedAt).getTime();
+  if (!Number.isFinite(heartbeatMs)) return true;
+  return (Date.now() - heartbeatMs) > ANALYSIS_LOCK_STALE_MS;
 }
 
 export async function fetchAnalysisGenerationLock(): Promise<AnalysisGenerationLock | null> {
@@ -357,7 +361,9 @@ export async function tryAcquireAnalysisGenerationLock(params: {
   const payload: AnalysisGenerationLock = {
     runId: params.runId,
     startedAt: new Date().toISOString(),
+    heartbeatAt: new Date().toISOString(),
     startedBy: params.startedBy,
+    step: 'idle',
     sections: params.sections,
   };
   const { error } = await db
@@ -375,6 +381,30 @@ export async function tryAcquireAnalysisGenerationLock(params: {
     return { acquired: false, lock: lockAfterConflict };
   }
   return { acquired: true, lock: payload };
+}
+
+export async function updateAnalysisGenerationLock(params: {
+  runId: string;
+  step?: 'idle' | 'nafta' | 'geo' | 'analysis';
+  sections?: Array<'nafta' | 'geo' | 'analysis'>;
+}): Promise<void> {
+  const currentLock = await fetchAnalysisGenerationLock();
+  if (!currentLock || currentLock.runId !== params.runId) return;
+
+  const payload: AnalysisGenerationLock = {
+    ...currentLock,
+    step: params.step ?? currentLock.step ?? 'idle',
+    sections: params.sections ?? currentLock.sections,
+    heartbeatAt: new Date().toISOString(),
+  };
+
+  await db
+    .from('medziagos_prognoze_internetas')
+    .update({
+      content: JSON.stringify(payload),
+      sukurta_at: payload.heartbeatAt,
+    })
+    .eq('artikulas', ANALYSIS_LOCK_ARTIKULAS);
 }
 
 export async function releaseAnalysisGenerationLock(runId?: string): Promise<void> {

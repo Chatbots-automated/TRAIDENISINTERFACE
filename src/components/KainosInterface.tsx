@@ -18,7 +18,7 @@ import {
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
   saveMaterialForecasts,
-  fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock,
+  fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock, updateAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
@@ -1729,6 +1729,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
     setSharedAnalysisLock(lockAttempt.lock);
     setGenLoading(true);
+    let currentStep: 'idle' | 'nafta' | 'geo' | 'analysis' = 'idle';
+    const heartbeatInterval = window.setInterval(() => {
+      updateAnalysisGenerationLock({ runId, step: currentStep, sections }).catch(() => undefined);
+    }, 5000);
+    const setGenerationStep = async (step: 'idle' | 'nafta' | 'geo' | 'analysis') => {
+      currentStep = step;
+      setGenStep(step);
+      await updateAnalysisGenerationLock({ runId, step, sections });
+    };
+    await updateAnalysisGenerationLock({ runId, step: 'idle', sections });
     const targetSections = new Set(sections);
     if (targetSections.has('nafta')) setStreamNafta('');
     if (targetSections.has('geo')) setStreamGeo('');
@@ -1844,7 +1854,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       if (targetSections.has('nafta')) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
-        setGenStep('nafta');
+        await setGenerationStep('nafta');
         const naftaResult = await runWebStep({
           maxTokens: 700,
           system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
@@ -1864,7 +1874,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       if (targetSections.has('geo')) {
         // -- Step 2: Geopolitical events --
-        setGenStep('geo');
+        await setGenerationStep('geo');
         let geoResult = await runWebStep({
           maxTokens: 550,
           system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
@@ -1893,7 +1903,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       if (targetSections.has('analysis')) {
         // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
-        setGenStep('analysis');
+        await setGenerationStep('analysis');
         const boundedNaftaText = truncatePromptSection(naftaText, 2500);
         const boundedGeoText = truncatePromptSection(geoText, 2200);
         const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 9000);
@@ -2053,6 +2063,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       setAnalysisDebug(debugState);
       setGenLoading(false);
       setGenStep('idle');
+      window.clearInterval(heartbeatInterval);
       await releaseAnalysisGenerationLock(runId);
       await syncSharedAnalysisState();
     }
@@ -2276,6 +2287,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const lastUpdated = analytics?.sukurta_at ?? null;
   const sharedGenerationActive = Boolean(sharedAnalysisLock);
   const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
+  const sharedStep = sharedAnalysisLock?.step || 'idle';
   const isGenerationBlocked = genLoading || sharedGenerationActive;
   const renderCitations = (meta: AnalysisSectionMeta) => {
     if (!meta.citations.length) return null;
@@ -2488,7 +2500,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   <p className="text-xs" style={{ color: '#64748b' }}>
                     {genLoading
                       ? (genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės')
-                      : `Analizę šiuo metu vykdo ${lockOwnerLabel}.`}
+                      : `Analizę šiuo metu vykdo ${lockOwnerLabel}${sharedStep !== 'idle' ? ` (${sharedStep})` : ''}.`}
                   </p>
                 </div>
               </div>
