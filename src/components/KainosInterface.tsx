@@ -503,6 +503,44 @@ interface AnalysisDebugState {
   error: string | null;
 }
 
+type AnalysisSectionKey = 'nafta' | 'geo' | 'analysis';
+
+function stripMarkdownToPreview(text: string, maxChars = 220): string {
+  const normalized = text
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
+    .replace(/[#>*_`~-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, maxChars).trim()}…`;
+}
+
+function extractUrlCitationsFromText(text: string): ExtractedCitation[] {
+  const links = new Map<string, ExtractedCitation>();
+  const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gim;
+  const rawUrlRegex = /(https?:\/\/[^\s)]+)(?!\))/gim;
+
+  let match: RegExpExecArray | null;
+  while ((match = markdownLinkRegex.exec(text)) !== null) {
+    const title = match[1]?.trim() || match[2];
+    const url = match[2]?.trim();
+    if (url && !links.has(url)) links.set(url, { title, url });
+  }
+  while ((match = rawUrlRegex.exec(text)) !== null) {
+    const url = match[1]?.trim();
+    if (!url || links.has(url)) continue;
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '');
+      links.set(url, { title: host, url });
+    } catch {
+      links.set(url, { title: url, url });
+    }
+  }
+
+  return Array.from(links.values());
+}
+
 
 function extractJsonPayload(text: string): unknown {
   const stripped = text
@@ -1654,6 +1692,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     missingForecastCodes: [],
     error: null,
   });
+  const [collapsedSections, setCollapsedSections] = useState<Record<AnalysisSectionKey, boolean>>({
+    nafta: true,
+    geo: true,
+    analysis: false,
+  });
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -2356,13 +2399,23 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
   const sharedStep = sharedAnalysisLock?.step || 'idle';
   const isGenerationBlocked = genLoading || sharedGenerationActive;
-  const renderCitations = (meta: AnalysisSectionMeta) => {
-    if (!meta.citations.length) return null;
+  const renderCitations = (meta: AnalysisSectionMeta, displayText: string) => {
+    const fallbackCitations = extractUrlCitationsFromText(displayText || '');
+    const merged = [...meta.citations];
+    const seen = new Set(merged.map(c => `${c.title}|${c.url}`));
+    for (const citation of fallbackCitations) {
+      const key = `${citation.title}|${citation.url}`;
+      if (!seen.has(key)) {
+        merged.push(citation);
+        seen.add(key);
+      }
+    }
+    if (!merged.length) return null;
     return (
       <div className="mt-2 pt-2 border-t border-blue-100">
-        <p className="text-[10px] font-semibold mb-1" style={{ color: '#1d4ed8' }}>Šaltiniai ({meta.citations.length})</p>
+        <p className="text-[10px] font-semibold mb-1" style={{ color: '#1d4ed8' }}>Šaltiniai ({merged.length})</p>
         <ul className="space-y-1">
-          {meta.citations.slice(0, 5).map((c, idx) => (
+          {merged.slice(0, 8).map((c, idx) => (
             <li key={`${c.url}-${idx}`} className="truncate text-[10px]">
               <a href={c.url} target="_blank" rel="noreferrer" className="underline" style={{ color: '#1d4ed8' }}>
                 {c.title}
@@ -2566,7 +2619,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   </p>
                   <p className="text-xs" style={{ color: '#64748b' }}>
                     {genLoading
-                      ? (genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės')
+                      ? (genStep === 'nafta' ? '1/3 • Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? '2/3 • Renkami geopolitiniai įvykiai' : '3/3 • Skaičiuojamos medžiagų prognozės')
                       : `Analizę šiuo metu vykdo ${lockOwnerLabel}${sharedStep !== 'idle' ? ` (${sharedStep})` : ''}.`}
                   </p>
                 </div>
@@ -2579,6 +2632,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #ffedd5' }}>
                 <BarChart2 className="w-4 h-4" style={{ color: '#c2410c' }} />
                 <span className="text-xs font-semibold" style={{ color: '#9a3412' }}>Naftos kainos ir dervų ryšys</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#9a3412' }}>1 etapas</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#ffedd5', color: '#9a3412' }}>
                   ~{Math.round(analysisMeta.nafta.confidence)}%
                 </span>
@@ -2590,6 +2644,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 >
                   Regeneruoti
                 </button>
+                <button
+                  onClick={() => setCollapsedSections(prev => ({ ...prev, nafta: !prev.nafta }))}
+                  className="text-[10px] px-2.5 py-1 rounded-lg"
+                  style={{ color: '#9a3412', background: '#fff' }}
+                >
+                  {collapsedSections.nafta ? 'Išskleisti' : 'Suskleisti'}
+                </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
                 {genLoading && genStep === 'nafta' ? (
@@ -2598,14 +2659,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#9a3412' }}>Atnaujinami naftos duomenys…</span>
                   </div>
                 ) : naftaDisplay ? (
+                  collapsedSections.nafta ? (
+                    <p className="text-xs" style={{ color: '#5a5550' }}>{stripMarkdownToPreview(naftaDisplay)}</p>
+                  ) : (
                   <>{renderMd(naftaDisplay)}</>
+                  )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
-                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta)}
+                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta, naftaDisplay)}
               </div>
             </div>
 
@@ -2615,6 +2680,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#eff6ff', borderBottom: '1px solid #dbeafe' }}>
                 <Globe className="w-4 h-4" style={{ color: '#1d4ed8' }} />
                 <span className="text-xs font-semibold" style={{ color: '#1e40af' }}>Geopolitiniai įvykiai ir rinkos sąlygos</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#1e40af' }}>2 etapas</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#dbeafe', color: '#1e40af' }}>
                   ~{Math.round(analysisMeta.geo.confidence)}%
                 </span>
@@ -2626,6 +2692,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 >
                   Regeneruoti
                 </button>
+                <button
+                  onClick={() => setCollapsedSections(prev => ({ ...prev, geo: !prev.geo }))}
+                  className="text-[10px] px-2.5 py-1 rounded-lg"
+                  style={{ color: '#1e40af', background: '#fff' }}
+                >
+                  {collapsedSections.geo ? 'Išskleisti' : 'Suskleisti'}
+                </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
                 {genLoading && genStep === 'geo' ? (
@@ -2634,14 +2707,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#1e40af' }}>Atnaujinami geopolitikos signalai…</span>
                   </div>
                 ) : geoDisplay ? (
+                  collapsedSections.geo ? (
+                    <p className="text-xs" style={{ color: '#5a5550' }}>{stripMarkdownToPreview(geoDisplay)}</p>
+                  ) : (
                   <>{renderMd(geoDisplay)}</>
+                  )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
-                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo)}
+                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo, geoDisplay)}
               </div>
             </div>
 
@@ -2651,6 +2728,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#ecfdf5', borderBottom: '1px solid #d1fae5' }}>
                 <TrendingUp className="w-4 h-4" style={{ color: '#047857' }} />
                 <span className="text-xs font-semibold" style={{ color: '#065f46' }}>Kainų analizė ir prognozė</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#fff', color: '#065f46' }}>3 etapas</span>
                 <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
                   ~{Math.round(analysisMeta.analysis.confidence)}%
                 </span>
@@ -2662,6 +2740,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 >
                   Regeneruoti
                 </button>
+                <button
+                  onClick={() => setCollapsedSections(prev => ({ ...prev, analysis: !prev.analysis }))}
+                  className="text-[10px] px-2.5 py-1 rounded-lg"
+                  style={{ color: '#065f46', background: '#fff' }}
+                >
+                  {collapsedSections.analysis ? 'Išskleisti' : 'Suskleisti'}
+                </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
                 {genLoading && genStep === 'analysis' ? (
@@ -2670,14 +2755,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#065f46' }}>Perskaičiuojamos medžiagų prognozės…</span>
                   </div>
                 ) : analysisDisplay ? (
+                  collapsedSections.analysis ? (
+                    <p className="text-xs" style={{ color: '#5a5550' }}>{stripMarkdownToPreview(analysisDisplay, 280)}</p>
+                  ) : (
                   <>{renderMd(analysisDisplay)}</>
+                  )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
-                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis)}
+                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis, analysisDisplay)}
               </div>
             </div>
           </div>
