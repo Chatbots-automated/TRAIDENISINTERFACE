@@ -18,10 +18,11 @@ import {
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
   saveMaterialForecasts,
+  fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
-import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction } from '../lib/kainosService';
+import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction, AnalysisGenerationLock } from '../lib/kainosService';
 import {
   fetchSablonai, createSablonas, updateSablonas, deleteSablonas, generateStructuredJson,
 } from '../lib/sablonaiService';
@@ -1633,6 +1634,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
+  const [sharedAnalysisLock, setSharedAnalysisLock] = useState<AnalysisGenerationLock | null>(null);
   const [analysisMeta, setAnalysisMeta] = useState<{
     nafta: AnalysisSectionMeta;
     geo: AnalysisSectionMeta;
@@ -1687,12 +1689,45 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   }, []);
 
   // ---- analytics generation (web search + citations + safety metadata) ----
+  const syncSharedAnalysisState = useCallback(async () => {
+    try {
+      const [latestAnalysis, lock] = await Promise.all([
+        fetchGeneralAnalysis(),
+        fetchAnalysisGenerationLock(),
+      ]);
+      setAnalytics(latestAnalysis);
+      setSharedAnalysisLock(lock);
+    } catch (error) {
+      console.warn('Nepavyko sinchronizuoti analytics būsenos:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncSharedAnalysisState();
+    const interval = window.setInterval(syncSharedAnalysisState, 8000);
+    return () => window.clearInterval(interval);
+  }, [syncSharedAnalysisState]);
+
   const generateAnalyticsFromData = useCallback(async (
     meds: Medžiaga[],
     hist: KainuIrašas[],
     sections: Array<'nafta' | 'geo' | 'analysis'> = ['nafta', 'geo', 'analysis']
   ) => {
     if (genLoading) return;
+    const runId = crypto.randomUUID();
+    const lockAttempt = await tryAcquireAnalysisGenerationLock({
+      runId,
+      startedBy: user?.email || user?.display_name || 'Nežinomas vartotojas',
+      sections,
+    });
+    if (!lockAttempt.acquired) {
+      setSharedAnalysisLock(lockAttempt.lock);
+      const owner = lockAttempt.lock?.startedBy || 'kitas vartotojas';
+      addNotif('info', 'Analizė jau generuojama', `Šiuo metu analizę generuoja ${owner}. Palaukite, kol procesas baigsis.`);
+      return;
+    }
+
+    setSharedAnalysisLock(lockAttempt.lock);
     setGenLoading(true);
     const targetSections = new Set(sections);
     if (targetSections.has('nafta')) setStreamNafta('');
@@ -2018,8 +2053,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       setAnalysisDebug(debugState);
       setGenLoading(false);
       setGenStep('idle');
+      await releaseAnalysisGenerationLock(runId);
+      await syncSharedAnalysisState();
     }
-  }, [genLoading, analytics]);
+  }, [genLoading, analytics, syncSharedAnalysisState, user]);
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
@@ -2237,6 +2274,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const geoDisplay = streamGeo || analytics?.geoevents || '';
   const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : (analytics?.content || ''));
   const lastUpdated = analytics?.sukurta_at ?? null;
+  const sharedGenerationActive = Boolean(sharedAnalysisLock);
+  const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
+  const isGenerationBlocked = genLoading || sharedGenerationActive;
   const renderCitations = (meta: AnalysisSectionMeta) => {
     if (!meta.citations.length) return null;
     return (
@@ -2429,15 +2469,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   Nafta → Geopolitika → Kainų prognozė
                 </p>
               </div>
-              <button onClick={generateAnalytics} disabled={genLoading}
+              <button onClick={generateAnalytics} disabled={isGenerationBlocked}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
                 style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
-                {genLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {genLoading ? 'Generuojama...' : 'Generuoti analizę'}
+                {isGenerationBlocked ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {isGenerationBlocked ? 'Generuojama...' : 'Generuoti analizę'}
               </button>
             </div>
 
-            {genLoading && (
+            {isGenerationBlocked && (
               <div className="rounded-2xl border bg-white px-5 py-6"
                 style={{ borderColor: '#dbeafe', boxShadow: '0 10px 30px rgba(37,99,235,0.12)' }}>
                 <div className="flex flex-col items-center justify-center text-center gap-3">
@@ -2446,7 +2486,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     Vykdoma DI analizė…
                   </p>
                   <p className="text-xs" style={{ color: '#64748b' }}>
-                    {genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės'}
+                    {genLoading
+                      ? (genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės')
+                      : `Analizę šiuo metu vykdo ${lockOwnerLabel}.`}
                   </p>
                 </div>
               </div>
@@ -2463,7 +2505,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('nafta')}
-                  disabled={genLoading}
+                  disabled={isGenerationBlocked}
                   className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
                   style={{ color: '#9a3412', background: '#fff' }}
                 >
@@ -2484,7 +2526,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
-                {!genLoading && genStep !== 'nafta' && renderCitations(analysisMeta.nafta)}
+                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta)}
               </div>
             </div>
 
@@ -2499,7 +2541,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('geo')}
-                  disabled={genLoading}
+                  disabled={isGenerationBlocked}
                   className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
                   style={{ color: '#1e40af', background: '#fff' }}
                 >
@@ -2520,7 +2562,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
-                {!genLoading && genStep !== 'geo' && renderCitations(analysisMeta.geo)}
+                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo)}
               </div>
             </div>
 
@@ -2535,7 +2577,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('analysis')}
-                  disabled={genLoading}
+                  disabled={isGenerationBlocked}
                   className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
                   style={{ color: '#065f46', background: '#fff' }}
                 >
@@ -2556,7 +2598,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
-                {!genLoading && genStep !== 'analysis' && renderCitations(analysisMeta.analysis)}
+                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis)}
               </div>
             </div>
           </div>

@@ -36,6 +36,13 @@ export interface PrognozėInternetas {
   sukurta_at: string;  // ISO timestamp
 }
 
+export interface AnalysisGenerationLock {
+  runId: string;
+  startedAt: string;
+  startedBy: string;
+  sections: Array<'nafta' | 'geo' | 'analysis'>;
+}
+
 export interface KainuPrognoze {
   id: number;
   artikulas: string;
@@ -229,6 +236,9 @@ export async function bulkInsertMedziagas(
 // ---------------------------------------------------------------------------
 
 const INTERNETAS_FIELDS = 'artikulas,content,geoevents,nafta,sukurta_at';
+const GENERAL_ANALYSIS_ARTIKULAS = '__general__';
+const ANALYSIS_LOCK_ARTIKULAS = '__analysis_lock__';
+const ANALYSIS_LOCK_STALE_MS = 12 * 60 * 1000;
 
 export async function fetchPrognozėInternetas(): Promise<PrognozėInternetas[]> {
   const { data, error } = await db
@@ -279,18 +289,103 @@ export async function upsertPrognozėInternetas(
 }
 
 export async function saveGeneralAnalysis(content: string, geoevents: string, nafta: string = ''): Promise<void> {
-  await upsertPrognozėInternetas('__general__', content, geoevents, nafta);
+  await upsertPrognozėInternetas(GENERAL_ANALYSIS_ARTIKULAS, content, geoevents, nafta);
 }
 
 export async function fetchGeneralAnalysis(): Promise<PrognozėInternetas | null> {
   const { data, error } = await db
     .from('medziagos_prognoze_internetas')
     .select(INTERNETAS_FIELDS)
-    .eq('artikulas', '__general__')
+    .eq('artikulas', GENERAL_ANALYSIS_ARTIKULAS)
     .limit(1);
 
   if (error) throw error;
   return (data && data.length > 0) ? data[0] : null;
+}
+
+function parseAnalysisLockRow(row: PrognozėInternetas | null): AnalysisGenerationLock | null {
+  if (!row) return null;
+  try {
+    const parsed = JSON.parse(row.content || '{}') as Partial<AnalysisGenerationLock>;
+    const sections = Array.isArray(parsed.sections)
+      ? parsed.sections.filter((s): s is 'nafta' | 'geo' | 'analysis' => ['nafta', 'geo', 'analysis'].includes(String(s)))
+      : ['nafta', 'geo', 'analysis'];
+
+    if (!parsed.runId || !parsed.startedBy) return null;
+    return {
+      runId: parsed.runId,
+      startedAt: parsed.startedAt || row.sukurta_at,
+      startedBy: parsed.startedBy,
+      sections: sections.length > 0 ? sections : ['nafta', 'geo', 'analysis'],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function isLockStale(lock: AnalysisGenerationLock): boolean {
+  const startedAtMs = new Date(lock.startedAt).getTime();
+  if (!Number.isFinite(startedAtMs)) return true;
+  return (Date.now() - startedAtMs) > ANALYSIS_LOCK_STALE_MS;
+}
+
+export async function fetchAnalysisGenerationLock(): Promise<AnalysisGenerationLock | null> {
+  const { data, error } = await db
+    .from('medziagos_prognoze_internetas')
+    .select(INTERNETAS_FIELDS)
+    .eq('artikulas', ANALYSIS_LOCK_ARTIKULAS)
+    .limit(1);
+  if (error) throw error;
+  const row = (data && data.length > 0) ? data[0] as PrognozėInternetas : null;
+  const parsed = parseAnalysisLockRow(row);
+  if (!parsed) return null;
+  if (isLockStale(parsed)) {
+    await db.from('medziagos_prognoze_internetas').delete().eq('artikulas', ANALYSIS_LOCK_ARTIKULAS);
+    return null;
+  }
+  return parsed;
+}
+
+export async function tryAcquireAnalysisGenerationLock(params: {
+  runId: string;
+  startedBy: string;
+  sections: Array<'nafta' | 'geo' | 'analysis'>;
+}): Promise<{ acquired: true; lock: AnalysisGenerationLock } | { acquired: false; lock: AnalysisGenerationLock | null }> {
+  const existing = await fetchAnalysisGenerationLock();
+  if (existing) return { acquired: false, lock: existing };
+
+  const payload: AnalysisGenerationLock = {
+    runId: params.runId,
+    startedAt: new Date().toISOString(),
+    startedBy: params.startedBy,
+    sections: params.sections,
+  };
+  const { error } = await db
+    .from('medziagos_prognoze_internetas')
+    .insert({
+      artikulas: ANALYSIS_LOCK_ARTIKULAS,
+      content: JSON.stringify(payload),
+      geoevents: '',
+      nafta: '',
+      sukurta_at: payload.startedAt,
+    });
+
+  if (error) {
+    const lockAfterConflict = await fetchAnalysisGenerationLock();
+    return { acquired: false, lock: lockAfterConflict };
+  }
+  return { acquired: true, lock: payload };
+}
+
+export async function releaseAnalysisGenerationLock(runId?: string): Promise<void> {
+  if (runId) {
+    const lock = await fetchAnalysisGenerationLock();
+    if (lock && lock.runId !== runId) return;
+  }
+  await db
+    .from('medziagos_prognoze_internetas')
+    .delete()
+    .eq('artikulas', ANALYSIS_LOCK_ARTIKULAS);
 }
 
 const PROGNOZES_FIELDS = 'id,artikulas,data,kaina_min,kaina_max,pasitikejimas,sukurta_at';
