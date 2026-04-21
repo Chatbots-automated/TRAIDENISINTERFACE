@@ -505,17 +505,6 @@ interface AnalysisDebugState {
 
 type AnalysisSectionKey = 'nafta' | 'geo' | 'analysis';
 
-function stripMarkdownToPreview(text: string, maxChars = 220): string {
-  const normalized = text
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
-    .replace(/[#>*_`~-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (normalized.length <= maxChars) return normalized;
-  return `${normalized.slice(0, maxChars).trim()}…`;
-}
-
 function extractUrlCitationsFromText(text: string): ExtractedCitation[] {
   const links = new Map<string, ExtractedCitation>();
   const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gim;
@@ -1693,8 +1682,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     error: null,
   });
   const [collapsedSections, setCollapsedSections] = useState<Record<AnalysisSectionKey, boolean>>({
-    nafta: true,
-    geo: true,
+    nafta: false,
+    geo: false,
     analysis: false,
   });
 
@@ -2386,7 +2375,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const renderMd = (text: string) => (
     <div
-      className="text-xs"
+      className="text-[13px] leading-6"
       dangerouslySetInnerHTML={{ __html: renderMarkdownHtml(text || '') }}
     />
   );
@@ -2645,11 +2634,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   Regeneruoti
                 </button>
                 <button
-                  onClick={() => setCollapsedSections(prev => ({ ...prev, nafta: !prev.nafta }))}
+                  onClick={() => setCollapsedSections(prev => ({
+                    nafta: !prev.nafta,
+                    geo: prev.geo,
+                    analysis: prev.analysis,
+                  }))}
                   className="text-[10px] px-2.5 py-1 rounded-lg"
                   style={{ color: '#9a3412', background: '#fff' }}
                 >
-                  {collapsedSections.nafta ? 'Išskleisti' : 'Suskleisti'}
+                  {collapsedSections.nafta ? 'Atverti' : 'Sutraukti'}
                 </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
@@ -2660,9 +2653,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   </div>
                 ) : naftaDisplay ? (
                   collapsedSections.nafta ? (
-                    <p className="text-xs" style={{ color: '#5a5550' }}>{stripMarkdownToPreview(naftaDisplay)}</p>
+                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
                   ) : (
-                  <>{renderMd(naftaDisplay)}</>
+                    <div className="max-w-3xl">
+                      <>{renderMd(naftaDisplay)}</>
+                    </div>
                   )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
@@ -2693,11 +2688,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   Regeneruoti
                 </button>
                 <button
-                  onClick={() => setCollapsedSections(prev => ({ ...prev, geo: !prev.geo }))}
+                  onClick={() => setCollapsedSections(prev => ({
+                    nafta: prev.nafta,
+                    geo: !prev.geo,
+                    analysis: prev.analysis,
+                  }))}
                   className="text-[10px] px-2.5 py-1 rounded-lg"
                   style={{ color: '#1e40af', background: '#fff' }}
                 >
-                  {collapsedSections.geo ? 'Išskleisti' : 'Suskleisti'}
+                  {collapsedSections.geo ? 'Atverti' : 'Sutraukti'}
                 </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
@@ -2708,9 +2707,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   </div>
                 ) : geoDisplay ? (
                   collapsedSections.geo ? (
-                    <p className="text-xs" style={{ color: '#5a5550' }}>{stripMarkdownToPreview(geoDisplay)}</p>
+                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
                   ) : (
-                  <>{renderMd(geoDisplay)}</>
+                    <div className="max-w-3xl">
+                      <>{renderMd(geoDisplay)}</>
+                    </div>
                   )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
@@ -2741,11 +2742,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   Regeneruoti
                 </button>
                 <button
-                  onClick={() => setCollapsedSections(prev => ({ ...prev, analysis: !prev.analysis }))}
+                  onClick={() => setCollapsedSections(prev => ({
+                    nafta: prev.nafta,
+                    geo: prev.geo,
+                    analysis: !prev.analysis,
+                  }))}
                   className="text-[10px] px-2.5 py-1 rounded-lg"
                   style={{ color: '#065f46', background: '#fff' }}
                 >
-                  {collapsedSections.analysis ? 'Išskleisti' : 'Suskleisti'}
+                  {collapsedSections.analysis ? 'Atverti' : 'Sutraukti'}
                 </button>
               </div>
               <div className="px-5 py-4 bg-white min-h-[150px]">
@@ -2756,9 +2761,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   </div>
                 ) : analysisDisplay ? (
                   collapsedSections.analysis ? (
-                    <p className="text-xs" style={{ color: '#5a5550' }}>{stripMarkdownToPreview(analysisDisplay, 280)}</p>
+                    <p className="text-xs italic" style={{ color: '#8a857f' }}>Skiltis suskleista. Spauskite „Atverti“, kad matytumėte pilną tekstą.</p>
                   ) : (
-                  <>{renderMd(analysisDisplay)}</>
+                    <div className="max-w-3xl">
+                      <>{renderMd(analysisDisplay)}</>
+                    </div>
                   )
                 ) : (
                   <div className="flex items-center gap-2 py-1">
