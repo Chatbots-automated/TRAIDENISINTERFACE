@@ -2680,9 +2680,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     </button>
                   </div>
                 </div>
-                <div className="px-5 py-4 min-h-[280px]">
+                <div className="px-5 py-4 h-[520px] overflow-y-auto">
                   {genLoading && genStep === analysisFocus ? (
-                    <div className="min-h-[220px] flex flex-col items-center justify-center gap-2">
+                    <div className="h-full min-h-[220px] flex flex-col items-center justify-center gap-2">
                       <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#2563eb' }} />
                       <span className="text-xs" style={{ color: '#64748b' }}>Atnaujinamas pasirinktas etapas…</span>
                     </div>
