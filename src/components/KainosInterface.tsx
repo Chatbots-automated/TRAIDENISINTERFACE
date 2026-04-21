@@ -1798,11 +1798,45 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 1;
     const BETWEEN_STEP_DELAY_MS = 1500;
+    const INPUT_TPM_SOFT_BUDGET = 24000;
+    const TOKEN_WINDOW_MS = 60_000;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
     const sdkPreview = (value: string, max = 700) => value.length > max ? `${value.slice(0, max)}…` : value;
+    let tokenWindowStart = Date.now();
+    let inputTokensInWindow = 0;
+    const estimateInputTokens = (text: string) => Math.max(1, Math.ceil(text.length / 4));
+    const reserveInputBudget = async (estimatedTokens: number, step: 'nafta' | 'geo' | 'analysis') => {
+      if (estimatedTokens > INPUT_TPM_SOFT_BUDGET) {
+        throw new Error(`Promptas per ilgas (${estimatedTokens} input tokenų estimate) ir viršija soft limitą ${INPUT_TPM_SOFT_BUDGET}/min.`);
+      }
+      while (true) {
+        const now = Date.now();
+        if (now - tokenWindowStart >= TOKEN_WINDOW_MS) {
+          tokenWindowStart = now;
+          inputTokensInWindow = 0;
+        }
+        if (inputTokensInWindow + estimatedTokens <= INPUT_TPM_SOFT_BUDGET) {
+          inputTokensInWindow += estimatedTokens;
+          sdkLog('TPM_BUDGET_RESERVED', {
+            step,
+            estimatedTokens,
+            inputTokensInWindow,
+            windowStartedAt: new Date(tokenWindowStart).toISOString(),
+          });
+          return;
+        }
+        const waitMs = Math.max(1000, TOKEN_WINDOW_MS - (now - tokenWindowStart));
+        sdkLog('TPM_THROTTLE_WAIT', {
+          step,
+          estimatedTokens,
+          inputTokensInWindow,
+          waitMs,
+        }, 'warn');
+        await sleep(waitMs);
+      }
+    };
     const sdkLog = (
       phase: string,
       payload: Record<string, unknown>,
@@ -1829,6 +1863,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         maxTokens: params.maxTokens,
         useWebSearch: Boolean(params.useWebSearch),
         promptChars: params.user.length,
+        promptTokensEstimate: estimateInputTokens(params.user),
         promptPreview: sdkPreview(params.user),
       });
 
@@ -1836,6 +1871,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       let lastError: any = null;
       for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
         try {
+          const estimatedTokens = estimateInputTokens(params.user);
+          await reserveInputBudget(estimatedTokens, params.step);
           const startedAt = Date.now();
           response = await client.messages.create({
             model: ANALYTICS_MODEL,
@@ -1868,7 +1905,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
             throw err;
           }
-          await sleep(2200 * (attempt + 1));
+          await sleep(12_000 * (attempt + 1));
         }
       }
       if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
