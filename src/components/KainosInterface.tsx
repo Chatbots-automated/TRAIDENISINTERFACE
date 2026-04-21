@@ -33,7 +33,7 @@ import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 15;
+const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 10;
 const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
 
 1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
@@ -1758,7 +1758,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 4;
+    const MAX_TOOL_TURNS = 6;
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1767,6 +1767,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       system: string;
       user: string;
       maxTokens: number;
+      expectJson?: boolean;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
       let mergedText = '';
@@ -1800,9 +1801,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
         const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
         const isPauseTurn = response.stop_reason === 'pause_turn';
-        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) {
-          if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
-        }
+        const isTokenLimit = response.stop_reason === 'max_tokens';
+        if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
         if (extracted.citations.length > 0) {
           const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
           for (const citation of extracted.citations) {
@@ -1813,8 +1813,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             }
           }
         }
-        if (!isPauseTurn || turn >= MAX_TOOL_TURNS) break;
+        const shouldContinue = (isPauseTurn || isTokenLimit) && turn < MAX_TOOL_TURNS;
+        if (!shouldContinue) break;
+
         msgs.push({ role: 'assistant', content: response.content as any });
+        msgs.push({
+          role: 'user',
+          content: params.expectJson
+            ? 'Tęskite tiksliai nuo paskutinio simbolio ir užbaikite TIK JSON (be paaiškinimų, be ``` blokų).'
+            : 'Tęskite nuo vietos, kur baigėte, be įžangos kartojimo.',
+        });
       }
 
       return {
@@ -1927,7 +1935,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
           const analysisResult = await runWebStep({
-            maxTokens: 2200,
+            maxTokens: 3200,
+            expectJson: true,
             system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
             user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
               today,
