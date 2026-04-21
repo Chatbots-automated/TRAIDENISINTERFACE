@@ -904,21 +904,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             style={{ background: '#f8fafc', borderColor: '#dbe2ea' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-3 border-b" style={{ borderColor: '#e5e7eb', background: '#ffffff' }}>
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <div>
-                  <h3 className="text-base font-semibold leading-tight" style={{ color: '#0f172a' }}>
-                  AI redaktorius
-                  </h3>
-                </div>
+            <div className="px-5 py-2.5 border-b space-y-2" style={{ borderColor: '#e5e7eb', background: '#ffffff' }}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold" style={{ color: '#0f172a' }}>AI redaktorius</h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg"
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md"
                     style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
                     {editorTab === 'schema' ? schemaKey : kainosPromptKey}
                   </span>
                   <button
                     onClick={() => setShowSchemaEditor(false)}
-                    className="w-8 h-8 inline-flex items-center justify-center rounded-lg transition-colors"
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-md transition-colors"
                     style={{ color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0' }}
                   >
                     <X className="w-4 h-4" />
@@ -926,89 +922,64 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5">
-                <div
-                  className="flex items-center gap-1 p-1 rounded-xl border"
-                  style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}
-                >
-                  <button
-                    onClick={() => openCombinedEditor('schema')}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                    style={{
-                      color: editorTab === 'schema' ? '#ffffff' : '#475569',
-                      background: editorTab === 'schema' ? '#2563eb' : 'transparent',
-                    }}
-                  >
-                    Schemos
-                  </button>
-                  <button
-                    onClick={() => openCombinedEditor('kainos_prompt')}
-                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                    style={{
-                      color: editorTab === 'kainos_prompt' ? '#ffffff' : '#475569',
-                      background: editorTab === 'kainos_prompt' ? '#2563eb' : 'transparent',
-                    }}
-                  >
-                    Promptai
-                  </button>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="flex items-center gap-1 p-0.5 rounded-lg border" style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}>
+                    <button
+                      onClick={() => openCombinedEditor('schema')}
+                      className="px-2 py-1 rounded-md text-[11px] font-medium transition-all"
+                      style={{
+                        color: editorTab === 'schema' ? '#ffffff' : '#475569',
+                        background: editorTab === 'schema' ? '#2563eb' : 'transparent',
+                      }}
+                    >
+                      Schemos
+                    </button>
+                    <button
+                      onClick={() => openCombinedEditor('kainos_prompt')}
+                      className="px-2 py-1 rounded-md text-[11px] font-medium transition-all"
+                      style={{
+                        color: editorTab === 'kainos_prompt' ? '#ffffff' : '#475569',
+                        background: editorTab === 'kainos_prompt' ? '#2563eb' : 'transparent',
+                      }}
+                    >
+                      Promptai
+                    </button>
+                  </div>
+
+                  {editorTab === 'schema' ? (
+                    <select
+                      value={schemaKey}
+                      onChange={(e) => openSchemaEditor(e.target.value as 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas')}
+                      className="select select-xs rounded-md"
+                      style={{ minWidth: 170 }}
+                    >
+                      <option value="sdk_chat_tool_schemas">SDK schema</option>
+                      <option value="kainos_ai_tool_schemas">Žaliavų schema</option>
+                    </select>
+                  ) : (
+                    <select
+                      value={kainosPromptKey}
+                      onChange={(e) => openPromptEditor(e.target.value as KainosPromptKey)}
+                      className="select select-xs rounded-md"
+                      style={{ minWidth: 170 }}
+                    >
+                      {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
+                        <option key={key} value={key}>{KAINOS_PROMPTS[key].label}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
-                {editorTab === 'schema' && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
-                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border"
-                      style={{
-                        color: schemaKey === 'sdk_chat_tool_schemas' ? '#ffffff' : '#334155',
-                        background: schemaKey === 'sdk_chat_tool_schemas' ? '#0f172a' : '#ffffff',
-                        borderColor: schemaKey === 'sdk_chat_tool_schemas' ? '#0f172a' : '#e2e8f0',
-                      }}
-                    >
-                      SDK schema
-                    </button>
-                    <button
-                      onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
-                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border"
-                      style={{
-                        color: schemaKey === 'kainos_ai_tool_schemas' ? '#ffffff' : '#334155',
-                        background: schemaKey === 'kainos_ai_tool_schemas' ? '#0f172a' : '#ffffff',
-                        borderColor: schemaKey === 'kainos_ai_tool_schemas' ? '#0f172a' : '#e2e8f0',
-                      }}
-                    >
-                      Žaliavų schema
-                    </button>
-                  </div>
-                )}
-                {editorTab === 'kainos_prompt' && (
-                  <div className="flex items-center gap-1">
-                    {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
-                      <button
-                        key={key}
-                        onClick={() => openPromptEditor(key)}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border"
-                        style={{
-                          color: kainosPromptKey === key ? '#ffffff' : '#334155',
-                          background: kainosPromptKey === key ? '#0f172a' : '#ffffff',
-                          borderColor: kainosPromptKey === key ? '#0f172a' : '#e2e8f0',
-                        }}
-                      >
-                        {KAINOS_PROMPTS[key].label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  {!editorUnlocked ? (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {!editorUnlocked && (
                     <>
                       <input
                         type="password"
                         value={editorPassword}
                         onChange={(e) => setEditorPassword(e.target.value)}
-                        placeholder="Slaptažodis redagavimui"
-                        className="input input-xs w-56"
+                        placeholder="Slaptažodis"
+                        className="input input-xs w-36"
                         onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
                       />
                       <button
@@ -1016,13 +987,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         onClick={handleUnlockEditor}
                         disabled={unlockingEditor || !editorPassword.trim()}
                       >
-                        {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
+                        {unlockingEditor ? '...' : 'Atrakinti'}
                       </button>
                     </>
-                  ) : null}
-                </div>
+                  )}
 
-                <div className="flex items-center gap-2 shrink-0">
                   {editorTab === 'schema' ? (
                     <>
                       <button
@@ -1037,7 +1006,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         disabled={schemaSaving || schemaLoading || !editorUnlocked}
                         onClick={saveSchema}
                       >
-                        {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                        {schemaSaving ? <Save className="w-3.5 h-3.5 animate-pulse" /> : <Save className="w-3.5 h-3.5" />}
                         Išsaugoti
                       </button>
                     </>
@@ -1054,7 +1023,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         }}
                         disabled={promptLoading || promptSaving}
                       >
-                        {!promptPreviewMode && promptPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                        {!promptPreviewMode && promptPreviewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
                         {promptPreviewMode ? 'Redaguoti' : 'Preview'}
                       </button>
                       <button
@@ -1065,14 +1034,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         Perkrauti
                       </button>
                       <button className="btn btn-primary btn-xs gap-1" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
-                        {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                        {promptSaving ? <Save className="w-3.5 h-3.5 animate-pulse" /> : <Save className="w-3.5 h-3.5" />}
                         Išsaugoti
                       </button>
                     </>
                   )}
                 </div>
               </div>
-              {!editorUnlocked && editorPasswordError && <p className="mt-1 text-[11px]" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>}
+              {!editorUnlocked && editorPasswordError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>}
             </div>
 
             <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
