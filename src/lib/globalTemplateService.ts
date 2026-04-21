@@ -12,6 +12,8 @@ import PizZip from 'pizzip';
 // Directus instance credentials
 const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
 const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_ADMIN_TOKEN = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
+const DIRECTUS_EFFECTIVE_TOKEN = (DIRECTUS_ADMIN_TOKEN || DIRECTUS_TOKEN).trim();
 const ENV_DOCX_TEMPLATE_FILE_ID = (import.meta.env.VITE_SDK_TEMPLATE_FILE_ID || '').trim() || null;
 const DOCX_TEMPLATE_TITLE = '__docx_global_template__';
 const SDK_TEMPLATE_COLLECTION = 'sdk_template';
@@ -27,7 +29,7 @@ let _docxCacheLoaded = false;
 let _cachedTemplateVars: { fileId: string; vars: string[] } | null = null;
 
 function getAuthHeaders(): HeadersInit {
-  return { Authorization: `Bearer ${DIRECTUS_TOKEN}` };
+  return { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` };
 }
 
 function cacheTemplateId(fileId: string | null) {
@@ -224,14 +226,14 @@ export async function getDocxTemplateFileId(): Promise<string | null> {
  * Build the Directus asset URL for the .docx template file.
  */
 export function getDocxTemplateUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}`;
 }
 
 /**
  * Build a Directus asset URL for preview/opening.
  */
 export function getDirectusAssetUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}`;
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}`;
 }
 
 /**
@@ -264,7 +266,7 @@ export async function uploadDocxBlobToDirectus(
   form.append('file', blob, filename);
   const resp = await fetch(`${DIRECTUS_URL}/files`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
     body: form,
   });
   if (!resp.ok) throw new Error(`DOCX failo įkėlimas nepavyko: ${resp.status}`);
@@ -275,7 +277,7 @@ export async function uploadDocxBlobToDirectus(
   if (previousFileId) {
     fetch(`${DIRECTUS_URL}/files/${previousFileId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
     }).catch(() => {});
   }
 
@@ -286,7 +288,7 @@ export async function uploadDocxBlobToDirectus(
  * Build a Directus asset download URL for any file ID.
  */
 export function getDirectusFileUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${DIRECTUS_TOKEN}&download`;
+  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}&download`;
 }
 
 /**
