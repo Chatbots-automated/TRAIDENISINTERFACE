@@ -165,6 +165,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [promptPreviewText, setPromptPreviewText] = useState('');
   const [promptPreviewStats, setPromptPreviewStats] = useState<string[]>([]);
   const [promptPreviewMissing, setPromptPreviewMissing] = useState<string[]>([]);
+  const [promptPreviewMode, setPromptPreviewMode] = useState(false);
   const [editorUnlocked, setEditorUnlocked] = useState(false);
   const [editorPassword, setEditorPassword] = useState('');
   const [editorPasswordError, setEditorPasswordError] = useState('');
@@ -406,6 +407,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     setPromptPreviewMissing([]);
     setPromptPreviewStats([]);
     setPromptPreviewError(null);
+    setPromptPreviewMode(false);
     setKainosPromptKey(targetKey);
     try {
       const promptVar = await getInstructionVariable(targetKey);
@@ -501,6 +503,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           `Template ilgis: ${template.length}`,
           `Rendered ilgis: ${rendered.length}`,
         ]);
+        setPromptPreviewMode(true);
         return;
       }
 
@@ -570,6 +573,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         `boundedGeoText: ${boundedGeoText.length} simb.`,
         `Rendered ilgis: ${rendered.length}`,
       ]);
+      setPromptPreviewMode(true);
     } catch (err: any) {
       setPromptPreviewError(err?.message || 'Nepavyko sugeneruoti prompt preview');
     } finally {
@@ -1023,49 +1027,45 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 )
               ) : promptLoading ? (
                 <div className="h-[560px] rounded-xl animate-pulse" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }} />
-	              ) : (
-	                <div className="space-y-3">
-	                  <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
-	                    <div className="px-3 py-2 text-[11px] font-medium" style={{ background: '#1f2937', color: '#d1d5db' }}>
-	                      Prompt tekstas • {KAINOS_PROMPTS[kainosPromptKey].help}
-	                    </div>
-	                    <textarea
-	                      value={kainosPromptContent}
-	                      onChange={(e) => setKainosPromptContent(e.target.value)}
-	                      className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
-	                      style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
-	                      readOnly={!editorUnlocked}
-	                    />
-	                  </div>
-	                  {(promptPreviewLoading || promptPreviewError || promptPreviewText) && (
-	                    <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
-	                      <div className="px-3 py-2 text-[11px] font-medium flex items-center justify-between" style={{ background: '#111827', color: '#d1d5db' }}>
-	                        <span>Prompt preview (su reikšmėmis)</span>
-	                        <span className="text-[10px]" style={{ color: promptPreviewMissing.length > 0 ? '#fca5a5' : '#9ca3af' }}>
-	                          {promptPreviewMissing.length > 0 ? `Nerasti: ${promptPreviewMissing.join(', ')}` : 'Visi placeholderiai užpildyti'}
-	                        </span>
-	                      </div>
-	                      <div className="px-3 py-2 space-y-1" style={{ background: '#f8fafc', borderBottom: `1px solid ${colors.border.default}` }}>
-	                        {promptPreviewError ? (
-	                          <p className="text-xs" style={{ color: colors.status.errorText }}>{promptPreviewError}</p>
-	                        ) : promptPreviewLoading ? (
-	                          <p className="text-xs" style={{ color: colors.text.tertiary }}>Generuojamas preview...</p>
-	                        ) : (
-	                          promptPreviewStats.map((line, i) => (
-	                            <p key={i} className="text-[11px]" style={{ color: colors.text.tertiary }}>{line}</p>
-	                          ))
-	                        )}
-	                      </div>
-	                      {!!promptPreviewText && (
-	                        <pre className="w-full min-h-[220px] max-h-[340px] overflow-auto font-mono text-xs p-4"
-	                          style={{ background: '#0b1220', color: '#dbeafe', lineHeight: '1.55' }}>
-	                          {promptPreviewText}
-	                        </pre>
-	                      )}
-	                    </div>
-	                  )}
-	                </div>
-	              )}
+		              ) : (
+		                <div className="rounded-xl overflow-hidden border" style={{ borderColor: colors.border.default }}>
+		                  <div className="px-3 py-2 text-[11px] font-medium flex items-center justify-between" style={{ background: '#1f2937', color: '#d1d5db' }}>
+		                    <span>{promptPreviewMode ? 'Prompt preview (su reikšmėmis)' : 'Prompt tekstas'}</span>
+		                    <span className="text-[10px]" style={{ color: promptPreviewMode && promptPreviewMissing.length > 0 ? '#fca5a5' : '#9ca3af' }}>
+		                      {promptPreviewMode
+		                        ? (promptPreviewMissing.length > 0 ? `Nerasti: ${promptPreviewMissing.join(', ')}` : 'Visi placeholderiai užpildyti')
+		                        : KAINOS_PROMPTS[kainosPromptKey].help}
+		                    </span>
+		                  </div>
+		                  {promptPreviewMode ? (
+		                    <>
+		                      <div className="px-3 py-2 space-y-1" style={{ background: '#f8fafc', borderBottom: `1px solid ${colors.border.default}` }}>
+		                        {promptPreviewError ? (
+		                          <p className="text-xs" style={{ color: colors.status.errorText }}>{promptPreviewError}</p>
+		                        ) : promptPreviewLoading ? (
+		                          <p className="text-xs" style={{ color: colors.text.tertiary }}>Generuojamas preview...</p>
+		                        ) : (
+		                          promptPreviewStats.map((line, i) => (
+		                            <p key={i} className="text-[11px]" style={{ color: colors.text.tertiary }}>{line}</p>
+		                          ))
+		                        )}
+		                      </div>
+		                      <pre className="w-full min-h-[560px] max-h-[560px] overflow-auto font-mono text-xs p-4"
+		                        style={{ background: '#0b1220', color: '#dbeafe', lineHeight: '1.55' }}>
+		                        {promptPreviewText || 'Preview dar negeneruotas.'}
+		                      </pre>
+		                    </>
+		                  ) : (
+		                    <textarea
+		                      value={kainosPromptContent}
+		                      onChange={(e) => { setKainosPromptContent(e.target.value); if (promptPreviewMode) setPromptPreviewMode(false); }}
+		                      className="w-full min-h-[560px] font-mono text-xs p-4 focus:outline-none"
+		                      style={{ background: '#0f172a', color: '#e2e8f0', lineHeight: '1.55' }}
+		                      readOnly={!editorUnlocked}
+		                    />
+		                  )}
+		                </div>
+		              )}
             </div>
 
             <div className="px-6 py-4 border-t flex items-center justify-between gap-2" style={{ borderColor: colors.border.default, background: colors.bg.secondary }}>
@@ -1142,11 +1142,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 	                  <>
 	                    <button
 	                      className="btn btn-soft btn-sm gap-1.5"
-	                      onClick={generatePromptPreview}
+	                      onClick={() => {
+	                        if (promptPreviewMode) {
+	                          setPromptPreviewMode(false);
+	                        } else {
+	                          generatePromptPreview();
+	                        }
+	                      }}
 	                      disabled={promptLoading || promptSaving}
 	                    >
-	                      {promptPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
-	                      Preview
+	                      {!promptPreviewMode && promptPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+	                      {promptPreviewMode ? 'Redaguoti' : 'Preview'}
 	                    </button>
 	                    <button
 	                      className="btn btn-soft btn-sm"

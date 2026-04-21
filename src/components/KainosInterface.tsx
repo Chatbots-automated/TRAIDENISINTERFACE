@@ -1713,7 +1713,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 2;
+    const MAX_TOOL_TURNS = 4;
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1830,11 +1830,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (targetSections.has('geo')) {
         // -- Step 2: Geopolitical events --
         setGenStep('geo');
-        const geoResult = await runWebStep({
+        let geoResult = await runWebStep({
           maxTokens: 550,
           system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
+        const geoTrimmed = geoResult.text.trim();
+        const geoLooksLikeMetaResponse = /^ieškosiu\b/i.test(geoTrimmed) || geoTrimmed.length < 120;
+        if (geoLooksLikeMetaResponse) {
+          geoResult = await runWebStep({
+            maxTokens: 650,
+            system: `Rinkos žvalgybų analitikas. Pateikite tik galutinį atsakymą lietuvių kalba (be frazių apie tai, ką darysite). Šiandien: ${today}.`,
+            user: `${applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today })}\n\nSVARBU: Pateikite iškart galutinį 4-6 punktų rezultatą su konkrečiais faktais ir poveikiu medžiagų kainoms.`,
+          });
+        }
         geoText = geoResult.text;
         setStreamGeo(geoText);
         setAnalysisMeta((prev) => ({
