@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
-  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye, ArrowRight, Lock, Unlock, ChevronDown,
+  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, ArrowRight, Lock, Unlock, ChevronDown,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
@@ -485,13 +485,6 @@ interface ExtractedResponseText {
 interface AnalysisSectionMeta {
   confidence: number;
   citations: ExtractedCitation[];
-}
-
-interface PromptPreviewSection {
-  title: string;
-  rendered: string;
-  unresolved: string[];
-  stats: string[];
 }
 
 interface AnalysisDebugState {
@@ -1649,10 +1642,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     geo: { confidence: 0, citations: [] },
     analysis: { confidence: 0, citations: [] },
   });
-  const [showPromptPreview, setShowPromptPreview] = useState(false);
-  const [promptPreviewLoading, setPromptPreviewLoading] = useState(false);
-  const [promptPreviewError, setPromptPreviewError] = useState<string | null>(null);
-  const [promptPreviewSections, setPromptPreviewSections] = useState<PromptPreviewSection[]>([]);
   const [analysisDebug, setAnalysisDebug] = useState<AnalysisDebugState>({
     lastRunAt: null,
     stepStatus: { nafta: 'idle', geo: 'idle', analysis: 'idle' },
@@ -2022,73 +2011,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       setGenStep('idle');
     }
   }, [genLoading, analytics]);
-
-  const openPromptPreviewModal = useCallback(async () => {
-    setShowPromptPreview(true);
-    setPromptPreviewLoading(true);
-    setPromptPreviewError(null);
-    try {
-      const [oilPromptVar, geoPromptVar, analysisPromptVar] = await Promise.all([
-        getInstructionVariable('kainos_ai_nafta_prompt'),
-        getInstructionVariable('kainos_ai_geo_prompt'),
-        getInstructionVariable('kainos_ai_analysis_prompt'),
-      ]);
-      const oilPromptTemplate = oilPromptVar?.content?.trim() || DEFAULT_KAINOS_OIL_PROMPT;
-      const geoPromptTemplate = geoPromptVar?.content?.trim() || DEFAULT_KAINOS_GEO_PROMPT;
-      const analysisPromptTemplate = analysisPromptVar?.content?.trim() || DEFAULT_KAINOS_ANALYSIS_PROMPT;
-
-      const today = new Date().toISOString().split('T')[0];
-      const boundedNaftaText = truncatePromptSection(analytics?.nafta || '', 2500);
-      const boundedGeoText = truncatePromptSection(analytics?.geoevents || '', 2200);
-      const materialChunks = chunkArray(medziagas, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
-      const chunkMeds = materialChunks[0] || [];
-      const chunkCodes = new Set(chunkMeds.map((m) => m.artikulas));
-      const chunkHist = istorija.filter((h) => chunkCodes.has(h.artikulas));
-      const vars = {
-        today,
-        chunkInfo: materialChunks.length > 0 ? `DALIS 1/${materialChunks.length}` : 'DALIS 1/1',
-        materialList: chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n') || 'Nėra medžiagų',
-        latestPrices: truncatePromptSection(formatLatestPricesForPrompt(chunkMeds, chunkHist), 4500),
-        trendData: truncatePromptSection(formatTrendDataForPrompt(medziagas, istorija), 9000),
-        priceData: truncatePromptSection(formatPriceDataForPrompt(chunkMeds, chunkHist), 7000),
-        boundedNaftaText,
-        boundedGeoText,
-        oilAnalysisContext: boundedNaftaText,
-        geoPoliticalContext: boundedGeoText,
-      };
-
-      const sections: PromptPreviewSection[] = [
-        {
-          title: '1 žingsnis · Nafta',
-          rendered: injectPromptVars(oilPromptTemplate, { today }),
-          unresolved: findUnresolvedPromptVars(injectPromptVars(oilPromptTemplate, { today })),
-          stats: [`Template ilgis: ${oilPromptTemplate.length}`, `Rendered ilgis: ${injectPromptVars(oilPromptTemplate, { today }).length}`],
-        },
-        {
-          title: '2 žingsnis · Geopolitika',
-          rendered: injectPromptVars(geoPromptTemplate, { today }),
-          unresolved: findUnresolvedPromptVars(injectPromptVars(geoPromptTemplate, { today })),
-          stats: [`Template ilgis: ${geoPromptTemplate.length}`, `Rendered ilgis: ${injectPromptVars(geoPromptTemplate, { today }).length}`],
-        },
-        {
-          title: '3 žingsnis · Medžiagų prognozė (1-a dalis preview)',
-          rendered: injectPromptVars(analysisPromptTemplate, vars),
-          unresolved: findUnresolvedPromptVars(injectPromptVars(analysisPromptTemplate, vars)),
-          stats: [
-            `Medžiagų dalių skaičius: ${Math.max(materialChunks.length, 1)}`,
-            `boundedNaftaText: ${boundedNaftaText.length} simb.`,
-            `boundedGeoText: ${boundedGeoText.length} simb.`,
-            `Rendered ilgis: ${injectPromptVars(analysisPromptTemplate, vars).length}`,
-          ],
-        },
-      ];
-      setPromptPreviewSections(sections);
-    } catch (err: any) {
-      setPromptPreviewError(err?.message || 'Nepavyko sugeneruoti preview');
-    } finally {
-      setPromptPreviewLoading(false);
-    }
-  }, [analytics?.nafta, analytics?.geoevents, medziagas, istorija]);
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
@@ -2500,14 +2422,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </div>
               </div>
 	              <div className="flex items-center gap-2">
-	                <button
-	                  onClick={openPromptPreviewModal}
-	                  disabled={genLoading}
-	                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95 disabled:opacity-60"
-	                  style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}
-	                >
-	                  <Eye className="w-3.5 h-3.5" />Prompt preview
-	                </button>
 	                <button onClick={generateAnalytics} disabled={genLoading}
 	                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
 	                  style={{ background: '#007AFF' }}>
@@ -2673,54 +2587,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           </div>
         )}
       </div>
-
-      {showPromptPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setShowPromptPreview(false)}>
-          <div className="w-full max-w-5xl mx-4 bg-white rounded-2xl overflow-hidden max-h-[88vh] flex flex-col"
-            style={{ boxShadow: '0 25px 50px rgba(0,0,0,0.2)' }}
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 shrink-0"
-              style={{ borderBottom: '1px solid #f0ede8' }}>
-              <h3 className="text-sm font-semibold" style={{ color: '#3d3935' }}>
-                Prompt preflight preview
-              </h3>
-              <button onClick={() => setShowPromptPreview(false)} className="p-1.5 rounded-md hover:bg-black/5">
-                <X className="w-4 h-4" style={{ color: '#8a857f' }} />
-              </button>
-            </div>
-            <div className="overflow-auto flex-1 px-5 py-4 space-y-3">
-              {promptPreviewLoading ? (
-                <div className="h-40 rounded-xl animate-pulse" style={{ background: '#f3f4f6' }} />
-              ) : promptPreviewError ? (
-                <div className="text-xs rounded-lg px-3 py-2" style={{ color: '#b91c1c', background: 'rgba(220,38,38,0.08)' }}>
-                  {promptPreviewError}
-                </div>
-              ) : (
-                promptPreviewSections.map((section, idx) => (
-                  <div key={idx} className="rounded-xl border overflow-hidden" style={{ borderColor: '#f0ede8' }}>
-                    <div className="px-4 py-2.5 text-xs font-semibold flex items-center justify-between" style={{ background: '#fafaf8', color: '#3d3935' }}>
-                      <span>{section.title}</span>
-                      <span className="text-[10px]" style={{ color: section.unresolved.length ? '#b91c1c' : '#6b7280' }}>
-                        {section.unresolved.length ? `Nerasti: ${section.unresolved.join(', ')}` : 'Visi placeholderiai užpildyti'}
-                      </span>
-                    </div>
-                    <div className="px-4 py-2 space-y-1">
-                      {section.stats.map((s, i) => (
-                        <p key={i} className="text-[11px]" style={{ color: '#6b7280' }}>{s}</p>
-                      ))}
-                    </div>
-                    <pre className="px-4 py-3 text-[11px] whitespace-pre-wrap overflow-auto" style={{ maxHeight: 280, background: '#0f172a', color: '#e2e8f0' }}>
-                      {section.rendered}
-                    </pre>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Excel Import Preview Modal */}
       {excelPreview && (
