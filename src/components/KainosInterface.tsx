@@ -1787,56 +1787,19 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     }
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-    const BETWEEN_STEP_DELAY_MS = 1500;
-
-    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-    const sdkPreview = (value: string, max = 500) => value.length > max ? `${value.slice(0, max)}…` : value;
-    const sdkLog = (
-      phase: string,
-      payload: Record<string, unknown>,
-      level: 'log' | 'warn' | 'error' = 'log'
-    ) => {
-      const tag = `[Kainos SDK][run:${runId}] ${phase}`;
-      if (level === 'error') console.error(tag, payload);
-      else if (level === 'warn') console.warn(tag, payload);
-      else console.log(tag, payload);
-    };
-
-    const runWebStep = async (params: {
+    const runStepRequest = async (params: {
       user: string;
       maxTokens: number;
       useWebSearch?: boolean;
-      step: 'nafta' | 'geo' | 'analysis';
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
-      sdkLog('REQUEST_INIT', {
-        step: params.step,
-        maxTokens: params.maxTokens,
-        useWebSearch: Boolean(params.useWebSearch),
-        promptChars: params.user.length,
-        promptPreview: sdkPreview(params.user),
-      });
-
-      const startedAt = Date.now();
       const response = await client.messages.create({
         model: ANALYTICS_MODEL,
         max_tokens: params.maxTokens,
         messages: msgs,
         ...(params.useWebSearch ? { tools: webSearchTool } : {}),
       });
-      sdkLog('REQUEST_OK', {
-        step: params.step,
-        durationMs: Date.now() - startedAt,
-        stopReason: response?.stop_reason || null,
-        usage: response?.usage || null,
-      });
       const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
-      sdkLog('RESPONSE_PARSED', {
-        step: params.step,
-        textChars: extracted.text.length,
-        textPreview: sdkPreview(extracted.text),
-        citations: extracted.citations.length,
-      });
       return {
         text: extracted.text.trim(),
         citations: extracted.citations,
@@ -1877,8 +1840,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (targetSections.has('nafta')) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
         await setGenerationStep('nafta');
-        const naftaResult = await runWebStep({
-          step: 'nafta',
+        const naftaResult = await runStepRequest({
           maxTokens: 700,
           useWebSearch: true,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
@@ -1890,16 +1852,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
         }));
         debugState.stepStatus.nafta = 'ok';
-        if (targetSections.has('geo') || targetSections.has('analysis')) {
-          await sleep(BETWEEN_STEP_DELAY_MS);
-        }
       }
 
       if (targetSections.has('geo')) {
         // -- Step 2: Geopolitical events --
         await setGenerationStep('geo');
-        const geoResult = await runWebStep({
-          step: 'geo',
+        const geoResult = await runStepRequest({
           maxTokens: 550,
           useWebSearch: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
@@ -1911,9 +1869,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
         }));
         debugState.stepStatus.geo = 'ok';
-        if (targetSections.has('analysis')) {
-          await sleep(BETWEEN_STEP_DELAY_MS);
-        }
       }
 
       if (targetSections.has('analysis')) {
@@ -1927,8 +1882,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 1800);
         const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
-        const analysisResult = await runWebStep({
-          step: 'analysis',
+        const analysisResult = await runStepRequest({
           maxTokens: 1800,
           useWebSearch: false,
           user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
