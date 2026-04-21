@@ -1822,7 +1822,19 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const shouldContinue = (isPauseTurn || isTokenLimit) && turn < MAX_TOOL_TURNS;
         if (!shouldContinue) break;
 
-        msgs.push({ role: 'assistant', content: response.content as any });
+        const textOnlyAssistantBlocks = Array.isArray(response.content)
+          ? (response.content as any[]).filter((block) => block?.type === 'text' && typeof block?.text === 'string')
+          : [];
+        const hasNonTextBlocks = Array.isArray(response.content)
+          ? (response.content as any[]).some((block) => block?.type !== 'text')
+          : false;
+
+        // IMPORTANT:
+        // If we feed back assistant tool_use blocks without corresponding tool_result blocks,
+        // Anthropic returns a 400 invalid_request_error. Keep continuation state text-only.
+        if (!hasNonTextBlocks && textOnlyAssistantBlocks.length > 0) {
+          msgs.push({ role: 'assistant', content: textOnlyAssistantBlocks as any });
+        }
         msgs.push({
           role: 'user',
           content: params.expectJson
