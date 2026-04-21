@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Plus, Trash2, Pencil, RefreshCw, Loader2, X, Upload,
-  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, Eye, ArrowRight, Lock, Unlock, ChevronDown,
+  Globe, TrendingUp, Sparkles, BarChart2, AlertTriangle, Check, LineChart as LineChartIcon, FileText, Save, ArrowRight, Lock, Unlock, ChevronDown,
 } from 'lucide-react';
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
@@ -18,10 +18,11 @@ import {
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
   saveMaterialForecasts,
+  fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock, updateAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
-import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction } from '../lib/kainosService';
+import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction, AnalysisGenerationLock } from '../lib/kainosService';
 import {
   fetchSablonai, createSablonas, updateSablonas, deleteSablonas, generateStructuredJson,
 } from '../lib/sablonaiService';
@@ -485,6 +486,19 @@ interface ExtractedResponseText {
 interface AnalysisSectionMeta {
   confidence: number;
   citations: ExtractedCitation[];
+}
+
+interface AnalysisDebugState {
+  lastRunAt: string | null;
+  stepStatus: {
+    nafta: 'idle' | 'ok' | 'error' | 'skipped';
+    geo: 'idle' | 'ok' | 'error' | 'skipped';
+    analysis: 'idle' | 'ok' | 'error' | 'skipped';
+  };
+  promptIssues: Array<{ prompt: string; variables: string[] }>;
+  parser: { total: number; json: number; markdown: number; failed: number } | null;
+  missingForecastCodes: string[];
+  error: string | null;
 }
 
 
@@ -1328,7 +1342,22 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
 
-      return { material: m, entries, prediction, points, minY, maxY, aiPredSeries };
+      const mathMid = prediction ? (prediction.kaina_min + prediction.kaina_max) / 2 : null;
+      const aiFinal = aiPredSeries.length > 0 ? aiPredSeries[aiPredSeries.length - 1].kaina : null;
+      const diffAbs = (mathMid !== null && aiFinal !== null) ? aiFinal - mathMid : null;
+      const diffPct = (diffAbs !== null && mathMid !== 0) ? (diffAbs / mathMid) * 100 : null;
+
+      return {
+        material: m,
+        entries,
+        prediction,
+        points,
+        minY,
+        maxY,
+        aiPredSeries,
+        diffAbs,
+        diffPct,
+      };
     }).filter(Boolean) as NonNullable<ReturnType<typeof Array.prototype.map>[number]>[];
   }, [medziagas, byArt, aiToggle, aiPredictions]);
 
@@ -1403,7 +1432,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         </div>
       )}
 
-      {charts.map(({ material, entries, prediction, points, minY, maxY, aiPredSeries }) => (
+      {charts.map(({ material, entries, prediction, points, minY, maxY, aiPredSeries, diffAbs, diffPct }) => (
         <div key={material.artikulas} className="rounded-xl bg-white overflow-hidden"
           style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
           {/* Header */}
@@ -1432,6 +1461,15 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   {typeof aiPredSeries[0].confidence === 'number' && (
                     <span className="ml-1 opacity-70">(~{Math.round(aiPredSeries[0].confidence)}%)</span>
                   )}
+                </span>
+              )}
+              {diffAbs !== null && diffPct !== null && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full"
+                  style={{
+                    background: Math.abs(diffPct) < 2 ? 'rgba(107,114,128,0.12)' : diffPct > 0 ? 'rgba(22,163,74,0.12)' : 'rgba(220,38,38,0.12)',
+                    color: Math.abs(diffPct) < 2 ? '#4b5563' : diffPct > 0 ? '#15803d' : '#b91c1c',
+                  }}>
+                  Δ AI vs matem.: {diffAbs >= 0 ? '+' : ''}{diffAbs.toFixed(3)} ({diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%)
                 </span>
               )}
             </div>
@@ -1596,6 +1634,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
+  const [sharedAnalysisLock, setSharedAnalysisLock] = useState<AnalysisGenerationLock | null>(null);
   const [analysisMeta, setAnalysisMeta] = useState<{
     nafta: AnalysisSectionMeta;
     geo: AnalysisSectionMeta;
@@ -1604,6 +1643,14 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     nafta: { confidence: 0, citations: [] },
     geo: { confidence: 0, citations: [] },
     analysis: { confidence: 0, citations: [] },
+  });
+  const [analysisDebug, setAnalysisDebug] = useState<AnalysisDebugState>({
+    lastRunAt: null,
+    stepStatus: { nafta: 'idle', geo: 'idle', analysis: 'idle' },
+    promptIssues: [],
+    parser: null,
+    missingForecastCodes: [],
+    error: null,
   });
 
   // ---- notifications ----
@@ -1642,13 +1689,56 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   }, []);
 
   // ---- analytics generation (web search + citations + safety metadata) ----
+  const syncSharedAnalysisState = useCallback(async () => {
+    try {
+      const [latestAnalysis, lock] = await Promise.all([
+        fetchGeneralAnalysis(),
+        fetchAnalysisGenerationLock(),
+      ]);
+      setAnalytics(latestAnalysis);
+      setSharedAnalysisLock(lock);
+    } catch (error) {
+      console.warn('Nepavyko sinchronizuoti analytics būsenos:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    syncSharedAnalysisState();
+    const interval = window.setInterval(syncSharedAnalysisState, 8000);
+    return () => window.clearInterval(interval);
+  }, [syncSharedAnalysisState]);
+
   const generateAnalyticsFromData = useCallback(async (
     meds: Medžiaga[],
     hist: KainuIrašas[],
     sections: Array<'nafta' | 'geo' | 'analysis'> = ['nafta', 'geo', 'analysis']
   ) => {
     if (genLoading) return;
+    const runId = crypto.randomUUID();
+    const lockAttempt = await tryAcquireAnalysisGenerationLock({
+      runId,
+      startedBy: user?.email || user?.display_name || 'Nežinomas vartotojas',
+      sections,
+    });
+    if (!lockAttempt.acquired) {
+      setSharedAnalysisLock(lockAttempt.lock);
+      const owner = lockAttempt.lock?.startedBy || 'kitas vartotojas';
+      addNotif('info', 'Analizė jau generuojama', `Šiuo metu analizę generuoja ${owner}. Palaukite, kol procesas baigsis.`);
+      return;
+    }
+
+    setSharedAnalysisLock(lockAttempt.lock);
     setGenLoading(true);
+    let currentStep: 'idle' | 'nafta' | 'geo' | 'analysis' = 'idle';
+    const heartbeatInterval = window.setInterval(() => {
+      updateAnalysisGenerationLock({ runId, step: currentStep, sections }).catch(() => undefined);
+    }, 5000);
+    const setGenerationStep = async (step: 'idle' | 'nafta' | 'geo' | 'analysis') => {
+      currentStep = step;
+      setGenStep(step);
+      await updateAnalysisGenerationLock({ runId, step, sections });
+    };
+    await updateAnalysisGenerationLock({ runId, step: 'idle', sections });
     const targetSections = new Set(sections);
     if (targetSections.has('nafta')) setStreamNafta('');
     if (targetSections.has('geo')) setStreamGeo('');
@@ -1668,7 +1758,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 2;
+    const MAX_TOOL_TURNS = 4;
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -1733,6 +1823,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       };
     };
 
+    const debugState: AnalysisDebugState = {
+      lastRunAt: new Date().toISOString(),
+      stepStatus: {
+        nafta: targetSections.has('nafta') ? 'error' : 'skipped',
+        geo: targetSections.has('geo') ? 'error' : 'skipped',
+        analysis: targetSections.has('analysis') ? 'error' : 'skipped',
+      },
+      promptIssues: [],
+      parser: null,
+      missingForecastCodes: [],
+      error: null,
+    };
     try {
       let naftaText = analytics?.nafta || '';
       let geoText = analytics?.geoevents || '';
@@ -1744,6 +1846,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const unresolved = findUnresolvedPromptVars(rendered);
         if (unresolved.length > 0 && !promptMissingVarsNotified.has(name)) {
           promptMissingVarsNotified.add(name);
+          debugState.promptIssues.push({ prompt: name, variables: unresolved });
           addNotif('error', 'Prompt placeholderiai', `${name}: nerasti kintamieji → ${unresolved.join(', ')}`);
         }
         return rendered;
@@ -1751,7 +1854,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       if (targetSections.has('nafta')) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
-        setGenStep('nafta');
+        await setGenerationStep('nafta');
         const naftaResult = await runWebStep({
           maxTokens: 700,
           system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
@@ -1763,6 +1866,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           ...prev,
           nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
         }));
+        debugState.stepStatus.nafta = 'ok';
         if (targetSections.has('geo') || targetSections.has('analysis')) {
           await sleep(BETWEEN_STEP_DELAY_MS);
         }
@@ -1770,18 +1874,28 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       if (targetSections.has('geo')) {
         // -- Step 2: Geopolitical events --
-        setGenStep('geo');
-        const geoResult = await runWebStep({
+        await setGenerationStep('geo');
+        let geoResult = await runWebStep({
           maxTokens: 550,
           system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
+        const geoTrimmed = geoResult.text.trim();
+        const geoLooksLikeMetaResponse = /^ieškosiu\b/i.test(geoTrimmed) || geoTrimmed.length < 120;
+        if (geoLooksLikeMetaResponse) {
+          geoResult = await runWebStep({
+            maxTokens: 650,
+            system: `Rinkos žvalgybų analitikas. Pateikite tik galutinį atsakymą lietuvių kalba (be frazių apie tai, ką darysite). Šiandien: ${today}.`,
+            user: `${applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today })}\n\nSVARBU: Pateikite iškart galutinį 4-6 punktų rezultatą su konkrečiais faktais ir poveikiu medžiagų kainoms.`,
+          });
+        }
         geoText = geoResult.text;
         setStreamGeo(geoText);
         setAnalysisMeta((prev) => ({
           ...prev,
           geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
         }));
+        debugState.stepStatus.geo = 'ok';
         if (targetSections.has('analysis')) {
           await sleep(BETWEEN_STEP_DELAY_MS);
         }
@@ -1789,7 +1903,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       if (targetSections.has('analysis')) {
         // -- Step 3: Material analysis + stable JSON forecasts (uses oil+geo context) --
-        setGenStep('analysis');
+        await setGenerationStep('analysis');
         const boundedNaftaText = truncatePromptSection(naftaText, 2500);
         const boundedGeoText = truncatePromptSection(geoText, 2200);
         const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 9000);
@@ -1884,11 +1998,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const mergedCodes = new Set(aggregatedForecasts.map((f) => f.artikulas));
           const missing = meds.filter((m) => !mergedCodes.has(m.artikulas));
           if (missing.length > 0) {
+            debugState.missingForecastCodes = missing.map((m) => m.artikulas);
             addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta). Jos grafikuose nebus rodomos.`);
           }
         } else {
           addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių. Patikrinkite, kad DI grąžintų JSON forecasts.');
         }
+        debugState.parser = {
+          total: materialChunks.length,
+          json: jsonChunkCount,
+          markdown: markdownChunkCount,
+          failed: failedChunkCount,
+        };
 
         const sanitized = mergedForecasts.map((pred) => {
           const historyEntries = hist
@@ -1903,6 +2024,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           ...prev,
           analysis: { confidence: Math.min(95, 35 + allAnalysisCitations.length * 6), citations: allAnalysisCitations },
         }));
+        debugState.stepStatus.analysis = 'ok';
 
         if (sanitized.length > 0) {
           await saveMaterialForecasts(
@@ -1924,6 +2046,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
       console.error('Analytics error:', err);
+      debugState.error = err?.message || 'Nepavyko sugeneruoti analizės';
+      if (targetSections.has('analysis') && debugState.stepStatus.analysis !== 'ok') debugState.stepStatus.analysis = 'error';
+      if (targetSections.has('nafta') && debugState.stepStatus.nafta !== 'ok') debugState.stepStatus.nafta = 'error';
+      if (targetSections.has('geo') && debugState.stepStatus.geo !== 'ok') debugState.stepStatus.geo = 'error';
       if (err?.status === 429) {
         addNotif(
           'error',
@@ -1933,8 +2059,15 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       } else {
         addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
       }
-    } finally { setGenLoading(false); setGenStep('idle'); }
-  }, [genLoading, analytics]);
+    } finally {
+      setAnalysisDebug(debugState);
+      setGenLoading(false);
+      setGenStep('idle');
+      window.clearInterval(heartbeatInterval);
+      await releaseAnalysisGenerationLock(runId);
+      await syncSharedAnalysisState();
+    }
+  }, [genLoading, analytics, syncSharedAnalysisState, user]);
 
   const generateAnalytics = useCallback(() =>
     generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
@@ -2152,6 +2285,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const geoDisplay = streamGeo || analytics?.geoevents || '';
   const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : (analytics?.content || ''));
   const lastUpdated = analytics?.sukurta_at ?? null;
+  const sharedGenerationActive = Boolean(sharedAnalysisLock);
+  const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
+  const sharedStep = sharedAnalysisLock?.step || 'idle';
+  const isGenerationBlocked = genLoading || sharedGenerationActive;
   const renderCitations = (meta: AnalysisSectionMeta) => {
     if (!meta.citations.length) return null;
     return (
@@ -2333,143 +2470,149 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
-          <div className="space-y-4 max-w-4xl">
-            {/* Controls row */}
-            <div className="flex items-center justify-between rounded-xl border px-4 py-3 bg-white"
-              style={{ borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div className="space-y-5 max-w-5xl">
+            <div className="rounded-2xl border bg-white px-5 py-4 flex items-center justify-between"
+              style={{ borderColor: '#e5e7eb', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
               <div>
-                <span className="text-xs font-medium" style={{ color: '#6b7280' }}>
+                <p className="text-xs font-medium" style={{ color: '#64748b' }}>
                   {lastUpdated ? `Atnaujinta: ${relativeTime(lastUpdated)}` : 'Analizė dar nesugeneruota'}
-                </span>
-                <div className="text-[11px] mt-1" style={{ color: '#8a857f' }}>
-                  Rodomi šaltiniai ir apytikslis patikimumas pagal citatų kiekį.
-                </div>
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: '#94a3b8' }}>
+                  Nafta → Geopolitika → Kainų prognozė
+                </p>
               </div>
-              <button onClick={generateAnalytics} disabled={genLoading}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
-                style={{ background: '#007AFF' }}>
-                {genLoading
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{genStep === 'nafta' ? 'Ieško naftos kainų...' : genStep === 'geo' ? 'Ieško įvykių...' : 'Analizuoja...'}</>
-                  : <><RefreshCw className="w-3.5 h-3.5" />Generuoti analizę</>}
+              <button onClick={generateAnalytics} disabled={isGenerationBlocked}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
+                {isGenerationBlocked ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {isGenerationBlocked ? 'Generuojama...' : 'Generuoti analizę'}
               </button>
             </div>
 
+            {isGenerationBlocked && (
+              <div className="rounded-2xl border bg-white px-5 py-6"
+                style={{ borderColor: '#dbeafe', boxShadow: '0 10px 30px rgba(37,99,235,0.12)' }}>
+                <div className="flex flex-col items-center justify-center text-center gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#2563eb' }} />
+                  <p className="text-sm font-semibold" style={{ color: '#1e3a8a' }}>
+                    Vykdoma DI analizė…
+                  </p>
+                  <p className="text-xs" style={{ color: '#64748b' }}>
+                    {genLoading
+                      ? (genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės')
+                      : `Analizę šiuo metu vykdo ${lockOwnerLabel}${sharedStep !== 'idle' ? ` (${sharedStep})` : ''}.`}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Oil prices box */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ background: 'linear-gradient(135deg,#78350f 0%,#b45309 100%)' }}>
-                <BarChart2 className="w-4 h-4 text-white opacity-90" />
-                <span className="text-xs font-semibold text-white">Naftos kainos &middot; Styrenas &middot; Dervos ryšys</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Patikimumas ~{Math.round(analysisMeta.nafta.confidence)}%
+            <div className="rounded-2xl overflow-hidden bg-white"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #ffedd5' }}>
+                <BarChart2 className="w-4 h-4" style={{ color: '#c2410c' }} />
+                <span className="text-xs font-semibold" style={{ color: '#9a3412' }}>Naftos kainos ir dervų ryšys</span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#ffedd5', color: '#9a3412' }}>
+                  ~{Math.round(analysisMeta.nafta.confidence)}%
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('nafta')}
-                  disabled={genLoading}
-                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                  disabled={isGenerationBlocked}
+                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                  style={{ color: '#9a3412', background: '#fff' }}
                 >
                   Regeneruoti
                 </button>
-                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
-              <div className="px-4 py-3 bg-white min-h-[60px]">
-                {naftaDisplay ? (
-                  <>{renderMd(naftaDisplay)}</>
-                ) : genLoading && genStep === 'nafta' ? (
-                  <div className="flex items-center gap-2 py-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b45309' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Ieškomos naftos kainos...</span>
+              <div className="px-5 py-4 bg-white min-h-[150px]">
+                {genLoading && genStep === 'nafta' ? (
+                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#c2410c' }} />
+                    <span className="text-xs" style={{ color: '#9a3412' }}>Atnaujinami naftos duomenys…</span>
                   </div>
+                ) : naftaDisplay ? (
+                  <>{renderMd(naftaDisplay)}</>
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
-                {renderCitations(analysisMeta.nafta)}
+                {!isGenerationBlocked && genStep !== 'nafta' && renderCitations(analysisMeta.nafta)}
               </div>
             </div>
 
             {/* Geopolitical events box */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ background: 'linear-gradient(135deg,#1a3a5c 0%,#2563a8 100%)' }}>
-                <Globe className="w-4 h-4 text-white opacity-90" />
-                <span className="text-xs font-semibold text-white">Geopolitiniai įvykiai &middot; Rinkos sąlygos</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Patikimumas ~{Math.round(analysisMeta.geo.confidence)}%
+            <div className="rounded-2xl overflow-hidden bg-white"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#eff6ff', borderBottom: '1px solid #dbeafe' }}>
+                <Globe className="w-4 h-4" style={{ color: '#1d4ed8' }} />
+                <span className="text-xs font-semibold" style={{ color: '#1e40af' }}>Geopolitiniai įvykiai ir rinkos sąlygos</span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                  ~{Math.round(analysisMeta.geo.confidence)}%
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('geo')}
-                  disabled={genLoading}
-                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                  disabled={isGenerationBlocked}
+                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                  style={{ color: '#1e40af', background: '#fff' }}
                 >
                   Regeneruoti
                 </button>
-                {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
-              <div className="px-4 py-3 bg-white min-h-[60px]">
-                {geoDisplay ? (
-                  <>{renderMd(geoDisplay)}</>
-                ) : genLoading && genStep === 'geo' ? (
-                  <div className="flex items-center gap-2 py-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#007AFF' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Ieškomi naujausi įvykiai...</span>
+              <div className="px-5 py-4 bg-white min-h-[150px]">
+                {genLoading && genStep === 'geo' ? (
+                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#1d4ed8' }} />
+                    <span className="text-xs" style={{ color: '#1e40af' }}>Atnaujinami geopolitikos signalai…</span>
                   </div>
+                ) : geoDisplay ? (
+                  <>{renderMd(geoDisplay)}</>
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
-                {renderCitations(analysisMeta.geo)}
+                {!isGenerationBlocked && genStep !== 'geo' && renderCitations(analysisMeta.geo)}
               </div>
             </div>
 
             {/* Price analysis box */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ background: 'linear-gradient(135deg,#0f4c2a 0%,#166534 100%)' }}>
-                <TrendingUp className="w-4 h-4 text-white opacity-90" />
-                <span className="text-xs font-semibold text-white">Kainų analizė &middot; Prognozė</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Patikimumas ~{Math.round(analysisMeta.analysis.confidence)}%
+            <div className="rounded-2xl overflow-hidden bg-white"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#ecfdf5', borderBottom: '1px solid #d1fae5' }}>
+                <TrendingUp className="w-4 h-4" style={{ color: '#047857' }} />
+                <span className="text-xs font-semibold" style={{ color: '#065f46' }}>Kainų analizė ir prognozė</span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
+                  ~{Math.round(analysisMeta.analysis.confidence)}%
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('analysis')}
-                  disabled={genLoading}
-                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                  disabled={isGenerationBlocked}
+                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                  style={{ color: '#065f46', background: '#fff' }}
                 >
                   Regeneruoti
                 </button>
-                {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
-              <div className="px-4 py-3 bg-white min-h-[60px]">
-                {analysisDisplay ? (
-                  <>{renderMd(analysisDisplay)}</>
-                ) : genLoading && genStep === 'analysis' ? (
-                  <div className="flex items-center gap-2 py-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#007AFF' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Analizuojami kainų duomenys...</span>
+              <div className="px-5 py-4 bg-white min-h-[150px]">
+                {genLoading && genStep === 'analysis' ? (
+                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#047857' }} />
+                    <span className="text-xs" style={{ color: '#065f46' }}>Perskaičiuojamos medžiagų prognozės…</span>
                   </div>
+                ) : analysisDisplay ? (
+                  <>{renderMd(analysisDisplay)}</>
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
-                {renderCitations(analysisMeta.analysis)}
+                {!isGenerationBlocked && genStep !== 'analysis' && renderCitations(analysisMeta.analysis)}
               </div>
             </div>
-
-            {genLoading && (
-              <p className="text-xs text-center" style={{ color: '#8a857f' }}>
-                Claude ieško internete su web_search ir analizuoja duomenis...
-              </p>
-            )}
           </div>
         )}
       </div>
