@@ -904,15 +904,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             style={{ background: '#f8fafc', borderColor: '#dbe2ea' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-6 py-5 border-b" style={{ borderColor: '#e5e7eb', background: '#ffffff' }}>
-              <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="px-5 py-3 border-b" style={{ borderColor: '#e5e7eb', background: '#ffffff' }}>
+              <div className="flex items-center justify-between gap-3 mb-2">
                 <div>
-                  <h3 className="text-lg font-semibold leading-tight" style={{ color: '#0f172a' }}>
+                  <h3 className="text-base font-semibold leading-tight" style={{ color: '#0f172a' }}>
                   AI redaktorius
                   </h3>
-                  <p className="text-xs mt-1" style={{ color: '#64748b' }}>
-                    {editorTab === 'schema' ? getSchemaDisplayName(schemaKey) : `${KAINOS_PROMPTS[kainosPromptKey].label} redaktorius`}
-                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg"
@@ -929,14 +926,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <div
                   className="flex items-center gap-1 p-1 rounded-xl border"
                   style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}
                 >
                   <button
                     onClick={() => openCombinedEditor('schema')}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
                     style={{
                       color: editorTab === 'schema' ? '#ffffff' : '#475569',
                       background: editorTab === 'schema' ? '#2563eb' : 'transparent',
@@ -946,7 +943,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </button>
                   <button
                     onClick={() => openCombinedEditor('kainos_prompt')}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+                    className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
                     style={{
                       color: editorTab === 'kainos_prompt' ? '#ffffff' : '#475569',
                       background: editorTab === 'kainos_prompt' ? '#2563eb' : 'transparent',
@@ -957,10 +954,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </div>
 
                 {editorTab === 'schema' && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => openSchemaEditor('sdk_chat_tool_schemas')}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all border"
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border"
                       style={{
                         color: schemaKey === 'sdk_chat_tool_schemas' ? '#ffffff' : '#334155',
                         background: schemaKey === 'sdk_chat_tool_schemas' ? '#0f172a' : '#ffffff',
@@ -971,7 +968,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     </button>
                     <button
                       onClick={() => openSchemaEditor('kainos_ai_tool_schemas')}
-                      className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all border"
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border"
                       style={{
                         color: schemaKey === 'kainos_ai_tool_schemas' ? '#ffffff' : '#334155',
                         background: schemaKey === 'kainos_ai_tool_schemas' ? '#0f172a' : '#ffffff',
@@ -983,12 +980,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </div>
                 )}
                 {editorTab === 'kainos_prompt' && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
                       <button
                         key={key}
                         onClick={() => openPromptEditor(key)}
-                        className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all border"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all border"
                         style={{
                           color: kainosPromptKey === key ? '#ffffff' : '#334155',
                           background: kainosPromptKey === key ? '#0f172a' : '#ffffff',
@@ -1002,7 +999,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 )}
               </div>
 
-              <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="mt-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   {!editorUnlocked ? (
                     <>
@@ -1011,37 +1008,32 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         value={editorPassword}
                         onChange={(e) => setEditorPassword(e.target.value)}
                         placeholder="Slaptažodis redagavimui"
-                        className="input input-sm w-64"
+                        className="input input-xs w-56"
                         onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
                       />
                       <button
-                        className="btn btn-primary btn-sm"
+                        className="btn btn-primary btn-xs"
                         onClick={handleUnlockEditor}
                         disabled={unlockingEditor || !editorPassword.trim()}
                       >
                         {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
                       </button>
                     </>
-                  ) : (
-                    <span className="text-[11px] px-2.5 py-1 rounded-lg"
-                      style={{ color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                      {editorTab === 'schema' ? 'Schema aktyvi' : `Promptas: ${KAINOS_PROMPTS[kainosPromptKey].label}`}
-                    </span>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
                   {editorTab === 'schema' ? (
                     <>
                       <button
-                        className="btn btn-soft btn-sm"
+                        className="btn btn-soft btn-xs"
                         onClick={() => loadSchemaContent(schemaKey)}
                         disabled={schemaLoading || schemaSaving || !editorUnlocked}
                       >
                         Perkrauti
                       </button>
                       <button
-                        className="btn btn-primary btn-sm gap-1.5"
+                        className="btn btn-primary btn-xs gap-1"
                         disabled={schemaSaving || schemaLoading || !editorUnlocked}
                         onClick={saveSchema}
                       >
@@ -1052,7 +1044,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   ) : (
                     <>
                       <button
-                        className="btn btn-soft btn-sm gap-1.5"
+                        className="btn btn-soft btn-xs gap-1"
                         onClick={() => {
                           if (promptPreviewMode) {
                             setPromptPreviewMode(false);
@@ -1066,13 +1058,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         {promptPreviewMode ? 'Redaguoti' : 'Preview'}
                       </button>
                       <button
-                        className="btn btn-soft btn-sm"
+                        className="btn btn-soft btn-xs"
                         onClick={() => openPromptEditor(kainosPromptKey)}
                         disabled={promptLoading || promptSaving || !editorUnlocked}
                       >
                         Perkrauti
                       </button>
-                      <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
+                      <button className="btn btn-primary btn-xs gap-1" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
                         {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
                         Išsaugoti
                       </button>
@@ -1080,17 +1072,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   )}
                 </div>
               </div>
-              {(editorUnlocked && (schemaError || schemaSuccess || promptError || promptSuccess)) && (
-                <div className="mt-2">
-                  {schemaError && <p className="text-xs" style={{ color: colors.status.errorText }}>{schemaError}</p>}
-                  {schemaSuccess && <p className="text-xs" style={{ color: colors.status.successText }}>{schemaSuccess}</p>}
-                  {promptError && <p className="text-xs" style={{ color: colors.status.errorText }}>{promptError}</p>}
-                  {promptSuccess && <p className="text-xs" style={{ color: colors.status.successText }}>{promptSuccess}</p>}
-                </div>
-              )}
-              {!editorUnlocked && editorPasswordError && (
-                <p className="mt-2 text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>
-              )}
+              {!editorUnlocked && editorPasswordError && <p className="mt-1 text-[11px]" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>}
             </div>
 
             <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
