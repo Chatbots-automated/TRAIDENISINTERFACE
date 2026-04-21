@@ -1802,27 +1802,69 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+    const sdkPreview = (value: string, max = 700) => value.length > max ? `${value.slice(0, max)}…` : value;
+    const sdkLog = (
+      phase: string,
+      payload: Record<string, unknown>,
+      level: 'log' | 'warn' | 'error' = 'log'
+    ) => {
+      const tag = `[Kainos SDK][run:${runId}] ${phase}`;
+      if (level === 'error') console.error(tag, payload);
+      else if (level === 'warn') console.warn(tag, payload);
+      else console.log(tag, payload);
+    };
 
     const runWebStep = async (params: {
       user: string;
       maxTokens: number;
       useWebSearch?: boolean;
+      step: 'nafta' | 'geo' | 'analysis';
+      chunkIndex?: number;
+      totalChunks?: number;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
+      sdkLog('REQUEST_INIT', {
+        step: params.step,
+        chunk: params.chunkIndex != null ? `${params.chunkIndex + 1}/${params.totalChunks || '?'}` : null,
+        maxTokens: params.maxTokens,
+        useWebSearch: Boolean(params.useWebSearch),
+        promptChars: params.user.length,
+        promptPreview: sdkPreview(params.user),
+      });
+
       let response: any = null;
       let lastError: any = null;
       for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
         try {
+          const startedAt = Date.now();
           response = await client.messages.create({
             model: ANALYTICS_MODEL,
             max_tokens: params.maxTokens,
             messages: msgs,
             ...(params.useWebSearch ? { tools: webSearchTool } : {}),
           });
+          sdkLog('REQUEST_OK', {
+            step: params.step,
+            attempt: attempt + 1,
+            durationMs: Date.now() - startedAt,
+            stopReason: response?.stop_reason || null,
+            usage: response?.usage || null,
+            responseBlocks: Array.isArray(response?.content)
+              ? response.content.map((b: any) => b?.type).slice(0, 12)
+              : [],
+          });
           break;
         } catch (err: any) {
           lastError = err;
           const isRateLimited = err?.status === 429;
+          sdkLog('REQUEST_ERROR', {
+            step: params.step,
+            attempt: attempt + 1,
+            isRateLimited,
+            status: err?.status ?? null,
+            message: err?.message ?? String(err),
+            error: err?.error ?? null,
+          }, isRateLimited ? 'warn' : 'error');
           if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
             throw err;
           }
@@ -1831,6 +1873,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       }
       if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
       const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
+      sdkLog('RESPONSE_PARSED', {
+        step: params.step,
+        textChars: extracted.text.length,
+        textPreview: sdkPreview(extracted.text),
+        citations: extracted.citations.length,
+      });
       return {
         text: extracted.text.trim(),
         citations: extracted.citations,
@@ -1872,6 +1920,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
         await setGenerationStep('nafta');
         const naftaResult = await runWebStep({
+          step: 'nafta',
           maxTokens: 700,
           useWebSearch: true,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
@@ -1892,6 +1941,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         // -- Step 2: Geopolitical events --
         await setGenerationStep('geo');
         let geoResult = await runWebStep({
+          step: 'geo',
           maxTokens: 550,
           useWebSearch: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
@@ -1934,6 +1984,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           const materialList = chunkMeds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
           let analysisResult = await runWebStep({
+            step: 'analysis',
+            chunkIndex,
+            totalChunks: materialChunks.length,
             maxTokens: 1800,
             useWebSearch: false,
             user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
@@ -1973,6 +2026,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           } catch {
             if (analysisResult.hitTokenLimit) {
               const compactRetry = await runWebStep({
+                step: 'analysis',
+                chunkIndex,
+                totalChunks: materialChunks.length,
                 maxTokens: 1400,
                 useWebSearch: false,
                 user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
