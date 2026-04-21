@@ -1001,6 +1001,109 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </div>
                 )}
               </div>
+
+              <div className="mt-4 pt-4 border-t flex items-center justify-between gap-3" style={{ borderColor: '#e5e7eb' }}>
+                <div className="flex-1 min-w-0">
+                  {!editorUnlocked ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="password"
+                        value={editorPassword}
+                        onChange={(e) => setEditorPassword(e.target.value)}
+                        placeholder="Įveskite slaptažodį redagavimui"
+                        className="input input-sm w-72"
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleUnlockEditor}
+                        disabled={unlockingEditor || !editorPassword.trim()}
+                      >
+                        {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
+                      </button>
+                      {editorPasswordError && (
+                        <span className="text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</span>
+                      )}
+                    </div>
+                  ) : editorTab === 'schema' ? (
+                    schemaError ? (
+                      <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: '#fef2f2', borderColor: '#fecaca' }}>
+                        {schemaError}
+                      </div>
+                    ) : schemaSuccess ? (
+                      <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                        {schemaSuccess}
+                      </div>
+                    ) : (
+                      <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: '#64748b', borderColor: '#e2e8f0', background: '#f8fafc' }}>
+                        Naudokite validų JSON masyvą. Išsaugojimas taikomas pasirinktai schemai.
+                      </div>
+                    )
+                  ) : promptError ? (
+                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: '#fef2f2', borderColor: '#fecaca' }}>
+                      {promptError}
+                    </div>
+                  ) : promptSuccess ? (
+                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                      {promptSuccess}
+                    </div>
+                  ) : (
+                    <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: '#64748b', borderColor: '#e2e8f0', background: '#f8fafc' }}>
+                      Šis prompt naudojamas Žaliavų analizėje: {KAINOS_PROMPTS[kainosPromptKey].label.toLowerCase()}.
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {editorTab === 'schema' ? (
+                    <>
+                      <button
+                        className="btn btn-soft btn-sm"
+                        onClick={() => loadSchemaContent(schemaKey)}
+                        disabled={schemaLoading || schemaSaving || !editorUnlocked}
+                      >
+                        Perkrauti
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm gap-1.5"
+                        disabled={schemaSaving || schemaLoading || !editorUnlocked}
+                        onClick={saveSchema}
+                      >
+                        {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                        Išsaugoti
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-soft btn-sm gap-1.5"
+                        onClick={() => {
+                          if (promptPreviewMode) {
+                            setPromptPreviewMode(false);
+                          } else {
+                            generatePromptPreview();
+                          }
+                        }}
+                        disabled={promptLoading || promptSaving}
+                      >
+                        {!promptPreviewMode && promptPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                        {promptPreviewMode ? 'Redaguoti' : 'Preview'}
+                      </button>
+                      <button
+                        className="btn btn-soft btn-sm"
+                        onClick={() => openPromptEditor(kainosPromptKey)}
+                        disabled={promptLoading || promptSaving || !editorUnlocked}
+                      >
+                        Perkrauti
+                      </button>
+                      <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
+                        {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+                        Išsaugoti
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
@@ -1058,107 +1161,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 		              )}
             </div>
 
-            <div className="px-6 py-4 border-t flex items-center justify-between gap-3" style={{ borderColor: '#e5e7eb', background: '#ffffff' }}>
-              <div className="flex-1 min-w-0">
-                {!editorUnlocked ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="password"
-                      value={editorPassword}
-                      onChange={(e) => setEditorPassword(e.target.value)}
-                      placeholder="Įveskite slaptažodį redagavimui"
-                      className="input input-sm w-72"
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
-                    />
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={handleUnlockEditor}
-                      disabled={unlockingEditor || !editorPassword.trim()}
-                    >
-                      {unlockingEditor ? 'Tikrinama...' : 'Atrakinti'}
-                    </button>
-                    {editorPasswordError && (
-                      <span className="text-xs" style={{ color: colors.status.errorText }}>{editorPasswordError}</span>
-                    )}
-                  </div>
-                ) : editorTab === 'schema' ? (
-                  schemaError ? (
-                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: '#fef2f2', borderColor: '#fecaca' }}>
-                      {schemaError}
-                    </div>
-                  ) : schemaSuccess ? (
-                    <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
-                      {schemaSuccess}
-                    </div>
-                  ) : (
-                    <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: '#64748b', borderColor: '#e2e8f0', background: '#f8fafc' }}>
-                      Naudokite validų JSON masyvą. Išsaugojimas taikomas pasirinktai schemai.
-                    </div>
-                  )
-                ) : promptError ? (
-                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.errorText, background: '#fef2f2', borderColor: '#fecaca' }}>
-                    {promptError}
-                  </div>
-                ) : promptSuccess ? (
-                  <div className="text-sm px-3 py-2 rounded-lg border truncate" style={{ color: colors.status.successText, background: '#f0fdf4', borderColor: '#bbf7d0' }}>
-                    {promptSuccess}
-                  </div>
-                ) : (
-                  <div className="text-xs px-3 py-2 rounded-lg border" style={{ color: '#64748b', borderColor: '#e2e8f0', background: '#f8fafc' }}>
-                    Šis prompt naudojamas Žaliavų analizėje: {KAINOS_PROMPTS[kainosPromptKey].label.toLowerCase()}.
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {editorTab === 'schema' ? (
-                  <>
-                    <button
-                      className="btn btn-soft btn-sm"
-                      onClick={() => loadSchemaContent(schemaKey)}
-                      disabled={schemaLoading || schemaSaving || !editorUnlocked}
-                    >
-                      Perkrauti
-                    </button>
-                    <button
-                      className="btn btn-primary btn-sm gap-1.5"
-                      disabled={schemaSaving || schemaLoading || !editorUnlocked}
-                      onClick={saveSchema}
-                    >
-                      {schemaSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
-                      Išsaugoti
-                    </button>
-                  </>
-	                ) : (
-	                  <>
-	                    <button
-	                      className="btn btn-soft btn-sm gap-1.5"
-	                      onClick={() => {
-	                        if (promptPreviewMode) {
-	                          setPromptPreviewMode(false);
-	                        } else {
-	                          generatePromptPreview();
-	                        }
-	                      }}
-	                      disabled={promptLoading || promptSaving}
-	                    >
-	                      {!promptPreviewMode && promptPreviewLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
-	                      {promptPreviewMode ? 'Redaguoti' : 'Preview'}
-	                    </button>
-	                    <button
-	                      className="btn btn-soft btn-sm"
-	                      onClick={() => openPromptEditor(kainosPromptKey)}
-                      disabled={promptLoading || promptSaving || !editorUnlocked}
-                    >
-                      Perkrauti
-                    </button>
-                    <button className="btn btn-primary btn-sm gap-1.5" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
-                      {promptSaving ? <Save className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
-                      Išsaugoti
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       )}
