@@ -163,7 +163,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [promptPreviewLoading, setPromptPreviewLoading] = useState(false);
   const [promptPreviewError, setPromptPreviewError] = useState<string | null>(null);
   const [promptPreviewText, setPromptPreviewText] = useState('');
-  const [promptPreviewStats, setPromptPreviewStats] = useState<string[]>([]);
   const [promptPreviewMissing, setPromptPreviewMissing] = useState<string[]>([]);
   const [promptPreviewMode, setPromptPreviewMode] = useState(false);
   const [editorUnlocked, setEditorUnlocked] = useState(false);
@@ -405,7 +404,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     setPromptSuccess(null);
     setPromptPreviewText('');
     setPromptPreviewMissing([]);
-    setPromptPreviewStats([]);
     setPromptPreviewError(null);
     setPromptPreviewMode(false);
     setKainosPromptKey(targetKey);
@@ -491,7 +489,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     setPromptPreviewLoading(true);
     setPromptPreviewError(null);
     setPromptPreviewMissing([]);
-    setPromptPreviewStats([]);
     try {
       const template = kainosPromptContent || KAINOS_PROMPTS[kainosPromptKey].defaultContent;
       const today = new Date().toISOString().split('T')[0];
@@ -499,10 +496,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         const rendered = injectPromptVars(template, { today });
         setPromptPreviewText(rendered);
         setPromptPreviewMissing(findUnresolvedPromptVars(rendered));
-        setPromptPreviewStats([
-          `Template ilgis: ${template.length}`,
-          `Rendered ilgis: ${rendered.length}`,
-        ]);
         setPromptPreviewMode(true);
         return;
       }
@@ -567,12 +560,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const rendered = injectPromptVars(template, vars);
       setPromptPreviewText(rendered);
       setPromptPreviewMissing(findUnresolvedPromptVars(rendered));
-      setPromptPreviewStats([
-        `Medžiagų dalių skaičius: ${Math.max(materialChunks.length, 1)}`,
-        `boundedNaftaText: ${boundedNaftaText.length} simb.`,
-        `boundedGeoText: ${boundedGeoText.length} simb.`,
-        `Rendered ilgis: ${rendered.length}`,
-      ]);
       setPromptPreviewMode(true);
     } catch (err: any) {
       setPromptPreviewError(err?.message || 'Nepavyko sugeneruoti prompt preview');
@@ -1039,20 +1026,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 		                  </div>
 		                  {promptPreviewMode ? (
 		                    <>
-		                      <div className="px-3 py-2 space-y-1" style={{ background: '#f8fafc', borderBottom: `1px solid ${colors.border.default}` }}>
-		                        {promptPreviewError ? (
-		                          <p className="text-xs" style={{ color: colors.status.errorText }}>{promptPreviewError}</p>
-		                        ) : promptPreviewLoading ? (
-		                          <p className="text-xs" style={{ color: colors.text.tertiary }}>Generuojamas preview...</p>
-		                        ) : (
-		                          promptPreviewStats.map((line, i) => (
-		                            <p key={i} className="text-[11px]" style={{ color: colors.text.tertiary }}>{line}</p>
-		                          ))
-		                        )}
-		                      </div>
 		                      <pre className="w-full min-h-[560px] max-h-[560px] overflow-auto font-mono text-xs p-4"
 		                        style={{ background: '#0b1220', color: '#dbeafe', lineHeight: '1.55' }}>
-		                        {promptPreviewText || 'Preview dar negeneruotas.'}
+		                        {promptPreviewLoading
+		                          ? 'Generuojamas preview...'
+		                          : promptPreviewError
+		                          ? `Klaida: ${promptPreviewError}`
+		                          : (promptPreviewText || 'Preview dar negeneruotas.')}
 		                      </pre>
 		                    </>
 		                  ) : (
