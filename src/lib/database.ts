@@ -22,6 +22,7 @@ import type { AppUser } from '../types';
 
 const directusUrl = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
 const directusToken = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const directusAdminToken = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
 
 if (!directusUrl) {
   throw new Error('Missing VITE_DIRECTUS_URL environment variable');
@@ -36,8 +37,11 @@ if (!directusToken) {
 // Main client
 export const db = createClient(directusUrl, directusToken);
 
-// Admin client (same token - permissions are controlled by Directus roles)
-export const dbAdmin = createClient(directusUrl, directusToken);
+// Admin client (optional dedicated token; falls back to main token if unset)
+if (!directusAdminToken) {
+  console.warn('[Directus] No VITE_DIRECTUS_ADMIN_TOKEN found - dbAdmin will use the default token.');
+}
+export const dbAdmin = createClient(directusUrl, directusAdminToken || directusToken);
 
 console.log('[Directus] Client configured at:', directusUrl);
 
