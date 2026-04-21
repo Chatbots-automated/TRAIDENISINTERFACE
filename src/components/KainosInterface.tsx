@@ -2418,181 +2418,147 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
-          <div className="space-y-4 max-w-4xl">
-            {/* Controls row */}
-	            <div className="flex items-center justify-between rounded-xl border px-4 py-3 bg-white"
-	              style={{ borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div className="space-y-5 max-w-5xl">
+            <div className="rounded-2xl border bg-white px-5 py-4 flex items-center justify-between"
+              style={{ borderColor: '#e5e7eb', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
               <div>
-                <span className="text-xs font-medium" style={{ color: '#6b7280' }}>
+                <p className="text-xs font-medium" style={{ color: '#64748b' }}>
                   {lastUpdated ? `Atnaujinta: ${relativeTime(lastUpdated)}` : 'Analizė dar nesugeneruota'}
-                </span>
-                <div className="text-[11px] mt-1" style={{ color: '#8a857f' }}>
-                  Rodomi šaltiniai ir apytikslis patikimumas pagal citatų kiekį.
+                </p>
+                <p className="text-[11px] mt-1" style={{ color: '#94a3b8' }}>
+                  Nafta → Geopolitika → Kainų prognozė
+                </p>
+              </div>
+              <button onClick={generateAnalytics} disabled={genLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
+                {genLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                {genLoading ? 'Generuojama...' : 'Generuoti analizę'}
+              </button>
+            </div>
+
+            {genLoading && (
+              <div className="rounded-2xl border bg-white px-5 py-6"
+                style={{ borderColor: '#dbeafe', boxShadow: '0 10px 30px rgba(37,99,235,0.12)' }}>
+                <div className="flex flex-col items-center justify-center text-center gap-3">
+                  <Loader2 className="w-8 h-8 animate-spin" style={{ color: '#2563eb' }} />
+                  <p className="text-sm font-semibold" style={{ color: '#1e3a8a' }}>
+                    Vykdoma DI analizė…
+                  </p>
+                  <p className="text-xs" style={{ color: '#64748b' }}>
+                    {genStep === 'nafta' ? 'Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? 'Renkami geopolitiniai įvykiai' : 'Skaičiuojamos medžiagų prognozės'}
+                  </p>
                 </div>
               </div>
-	              <div className="flex items-center gap-2">
-	                <button onClick={generateAnalytics} disabled={genLoading}
-	                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
-	                  style={{ background: '#007AFF' }}>
-	                  {genLoading
-	                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{genStep === 'nafta' ? 'Ieško naftos kainų...' : genStep === 'geo' ? 'Ieško įvykių...' : 'Analizuoja...'}</>
-	                    : <><RefreshCw className="w-3.5 h-3.5" />Generuoti analizę</>}
-	                </button>
-	              </div>
-	            </div>
-	            <div className="rounded-xl border bg-white px-4 py-3"
-	              style={{ borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-	              <div className="flex items-center justify-between mb-2">
-	                <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>Troubleshooting panelis</span>
-	                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(0,0,0,0.04)', color: '#6b7280' }}>
-	                  {analysisDebug.lastRunAt ? `Paskutinis run: ${relativeTime(analysisDebug.lastRunAt)}` : 'Run dar nebuvo'}
-	                </span>
-	              </div>
-	              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-	                {(['nafta', 'geo', 'analysis'] as const).map((step) => (
-	                  <div key={step} className="rounded-lg px-2.5 py-2 text-[11px]"
-	                    style={{ background: '#fafaf8', border: '1px solid #f0ede8', color: '#5a5550' }}>
-	                    <span className="font-medium">{step.toUpperCase()}:</span> {analysisDebug.stepStatus[step]}
-	                  </div>
-	                ))}
-	              </div>
-	              <div className="text-[11px] space-y-1" style={{ color: '#6b7280' }}>
-	                <p>
-	                  Prompt klaidos: {analysisDebug.promptIssues.length}
-	                  {analysisDebug.promptIssues.length > 0 && ` (${analysisDebug.promptIssues.map((i) => `${i.prompt}: ${i.variables.join(', ')}`).join(' | ')})`}
-	                </p>
-	                <p>
-	                  Parseris: {analysisDebug.parser
-	                    ? `JSON ${analysisDebug.parser.json}/${analysisDebug.parser.total}, markdown ${analysisDebug.parser.markdown}, failed ${analysisDebug.parser.failed}`
-	                    : 'duomenų nėra'}
-	                </p>
-	                <p>
-	                  Trūkstamos prognozės: {analysisDebug.missingForecastCodes.length > 0
-	                    ? analysisDebug.missingForecastCodes.join(', ')
-	                    : 'nėra'}
-	                </p>
-	                {analysisDebug.error && (
-	                  <p style={{ color: '#b91c1c' }}>Klaida: {analysisDebug.error}</p>
-	                )}
-	              </div>
-	            </div>
+            )}
 
             {/* Oil prices box */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ background: 'linear-gradient(135deg,#78350f 0%,#b45309 100%)' }}>
-                <BarChart2 className="w-4 h-4 text-white opacity-90" />
-                <span className="text-xs font-semibold text-white">Naftos kainos &middot; Styrenas &middot; Dervos ryšys</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Patikimumas ~{Math.round(analysisMeta.nafta.confidence)}%
+            <div className="rounded-2xl overflow-hidden bg-white"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#fff7ed', borderBottom: '1px solid #ffedd5' }}>
+                <BarChart2 className="w-4 h-4" style={{ color: '#c2410c' }} />
+                <span className="text-xs font-semibold" style={{ color: '#9a3412' }}>Naftos kainos ir dervų ryšys</span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#ffedd5', color: '#9a3412' }}>
+                  ~{Math.round(analysisMeta.nafta.confidence)}%
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('nafta')}
                   disabled={genLoading}
-                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                  style={{ color: '#9a3412', background: '#fff' }}
                 >
                   Regeneruoti
                 </button>
-                {genLoading && genStep === 'nafta' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
-              <div className="px-4 py-3 bg-white min-h-[60px]">
-                {naftaDisplay ? (
-                  <>{renderMd(naftaDisplay)}</>
-                ) : genLoading && genStep === 'nafta' ? (
-                  <div className="flex items-center gap-2 py-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b45309' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Ieškomos naftos kainos...</span>
+              <div className="px-5 py-4 bg-white min-h-[150px]">
+                {genLoading && genStep === 'nafta' ? (
+                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#c2410c' }} />
+                    <span className="text-xs" style={{ color: '#9a3412' }}>Atnaujinami naftos duomenys…</span>
                   </div>
+                ) : naftaDisplay ? (
+                  <>{renderMd(naftaDisplay)}</>
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Naftos kainų duomenys nesugeneruoti.</span>
                   </div>
                 )}
-                {renderCitations(analysisMeta.nafta)}
+                {!genLoading && genStep !== 'nafta' && renderCitations(analysisMeta.nafta)}
               </div>
             </div>
 
             {/* Geopolitical events box */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ background: 'linear-gradient(135deg,#1a3a5c 0%,#2563a8 100%)' }}>
-                <Globe className="w-4 h-4 text-white opacity-90" />
-                <span className="text-xs font-semibold text-white">Geopolitiniai įvykiai &middot; Rinkos sąlygos</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Patikimumas ~{Math.round(analysisMeta.geo.confidence)}%
+            <div className="rounded-2xl overflow-hidden bg-white"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#eff6ff', borderBottom: '1px solid #dbeafe' }}>
+                <Globe className="w-4 h-4" style={{ color: '#1d4ed8' }} />
+                <span className="text-xs font-semibold" style={{ color: '#1e40af' }}>Geopolitiniai įvykiai ir rinkos sąlygos</span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                  ~{Math.round(analysisMeta.geo.confidence)}%
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('geo')}
                   disabled={genLoading}
-                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                  style={{ color: '#1e40af', background: '#fff' }}
                 >
                   Regeneruoti
                 </button>
-                {genLoading && genStep === 'geo' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
-              <div className="px-4 py-3 bg-white min-h-[60px]">
-                {geoDisplay ? (
-                  <>{renderMd(geoDisplay)}</>
-                ) : genLoading && genStep === 'geo' ? (
-                  <div className="flex items-center gap-2 py-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#007AFF' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Ieškomi naujausi įvykiai...</span>
+              <div className="px-5 py-4 bg-white min-h-[150px]">
+                {genLoading && genStep === 'geo' ? (
+                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#1d4ed8' }} />
+                    <span className="text-xs" style={{ color: '#1e40af' }}>Atnaujinami geopolitikos signalai…</span>
                   </div>
+                ) : geoDisplay ? (
+                  <>{renderMd(geoDisplay)}</>
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota. Paspauskite „Regeneruoti“.</span>
                   </div>
                 )}
-                {renderCitations(analysisMeta.geo)}
+                {!genLoading && genStep !== 'geo' && renderCitations(analysisMeta.geo)}
               </div>
             </div>
 
             {/* Price analysis box */}
-            <div className="rounded-xl overflow-hidden"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-              <div className="flex items-center gap-2 px-4 py-3"
-                style={{ background: 'linear-gradient(135deg,#0f4c2a 0%,#166534 100%)' }}>
-                <TrendingUp className="w-4 h-4 text-white opacity-90" />
-                <span className="text-xs font-semibold text-white">Kainų analizė &middot; Prognozė</span>
-                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white">
-                  Patikimumas ~{Math.round(analysisMeta.analysis.confidence)}%
+            <div className="rounded-2xl overflow-hidden bg-white"
+              style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+              <div className="flex items-center gap-2 px-5 py-3" style={{ background: '#ecfdf5', borderBottom: '1px solid #d1fae5' }}>
+                <TrendingUp className="w-4 h-4" style={{ color: '#047857' }} />
+                <span className="text-xs font-semibold" style={{ color: '#065f46' }}>Kainų analizė ir prognozė</span>
+                <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: '#d1fae5', color: '#065f46' }}>
+                  ~{Math.round(analysisMeta.analysis.confidence)}%
                 </span>
                 <button
                   onClick={() => regenerateAnalysisSection('analysis')}
                   disabled={genLoading}
-                  className="text-[10px] px-2 py-0.5 rounded bg-white/15 text-white disabled:opacity-50"
+                  className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
+                  style={{ color: '#065f46', background: '#fff' }}
                 >
                   Regeneruoti
                 </button>
-                {genLoading && genStep === 'analysis' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
               </div>
-              <div className="px-4 py-3 bg-white min-h-[60px]">
-                {analysisDisplay ? (
-                  <>{renderMd(analysisDisplay)}</>
-                ) : genLoading && genStep === 'analysis' ? (
-                  <div className="flex items-center gap-2 py-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#007AFF' }} />
-                    <span className="text-xs" style={{ color: '#8a857f' }}>Analizuojami kainų duomenys...</span>
+              <div className="px-5 py-4 bg-white min-h-[150px]">
+                {genLoading && genStep === 'analysis' ? (
+                  <div className="min-h-[130px] flex flex-col items-center justify-center gap-2">
+                    <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#047857' }} />
+                    <span className="text-xs" style={{ color: '#065f46' }}>Perskaičiuojamos medžiagų prognozės…</span>
                   </div>
+                ) : analysisDisplay ? (
+                  <>{renderMd(analysisDisplay)}</>
                 ) : (
                   <div className="flex items-center gap-2 py-1">
                     <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
                     <span className="text-xs" style={{ color: '#8a857f' }}>Analizė nesugeneruota.</span>
                   </div>
                 )}
-                {renderCitations(analysisMeta.analysis)}
+                {!genLoading && genStep !== 'analysis' && renderCitations(analysisMeta.analysis)}
               </div>
             </div>
-
-            {genLoading && (
-              <p className="text-xs text-center" style={{ color: '#8a857f' }}>
-                Claude ieško internete su web_search ir analizuoja duomenis...
-              </p>
-            )}
           </div>
         )}
       </div>
