@@ -1789,101 +1789,53 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       getInstructionVariable('kainos_ai_geo_prompt'),
       getInstructionVariable('kainos_ai_analysis_prompt'),
     ]);
-    const oilPromptTemplate = oilPromptVar?.content?.trim() || DEFAULT_KAINOS_OIL_PROMPT;
-    const geoPromptTemplate = geoPromptVar?.content?.trim() || DEFAULT_KAINOS_GEO_PROMPT;
-    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || DEFAULT_KAINOS_ANALYSIS_PROMPT;
+    const oilPromptTemplate = oilPromptVar?.content?.trim() || '';
+    const geoPromptTemplate = geoPromptVar?.content?.trim() || '';
+    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || '';
+    if (!oilPromptTemplate || !geoPromptTemplate || !analysisPromptTemplate) {
+      throw new Error('Trūksta promptų instruction_variables lentelėje. Užpildykite: kainos_ai_nafta_prompt, kainos_ai_geo_prompt, kainos_ai_analysis_prompt.');
+    }
     const today = new Date().toISOString().split('T')[0];
     const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
     const ANALYTICS_RETRY_ATTEMPTS = 2;
-    const MAX_TOOL_TURNS = 3;
+    const MAX_TOOL_TURNS = 1;
     const BETWEEN_STEP_DELAY_MS = 1500;
 
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
     const runWebStep = async (params: {
-      system: string;
       user: string;
       maxTokens: number;
-      expectJson?: boolean;
       useWebSearch?: boolean;
     }): Promise<ExtractedResponseText> => {
       const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
-      let mergedText = '';
-      let mergedCitations: ExtractedCitation[] = [];
-      const stopReasons: string[] = [];
-
-      let turn = 0;
-      while (true) {
-        turn += 1;
-        let response: any = null;
-        let lastError: any = null;
-        for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
-          try {
-            response = await client.messages.create({
-              model: ANALYTICS_MODEL,
-              max_tokens: params.maxTokens,
-              system: params.system,
-              messages: msgs,
-              ...(params.useWebSearch ? { tools: webSearchTool } : {}),
-            });
-            break;
-          } catch (err: any) {
-            lastError = err;
-            const isRateLimited = err?.status === 429;
-            if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
-              throw err;
-            }
-            await sleep(2200 * (attempt + 1));
+      let response: any = null;
+      let lastError: any = null;
+      for (let attempt = 0; attempt < ANALYTICS_RETRY_ATTEMPTS; attempt += 1) {
+        try {
+          response = await client.messages.create({
+            model: ANALYTICS_MODEL,
+            max_tokens: params.maxTokens,
+            messages: msgs,
+            ...(params.useWebSearch ? { tools: webSearchTool } : {}),
+          });
+          break;
+        } catch (err: any) {
+          lastError = err;
+          const isRateLimited = err?.status === 429;
+          if (!isRateLimited || attempt === ANALYTICS_RETRY_ATTEMPTS - 1) {
+            throw err;
           }
+          await sleep(2200 * (attempt + 1));
         }
-        if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
-
-        const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
-        const isPauseTurn = response.stop_reason === 'pause_turn';
-        const isTokenLimit = response.stop_reason === 'max_tokens';
-        if (typeof response.stop_reason === 'string') {
-          stopReasons.push(response.stop_reason);
-        }
-        if (extracted.text) mergedText = [mergedText, extracted.text].filter(Boolean).join('\n');
-        if (extracted.citations.length > 0) {
-          const seen = new Set(mergedCitations.map(c => `${c.title}|${c.url}`));
-          for (const citation of extracted.citations) {
-            const key = `${citation.title}|${citation.url}`;
-            if (!seen.has(key)) {
-              mergedCitations.push(citation);
-              seen.add(key);
-            }
-          }
-        }
-        const shouldContinue = (isPauseTurn || isTokenLimit) && turn < MAX_TOOL_TURNS;
-        if (!shouldContinue) break;
-
-        const textOnlyAssistantBlocks = Array.isArray(response.content)
-          ? (response.content as any[]).filter((block) => block?.type === 'text' && typeof block?.text === 'string')
-          : [];
-        const hasNonTextBlocks = Array.isArray(response.content)
-          ? (response.content as any[]).some((block) => block?.type !== 'text')
-          : false;
-
-        // IMPORTANT:
-        // If we feed back assistant tool_use blocks without corresponding tool_result blocks,
-        // Anthropic returns a 400 invalid_request_error. Keep continuation state text-only.
-        if (!hasNonTextBlocks && textOnlyAssistantBlocks.length > 0) {
-          msgs.push({ role: 'assistant', content: textOnlyAssistantBlocks as any });
-        }
-        msgs.push({
-          role: 'user',
-          content: params.expectJson
-            ? 'Tęskite tiksliai nuo paskutinio simbolio ir užbaikite TIK JSON (be paaiškinimų, be ``` blokų).'
-            : 'Tęskite nuo vietos, kur baigėte, be įžangos kartojimo.',
-        });
       }
-
+      if (!response) throw lastError || new Error('Nepavyko gauti atsakymo iš DI');
+      const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
       return {
-        text: mergedText.trim(),
-        citations: mergedCitations,
-        stopReasons,
-        hitTokenLimit: stopReasons.includes('max_tokens'),
+        text: extracted.text.trim(),
+        citations: extracted.citations,
+        stopReasons: typeof response.stop_reason === 'string' ? [response.stop_reason] : [],
+        hitTokenLimit: response.stop_reason === 'max_tokens',
       };
     };
 
@@ -1922,7 +1874,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const naftaResult = await runWebStep({
           maxTokens: 700,
           useWebSearch: true,
-          system: `Naftos ir žaliavų rinkos analitikas. Visada atsakykite lietuvių kalba su konkrečiais skaičiais. Šiandien: ${today}.`,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
         });
         naftaText = naftaResult.text;
@@ -1943,19 +1894,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         let geoResult = await runWebStep({
           maxTokens: 550,
           useWebSearch: true,
-          system: `Rinkos žvalgybų analitikas. Atsakykite lietuvių kalba. Šiandien: ${today}.`,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
-        const geoTrimmed = geoResult.text.trim();
-        const geoLooksLikeMetaResponse = /^ieškosiu\b/i.test(geoTrimmed) || geoTrimmed.length < 120;
-        if (geoLooksLikeMetaResponse) {
-          geoResult = await runWebStep({
-            maxTokens: 650,
-            useWebSearch: true,
-            system: `Rinkos žvalgybų analitikas. Pateikite tik galutinį atsakymą lietuvių kalba (be frazių apie tai, ką darysite). Šiandien: ${today}.`,
-            user: `${applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today })}\n\nSVARBU: Pateikite iškart galutinį 4-6 punktų rezultatą su konkrečiais faktais ir poveikiu medžiagų kainoms.`,
-          });
-        }
         geoText = geoResult.text;
         setStreamGeo(geoText);
         setAnalysisMeta((prev) => ({
@@ -1995,9 +1935,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
           let analysisResult = await runWebStep({
             maxTokens: 1800,
-            expectJson: true,
             useWebSearch: false,
-            system: `Patyrusi medžiagų kainų analitikė. Visada atsakykite TIK JSON. Šiandien: ${today}.`,
             user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
               today,
               materialList,
@@ -2036,10 +1974,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             if (analysisResult.hitTokenLimit) {
               const compactRetry = await runWebStep({
                 maxTokens: 1400,
-                expectJson: true,
                 useWebSearch: false,
-                system: `Patyrusi medžiagų kainų analitikė. Grąžinkite tik kompaktišką, validų JSON. Šiandien: ${today}.`,
-                user: `${applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
+                user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
                   today,
                   materialList,
                   chunkInfo: `DALIS ${chunkIndex + 1}/${materialChunks.length}`,
@@ -2050,7 +1986,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   boundedGeoText,
                   oilAnalysisContext: boundedNaftaText,
                   geoPoliticalContext: boundedGeoText,
-                })}\n\nSVARBU: Jei trūksta vietos, trumpinkite "analysis_markdown" iki 3-5 sakinių, bet pilnai pateikite forecasts.`,
+                }),
               });
               analysisResult = compactRetry;
               appendCitations(compactRetry.citations);
