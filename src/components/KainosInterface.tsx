@@ -447,6 +447,20 @@ function extractUrlCitationsFromText(text: string): ExtractedCitation[] {
   return Array.from(links.values());
 }
 
+function getAnalysisMarkdownForDisplay(content: string): string {
+  const raw = (content || '').trim();
+  if (!raw) return '';
+  try {
+    const payload = extractJsonPayload(raw) as AnalysisForecastResponsePayload;
+    if (payload && typeof payload === 'object' && typeof payload.analysis_markdown === 'string' && payload.analysis_markdown.trim()) {
+      return payload.analysis_markdown.trim();
+    }
+  } catch {
+    // Legacy rows can still be plain markdown.
+  }
+  return content;
+}
+
 
 function extractJsonPayload(text: string): unknown {
   const stripped = text
@@ -1388,6 +1402,8 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
                   title={aiPredSeries[0].reasoning}>
                   AI taškai: {aiPredSeries.length} ({aiPredSeries[0].data} → {aiPredSeries[aiPredSeries.length - 1].data})
+                  {' · '}
+                  {aiPredSeries[aiPredSeries.length - 1].kaina.toFixed(2)} {material.vienetas}
                   {typeof aiPredSeries[0].confidence === 'number' && (
                     <span className="ml-1 opacity-70">(~{Math.round(aiPredSeries[0].confidence)}%)</span>
                   )}
@@ -1713,6 +1729,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       let naftaText = analytics?.nafta || '';
       let geoText = analytics?.geoevents || '';
       let analysisText = '';
+      let analysisRawContent = '';
       const promptMissingVarsNotified = new Set<string>();
 
       const applyPrompt = (name: string, template: string, vars: Record<string, string>) => {
@@ -1785,7 +1802,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           }),
         });
 
-        analysisText = analysisResult.text.trim();
+        analysisRawContent = analysisResult.text.trim();
+        analysisText = analysisRawContent;
         let mergedForecasts: AiPrediction[] = [];
         try {
           const analysisPayload = extractJsonPayload(analysisResult.text);
@@ -1828,7 +1846,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
       }
 
-      await saveGeneralAnalysis(analysisText, geoText, naftaText);
+      await saveGeneralAnalysis(analysisRawContent || analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
 
@@ -2072,7 +2090,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const naftaDisplay = streamNafta || analytics?.nafta || '';
   const geoDisplay = streamGeo || analytics?.geoevents || '';
-  const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : (analytics?.content || ''));
+  const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : getAnalysisMarkdownForDisplay(analytics?.content || ''));
   const lastUpdated = analytics?.sukurta_at ?? null;
   const sharedGenerationActive = Boolean(sharedAnalysisLock);
   const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
