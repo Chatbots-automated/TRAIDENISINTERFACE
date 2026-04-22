@@ -486,6 +486,7 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
   const byCodeNormalized = new Map(medziagas.map((m) => [normalizeName(m.artikulas), m.artikulas]));
   const byNameNormalized = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
   const normalizedCodeEntries = medziagas.map((m) => ({ normalized: normalizeName(m.artikulas), artikulas: m.artikulas }));
+  const artikulasList = medziagas.map((m) => m.artikulas).filter(Boolean);
 
   const resolveArtikulas = (rawCode: string): string | null => {
     const normalizedRaw = normalizeName(rawCode);
@@ -510,6 +511,13 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
     const candidateCodes = new Set<string>();
     for (const source of sourceFields) {
       candidateCodes.add(source);
+
+      // Explicitly look for any known artikulas token inside the AI material string
+      // (e.g. "101-14 | derva Derakane 441-400" -> "101-14").
+      for (const artikulas of artikulasList) {
+        if (source.includes(artikulas)) candidateCodes.add(artikulas);
+      }
+
       const beforePipe = source.split('|')[0]?.trim();
       if (beforePipe) candidateCodes.add(beforePipe);
       const bracketCode = source.match(/\[([A-Za-z0-9-]+)\]/)?.[1]?.trim();
