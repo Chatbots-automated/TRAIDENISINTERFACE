@@ -14,7 +14,6 @@ import {
   fetchMedziagas, fetchIstorija,
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
-  fetchGeneralAnalysis,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
@@ -1612,11 +1611,14 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [med, ist, ana] = await Promise.all([
-        fetchMedziagas(), fetchIstorija(), fetchGeneralAnalysis(),
+      const [med, ist] = await Promise.all([
+        fetchMedziagas(), fetchIstorija(),
       ]);
-      setMedziagas(med); setIstorija(ist); setAnalytics(ana);
-      return { med, ist, ana };
+      setMedziagas(med);
+      setIstorija(ist);
+      // Legacy __general__ endpoint is no longer required for internet analysis UI.
+      setAnalytics(null);
+      return { med, ist, ana: null };
     } catch (err: any) {
       addNotif('error', 'Klaida', err.message || 'Nepavyko įkelti duomenų');
       return { med: [], ist: [], ana: null };
