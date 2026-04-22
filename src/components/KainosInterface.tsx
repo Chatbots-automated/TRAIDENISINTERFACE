@@ -31,75 +31,12 @@ import {
   fetchAnalyticsPromptTemplates,
   fetchKainosToolSchemas,
   runSdkRequest,
-  injectPromptVars,
-  findUnresolvedPromptVars,
   type ExtractedCitation,
 } from '../lib/kainosAnalyticsFramework';
 
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
-const MAX_HISTORY_POINTS_PER_MATERIAL = 4;
-function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
-  if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
-  const lines: string[] = [];
-  for (const m of meds) {
-    const entries = hist.filter(e => e.artikulas === m.artikulas).sort((a, b) => a.data.localeCompare(b.data));
-    if (!entries.length) continue;
-    const compactEntries = entries.slice(-MAX_HISTORY_POINTS_PER_MATERIAL);
-    const row = compactEntries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ');
-    lines.push(`${m.pavadinimas} [${m.artikulas}] (${m.vienetas}): ${row}`);
-  }
-  return lines.join('\n');
-}
-
-function truncatePromptSection(text: string, maxChars: number): string {
-  if (!text || text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
-}
-
-function estimateTokens(text: string): number {
-  // Practical approximation for mixed LT/EN prompts.
-  return Math.ceil((text || '').length / 4);
-}
-
-function formatLatestPricesForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
-  if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
-  return meds
-    .map((m) => {
-      const latest = hist
-        .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
-        .sort((a, b) => b.data.localeCompare(a.data))[0];
-      if (!latest) return `- ${m.artikulas} (${m.pavadinimas}): nėra kainos`;
-      return `- ${m.artikulas} (${m.pavadinimas}): ${formatPrice(latest)} @ ${latest.data}`;
-    })
-    .join('\n');
-}
-
-function formatTrendDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
-  if (!meds.length || !hist.length) return 'Tendencijai nepakanka duomenų.';
-  return meds
-    .map((m) => {
-      const entries = hist
-        .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
-        .sort((a, b) => a.data.localeCompare(b.data));
-      if (entries.length < 2) return `- ${m.artikulas}: nepakanka istorijos trendui`;
-      const first = Number(entries[0].kaina_min);
-      const last = Number(entries[entries.length - 1].kaina_min);
-      if (!Number.isFinite(first) || !Number.isFinite(last) || first === 0) return `- ${m.artikulas}: trendas nenustatytas`;
-      const deltaPct = ((last - first) / first) * 100;
-      const dir = deltaPct > 0.5 ? 'kylanti' : deltaPct < -0.5 ? 'krentanti' : 'stabili';
-      const math = computePrediction(entries);
-      const mathMid = math ? (math.kaina_min + math.kaina_max) / 2 : null;
-      const mathDeltaPct = mathMid !== null && last !== 0 ? ((mathMid - last) / last) * 100 : null;
-      const mathText = math
-        ? `, matematinė 3 mėn. prognozė ${mathMid! > last ? 'aukštyn' : 'žemyn'} (${(mathDeltaPct ?? 0).toFixed(2)}%)`
-        : '';
-      return `- ${m.artikulas}: ${dir}, pokytis ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}% (${entries[0].data} → ${entries[entries.length - 1].data})${mathText}`;
-    })
-    .join('\n');
-}
-
 function addMonthsISO(dateIso: string, months: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, (m - 1) + months, d));
@@ -1731,24 +1668,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     });
     const { nafta: oilPromptTemplate, geo: geoPromptTemplate, analysis: analysisPromptTemplate } = await fetchAnalyticsPromptTemplates();
     const today = new Date().toISOString().split('T')[0];
-    const shouldUseTools = targetSections.has('nafta') || targetSections.has('geo');
-    const kainosToolSchemas = shouldUseTools ? await fetchKainosToolSchemas() : [];
-    if (shouldUseTools && kainosToolSchemas.length === 0) {
+    const kainosToolSchemas = await fetchKainosToolSchemas();
+    if (kainosToolSchemas.length === 0) {
       addNotif('info', 'Kainos schema', 'kainos_ai_tool_schemas nėra užpildyta Directus. Analizė vykdoma be papildomų SDK įrankių.');
     }
-    const runStepRequest = (params: { user: string; maxTokens: number; withTools?: boolean; step: AnalysisSectionKey; }): Promise<ExtractedResponseText> => {
-      const promptTokens = estimateTokens(params.user);
-      if (promptTokens > 5000) {
-        addNotif('info', 'Didelis promptas', `${params.step}: ~${promptTokens} įvesties tokenų. Tai gali kelti 429 limitą.`);
-      }
-      const effectiveTools = params.withTools ? kainosToolSchemas : [];
-      return runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, effectiveTools).then((result) => ({
+    const runStepRequest = (params: { user: string; maxTokens: number; step: AnalysisSectionKey; }): Promise<ExtractedResponseText> =>
+      runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, kainosToolSchemas).then((result) => ({
         text: result.text.trim(),
         citations: result.citations,
         stopReasons: result.stopReason ? [result.stopReason] : [],
         hitTokenLimit: result.stopReason === 'max_tokens',
       }));
-    };
 
     const debugState: AnalysisDebugState = {
       lastRunAt: new Date().toISOString(),
@@ -1767,18 +1697,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       let geoText = analytics?.geoevents || '';
       let analysisText = '';
       let analysisRawContent = '';
-      const promptMissingVarsNotified = new Set<string>();
-
-      const applyPrompt = (name: string, template: string, vars: Record<string, string>) => {
-        const rendered = injectPromptVars(template, vars);
-        const unresolved = findUnresolvedPromptVars(rendered);
-        if (unresolved.length > 0 && !promptMissingVarsNotified.has(name)) {
-          promptMissingVarsNotified.add(name);
-          debugState.promptIssues.push({ prompt: name, variables: unresolved });
-          addNotif('error', 'Prompt placeholderiai', `${name}: nerasti kintamieji → ${unresolved.join(', ')}`);
-        }
-        return rendered;
-      };
 
       if (targetSections.has('nafta')) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
@@ -1786,8 +1704,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const naftaResult = await runStepRequest({
           step: 'nafta',
           maxTokens: 500,
-          withTools: true,
-          user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
+          user: oilPromptTemplate,
         });
         naftaText = naftaResult.text;
         setStreamNafta(naftaText);
@@ -1804,8 +1721,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const geoResult = await runStepRequest({
           step: 'geo',
           maxTokens: 450,
-          withTools: true,
-          user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
+          user: geoPromptTemplate,
         });
         geoText = geoResult.text;
         setStreamGeo(geoText);
@@ -1819,30 +1735,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (targetSections.has('analysis')) {
         // -- Step 3: One prompt, one response --
         await setGenerationStep('analysis');
-        const boundedNaftaText = truncatePromptSection(naftaText, 1200);
-        const boundedGeoText = truncatePromptSection(geoText, 1200);
-        const globalTrendData = truncatePromptSection(formatTrendDataForPrompt(meds, hist), 2200);
         const fallbackDate = addMonthsISO(today, 3);
-        const priceData = truncatePromptSection(formatPriceDataForPrompt(meds, hist), 2500);
-        const latestPrices = truncatePromptSection(formatLatestPricesForPrompt(meds, hist), 1800);
-        const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
-
         const analysisResult = await runStepRequest({
           step: 'analysis',
           maxTokens: 900,
-          withTools: false,
-          user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
-            today,
-            materialList,
-            chunkInfo: 'DALIS 1/1',
-            latestPrices,
-            trendData: globalTrendData,
-            priceData,
-            boundedNaftaText,
-            boundedGeoText,
-            oilAnalysisContext: boundedNaftaText,
-            geoPoliticalContext: boundedGeoText,
-          }),
+          user: analysisPromptTemplate,
         });
 
         analysisRawContent = analysisResult.text.trim();
