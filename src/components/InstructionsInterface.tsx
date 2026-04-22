@@ -824,51 +824,53 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto" ref={contentRef}>
               <div className="px-8 py-6">
-                {isEditing ? (
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full min-h-[500px] p-4 text-sm resize-none focus:outline-none transition-colors"
-                    style={{
-                      color: colors.text.primary,
-                      background: colors.bg.secondary,
-                      border: `1px solid ${colors.border.default}`,
-                      borderRadius: '8px',
-                      lineHeight: '1.75',
-                      boxSizing: 'border-box',
-                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.background = colors.bg.white;
-                      e.target.style.boxShadow = `0 0 0 2px ${colors.interactive.accent}33`;
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.background = colors.bg.secondary;
-                      e.target.style.boxShadow = 'none';
-                    }}
-                    placeholder="Įveskite instrukcijos turinį..."
-                    autoFocus
-                  />
-                ) : (
-                  <div className="max-w-none">
-                    {selectedVariable.content ? (
-                      <pre
-                        className="whitespace-pre-wrap text-sm p-4 rounded-lg min-h-[500px] m-0"
-                        style={{
-                          color: colors.text.secondary,
-                          background: colors.bg.secondary,
-                          border: `1px solid ${colors.border.default}`,
-                          lineHeight: '1.75',
-                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
-                        }}
-                      >
-                        {selectedVariable.content}
-                      </pre>
-                    ) : (
-                      <EmptyContentPlaceholder onClick={() => setShowPasswordInput(true)} />
-                    )}
-                  </div>
-                )}
+                <div className="w-full min-h-[500px] h-[65vh] max-h-[700px]">
+                  {isEditing ? (
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full h-full p-4 text-sm resize-none focus:outline-none transition-colors"
+                      style={{
+                        color: colors.text.primary,
+                        background: colors.bg.secondary,
+                        border: `1px solid ${colors.border.default}`,
+                        borderRadius: '8px',
+                        lineHeight: '1.75',
+                        boxSizing: 'border-box',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.background = colors.bg.white;
+                        e.target.style.boxShadow = `0 0 0 2px ${colors.interactive.accent}33`;
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.background = colors.bg.secondary;
+                        e.target.style.boxShadow = 'none';
+                      }}
+                      placeholder="Įveskite instrukcijos turinį..."
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="max-w-none h-full">
+                      {selectedVariable.content ? (
+                        <pre
+                          className="whitespace-pre-wrap text-sm p-4 rounded-lg h-full m-0 overflow-y-auto"
+                          style={{
+                            color: colors.text.secondary,
+                            background: colors.bg.secondary,
+                            border: `1px solid ${colors.border.default}`,
+                            lineHeight: '1.75',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+                          }}
+                        >
+                          {selectedVariable.content}
+                        </pre>
+                      ) : (
+                        <EmptyContentPlaceholder onClick={() => setShowPasswordInput(true)} />
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
