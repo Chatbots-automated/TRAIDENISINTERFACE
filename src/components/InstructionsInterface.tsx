@@ -38,6 +38,8 @@ import {
   fetchGeneralAnalysis,
   formatPrice,
 } from '../lib/kainosService';
+import NotificationContainer from './NotificationContainer';
+import { useNotifications } from './sdk/useNotifications';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
@@ -142,7 +144,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [versions, setVersions] = useState<InstructionVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
@@ -170,6 +171,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [editorPasswordError, setEditorPasswordError] = useState('');
   const [unlockingEditor, setUnlockingEditor] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const { notifications, addNotification, addErrorNotification, removeNotification } = useNotifications();
 
   const selectedVariable = variables[selectedIndex] || null;
 
@@ -206,11 +208,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   }, [selectedIndex, variables]);
 
-  const loadVariables = async () => {
+  const loadVariables = async (preferredVariableKey?: string | null) => {
     try {
       setLoading(true);
       const data = await getInstructionVariables();
-      setVariables(data);
+      const chatOnly = data.filter((variable) => variable.variable_key.startsWith('chat'));
+      setVariables(chatOnly);
+      setSelectedIndex((currentIndex) => {
+        const currentKey = variables[currentIndex]?.variable_key ?? null;
+        const targetKey = preferredVariableKey ?? currentKey;
+        if (!targetKey) return 0;
+        const targetIndex = chatOnly.findIndex((variable) => variable.variable_key === targetKey);
+        return targetIndex >= 0 ? targetIndex : 0;
+      });
     } catch (err: any) {
       setError('Nepavyko įkelti instrukcijų');
       console.error(err);
@@ -260,16 +270,18 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       );
 
       if (result.success) {
-        setSuccess('Išsaugota!');
-        setTimeout(() => setSuccess(null), 3000);
+        addNotification('success', 'Išsaugota', 'Instrukcija sėkmingai atnaujinta.');
         setIsEditing(false);
         setIsAuthenticated(false);
-        await loadVariables();
+        await loadVariables(selectedVariable.variable_key);
       } else {
-        setError(result.error || 'Nepavyko išsaugoti');
+        const saveError = result.error || 'Nepavyko išsaugoti';
+        setError(saveError);
+        addNotification('error', 'Klaida', saveError);
       }
     } catch (err: any) {
       setError(err.message || 'Klaida saugant instrukciją');
+      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti instrukcijos');
     } finally {
       setSaving(false);
     }
@@ -285,15 +297,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const result = await revertToVersion(versionNumber, user.id, user.email);
 
       if (result.success) {
-        setSuccess('Versija grąžinta!');
-        setTimeout(() => setSuccess(null), 3000);
+        addNotification('success', 'Versija grąžinta', `Atstatyta versija #${versionNumber}.`);
         await loadVariables();
         await loadVersions();
       } else {
-        setError(result.error || 'Nepavyko grąžinti versijos');
+        const revertError = result.error || 'Nepavyko grąžinti versijos';
+        setError(revertError);
+        addNotification('error', 'Klaida', revertError);
       }
     } catch (err: any) {
       setError(err.message);
+      addErrorNotification('Klaida', err, 'Nepavyko grąžinti versijos');
     } finally {
       setRevertingVersion(null);
     }
@@ -805,61 +819,58 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
                 </div>
               )}
-              {success && (
-                <div className="alert alert-soft alert-success mt-4 text-sm">
-                  <Check className="w-4 h-4" />
-                  <span>{success}</span>
-                </div>
-              )}
             </div>
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto" ref={contentRef}>
               <div className="px-8 py-6">
-                {isEditing ? (
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="w-full min-h-[500px] p-4 text-sm resize-none focus:outline-none transition-colors"
-                    style={{
-                      color: colors.text.primary,
-                      background: colors.bg.secondary,
-                      border: `1px solid ${colors.border.default}`,
-                      borderRadius: '8px',
-                      lineHeight: '1.75',
-                      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.background = colors.bg.white;
-                      e.target.style.border = `2px solid ${colors.interactive.accent}`;
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.background = colors.bg.secondary;
-                      e.target.style.border = `1px solid ${colors.border.default}`;
-                    }}
-                    placeholder="Įveskite instrukcijos turinį..."
-                    autoFocus
-                  />
-                ) : (
-                  <div className="prose prose-sm max-w-none">
-                    {selectedVariable.content ? (
-                      <pre
-                        className="whitespace-pre-wrap text-sm p-6 rounded-lg"
-                        style={{
-                          color: colors.text.secondary,
-                          background: colors.bg.secondary,
-                          border: `1px solid ${colors.border.light}`,
-                          lineHeight: '1.75',
-                          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
-                        }}
-                      >
-                        {selectedVariable.content}
-                      </pre>
-                    ) : (
-                      <EmptyContentPlaceholder onClick={() => setShowPasswordInput(true)} />
-                    )}
-                  </div>
-                )}
+                <div className="w-full min-h-[500px] h-[65vh] max-h-[700px]">
+                  {isEditing ? (
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full h-full p-4 text-sm resize-none focus:outline-none transition-colors"
+                      style={{
+                        color: colors.text.primary,
+                        background: colors.bg.secondary,
+                        border: `1px solid ${colors.border.default}`,
+                        borderRadius: '8px',
+                        lineHeight: '1.75',
+                        boxSizing: 'border-box',
+                        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+                      }}
+                      onFocus={(e) => {
+                        e.target.style.background = colors.bg.white;
+                        e.target.style.boxShadow = `0 0 0 2px ${colors.interactive.accent}33`;
+                      }}
+                      onBlur={(e) => {
+                        e.target.style.background = colors.bg.secondary;
+                        e.target.style.boxShadow = 'none';
+                      }}
+                      placeholder="Įveskite instrukcijos turinį..."
+                      autoFocus
+                    />
+                  ) : (
+                    <div className="max-w-none h-full">
+                      {selectedVariable.content ? (
+                        <pre
+                          className="whitespace-pre-wrap text-sm p-4 rounded-lg h-full m-0 overflow-y-auto"
+                          style={{
+                            color: colors.text.secondary,
+                            background: colors.bg.secondary,
+                            border: `1px solid ${colors.border.default}`,
+                            lineHeight: '1.75',
+                            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
+                          }}
+                        >
+                          {selectedVariable.content}
+                        </pre>
+                      ) : (
+                        <EmptyContentPlaceholder onClick={() => setShowPasswordInput(true)} />
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1102,6 +1113,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         </div>
       )}
+      <NotificationContainer notifications={notifications} onRemove={removeNotification} />
     </div>
   );
 }
@@ -1206,6 +1218,7 @@ function NavButton({
   onClick: () => void;
 }) {
   const [isHovered, setIsHovered] = React.useState(false);
+  const isCommercialBridgeVariable = variable.variable_key === 'chat_commercial_offer_generation';
 
   return (
     <button
@@ -1214,10 +1227,22 @@ function NavButton({
       onMouseLeave={() => setIsHovered(false)}
       className="w-full text-left px-3 py-2.5 rounded-lg transition-all group"
       style={{
-        background: isSelected ? colors.bg.white : (isHovered ? colors.bg.white + '99' : 'transparent'),
+        background: isSelected
+          ? colors.bg.white
+          : isCommercialBridgeVariable
+            ? colors.bg.white + '66'
+            : (isHovered ? colors.bg.white + '99' : 'transparent'),
         boxShadow: isSelected ? '0 1px 3px 0 rgba(0, 0, 0, 0.05)' : 'none',
-        border: isSelected ? `1px solid ${colors.interactive.accent}33` : '1px solid transparent',
-        borderLeft: isSelected ? `2px solid ${colors.interactive.accent}` : '2px solid transparent'
+        border: isSelected
+          ? `1px solid ${colors.interactive.accent}33`
+          : isCommercialBridgeVariable
+            ? `1px solid ${colors.border.default}`
+            : '1px solid transparent',
+        borderLeft: isSelected
+          ? `2px solid ${colors.interactive.accent}`
+          : isCommercialBridgeVariable
+            ? `2px solid ${colors.border.default}`
+            : '2px solid transparent'
       }}
     >
       <div className="flex items-start space-x-3">

@@ -4430,6 +4430,17 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {globalDocxFileId && (
+                    <a
+                      href={getDirectusFileUrl(globalDocxFileId)}
+                      download
+                      className="btn btn-soft btn-sm gap-1.5"
+                      title="Atsisiųsti esamą DOCX šabloną"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Atsisiųsti .docx
+                    </a>
+                  )}
                   {/* DOCX template upload */}
                   <input
                     ref={docxFileInputRef}
