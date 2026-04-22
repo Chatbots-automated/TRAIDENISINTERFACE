@@ -210,7 +210,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     try {
       setLoading(true);
       const data = await getInstructionVariables();
-      setVariables(data);
+      const chatOnly = data.filter((variable) => variable.variable_key.startsWith('chat'));
+      setVariables(chatOnly);
+      setSelectedIndex(0);
     } catch (err: any) {
       setError('Nepavyko įkelti instrukcijų');
       console.error(err);
