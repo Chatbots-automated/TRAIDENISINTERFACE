@@ -14,9 +14,11 @@ export interface InternetAnalysisRecord {
 interface TokenUsage {
   input_tokens?: number;
   output_tokens?: number;
+  total_tokens?: number;
 }
 
 interface ToolSchemaCandidate {
+  type?: unknown;
   name?: unknown;
   description?: unknown;
   input_schema?: unknown;
@@ -33,11 +35,13 @@ const inFlightAnalyses = new Set<InternetAnalysisId>();
 
 function extractResponseText(content: unknown): string {
   if (!Array.isArray(content)) return '';
-  return content
+  const textBlocks = content
     .filter((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    .map((block: any) => block.text)
-    .join('\n')
-    .trim();
+    .map((block: any) => String(block.text).trim())
+    .filter(Boolean);
+
+  // Deterministic join: preserve paragraph-level spacing between text blocks.
+  return textBlocks.join('\n\n').trim();
 }
 
 function findTemplateVars(template: string): string[] {
@@ -46,12 +50,7 @@ function findTemplateVars(template: string): string[] {
 }
 
 function interpolateTemplate(template: string, values: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(values)) {
-    result = result.replaceAll(`{{${key}}}`, value);
-    result = result.replaceAll(`{{ ${key} }}`, value);
-  }
-  return result;
+  return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_full, key: string) => values[key] ?? '');
 }
 
 export function parseTokenUsage(tokensRaw: string | null): { input: number; output: number; total: number } | null {
@@ -61,7 +60,9 @@ export function parseTokenUsage(tokensRaw: string | null): { input: number; outp
     const input = Number(parsed.input_tokens || 0);
     const output = Number(parsed.output_tokens || 0);
     if (!Number.isFinite(input) || !Number.isFinite(output)) return null;
-    return { input, output, total: input + output };
+    const persistedTotal = Number(parsed.total_tokens);
+    const total = Number.isFinite(persistedTotal) ? persistedTotal : input + output;
+    return { input, output, total };
   } catch {
     return null;
   }
@@ -119,20 +120,29 @@ function validateToolSchemas(tools: unknown[]): Anthropic.Tool[] {
 
   for (const candidate of tools) {
     const tool = candidate as ToolSchemaCandidate;
+    const type = typeof tool.type === 'string' ? tool.type.trim() : '';
     const name = typeof tool.name === 'string' ? tool.name.trim() : '';
     const description = typeof tool.description === 'string' ? tool.description.trim() : '';
     const inputSchema = tool.input_schema;
 
-    if (!name) {
-      throw new Error('Netinkama tool schema: trūksta name.');
+    // Built-in web search tool schema
+    if (type) {
+      if (!type.startsWith('web_search_')) {
+        throw new Error(`Nepalaikomas tool tipas: ${type}`);
+      }
+      if (!name) {
+        throw new Error(`Netinkama tool schema (${type}): trūksta name.`);
+      }
+      validated.push(tool as Anthropic.Tool);
+      continue;
     }
-    if (!description) {
-      throw new Error(`Netinkama tool schema (${name}): trūksta description.`);
-    }
+
+    // Custom tool schema
+    if (!name) throw new Error('Netinkama tool schema: trūksta name.');
+    if (!description) throw new Error(`Netinkama tool schema (${name}): trūksta description.`);
     if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) {
       throw new Error(`Netinkama tool schema (${name}): input_schema turi būti objektas.`);
     }
-
     validated.push(tool as Anthropic.Tool);
   }
 
@@ -189,7 +199,14 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
     if (!content.trim()) {
       throw new Error('DI atsakymas neturi tekstinio turinio.');
     }
-    const tokens = JSON.stringify(response.usage || {});
+    const usage = response.usage || {};
+    const inputTokens = Number((usage as any).input_tokens || 0);
+    const outputTokens = Number((usage as any).output_tokens || 0);
+    const tokens = JSON.stringify({
+      input_tokens: Number.isFinite(inputTokens) ? inputTokens : 0,
+      output_tokens: Number.isFinite(outputTokens) ? outputTokens : 0,
+      total_tokens: (Number.isFinite(inputTokens) ? inputTokens : 0) + (Number.isFinite(outputTokens) ? outputTokens : 0),
+    });
 
     const { error } = await db
       .from('medziagos_analize_internetas')

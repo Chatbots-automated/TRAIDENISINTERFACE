@@ -1579,6 +1579,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     analysis: false,
   });
   const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
+  const analysisFetchVersionRef = useRef(0);
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1617,8 +1618,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // ---- internet analysis (single request per action) ----
   const loadInternetAnalysisState = useCallback(async (notifyOnError: boolean = false) => {
+    const requestVersion = ++analysisFetchVersionRef.current;
     try {
       const rows = await fetchInternetAnalyses();
+      if (requestVersion !== analysisFetchVersionRef.current) return;
       setInternetAnalyses({
         nafta: rows.find((r) => r.id === 'nafta') || null,
         politika: rows.find((r) => r.id === 'politika') || null,
@@ -2137,7 +2140,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               </aside>
 
               <div className="rounded-2xl overflow-hidden bg-white"
-                style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+                style={{
+                  border: genLoading && genStep === analysisFocus ? '1px solid #bfdbfe' : '1px solid #e5e7eb',
+                  boxShadow: genLoading && genStep === analysisFocus
+                    ? '0 10px 25px rgba(59,130,246,0.10)'
+                    : '0 10px 25px rgba(15,23,42,0.06)',
+                }}>
                 <div className="px-5 py-3 flex items-center justify-between"
                   style={{
                     background: analysisFocus === 'nafta' ? '#fff7ed' : analysisFocus === 'geo' ? '#eff6ff' : '#ecfdf5',
@@ -2181,7 +2189,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           return (
                             <div className="flex items-center gap-2 py-1">
                               <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                              <span className="text-xs" style={{ color: '#8a857f' }}>Šio etapo analizė dar nesugeneruota.</span>
+                              <span className="text-xs" style={{ color: '#8a857f' }}>No analysis generated yet.</span>
                             </div>
                           );
                         }
