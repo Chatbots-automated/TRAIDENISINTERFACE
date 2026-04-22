@@ -337,6 +337,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const item = parsed[i];
       if (!item || typeof item !== 'object') return `Įrašas #${i + 1} turi būti objektas`;
       if (!item.name || typeof item.name !== 'string') return `Įrašas #${i + 1} neturi teisingo "name"`;
+      if (typeof item.type === 'string' && item.type.trim().length > 0) {
+        if (!item.type.startsWith('web_search_')) return `Įrašas #${i + 1} turi nepalaikomą "type": ${item.type}`;
+        continue;
+      }
       if (!item.input_schema || typeof item.input_schema !== 'object') return `Įrašas #${i + 1} neturi "input_schema" objekto`;
     }
     return null;
@@ -351,6 +355,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const validationError = validateSchemaArray(parsed);
       if (validationError) {
         setSchemaError(validationError);
+        addErrorNotification('Schema klaida', validationError);
         return;
       }
 
@@ -375,10 +380,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
       setSchemaContent(normalized);
       setSchemaSuccess('Schema išsaugota');
+      addNotification('success', 'Schema', 'Schema išsaugota');
       setTimeout(() => setSchemaSuccess(null), 3000);
     } catch (err: any) {
       console.error('[SchemaEditor] Save failed:', err);
       setSchemaError(err?.message || 'Nepavyko išsaugoti schemos');
+      addErrorNotification('Schema klaida', err?.message || 'Nepavyko išsaugoti schemos');
     } finally {
       setSchemaSaving(false);
     }
@@ -443,11 +450,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const content = kainosPromptContent.trim();
       if (!content) {
         setPromptError('Prompt negali būti tuščias');
+        addErrorNotification('Prompt klaida', 'Prompt negali būti tuščias');
         return;
       }
       const invalidVars = validatePromptVariablesForEditor(content);
       if (invalidVars.length > 0) {
         setPromptError(`Neleistini kintamieji: ${invalidVars.join(', ')}. Leidžiami: {{today}}, {{oilAnalysis}}, {{geoPolitical}}.`);
+        addErrorNotification('Prompt klaida', `Neleistini kintamieji: ${invalidVars.join(', ')}`);
         return;
       }
       const existing = await getInstructionVariable(kainosPromptKey);
@@ -467,10 +476,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         if (insertError) throw insertError;
       }
       setPromptSuccess('Prompt išsaugotas');
+      addNotification('success', 'Prompt', 'Prompt išsaugotas');
       setTimeout(() => setPromptSuccess(null), 3000);
     } catch (err: any) {
       console.error('[KainosPrompt] Save failed:', err);
       setPromptError(err?.message || 'Nepavyko išsaugoti prompt');
+      addErrorNotification('Prompt klaida', err?.message || 'Nepavyko išsaugoti prompt');
     } finally {
       setPromptSaving(false);
     }
@@ -982,6 +993,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </div>
               </div>
               {!editorUnlocked && editorPasswordError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>}
+              {editorTab === 'schema' && schemaError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{schemaError}</p>}
+              {editorTab === 'schema' && schemaSuccess && <p className="text-[10px]" style={{ color: '#16a34a' }}>{schemaSuccess}</p>}
+              {editorTab === 'kainos_prompt' && promptError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{promptError}</p>}
+              {editorTab === 'kainos_prompt' && promptSuccess && <p className="text-[10px]" style={{ color: '#16a34a' }}>{promptSuccess}</p>}
             </div>
 
             <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
