@@ -1108,27 +1108,41 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
-      // Source of truth for graph AI points: Directus table medziagos_kainu_prognozes
-      // (persisted from 3rd-step JSON forecasts during analysis run).
-      const directusForecasts = await fetchLatestMaterialForecasts();
-      const loaded = directusForecasts
-        .map((row) => {
-          const kMin = Number(row.kaina_min);
-          const kMax = Number(row.kaina_max);
-          const kaina = Number.isFinite(kMin) && Number.isFinite(kMax) ? (kMin + kMax) / 2 : Number.isFinite(kMin) ? kMin : NaN;
-          if (!Number.isFinite(kaina)) return null;
-          return {
-            artikulas: row.artikulas,
-            data: row.data,
-            kaina,
-            reasoning: 'Prognozė užkrauta iš Directus meziagos_kainu_prognozes.',
-            confidence: typeof row.pasitikejimas === 'number' ? row.pasitikejimas : undefined,
-          } as AiPrediction;
-        })
-        .filter((item): item is AiPrediction => Boolean(item));
+      // Primary source of truth: Directus medziagos_prognoze_internetas.content (3-step JSON payload).
+      const fallbackDate = addMonthsISO(new Date().toISOString().slice(0, 10), 3);
+      const rawContent = analytics?.content || '';
+      let loaded: AiPrediction[] = [];
+      if (rawContent.trim()) {
+        try {
+          const payload = extractJsonPayload(rawContent);
+          loaded = normalizeAnalysisForecasts(payload, medziagas, fallbackDate);
+        } catch (parseError) {
+          console.warn('[GrafaTab] Nepavyko išparsinti medziagos_prognoze_internetas.content JSON:', parseError);
+        }
+      }
+
+      // Fallback: latest persisted batch table, if content is legacy/markdown-only.
+      if (loaded.length === 0) {
+        const directusForecasts = await fetchLatestMaterialForecasts();
+        loaded = directusForecasts
+          .map((row) => {
+            const kMin = Number(row.kaina_min);
+            const kMax = Number(row.kaina_max);
+            const kaina = Number.isFinite(kMin) && Number.isFinite(kMax) ? (kMin + kMax) / 2 : Number.isFinite(kMin) ? kMin : NaN;
+            if (!Number.isFinite(kaina)) return null;
+            return {
+              artikulas: row.artikulas,
+              data: row.data,
+              kaina,
+              reasoning: 'Prognozė užkrauta iš Directus meziagos_kainu_prognozes.',
+              confidence: typeof row.pasitikejimas === 'number' ? row.pasitikejimas : undefined,
+            } as AiPrediction;
+          })
+          .filter((item): item is AiPrediction => Boolean(item));
+      }
 
       if (loaded.length === 0) {
-        onError?.('Directus tarpiniame prognozių faile (medziagos_kainu_prognozes) nerasta AI taškų grafui.');
+        onError?.('Nerasta validžių AI prognozių nei medziagos_prognoze_internetas.content, nei medziagos_kainu_prognozes lentelėje.');
         setAiToggle(false);
         return;
       }
@@ -1151,7 +1165,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, onError]);
+  }, [aiLoading, medziagas, istorija, onError, analytics]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
