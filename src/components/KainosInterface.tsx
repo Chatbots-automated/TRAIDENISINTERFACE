@@ -10,14 +10,12 @@ import {
 import Anthropic from '@anthropic-ai/sdk';
 import * as XLSX from 'xlsx';
 import type { AppUser } from '../types';
-import { getInstructionVariable } from '../lib/instructionsService';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import {
   fetchMedziagas, fetchIstorija,
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
-  saveMaterialForecasts,
   fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock, updateAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
@@ -29,73 +27,19 @@ import {
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
 import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer';
+import {
+  fetchAnalyticsPromptTemplates,
+  fetchKainosToolSchemas,
+  runSdkRequest,
+  injectPromptVars,
+  findUnresolvedPromptVars,
+  type ExtractedCitation,
+} from '../lib/kainosAnalyticsFramework';
 
 interface KainosInterfaceProps { user: AppUser; }
 
 const ANALYTICS_MODEL = 'claude-sonnet-4-5';
 const MAX_HISTORY_POINTS_PER_MATERIAL = 4;
-const DEFAULT_KAINOS_OIL_PROMPT = `Šiandien yra {{today}}. Ieškokite internete dabartinių naftos kainų ir pateikite:
-
-1. **Brent žalia nafta** — dabartinė kaina (USD/bbl ir EUR/bbl), savaitės ir mėnesio pokytis procentais
-2. **Rytų Europos kontekstas** — kaip naftos kainos veikia regioną (Baltijos šalys, Lenkija), energijos kainos, transporto sąnaudos
-3. **Nafta → dervos ryšys** — kaip dabartinės naftos kainos veikia poliestetinių ir epoksidinių dervų gamybos sąnaudas.
-4. **Styreno kaina** — jei randama, dabartinė styreno kaina Europoje
-
-Pateikite trumpai ir struktūruotai lietuvių kalba. Naudokite konkrečius skaičius.`;
-const DEFAULT_KAINOS_GEO_PROMPT = `Šiandien yra {{today}}. Ieškokite internete naujausių geopolitinių įvykių, kurie gali turėti įtakos poliestetinėms dervoms, epoksidinėms dervoms, stiklo pluštui ir kompozitinių medžiagų kainoms.
-
-Sutelkite dėmesį į:
-- naftos kainas
-- sankcijas
-- prekybos politiką
-- energijos kainas
-- tiekimo grandinės sutrikimus
-
-Pateikite 4-6 konkrečius biuletenų punktus lietuvių kalba.`;
-const DEFAULT_KAINOS_ANALYSIS_PROMPT = `Šiandien yra {{today}}. Įvertinkite žaliavų kainų prognozes remdamiesi:
-
-1) Geopolitika (karai, tarifai, sankcijos, tiekimo sutrikimai)
-2) Naftos kaina ir jos tendencijos
-3) Medžiagų istorinėmis kainomis ir jų trendu
-
-MEDŽIAGŲ SĄRAŠAS ({{chunkInfo}}):
-{{materialList}}
-
-DABARTINĖS / PASKUTINĖS KAINOS:
-{{latestPrices}}
-
-KAINŲ TENDENCIJOS:
-{{trendData}}
-
-ISTORINIAI KAINŲ DUOMENYS:
-{{priceData}}
-
-NAFTOS KAINŲ KONTEKSTAS:
-{{boundedNaftaText}}
-
-GEOPOLITINIS KONTEKSTAS:
-{{boundedGeoText}}
-
-Privalomas atsakymo formatas (TIK JSON objektas, be jokio papildomo teksto):
-{
-  "analysis_markdown": "Trumpa analizė lietuvių kalba su aiškiais punktais (tik šiai medžiagų daliai).",
-  "forecasts": [
-    {
-      "artikulas": "MEDZIAGOS_KODAS",
-      "kaina": 1.23,
-      "data": "YYYY-MM-DD",
-      "confidence": 0-100,
-      "reasoning": "Trumpas paaiškinimas."
-    }
-  ]
-}
-
-Taisyklės:
-- "forecasts" turi turėti po vieną įrašą kiekvienam artikului iš sąrašo (naudokite tik pateiktus artikulus, be sinonimų).
-- Kiekvienas "artikulas" turi būti unikalus, be dublių.
-- "kaina" turi būti skaičius (ne tekstas) ir realistiška pagal trendą bei kontekstą.
-- "data" turi būti griežtai YYYY-MM-DD formatu (~3 mėn. nuo šiandien).
-- Jei trūksta duomenų medžiagai, vis tiek grąžinkite įrašą su konservatyvia prognoze.`;
 function formatPriceDataForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   const lines: string[] = [];
@@ -161,19 +105,6 @@ function addDaysISO(dateIso: string, days: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + days));
   return dt.toISOString().split('T')[0];
-}
-
-function injectPromptVars(template: string, vars: Record<string, string>): string {
-  let output = template;
-  for (const [key, value] of Object.entries(vars)) {
-    output = output.split(`{{${key}}}`).join(value);
-  }
-  return output;
-}
-
-function findUnresolvedPromptVars(text: string): string[] {
-  const matches = text.match(/\{\{[^}]+\}\}/g) || [];
-  return Array.from(new Set(matches.map((m) => m.replace(/[{}]/g, '').trim())));
 }
 
 function normalizeName(value: string): string {
@@ -464,12 +395,6 @@ interface AnalysisForecastResponsePayload {
   }>;
 }
 
-interface ExtractedCitation {
-  title: string;
-  url: string;
-  citedText?: string;
-}
-
 interface ExtractedResponseText {
   text: string;
   citations: ExtractedCitation[];
@@ -522,6 +447,20 @@ function extractUrlCitationsFromText(text: string): ExtractedCitation[] {
   return Array.from(links.values());
 }
 
+function getAnalysisMarkdownForDisplay(content: string): string {
+  const raw = (content || '').trim();
+  if (!raw) return '';
+  try {
+    const payload = extractJsonPayload(raw) as AnalysisForecastResponsePayload;
+    if (payload && typeof payload === 'object' && typeof payload.analysis_markdown === 'string' && payload.analysis_markdown.trim()) {
+      return payload.analysis_markdown.trim();
+    }
+  } catch {
+    // Legacy rows can still be plain markdown.
+  }
+  return content;
+}
+
 
 function extractJsonPayload(text: string): unknown {
   const stripped = text
@@ -552,40 +491,26 @@ function extractJsonPayload(text: string): unknown {
   throw new Error('AI negrąžino atpažįstamo JSON');
 }
 
-function extractTextAndCitationsFromMessage(contentBlocks: any[]): ExtractedResponseText {
-  let text = '';
-  const citations: ExtractedCitation[] = [];
-
-  for (const block of contentBlocks || []) {
-    if (block?.type !== 'text') continue;
-    if (typeof block.text === 'string') {
-      text += `${block.text}\n`;
-    }
-    if (Array.isArray(block.citations)) {
-      for (const citation of block.citations) {
-        const title = citation?.title || citation?.document_title || 'Šaltinis';
-        const url = citation?.url || citation?.source_url;
-        const citedText = citation?.cited_text;
-        if (url && !citations.some(c => c.url === url && c.title === title)) {
-          citations.push({ title: String(title), url: String(url), citedText: citedText ? String(citedText) : undefined });
-        }
-      }
-    }
-  }
-
-  return { text: text.trim(), citations };
-}
-
 function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
-  const byCode = new Map(medziagas.map(m => [m.artikulas.toLowerCase(), m.artikulas]));
+  const byCode = new Map(medziagas.map((m) => [m.artikulas.toLowerCase(), m.artikulas]));
+  const byCodeNormalized = new Map(medziagas.map((m) => [normalizeName(m.artikulas), m.artikulas]));
+  const byNameNormalized = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
 
   const toPredictions = (item: any): AiPrediction[] => {
     if (!item || typeof item !== 'object') return [];
     const rawCode = typeof item?.artikulas === 'string'
       ? item.artikulas.trim()
-      : (typeof item?.material === 'string' ? item.material.trim() : '');
+      : (typeof item?.material === 'string'
+        ? item.material.trim()
+        : (typeof item?.material_code === 'string'
+          ? item.material_code.trim()
+          : (typeof item?.name === 'string' ? item.name.trim() : '')));
     if (!rawCode) return [];
-    const artikulas = byCode.get(rawCode.toLowerCase()) || null;
+    const normalizedRaw = normalizeName(rawCode);
+    const artikulas = byCode.get(rawCode.toLowerCase())
+      || byCodeNormalized.get(normalizedRaw)
+      || byNameNormalized.get(normalizedRaw)
+      || null;
     if (!artikulas) return [];
 
     const confidenceRaw = coerceFiniteNumber(item?.confidence);
@@ -1205,19 +1130,21 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
+      // Primary source of truth: Directus medziagos_prognoze_internetas.content (3-step JSON payload).
       const fallbackDate = addMonthsISO(new Date().toISOString().slice(0, 10), 3);
       const rawContent = analytics?.content || '';
-      if (!rawContent.trim()) {
-        onError?.('Nėra analizės turinio. Pirmiausia sugeneruokite analizę.');
-        setAiToggle(false);
-        return;
+      let loaded: AiPrediction[] = [];
+      if (rawContent.trim()) {
+        try {
+          const payload = extractJsonPayload(rawContent);
+          loaded = normalizeAnalysisForecasts(payload, medziagas, fallbackDate);
+        } catch (parseError) {
+          console.warn('[GrafaTab] Nepavyko išparsinti medziagos_prognoze_internetas.content JSON:', parseError);
+        }
       }
 
-      const payload = extractJsonPayload(rawContent);
-      const loaded = normalizeAnalysisForecasts(payload, medziagas, fallbackDate);
-
       if (loaded.length === 0) {
-        onError?.('Analizės content nerastos validžios AI prognozės grafui.');
+        onError?.('Nerasta validžių AI prognozių medziagos_prognoze_internetas.content lauke.');
         setAiToggle(false);
         return;
       }
@@ -1295,12 +1222,15 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         });
 
         if (aiToggle && aiPredSeries.length > 0) {
+          let lastProjectionDate = lastPoint.date;
           aiPredSeries.forEach((aiPoint, idx) => {
             const ratio = (idx + 1) / aiPredSeries.length;
             const interpolated = lastPoint.kaina! + (mathTargetValue - lastPoint.kaina!) * ratio;
+            const projectedDate = aiPoint.data > lastProjectionDate ? aiPoint.data : addDaysISO(lastProjectionDate, 1);
+            lastProjectionDate = projectedDate;
             points.push({
-              date: aiPoint.data,
-              label: aiPoint.data,
+              date: projectedDate,
+              label: projectedDate,
               kaina: null,
               predicted: interpolated,
             });
@@ -1324,10 +1254,13 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
           kaina: lastPoint.kaina,
           aiPredicted: lastPoint.kaina!,
         });
+        let lastAiDate = lastPoint.date;
         for (const aiPred of aiPredSeries) {
+          const aiDate = aiPred.data > lastAiDate ? aiPred.data : addDaysISO(lastAiDate, 1);
+          lastAiDate = aiDate;
           points.push({
-            date: aiPred.data,
-            label: aiPred.data,
+            date: aiDate,
+            label: aiDate,
             kaina: null,
             aiPredicted: aiPred.kaina,
           });
@@ -1479,6 +1412,8 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
                   title={aiPredSeries[0].reasoning}>
                   AI taškai: {aiPredSeries.length} ({aiPredSeries[0].data} → {aiPredSeries[aiPredSeries.length - 1].data})
+                  {' · '}
+                  {aiPredSeries[aiPredSeries.length - 1].kaina.toFixed(2)} {material.vienetas}
                   {typeof aiPredSeries[0].confidence === 'number' && (
                     <span className="ml-1 opacity-70">(~{Math.round(aiPredSeries[0].confidence)}%)</span>
                   )}
@@ -1774,39 +1709,19 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
       dangerouslyAllowBrowser: true,
     });
-    const [oilPromptVar, geoPromptVar, analysisPromptVar] = await Promise.all([
-      getInstructionVariable('kainos_ai_nafta_prompt'),
-      getInstructionVariable('kainos_ai_geo_prompt'),
-      getInstructionVariable('kainos_ai_analysis_prompt'),
-    ]);
-    const oilPromptTemplate = oilPromptVar?.content?.trim() || '';
-    const geoPromptTemplate = geoPromptVar?.content?.trim() || '';
-    const analysisPromptTemplate = analysisPromptVar?.content?.trim() || '';
-    if (!oilPromptTemplate || !geoPromptTemplate || !analysisPromptTemplate) {
-      throw new Error('Trūksta promptų instruction_variables lentelėje. Užpildykite: kainos_ai_nafta_prompt, kainos_ai_geo_prompt, kainos_ai_analysis_prompt.');
-    }
+    const { nafta: oilPromptTemplate, geo: geoPromptTemplate, analysis: analysisPromptTemplate } = await fetchAnalyticsPromptTemplates();
     const today = new Date().toISOString().split('T')[0];
-    const webSearchTool = [{ type: 'web_search_20260209', name: 'web_search' }] as any;
-    const runStepRequest = async (params: {
-      user: string;
-      maxTokens: number;
-      useWebSearch?: boolean;
-    }): Promise<ExtractedResponseText> => {
-      const msgs: Anthropic.MessageParam[] = [{ role: 'user', content: params.user }];
-      const response = await client.messages.create({
-        model: ANALYTICS_MODEL,
-        max_tokens: params.maxTokens,
-        messages: msgs,
-        ...(params.useWebSearch ? { tools: webSearchTool } : {}),
-      });
-      const extracted = extractTextAndCitationsFromMessage(response.content as any[]);
-      return {
-        text: extracted.text.trim(),
-        citations: extracted.citations,
-        stopReasons: typeof response.stop_reason === 'string' ? [response.stop_reason] : [],
-        hitTokenLimit: response.stop_reason === 'max_tokens',
-      };
-    };
+    const kainosToolSchemas = await fetchKainosToolSchemas();
+    if (kainosToolSchemas.length === 0) {
+      addNotif('info', 'Kainos schema', 'kainos_ai_tool_schemas nėra užpildyta Directus. Analizė vykdoma be papildomų SDK įrankių.');
+    }
+    const runStepRequest = (params: { user: string; maxTokens: number; }): Promise<ExtractedResponseText> =>
+      runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, kainosToolSchemas).then((result) => ({
+        text: result.text.trim(),
+        citations: result.citations,
+        stopReasons: result.stopReason ? [result.stopReason] : [],
+        hitTokenLimit: result.stopReason === 'max_tokens',
+      }));
 
     const debugState: AnalysisDebugState = {
       lastRunAt: new Date().toISOString(),
@@ -1824,6 +1739,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       let naftaText = analytics?.nafta || '';
       let geoText = analytics?.geoevents || '';
       let analysisText = '';
+      let analysisRawContent = '';
       const promptMissingVarsNotified = new Set<string>();
 
       const applyPrompt = (name: string, template: string, vars: Record<string, string>) => {
@@ -1842,7 +1758,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         await setGenerationStep('nafta');
         const naftaResult = await runStepRequest({
           maxTokens: 700,
-          useWebSearch: true,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
         });
         naftaText = naftaResult.text;
@@ -1859,7 +1774,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         await setGenerationStep('geo');
         const geoResult = await runStepRequest({
           maxTokens: 550,
-          useWebSearch: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
         geoText = geoResult.text;
@@ -1884,7 +1798,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
         const analysisResult = await runStepRequest({
           maxTokens: 1800,
-          useWebSearch: false,
           user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
             today,
             materialList,
@@ -1899,7 +1812,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           }),
         });
 
-        analysisText = analysisResult.text.trim();
+        analysisRawContent = analysisResult.text.trim();
+        analysisText = analysisRawContent;
         let mergedForecasts: AiPrediction[] = [];
         try {
           const analysisPayload = extractJsonPayload(analysisResult.text);
@@ -1940,20 +1854,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         }));
         debugState.stepStatus.analysis = 'ok';
 
-        if (sanitized.length > 0) {
-          await saveMaterialForecasts(
-            sanitized.map((item) => ({
-              artikulas: item.artikulas,
-              data: item.data,
-              kaina_min: item.kaina,
-              kaina_max: item.kaina,
-              pasitikejimas: item.confidence ?? null,
-            }))
-          );
-        }
       }
 
-      await saveGeneralAnalysis(analysisText, geoText, naftaText);
+      await saveGeneralAnalysis(analysisRawContent || analysisText, geoText, naftaText);
       const freshAnalysis = await fetchGeneralAnalysis();
       setAnalytics(freshAnalysis);
 
@@ -2197,7 +2100,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   const naftaDisplay = streamNafta || analytics?.nafta || '';
   const geoDisplay = streamGeo || analytics?.geoevents || '';
-  const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : (analytics?.content || ''));
+  const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : getAnalysisMarkdownForDisplay(analytics?.content || ''));
   const lastUpdated = analytics?.sukurta_at ?? null;
   const sharedGenerationActive = Boolean(sharedAnalysisLock);
   const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';

@@ -56,7 +56,6 @@ import {
 import { appLogger } from '../lib/appLogger';
 import { createStandartinisProjektas, updateStandartinisProjektas, getStandartinisByConversationId } from '../lib/dokumentaiService';
 import type { AppUser } from '../types';
-import { tools } from '../lib/toolDefinitions';
 import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
 import { OFFER_PARAMETER_DEFINITIONS } from '../lib/offerParametersService';
@@ -218,7 +217,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [aiVarEditLoading, setAiVarEditLoading] = useState(false);
   const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
   const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
-  const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>(tools);
+  const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -242,12 +241,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   useEffect(() => {
     const loadActiveSdkTools = async () => {
       try {
-        // Prefer new dedicated key, fallback to legacy key if still present
+        // Source of truth: Directus instruction_variables (editable by admins)
         const schemaVar = await getInstructionVariable('sdk_chat_tool_schemas')
           || await getInstructionVariable('sdk_tool_schemas');
 
         if (!schemaVar?.content?.trim()) {
-          setActiveSdkTools(tools);
+          setActiveSdkTools([]);
+          addNotification('error', 'SDK schema', 'Nerasta sdk_chat_tool_schemas Directus lentelėje instruction_variables.');
           return;
         }
 
@@ -255,13 +255,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (!Array.isArray(parsed)) throw new Error('Schema config must be an array');
         setActiveSdkTools(parsed as Anthropic.Tool[]);
       } catch (error) {
-        console.error('[SDK Tools] Failed to load schema. Falling back to defaults.', error);
-        setActiveSdkTools(tools);
+        console.error('[SDK Tools] Failed to load schema from Directus.', error);
+        setActiveSdkTools([]);
+        addNotification('error', 'SDK schema', 'Nepavyko užkrauti SDK schemos iš Directus. Patikrinkite JSON formatą.');
       }
     };
 
     loadActiveSdkTools();
-  }, []);
+  }, [addNotification]);
 
   // Re-hydrate current global template pointer when opening viewers/panels.
   // This avoids stale "null" state in long-lived sessions after template updates.
