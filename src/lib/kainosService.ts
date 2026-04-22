@@ -3,7 +3,6 @@
 //   medziagos                    – materials catalogue (artikulas PK, pavadinimas, vienetas, sukurta_at)
 //   medziagos_kainu_istorija     – price history       (id PK auto, artikulas, data, kaina_min, kaina_max, pastabos, sukurta_at)
 //   medziagos_prognoze_internetas – AI web analysis    (artikulas PK, content, geoevents, nafta, sukurta_at)
-//   medziagos_kainu_prognozes     – shared forecasts    (id PK auto, artikulas, data, kaina_min, kaina_max, pasitikejimas, sukurta_at)
 
 import { db } from './database';
 
@@ -43,16 +42,6 @@ export interface AnalysisGenerationLock {
   startedBy: string;
   step?: 'idle' | 'nafta' | 'geo' | 'analysis';
   sections: Array<'nafta' | 'geo' | 'analysis'>;
-}
-
-export interface KainuPrognoze {
-  id: number;
-  artikulas: string;
-  data: string;
-  kaina_min: number;
-  kaina_max: number;
-  pasitikejimas: number | null;
-  sukurta_at: string;
 }
 
 /** Computed prediction (not stored in DB — calculated on-the-fly). */
@@ -416,50 +405,6 @@ export async function releaseAnalysisGenerationLock(runId?: string): Promise<voi
     .from('medziagos_prognoze_internetas')
     .delete()
     .eq('artikulas', ANALYSIS_LOCK_ARTIKULAS);
-}
-
-const PROGNOZES_FIELDS = 'id,artikulas,data,kaina_min,kaina_max,pasitikejimas,sukurta_at';
-
-export async function fetchLatestMaterialForecasts(): Promise<KainuPrognoze[]> {
-  const { data, error } = await db
-    .from('medziagos_kainu_prognozes')
-    .select(PROGNOZES_FIELDS)
-    .order('sukurta_at', { ascending: false })
-    .limit(-1);
-
-  if (error) throw error;
-  const rows = (data || []) as KainuPrognoze[];
-  if (rows.length === 0) return [];
-  const latestBatchTs = rows[0].sukurta_at;
-  return rows.filter((row) => row.sukurta_at === latestBatchTs);
-}
-
-export async function saveMaterialForecasts(
-  forecasts: Array<{ artikulas: string; data: string; kaina_min: number; kaina_max: number; pasitikejimas?: number | null }>
-): Promise<void> {
-  if (!forecasts.length) return;
-
-  const now = new Date().toISOString();
-  for (const f of forecasts) {
-    const { error: deleteError } = await db
-      .from('medziagos_kainu_prognozes')
-      .delete()
-      .eq('artikulas', f.artikulas)
-      .eq('data', f.data);
-    if (deleteError) throw deleteError;
-
-    const { error } = await db
-      .from('medziagos_kainu_prognozes')
-      .insert({
-        artikulas: f.artikulas,
-        data: f.data,
-        kaina_min: f.kaina_min,
-        kaina_max: f.kaina_max,
-        pasitikejimas: f.pasitikejimas ?? null,
-        sukurta_at: now,
-      });
-    if (error) throw error;
-  }
 }
 
 // ---------------------------------------------------------------------------
