@@ -44,6 +44,7 @@ interface ToolSchemaCandidate {
   description?: unknown;
   input_schema?: unknown;
   allowed_callers?: unknown;
+  max_uses?: unknown;
 }
 
 const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
@@ -54,6 +55,8 @@ const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
 
 const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices', 'materialList']);
 const inFlightAnalyses = new Set<InternetAnalysisId>();
+const WEB_SEARCH_MAX_USES_DEFAULT = 1;
+const WEB_SEARCH_MAX_USES_LIMIT = 3;
 
 interface PriceHistoryRowLite {
   artikulas: string;
@@ -268,9 +271,23 @@ function validateToolSchemas(
       const normalizedCallers = callers.length > 0 ? callers : ['direct'];
       if (!normalizedCallers.includes('direct')) normalizedCallers.push('direct');
 
+      const rawMaxUses = tool.max_uses;
+      const numericMaxUses =
+        typeof rawMaxUses === 'number' && Number.isFinite(rawMaxUses)
+          ? Math.trunc(rawMaxUses)
+          : WEB_SEARCH_MAX_USES_DEFAULT;
+      if (numericMaxUses < 1 || numericMaxUses > WEB_SEARCH_MAX_USES_LIMIT) {
+        throw new InternetAnalysisConfigError({
+          reason: `Netinkama tool schema (${type}): max_uses turi būti 1-${WEB_SEARCH_MAX_USES_LIMIT}.`,
+          promptContent,
+          toolSchemaContent,
+        });
+      }
+
       validated.push({
         ...(tool as any),
         allowed_callers: normalizedCallers,
+        max_uses: numericMaxUses,
       } as Anthropic.Tool);
       continue;
     }
@@ -339,28 +356,28 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
   }
   inFlightAnalyses.add(analysisId);
 
-  const promptVar = await getInstructionVariable(PROMPT_KEYS[analysisId]);
-  const toolsVar = await getInstructionVariable('kainos_ai_tool_schemas');
-  const promptContent = promptVar?.content ?? '';
-  const toolSchemaContent = toolsVar?.content ?? '';
-  const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
-  const tools = await getDynamicTools(promptContent, toolSchemaContent);
-  const apiKey = String(import.meta.env.VITE_ANTHROPIC_API_KEY || '').trim();
-  if (!apiKey) {
-    throw new InternetAnalysisConfigError({
-      reason: 'Nerastas ANTHROPIC API raktas. Netlify aplinkoje nustatykite VITE_ANTHROPIC_API_KEY.',
-      promptContent,
-      toolSchemaContent,
-      resolvedPrompt: prompt,
-    });
-  }
-
-  const client = new Anthropic({
-    apiKey,
-    dangerouslyAllowBrowser: true,
-  });
-
   try {
+    const promptVar = await getInstructionVariable(PROMPT_KEYS[analysisId]);
+    const toolsVar = await getInstructionVariable('kainos_ai_tool_schemas');
+    const promptContent = promptVar?.content ?? '';
+    const toolSchemaContent = toolsVar?.content ?? '';
+    const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
+    const tools = await getDynamicTools(promptContent, toolSchemaContent);
+    const apiKey = String(import.meta.env.VITE_ANTHROPIC_API_KEY || '').trim();
+    if (!apiKey) {
+      throw new InternetAnalysisConfigError({
+        reason: 'Nerastas ANTHROPIC API raktas. Netlify aplinkoje nustatykite VITE_ANTHROPIC_API_KEY.',
+        promptContent,
+        toolSchemaContent,
+        resolvedPrompt: prompt,
+      });
+    }
+
+    const client = new Anthropic({
+      apiKey,
+      dangerouslyAllowBrowser: true,
+    });
+
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
