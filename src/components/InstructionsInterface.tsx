@@ -38,6 +38,8 @@ import {
   fetchGeneralAnalysis,
   formatPrice,
 } from '../lib/kainosService';
+import NotificationContainer from './NotificationContainer';
+import { useNotifications } from './sdk/useNotifications';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
@@ -170,6 +172,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [editorPasswordError, setEditorPasswordError] = useState('');
   const [unlockingEditor, setUnlockingEditor] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const { notifications, addNotification, addErrorNotification, removeNotification } = useNotifications();
 
   const selectedVariable = variables[selectedIndex] || null;
 
@@ -206,13 +209,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   }, [selectedIndex, variables]);
 
-  const loadVariables = async () => {
+  const loadVariables = async (preferredVariableKey?: string | null) => {
     try {
       setLoading(true);
       const data = await getInstructionVariables();
       const chatOnly = data.filter((variable) => variable.variable_key.startsWith('chat'));
       setVariables(chatOnly);
-      setSelectedIndex(0);
+      setSelectedIndex((currentIndex) => {
+        const currentKey = variables[currentIndex]?.variable_key ?? null;
+        const targetKey = preferredVariableKey ?? currentKey;
+        if (!targetKey) return 0;
+        const targetIndex = chatOnly.findIndex((variable) => variable.variable_key === targetKey);
+        return targetIndex >= 0 ? targetIndex : 0;
+      });
     } catch (err: any) {
       setError('Nepavyko įkelti instrukcijų');
       console.error(err);
@@ -263,15 +272,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
       if (result.success) {
         setSuccess('Išsaugota!');
+        addNotification('success', 'Išsaugota', 'Instrukcija sėkmingai atnaujinta.');
         setTimeout(() => setSuccess(null), 3000);
         setIsEditing(false);
         setIsAuthenticated(false);
-        await loadVariables();
+        await loadVariables(selectedVariable.variable_key);
       } else {
-        setError(result.error || 'Nepavyko išsaugoti');
+        const saveError = result.error || 'Nepavyko išsaugoti';
+        setError(saveError);
+        addNotification('error', 'Klaida', saveError);
       }
     } catch (err: any) {
       setError(err.message || 'Klaida saugant instrukciją');
+      addErrorNotification('Klaida', err, 'Nepavyko išsaugoti instrukcijos');
     } finally {
       setSaving(false);
     }
@@ -288,14 +301,18 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
       if (result.success) {
         setSuccess('Versija grąžinta!');
+        addNotification('success', 'Versija grąžinta', `Atstatyta versija #${versionNumber}.`);
         setTimeout(() => setSuccess(null), 3000);
         await loadVariables();
         await loadVersions();
       } else {
-        setError(result.error || 'Nepavyko grąžinti versijos');
+        const revertError = result.error || 'Nepavyko grąžinti versijos';
+        setError(revertError);
+        addNotification('error', 'Klaida', revertError);
       }
     } catch (err: any) {
       setError(err.message);
+      addErrorNotification('Klaida', err, 'Nepavyko grąžinti versijos');
     } finally {
       setRevertingVersion(null);
     }
@@ -829,28 +846,29 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       border: `1px solid ${colors.border.default}`,
                       borderRadius: '8px',
                       lineHeight: '1.75',
+                      boxSizing: 'border-box',
                       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
                     }}
                     onFocus={(e) => {
                       e.target.style.background = colors.bg.white;
-                      e.target.style.border = `2px solid ${colors.interactive.accent}`;
+                      e.target.style.boxShadow = `0 0 0 2px ${colors.interactive.accent}33`;
                     }}
                     onBlur={(e) => {
                       e.target.style.background = colors.bg.secondary;
-                      e.target.style.border = `1px solid ${colors.border.default}`;
+                      e.target.style.boxShadow = 'none';
                     }}
                     placeholder="Įveskite instrukcijos turinį..."
                     autoFocus
                   />
                 ) : (
-                  <div className="prose prose-sm max-w-none">
+                  <div className="max-w-none">
                     {selectedVariable.content ? (
                       <pre
-                        className="whitespace-pre-wrap text-sm p-6 rounded-lg"
+                        className="whitespace-pre-wrap text-sm p-4 rounded-lg min-h-[500px] m-0"
                         style={{
                           color: colors.text.secondary,
                           background: colors.bg.secondary,
-                          border: `1px solid ${colors.border.light}`,
+                          border: `1px solid ${colors.border.default}`,
                           lineHeight: '1.75',
                           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
                         }}
@@ -1104,6 +1122,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         </div>
       )}
+      <NotificationContainer notifications={notifications} onRemove={removeNotification} />
     </div>
   );
 }
