@@ -55,7 +55,7 @@ const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
 
 const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices', 'materialList']);
 const inFlightAnalyses = new Set<InternetAnalysisId>();
-const WEB_SEARCH_MAX_USES_DEFAULT = 1;
+const WEB_SEARCH_MAX_USES_DEFAULT = 3;
 const WEB_SEARCH_MAX_USES_LIMIT = 3;
 
 interface PriceHistoryRowLite {
@@ -276,18 +276,19 @@ function validateToolSchemas(
         typeof rawMaxUses === 'number' && Number.isFinite(rawMaxUses)
           ? Math.trunc(rawMaxUses)
           : WEB_SEARCH_MAX_USES_DEFAULT;
-      if (numericMaxUses < 1 || numericMaxUses > WEB_SEARCH_MAX_USES_LIMIT) {
+      if (numericMaxUses < 1) {
         throw new InternetAnalysisConfigError({
-          reason: `Netinkama tool schema (${type}): max_uses turi būti 1-${WEB_SEARCH_MAX_USES_LIMIT}.`,
+          reason: `Netinkama tool schema (${type}): max_uses turi būti bent 1.`,
           promptContent,
           toolSchemaContent,
         });
       }
+      const normalizedMaxUses = Math.min(numericMaxUses, WEB_SEARCH_MAX_USES_LIMIT);
 
       validated.push({
         ...(tool as any),
         allowed_callers: normalizedCallers,
-        max_uses: numericMaxUses,
+        max_uses: normalizedMaxUses,
       } as Anthropic.Tool);
       continue;
     }
