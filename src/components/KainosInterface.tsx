@@ -358,7 +358,6 @@ interface AiPrediction {
   kaina: number;
   data: string;
   reasoning: string;
-  confidence?: number;
   currentPrice?: number;
   oilImpactPercent?: number;
   oilCurrentPrice?: number;
@@ -522,8 +521,6 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
     const artikulas = resolveArtikulas(rawCode);
     if (!artikulas) return [];
 
-    const confidenceRaw = coerceFiniteNumber(item?.confidence);
-    const confidence = confidenceRaw === null ? undefined : Math.max(0, Math.min(100, confidenceRaw));
     const reasoning = typeof item?.reasoning === 'string'
       ? item.reasoning
       : 'Prognozė pagal naftos ir geopolitinį kontekstą.';
@@ -538,7 +535,6 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
           kaina: coerceFiniteNumber(p?.price),
           data: normalizeIsoDate(p?.date, fallbackDate),
           reasoning,
-          confidence,
         }))
         .filter((p: any) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
       if (normalizedPoints.length > 0) return normalizedPoints;
@@ -550,7 +546,6 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
       kaina,
       data,
       reasoning,
-      confidence,
     }];
   };
 
@@ -602,7 +597,6 @@ function parseForecastsFromMarkdownTable(text: string, medziagas: Medžiaga[], f
       kaina,
       data: fallbackDate,
       reasoning: 'Prognozė išgauta iš markdown lentelės.',
-      confidence: undefined,
     });
     seen.add(artikulas);
   }
@@ -654,25 +648,9 @@ function parseForecastsFromNarrativeText(text: string, medziagas: Medžiaga[], f
       kaina,
       data: fallbackDate,
       reasoning: 'Prognozė išgauta iš naratyvinio teksto fallback.',
-      confidence: undefined,
     });
   }
   return predictions;
-}
-
-function sanitizePredictionAgainstHistory(aiPred: AiPrediction, lastActualPrice: number): AiPrediction {
-  const MAX_CHANGE_PERCENT = 35;
-  const max = lastActualPrice * (1 + MAX_CHANGE_PERCENT / 100);
-  const min = lastActualPrice * (1 - MAX_CHANGE_PERCENT / 100);
-  const boundedPrice = Math.min(max, Math.max(min, aiPred.kaina));
-  if (boundedPrice === aiPred.kaina) return aiPred;
-
-  return {
-    ...aiPred,
-    kaina: boundedPrice,
-    reasoning: `${aiPred.reasoning} Prognozė apribota saugumo riba ±${MAX_CHANGE_PERCENT}% nuo paskutinės kainos.`,
-    confidence: Math.min(100, Math.max(0, (aiPred.confidence ?? 70) - 10)),
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1158,16 +1136,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         return;
       }
 
-      const normalizedPredictions = loaded;
-
-      const sanitized = normalizedPredictions.map(pred => {
-        const historyEntries = istorija
-          .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
-          .sort((a, b) => b.data.localeCompare(a.data));
-        const lastActual = historyEntries[0]?.kaina_min;
-        return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
-      });
-      setAiPredictions(sanitized);
+      setAiPredictions(loaded);
       setAiResponseCitations([]);
     } catch (err: any) {
       console.error('AI prediction error:', err);
@@ -1439,9 +1408,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
                   AI taškai: {aiPredSeries.length} ({aiPredSeries[0].data} → {aiPredSeries[aiPredSeries.length - 1].data})
                   {' · '}
                   {aiPredSeries[aiPredSeries.length - 1].kaina.toFixed(2)} {material.vienetas}
-                  {typeof aiPredSeries[0].confidence === 'number' && (
-                    <span className="ml-1 opacity-70">(~{Math.round(aiPredSeries[0].confidence)}%)</span>
-                  )}
                 </span>
               )}
               {diffAbs !== null && diffPct !== null && (
@@ -1859,14 +1825,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           debugState.missingForecastCodes = missing.map((m) => m.artikulas);
           addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta).`);
         }
-
-        const sanitized = mergedForecasts.map((pred) => {
-          const historyEntries = hist
-            .filter(e => e.artikulas === pred.artikulas && e.kaina_min != null)
-            .sort((a, b) => b.data.localeCompare(a.data));
-          const lastActual = historyEntries[0]?.kaina_min;
-          return Number.isFinite(lastActual) ? sanitizePredictionAgainstHistory(pred, Number(lastActual)) : pred;
-        });
 
         setStreamAnalysis(analysisText);
         setAnalysisMeta((prev) => ({
