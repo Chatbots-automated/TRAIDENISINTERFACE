@@ -144,7 +144,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [versions, setVersions] = useState<InstructionVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
@@ -271,9 +270,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       );
 
       if (result.success) {
-        setSuccess('Išsaugota!');
         addNotification('success', 'Išsaugota', 'Instrukcija sėkmingai atnaujinta.');
-        setTimeout(() => setSuccess(null), 3000);
         setIsEditing(false);
         setIsAuthenticated(false);
         await loadVariables(selectedVariable.variable_key);
@@ -300,9 +297,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const result = await revertToVersion(versionNumber, user.id, user.email);
 
       if (result.success) {
-        setSuccess('Versija grąžinta!');
         addNotification('success', 'Versija grąžinta', `Atstatyta versija #${versionNumber}.`);
-        setTimeout(() => setSuccess(null), 3000);
         await loadVariables();
         await loadVersions();
       } else {
@@ -822,12 +817,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   <AlertCircle className="w-4 h-4" />
                   <span className="flex-1">{error}</span>
                   <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100 transition-opacity"><X className="w-4 h-4" /></button>
-                </div>
-              )}
-              {success && (
-                <div className="alert alert-soft alert-success mt-4 text-sm">
-                  <Check className="w-4 h-4" />
-                  <span>{success}</span>
                 </div>
               )}
             </div>
