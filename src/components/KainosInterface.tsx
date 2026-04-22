@@ -1546,6 +1546,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
+  const [runningSections, setRunningSections] = useState<Record<'nafta' | 'geo' | 'analysis', boolean>>({
+    nafta: false,
+    geo: false,
+    analysis: false,
+  });
   const [internetAnalyses, setInternetAnalyses] = useState<Record<InternetAnalysisId, InternetAnalysisRecord | null>>({
     nafta: null,
     politika: null,
@@ -1611,7 +1616,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   }, []);
 
   // ---- internet analysis (single request per action) ----
-  const loadInternetAnalysisState = useCallback(async () => {
+  const loadInternetAnalysisState = useCallback(async (notifyOnError: boolean = false) => {
     try {
       const rows = await fetchInternetAnalyses();
       setInternetAnalyses({
@@ -1620,7 +1625,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         kainos: rows.find((r) => r.id === 'kainos') || null,
       });
     } catch (error) {
-      console.warn('Nepavyko įkelti internet analizės būsenos:', error);
+      if (notifyOnError) {
+        addNotif('error', 'Klaida', error instanceof Error ? error.message : 'Nepavyko įkelti analizės būsenos.');
+      }
     }
   }, []);
 
@@ -1631,21 +1638,23 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   }, [loadInternetAnalysisState]);
 
   const generateSingleAnalysis = useCallback(async (section: 'nafta' | 'geo' | 'analysis') => {
-    if (genLoading) return;
+    if (genLoading || runningSections[section]) return;
     setGenLoading(true);
     setGenStep(section);
+    setRunningSections((prev) => ({ ...prev, [section]: true }));
     try {
       const targetId: InternetAnalysisId = section === 'nafta' ? 'nafta' : section === 'geo' ? 'politika' : 'kainos';
       await runInternetAnalysis(targetId);
-      await loadInternetAnalysisState();
+      await loadInternetAnalysisState(true);
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
       addNotif('error', 'Klaida', err?.message || 'Nepavyko sugeneruoti analizės');
     } finally {
       setGenLoading(false);
       setGenStep('idle');
+      setRunningSections((prev) => ({ ...prev, [section]: false }));
     }
-  }, [genLoading, loadInternetAnalysisState]);
+  }, [genLoading, loadInternetAnalysisState, runningSections]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
