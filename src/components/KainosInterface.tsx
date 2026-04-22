@@ -58,6 +58,11 @@ function truncatePromptSection(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
 }
 
+function estimateTokens(text: string): number {
+  // Practical approximation for mixed LT/EN prompts.
+  return Math.ceil((text || '').length / 4);
+}
+
 function formatLatestPricesForPrompt(meds: Medžiaga[], hist: KainuIrašas[]): string {
   if (!meds.length || !hist.length) return 'Nėra kainų duomenų.';
   return meds
@@ -1726,17 +1731,24 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     });
     const { nafta: oilPromptTemplate, geo: geoPromptTemplate, analysis: analysisPromptTemplate } = await fetchAnalyticsPromptTemplates();
     const today = new Date().toISOString().split('T')[0];
-    const kainosToolSchemas = await fetchKainosToolSchemas();
-    if (kainosToolSchemas.length === 0) {
+    const shouldUseTools = targetSections.has('nafta') || targetSections.has('geo');
+    const kainosToolSchemas = shouldUseTools ? await fetchKainosToolSchemas() : [];
+    if (shouldUseTools && kainosToolSchemas.length === 0) {
       addNotif('info', 'Kainos schema', 'kainos_ai_tool_schemas nėra užpildyta Directus. Analizė vykdoma be papildomų SDK įrankių.');
     }
-    const runStepRequest = (params: { user: string; maxTokens: number; }): Promise<ExtractedResponseText> =>
-      runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, kainosToolSchemas).then((result) => ({
+    const runStepRequest = (params: { user: string; maxTokens: number; withTools?: boolean; step: AnalysisSectionKey; }): Promise<ExtractedResponseText> => {
+      const promptTokens = estimateTokens(params.user);
+      if (promptTokens > 5000) {
+        addNotif('info', 'Didelis promptas', `${params.step}: ~${promptTokens} įvesties tokenų. Tai gali kelti 429 limitą.`);
+      }
+      const effectiveTools = params.withTools ? kainosToolSchemas : [];
+      return runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, effectiveTools).then((result) => ({
         text: result.text.trim(),
         citations: result.citations,
         stopReasons: result.stopReason ? [result.stopReason] : [],
         hitTokenLimit: result.stopReason === 'max_tokens',
       }));
+    };
 
     const debugState: AnalysisDebugState = {
       lastRunAt: new Date().toISOString(),
@@ -1772,7 +1784,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
         await setGenerationStep('nafta');
         const naftaResult = await runStepRequest({
-          maxTokens: 700,
+          step: 'nafta',
+          maxTokens: 500,
+          withTools: true,
           user: applyPrompt('Naftos prompt', oilPromptTemplate, { today }),
         });
         naftaText = naftaResult.text;
@@ -1788,7 +1802,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         // -- Step 2: Geopolitical events --
         await setGenerationStep('geo');
         const geoResult = await runStepRequest({
-          maxTokens: 550,
+          step: 'geo',
+          maxTokens: 450,
+          withTools: true,
           user: applyPrompt('Geopolitikos prompt', geoPromptTemplate, { today }),
         });
         geoText = geoResult.text;
@@ -1812,7 +1828,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         const materialList = meds.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n');
 
         const analysisResult = await runStepRequest({
-          maxTokens: 1800,
+          step: 'analysis',
+          maxTokens: 900,
+          withTools: false,
           user: applyPrompt('Medžiagų prognozės prompt', analysisPromptTemplate, {
             today,
             materialList,
