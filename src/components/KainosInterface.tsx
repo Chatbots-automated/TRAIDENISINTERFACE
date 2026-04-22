@@ -405,27 +405,77 @@ function getAnalysisMarkdownForDisplay(content: string): string {
 function extractJsonPayload(text: string): unknown {
   const stripped = text
     .replace(/```json/gi, '```')
-    .replace(/```/g, '')
     .trim();
 
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    // fallback to broad block extraction for partially wrapped responses
+  const jsonBlocks = Array.from(stripped.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi))
+    .map((m) => (m[1] || '').trim())
+    .filter(Boolean);
+
+  const candidates = [
+    stripped.replace(/```/g, '').trim(),
+    ...jsonBlocks,
+  ].filter(Boolean);
+
+  const tryParse = (raw: string): unknown | null => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  for (const candidate of candidates) {
+    const parsed = tryParse(candidate);
+    if (parsed !== null) return parsed;
+  }
+
+  const forecastsIdx = stripped.search(/"forecasts"\s*:/i);
+  if (forecastsIdx >= 0) {
+    const objectStart = stripped.lastIndexOf('{', forecastsIdx);
+    if (objectStart >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = objectStart; i < stripped.length; i += 1) {
+        const ch = stripped[i];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (ch === '\\') {
+            escaped = true;
+          } else if (ch === '"') {
+            inString = false;
+          }
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === '{') depth += 1;
+        if (ch === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            const chunk = stripped.slice(objectStart, i + 1);
+            const parsed = tryParse(chunk);
+            if (parsed !== null) return parsed;
+            break;
+          }
+        }
+      }
+    }
   }
 
   const objectMatch = stripped.match(/\{[\s\S]*\}/);
   if (objectMatch) {
-    try {
-      return JSON.parse(objectMatch[0]);
-    } catch {
-      // continue
-    }
+    const parsed = tryParse(objectMatch[0]);
+    if (parsed !== null) return parsed;
   }
 
   const arrayMatch = stripped.match(/\[[\s\S]*\]/);
   if (arrayMatch) {
-    return JSON.parse(arrayMatch[0]);
+    const parsed = tryParse(arrayMatch[0]);
+    if (parsed !== null) return parsed;
   }
 
   throw new Error('AI negrąžino atpažįstamo JSON');
@@ -1036,7 +1086,7 @@ function SablonaiTab() {
 }
 
 
-function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analytics: PrognozėInternetas | null; onError?: (msg: string) => void }) {
+function GrafaTab({ medziagas, istorija, analysisContent, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analysisContent: string; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
   const [aiToggle, setAiToggle] = useState(false);
@@ -1060,9 +1110,9 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
-      // Primary source of truth: Directus medziagos_prognoze_internetas.content (3-step JSON payload).
+      // Primary source of truth: third-step analysis content from medziagos_analize_internetas (id = "kainos").
       const fallbackDate = addMonthsISO(new Date().toISOString().slice(0, 10), 3);
-      const rawContent = analytics?.content || '';
+      const rawContent = analysisContent || '';
       let loaded: AiPrediction[] = [];
       if (rawContent.trim()) {
         try {
@@ -1073,8 +1123,18 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         }
       }
 
+      if (loaded.length === 0 && rawContent.trim()) {
+        const fromMarkdown = parseForecastsFromMarkdownTable(rawContent, medziagas, fallbackDate);
+        const fromNarrative = parseForecastsFromNarrativeText(rawContent, medziagas, fallbackDate);
+        const deduped = new Map<string, AiPrediction>();
+        for (const pred of [...fromMarkdown, ...fromNarrative]) {
+          deduped.set(`${pred.artikulas}|${pred.data}`, pred);
+        }
+        loaded = Array.from(deduped.values());
+      }
+
       if (loaded.length === 0) {
-        onError?.('Nerasta validžių AI prognozių medziagos_prognoze_internetas.content lauke.');
+        onError?.('Nerasta validžių AI prognozių tarp 3-ios analizės JSON/teksto duomenų.');
         setAiToggle(false);
         return;
       }
@@ -1088,7 +1148,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, onError, analytics]);
+  }, [aiLoading, medziagas, istorija, onError, analysisContent]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
@@ -2074,7 +2134,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <SablonaiTab />
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
-          <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
+          <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="space-y-5">
