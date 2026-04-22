@@ -492,15 +492,25 @@ function extractJsonPayload(text: string): unknown {
 }
 
 function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
-  const byCode = new Map(medziagas.map(m => [m.artikulas.toLowerCase(), m.artikulas]));
+  const byCode = new Map(medziagas.map((m) => [m.artikulas.toLowerCase(), m.artikulas]));
+  const byCodeNormalized = new Map(medziagas.map((m) => [normalizeName(m.artikulas), m.artikulas]));
+  const byNameNormalized = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
 
   const toPredictions = (item: any): AiPrediction[] => {
     if (!item || typeof item !== 'object') return [];
     const rawCode = typeof item?.artikulas === 'string'
       ? item.artikulas.trim()
-      : (typeof item?.material === 'string' ? item.material.trim() : '');
+      : (typeof item?.material === 'string'
+        ? item.material.trim()
+        : (typeof item?.material_code === 'string'
+          ? item.material_code.trim()
+          : (typeof item?.name === 'string' ? item.name.trim() : '')));
     if (!rawCode) return [];
-    const artikulas = byCode.get(rawCode.toLowerCase()) || null;
+    const normalizedRaw = normalizeName(rawCode);
+    const artikulas = byCode.get(rawCode.toLowerCase())
+      || byCodeNormalized.get(normalizedRaw)
+      || byNameNormalized.get(normalizedRaw)
+      || null;
     if (!artikulas) return [];
 
     const confidenceRaw = coerceFiniteNumber(item?.confidence);
