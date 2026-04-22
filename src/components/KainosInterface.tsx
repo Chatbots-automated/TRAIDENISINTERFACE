@@ -501,30 +501,41 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
 
   const toPredictions = (item: any): AiPrediction[] => {
     if (!item || typeof item !== 'object') return [];
-    const rawCode = typeof item?.artikulas === 'string'
-      ? item.artikulas.trim()
-      : (typeof item?.material === 'string'
-        ? item.material.trim()
-        : (typeof item?.material_code === 'string'
-          ? item.material_code.trim()
-          : (typeof item?.name === 'string' ? item.name.trim() : '')));
-    if (!rawCode) return [];
-    const artikulas = resolveArtikulas(rawCode);
+
+    const sourceFields = [item?.artikulas, item?.material, item?.material_code, item?.name]
+      .filter((v: unknown): v is string => typeof v === 'string')
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    const candidateCodes = new Set<string>();
+    for (const source of sourceFields) {
+      candidateCodes.add(source);
+      const beforePipe = source.split('|')[0]?.trim();
+      if (beforePipe) candidateCodes.add(beforePipe);
+      const bracketCode = source.match(/\[([A-Za-z0-9-]+)\]/)?.[1]?.trim();
+      if (bracketCode) candidateCodes.add(bracketCode);
+      const leadingCode = source.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\b/)?.[1]?.trim();
+      if (leadingCode) candidateCodes.add(leadingCode);
+    }
+
+    const artikulas = Array.from(candidateCodes)
+      .map((candidate) => resolveArtikulas(candidate))
+      .find((resolved): resolved is string => Boolean(resolved)) || null;
     if (!artikulas) return [];
 
     const reasoning = typeof item?.reasoning === 'string'
       ? item.reasoning
       : 'Prognozė pagal naftos ir geopolitinį kontekstą.';
 
-    let kaina = coerceFiniteNumber(item?.kaina);
-    let data = normalizeIsoDate(item?.data, fallbackDate);
+    let kaina = coerceFiniteNumber(item?.kaina ?? item?.price ?? item?.value);
+    let data = normalizeIsoDate(item?.data ?? item?.date, fallbackDate);
 
     if (Array.isArray(item?.points)) {
       const normalizedPoints: AiPrediction[] = item.points
         .map((p: any) => ({
           artikulas,
-          kaina: coerceFiniteNumber(p?.price),
-          data: normalizeIsoDate(p?.date, fallbackDate),
+          kaina: coerceFiniteNumber(p?.price ?? p?.kaina ?? p?.value),
+          data: normalizeIsoDate(p?.date ?? p?.data, fallbackDate),
           reasoning,
         }))
         .filter((p: any) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
