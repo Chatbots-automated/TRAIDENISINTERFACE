@@ -495,6 +495,19 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
   const byCode = new Map(medziagas.map((m) => [m.artikulas.toLowerCase(), m.artikulas]));
   const byCodeNormalized = new Map(medziagas.map((m) => [normalizeName(m.artikulas), m.artikulas]));
   const byNameNormalized = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
+  const normalizedCodeEntries = medziagas.map((m) => ({ normalized: normalizeName(m.artikulas), artikulas: m.artikulas }));
+
+  const resolveArtikulas = (rawCode: string): string | null => {
+    const normalizedRaw = normalizeName(rawCode);
+    return byCode.get(rawCode.toLowerCase())
+      || byCodeNormalized.get(normalizedRaw)
+      || byNameNormalized.get(normalizedRaw)
+      // Fallback for prefixed/suffixed codes in AI payloads (e.g. "MAT-101-1", "101-1 resin")
+      || normalizedCodeEntries.find((entry) => (
+        normalizedRaw.includes(entry.normalized) || entry.normalized.includes(normalizedRaw)
+      ))?.artikulas
+      || null;
+  };
 
   const toPredictions = (item: any): AiPrediction[] => {
     if (!item || typeof item !== 'object') return [];
@@ -506,11 +519,7 @@ function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fa
           ? item.material_code.trim()
           : (typeof item?.name === 'string' ? item.name.trim() : '')));
     if (!rawCode) return [];
-    const normalizedRaw = normalizeName(rawCode);
-    const artikulas = byCode.get(rawCode.toLowerCase())
-      || byCodeNormalized.get(normalizedRaw)
-      || byNameNormalized.get(normalizedRaw)
-      || null;
+    const artikulas = resolveArtikulas(rawCode);
     if (!artikulas) return [];
 
     const confidenceRaw = coerceFiniteNumber(item?.confidence);
@@ -1173,7 +1182,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
       fetchAiPredictions();
     }
-  }, [aiToggle]);
+  }, [aiToggle, aiPredictions.length, aiLoading, fetchAiPredictions]);
 
   // Group history by artikulas
   const byArt = useMemo(() => {
