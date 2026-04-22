@@ -51,8 +51,44 @@ const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
   kainos: 'kainos_ai_prediction_prompt',
 };
 
-const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical']);
+const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices']);
 const inFlightAnalyses = new Set<InternetAnalysisId>();
+
+interface PriceHistoryRowLite {
+  artikulas: string;
+  kaina_min: number | null;
+  kaina_max: number | null;
+  data: string;
+}
+
+export function buildLatestPricesSummary(rows: PriceHistoryRowLite[]): string {
+  if (!rows.length) return 'Nėra kainų duomenų.';
+
+  const byArt = new Map<string, PriceHistoryRowLite[]>();
+  for (const row of rows) {
+    if (!row.artikulas) continue;
+    if (!byArt.has(row.artikulas)) byArt.set(row.artikulas, []);
+    byArt.get(row.artikulas)!.push(row);
+  }
+
+  const lines: string[] = [];
+  for (const [artikulas, artRows] of Array.from(byArt.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
+    const latestDate = artRows.reduce((max, r) => (r.data > max ? r.data : max), '');
+    const latestRows = artRows.filter((r) => r.data === latestDate);
+
+    const mins = latestRows.map((r) => Number(r.kaina_min)).filter((v) => Number.isFinite(v));
+    const maxs = latestRows.map((r) => Number(r.kaina_max)).filter((v) => Number.isFinite(v));
+
+    const avgMin = mins.length > 0 ? mins.reduce((a, b) => a + b, 0) / mins.length : null;
+    const avgMax = maxs.length > 0 ? maxs.reduce((a, b) => a + b, 0) / maxs.length : null;
+
+    const minText = avgMin != null ? `kaina_min=${avgMin.toFixed(4)}` : 'kaina_min=—';
+    const maxText = avgMax != null ? `kaina_max=${avgMax.toFixed(4)}` : 'kaina_max=—';
+    lines.push(`- ${artikulas}: ${minText}, ${maxText} @ ${latestDate || 'nežinoma data'}`);
+  }
+
+  return lines.length > 0 ? lines.join('\n') : 'Nėra kainų duomenų.';
+}
 
 function extractResponseText(content: unknown): string {
   if (!Array.isArray(content)) return '';
@@ -128,10 +164,21 @@ async function getRuntimePrompt(
     db.from('medziagos_analize_internetas').select('content').eq('id', 'politika').single(),
   ]);
 
+  let latestPrices = '';
+  if (detectedVars.includes('latestPrices')) {
+    const { data: priceRows, error: priceError } = await db
+      .from('medziagos_kainu_istorija')
+      .select('artikulas,kaina_min,kaina_max,data')
+      .limit(-1);
+    if (priceError) throw priceError;
+    latestPrices = buildLatestPricesSummary((priceRows || []) as PriceHistoryRowLite[]);
+  }
+
   const values: Record<string, string> = {
     today: new Date().toISOString().split('T')[0],
     oilAnalysis: typeof oil.data?.content === 'string' ? oil.data.content : '',
     geoPolitical: typeof geo.data?.content === 'string' ? geo.data.content : '',
+    latestPrices,
   };
 
   const resolvedPrompt = interpolateTemplate(template, values);

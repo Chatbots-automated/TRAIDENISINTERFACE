@@ -34,7 +34,7 @@ import { colors } from '../lib/designSystem';
 import { tools as defaultSdkTools } from '../lib/toolDefinitions';
 import NotificationContainer from './NotificationContainer';
 import { useNotifications } from './sdk/useNotifications';
-import { validatePromptVariablesForEditor } from '../lib/internetAnalysisService';
+import { buildLatestPricesSummary, validatePromptVariablesForEditor } from '../lib/internetAnalysisService';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
@@ -64,6 +64,9 @@ NAFTOS ANALIZĖ:
 GEOPOLITINIS KONTEKSTAS:
 {{geoPolitical}}
 
+NAUJAUSIOS MEDŽIAGŲ KAINOS:
+{{latestPrices}}
+
 Atsakykite aiškiai, struktūruotai, lietuvių kalba.`;
 type KainosPromptKey = 'kainos_ai_nafta_prompt' | 'kainos_ai_geo_prompt' | 'kainos_ai_prediction_prompt';
 const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; defaultContent: string }> = {
@@ -79,7 +82,7 @@ const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; def
   },
   kainos_ai_prediction_prompt: {
     label: 'Prognozė',
-    help: 'Placeholderiai: {{today}} {{oilAnalysis}} {{geoPolitical}}',
+    help: 'Placeholderiai: {{today}} {{oilAnalysis}} {{geoPolitical}} {{latestPrices}}',
     defaultContent: DEFAULT_KAINOS_ANALYSIS_PROMPT,
   },
 };
@@ -455,7 +458,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       }
       const invalidVars = validatePromptVariablesForEditor(content);
       if (invalidVars.length > 0) {
-        setPromptError(`Neleistini kintamieji: ${invalidVars.join(', ')}. Leidžiami: {{today}}, {{oilAnalysis}}, {{geoPolitical}}.`);
+        setPromptError(`Neleistini kintamieji: ${invalidVars.join(', ')}. Leidžiami: {{today}}, {{oilAnalysis}}, {{geoPolitical}}, {{latestPrices}}.`);
         addErrorNotification('Prompt klaida', `Neleistini kintamieji: ${invalidVars.join(', ')}`);
         return;
       }
@@ -502,14 +505,19 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         return;
       }
 
-      const [oilAnalysis, geoPolitical] = await Promise.all([
+      const [oilAnalysis, geoPolitical, latestRows] = await Promise.all([
         dbAdmin.from('medziagos_analize_internetas').select('content').eq('id', 'nafta').single(),
         dbAdmin.from('medziagos_analize_internetas').select('content').eq('id', 'politika').single(),
+        dbAdmin.from('medziagos_kainu_istorija').select('artikulas,kaina_min,kaina_max,data').limit(-1),
       ]);
       const vars = {
         today,
         oilAnalysis: truncatePromptSection(String(oilAnalysis.data?.content || ''), 4000),
         geoPolitical: truncatePromptSection(String(geoPolitical.data?.content || ''), 4000),
+        latestPrices: truncatePromptSection(
+          buildLatestPricesSummary((latestRows.data || []) as Array<{ artikulas: string; kaina_min: number | null; kaina_max: number | null; data: string }>),
+          5000
+        ),
       };
       const rendered = injectPromptVars(template, vars);
       setPromptPreviewText(rendered);
