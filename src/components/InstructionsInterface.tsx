@@ -1257,11 +1257,6 @@ function NavButton({
           }}>
             {variable.variable_name}
           </p>
-          {isCommercialBridgeVariable && (
-            <p className="text-[11px] mt-0.5 font-medium" style={{ color: colors.text.tertiary }}>
-              Pagrindinis tiltas į .docx
-            </p>
-          )}
           {!variable.content && (
             <p className="text-xs mt-0.5" style={{ color: colors.status.warningText }}>Tuščia</p>
           )}
