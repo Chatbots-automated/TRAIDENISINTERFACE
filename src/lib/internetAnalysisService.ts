@@ -335,9 +335,18 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
   const toolSchemaContent = toolsVar?.content ?? '';
   const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
   const tools = await getDynamicTools(promptContent, toolSchemaContent);
+  const apiKey = String(import.meta.env.VITE_ANTHROPIC_API_KEY || '').trim();
+  if (!apiKey) {
+    throw new InternetAnalysisConfigError({
+      reason: 'Nerastas ANTHROPIC API raktas. Netlify aplinkoje nustatykite VITE_ANTHROPIC_API_KEY.',
+      promptContent,
+      toolSchemaContent,
+      resolvedPrompt: prompt,
+    });
+  }
 
   const client = new Anthropic({
-    apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
+    apiKey,
     dangerouslyAllowBrowser: true,
   });
 
@@ -379,8 +388,9 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
         status: err.status,
         name: err.name,
         headers: err.headers,
+        message: err.message,
       });
-      throw new Error('Nepavyko gauti DI atsakymo. Patikrinkite API konfigūraciją arba bandykite vėliau.');
+      throw new Error(`Anthropic API klaida (${err.status ?? 'unknown'}): ${err.message || 'Neteisinga užklausa.'}`);
     }
     throw err;
   } finally {
