@@ -11,6 +11,27 @@ export interface InternetAnalysisRecord {
   date_updated: string | null;
 }
 
+export class InternetAnalysisConfigError extends Error {
+  reason: string;
+  promptContent: string;
+  toolSchemaContent: string;
+  resolvedPrompt?: string;
+
+  constructor(params: {
+    reason: string;
+    promptContent: string;
+    toolSchemaContent: string;
+    resolvedPrompt?: string;
+  }) {
+    super(params.reason);
+    this.name = 'InternetAnalysisConfigError';
+    this.reason = params.reason;
+    this.promptContent = params.promptContent;
+    this.toolSchemaContent = params.toolSchemaContent;
+    this.resolvedPrompt = params.resolvedPrompt;
+  }
+}
+
 interface TokenUsage {
   input_tokens?: number;
   output_tokens?: number;
@@ -78,17 +99,28 @@ export async function fetchInternetAnalyses(): Promise<InternetAnalysisRecord[]>
   return (data || []) as InternetAnalysisRecord[];
 }
 
-async function getRuntimePrompt(analysisId: InternetAnalysisId): Promise<string> {
-  const promptVar = await getInstructionVariable(PROMPT_KEYS[analysisId]);
-  const template = promptVar?.content?.trim();
+async function getRuntimePrompt(
+  analysisId: InternetAnalysisId,
+  templateRaw: string,
+  toolSchemaRaw: string
+): Promise<string> {
+  const template = templateRaw.trim();
   if (!template) {
-    throw new Error(`Nerastas promptas: ${PROMPT_KEYS[analysisId]}`);
+    throw new InternetAnalysisConfigError({
+      reason: `Promptas ${PROMPT_KEYS[analysisId]} yra tuščias arba neužpildytas.`,
+      promptContent: templateRaw,
+      toolSchemaContent: toolSchemaRaw,
+    });
   }
 
   const detectedVars = findTemplateVars(template);
   const invalidVars = detectedVars.filter((v) => !ALLOWED_PROMPT_VARS.has(v));
   if (invalidVars.length > 0) {
-    throw new Error(`Prompte naudojami neleistini kintamieji: ${invalidVars.join(', ')}`);
+    throw new InternetAnalysisConfigError({
+      reason: `Prompte naudojami neleistini kintamieji: ${invalidVars.join(', ')}`,
+      promptContent: templateRaw,
+      toolSchemaContent: toolSchemaRaw,
+    });
   }
 
   const [oil, geo] = await Promise.all([
@@ -102,20 +134,36 @@ async function getRuntimePrompt(analysisId: InternetAnalysisId): Promise<string>
     geoPolitical: typeof geo.data?.content === 'string' ? geo.data.content : '',
   };
 
+  const resolvedPrompt = interpolateTemplate(template, values);
+
   // kainos prediction should not run with missing upstream context if prompt needs it.
   if (analysisId === 'kainos') {
     if (detectedVars.includes('oilAnalysis') && !values.oilAnalysis.trim()) {
-      throw new Error('Kainų prognozei trūksta naftos analizės turinio.');
+      throw new InternetAnalysisConfigError({
+        reason: 'Kainų prognozei trūksta naftos analizės turinio.',
+        promptContent: templateRaw,
+        toolSchemaContent: toolSchemaRaw,
+        resolvedPrompt,
+      });
     }
     if (detectedVars.includes('geoPolitical') && !values.geoPolitical.trim()) {
-      throw new Error('Kainų prognozei trūksta geopolitinės analizės turinio.');
+      throw new InternetAnalysisConfigError({
+        reason: 'Kainų prognozei trūksta geopolitinės analizės turinio.',
+        promptContent: templateRaw,
+        toolSchemaContent: toolSchemaRaw,
+        resolvedPrompt,
+      });
     }
   }
 
-  return interpolateTemplate(template, values);
+  return resolvedPrompt;
 }
 
-function validateToolSchemas(tools: unknown[]): Anthropic.Tool[] {
+function validateToolSchemas(
+  tools: unknown[],
+  promptContent: string,
+  toolSchemaContent: string
+): Anthropic.Tool[] {
   const validated: Anthropic.Tool[] = [];
 
   for (const candidate of tools) {
@@ -128,20 +176,40 @@ function validateToolSchemas(tools: unknown[]): Anthropic.Tool[] {
     // Built-in web search tool schema
     if (type) {
       if (!type.startsWith('web_search_')) {
-        throw new Error(`Nepalaikomas tool tipas: ${type}`);
+        throw new InternetAnalysisConfigError({
+          reason: `Nepalaikomas tool tipas: ${type}`,
+          promptContent,
+          toolSchemaContent,
+        });
       }
       if (!name) {
-        throw new Error(`Netinkama tool schema (${type}): trūksta name.`);
+        throw new InternetAnalysisConfigError({
+          reason: `Netinkama tool schema (${type}): trūksta name.`,
+          promptContent,
+          toolSchemaContent,
+        });
       }
       validated.push(tool as Anthropic.Tool);
       continue;
     }
 
     // Custom tool schema
-    if (!name) throw new Error('Netinkama tool schema: trūksta name.');
-    if (!description) throw new Error(`Netinkama tool schema (${name}): trūksta description.`);
+    if (!name) throw new InternetAnalysisConfigError({
+      reason: 'Netinkama tool schema: trūksta name.',
+      promptContent,
+      toolSchemaContent,
+    });
+    if (!description) throw new InternetAnalysisConfigError({
+      reason: `Netinkama tool schema (${name}): trūksta description.`,
+      promptContent,
+      toolSchemaContent,
+    });
     if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) {
-      throw new Error(`Netinkama tool schema (${name}): input_schema turi būti objektas.`);
+      throw new InternetAnalysisConfigError({
+        reason: `Netinkama tool schema (${name}): input_schema turi būti objektas.`,
+        promptContent,
+        toolSchemaContent,
+      });
     }
     validated.push(tool as Anthropic.Tool);
   }
@@ -149,15 +217,30 @@ function validateToolSchemas(tools: unknown[]): Anthropic.Tool[] {
   return validated;
 }
 
-async function getDynamicTools(): Promise<Anthropic.Tool[]> {
-  const toolsVar = await getInstructionVariable('kainos_ai_tool_schemas');
-  if (!toolsVar?.content?.trim()) return [];
-
-  const parsed = JSON.parse(toolsVar.content);
-  if (!Array.isArray(parsed)) {
-    throw new Error('kainos_ai_tool_schemas turi būti JSON masyvas');
+async function getDynamicTools(
+  promptContent: string,
+  toolSchemaRaw: string
+): Promise<Anthropic.Tool[]> {
+  if (!toolSchemaRaw.trim()) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolSchemaRaw);
+  } catch {
+    throw new InternetAnalysisConfigError({
+      reason: 'kainos_ai_tool_schemas nėra validus JSON.',
+      promptContent,
+      toolSchemaContent: toolSchemaRaw,
+    });
   }
-  return validateToolSchemas(parsed);
+
+  if (!Array.isArray(parsed)) {
+    throw new InternetAnalysisConfigError({
+      reason: 'kainos_ai_tool_schemas turi būti JSON masyvas.',
+      promptContent,
+      toolSchemaContent: toolSchemaRaw,
+    });
+  }
+  return validateToolSchemas(parsed, promptContent, toolSchemaRaw);
 }
 
 function getToolResultErrors(content: unknown): string[] {
@@ -174,8 +257,12 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
   }
   inFlightAnalyses.add(analysisId);
 
-  const prompt = await getRuntimePrompt(analysisId);
-  const tools = await getDynamicTools();
+  const promptVar = await getInstructionVariable(PROMPT_KEYS[analysisId]);
+  const toolsVar = await getInstructionVariable('kainos_ai_tool_schemas');
+  const promptContent = promptVar?.content ?? '';
+  const toolSchemaContent = toolsVar?.content ?? '';
+  const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
+  const tools = await getDynamicTools(promptContent, toolSchemaContent);
 
   const client = new Anthropic({
     apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,

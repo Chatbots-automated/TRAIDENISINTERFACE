@@ -28,6 +28,7 @@ import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer
 import { type ExtractedCitation } from '../lib/kainosAnalyticsFramework';
 import {
   fetchInternetAnalyses,
+  InternetAnalysisConfigError,
   parseTokenUsage,
   runInternetAnalysis,
   type InternetAnalysisId,
@@ -1580,6 +1581,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   });
   const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
   const analysisFetchVersionRef = useRef(0);
+  const [configWarning, setConfigWarning] = useState<{
+    reason: string;
+    promptContent: string;
+    toolSchemaContent: string;
+    resolvedPrompt?: string;
+  } | null>(null);
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1651,6 +1658,14 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       await loadInternetAnalysisState(true);
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
+      if (err instanceof InternetAnalysisConfigError) {
+        setConfigWarning({
+          reason: err.reason,
+          promptContent: err.promptContent,
+          toolSchemaContent: err.toolSchemaContent,
+          resolvedPrompt: err.resolvedPrompt,
+        });
+      }
       addNotif('error', 'Klaida', err?.message || 'Nepavyko sugeneruoti analizės');
     } finally {
       setGenLoading(false);
@@ -2331,6 +2346,50 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       {editingIras && (
         <PriceModal medziagas={medziagas} initial={editingIras}
           onSave={handleUpdatePrice} onClose={() => setEditingIras(null)} />
+      )}
+
+      {configWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(15,23,42,0.45)' }}
+          onClick={() => setConfigWarning(null)}>
+          <div
+            className="w-full max-w-3xl bg-white rounded-2xl overflow-hidden"
+            style={{ boxShadow: '0 24px 60px rgba(15,23,42,0.22)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #e2e8f0' }}>
+              <div>
+                <h4 className="text-sm font-semibold" style={{ color: '#0f172a' }}>Konfigūracijos klaida</h4>
+                <p className="text-xs mt-1" style={{ color: '#64748b' }}>{configWarning.reason}</p>
+              </div>
+              <button onClick={() => setConfigWarning(null)} className="p-1.5 rounded hover:bg-slate-100">
+                <X className="w-4 h-4" style={{ color: '#64748b' }} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-auto">
+              <div>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#334155' }}>Prompt content</p>
+                <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#0f172a' }}>
+                  {configWarning.promptContent?.trim() ? configWarning.promptContent : '[Prompt is empty]'}
+                </pre>
+              </div>
+              {configWarning.resolvedPrompt && (
+                <div>
+                  <p className="text-xs font-semibold mb-1" style={{ color: '#334155' }}>Resolved prompt (runtime)</p>
+                  <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#0f172a' }}>
+                    {configWarning.resolvedPrompt}
+                  </pre>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#334155' }}>Tool schema content</p>
+                <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#0f172a' }}>
+                  {configWarning.toolSchemaContent?.trim() ? configWarning.toolSchemaContent : '[Tool schema is empty → analysis runs without tools]'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <NotificationContainer notifications={notifs} onRemove={removeNotif} />
