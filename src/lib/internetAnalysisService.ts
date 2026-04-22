@@ -51,7 +51,7 @@ const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
   kainos: 'kainos_ai_prediction_prompt',
 };
 
-const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices']);
+const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices', 'materialList']);
 const inFlightAnalyses = new Set<InternetAnalysisId>();
 
 interface PriceHistoryRowLite {
@@ -59,6 +59,12 @@ interface PriceHistoryRowLite {
   kaina_min: number | null;
   kaina_max: number | null;
   data: string;
+}
+
+interface MaterialRowLite {
+  artikulas: string;
+  pavadinimas: string;
+  vienetas: string;
 }
 
 export function buildLatestPricesSummary(rows: PriceHistoryRowLite[]): string {
@@ -88,6 +94,15 @@ export function buildLatestPricesSummary(rows: PriceHistoryRowLite[]): string {
   }
 
   return lines.length > 0 ? lines.join('\n') : 'Nėra kainų duomenų.';
+}
+
+export function buildMaterialListSummary(rows: MaterialRowLite[]): string {
+  if (!rows.length) return 'Nėra medžiagų sąrašo.';
+  return rows
+    .filter((row) => row.artikulas && row.pavadinimas)
+    .sort((a, b) => a.artikulas.localeCompare(b.artikulas))
+    .map((row) => `- ${row.artikulas} | ${row.pavadinimas} | ${row.vienetas || '—'}`)
+    .join('\n');
 }
 
 function extractResponseText(content: unknown): string {
@@ -165,6 +180,7 @@ async function getRuntimePrompt(
   ]);
 
   let latestPrices = '';
+  let materialList = '';
   if (detectedVars.includes('latestPrices')) {
     const { data: priceRows, error: priceError } = await db
       .from('medziagos_kainu_istorija')
@@ -173,12 +189,21 @@ async function getRuntimePrompt(
     if (priceError) throw priceError;
     latestPrices = buildLatestPricesSummary((priceRows || []) as PriceHistoryRowLite[]);
   }
+  if (detectedVars.includes('materialList')) {
+    const { data: materials, error: materialsError } = await db
+      .from('medziagos')
+      .select('artikulas,pavadinimas,vienetas')
+      .limit(-1);
+    if (materialsError) throw materialsError;
+    materialList = buildMaterialListSummary((materials || []) as MaterialRowLite[]);
+  }
 
   const values: Record<string, string> = {
     today: new Date().toISOString().split('T')[0],
     oilAnalysis: typeof oil.data?.content === 'string' ? oil.data.content : '',
     geoPolitical: typeof geo.data?.content === 'string' ? geo.data.content : '',
     latestPrices,
+    materialList,
   };
 
   const resolvedPrompt = interpolateTemplate(template, values);

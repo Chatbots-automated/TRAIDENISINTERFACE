@@ -34,7 +34,7 @@ import { colors } from '../lib/designSystem';
 import { tools as defaultSdkTools } from '../lib/toolDefinitions';
 import NotificationContainer from './NotificationContainer';
 import { useNotifications } from './sdk/useNotifications';
-import { buildLatestPricesSummary, validatePromptVariablesForEditor } from '../lib/internetAnalysisService';
+import { buildLatestPricesSummary, buildMaterialListSummary, validatePromptVariablesForEditor } from '../lib/internetAnalysisService';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
@@ -67,6 +67,9 @@ GEOPOLITINIS KONTEKSTAS:
 NAUJAUSIOS MEDŽIAGŲ KAINOS:
 {{latestPrices}}
 
+AUKŠTO LYGIO MEDŽIAGŲ SĄRAŠAS:
+{{materialList}}
+
 Atsakykite aiškiai, struktūruotai, lietuvių kalba.`;
 type KainosPromptKey = 'kainos_ai_nafta_prompt' | 'kainos_ai_geo_prompt' | 'kainos_ai_prediction_prompt';
 const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; defaultContent: string }> = {
@@ -82,7 +85,7 @@ const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; def
   },
   kainos_ai_prediction_prompt: {
     label: 'Prognozė',
-    help: 'Placeholderiai: {{today}} {{oilAnalysis}} {{geoPolitical}} {{latestPrices}}',
+    help: 'Placeholderiai: {{today}} {{oilAnalysis}} {{geoPolitical}} {{latestPrices}} {{materialList}}',
     defaultContent: DEFAULT_KAINOS_ANALYSIS_PROMPT,
   },
 };
@@ -458,7 +461,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       }
       const invalidVars = validatePromptVariablesForEditor(content);
       if (invalidVars.length > 0) {
-        setPromptError(`Neleistini kintamieji: ${invalidVars.join(', ')}. Leidžiami: {{today}}, {{oilAnalysis}}, {{geoPolitical}}, {{latestPrices}}.`);
+        setPromptError(`Neleistini kintamieji: ${invalidVars.join(', ')}. Leidžiami: {{today}}, {{oilAnalysis}}, {{geoPolitical}}, {{latestPrices}}, {{materialList}}.`);
         addErrorNotification('Prompt klaida', `Neleistini kintamieji: ${invalidVars.join(', ')}`);
         return;
       }
@@ -505,10 +508,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         return;
       }
 
-      const [oilAnalysis, geoPolitical, latestRows] = await Promise.all([
+      const [oilAnalysis, geoPolitical, latestRows, materialRows] = await Promise.all([
         dbAdmin.from('medziagos_analize_internetas').select('content').eq('id', 'nafta').single(),
         dbAdmin.from('medziagos_analize_internetas').select('content').eq('id', 'politika').single(),
         dbAdmin.from('medziagos_kainu_istorija').select('artikulas,kaina_min,kaina_max,data').limit(-1),
+        dbAdmin.from('medziagos').select('artikulas,pavadinimas,vienetas').limit(-1),
       ]);
       const vars = {
         today,
@@ -516,6 +520,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         geoPolitical: truncatePromptSection(String(geoPolitical.data?.content || ''), 4000),
         latestPrices: truncatePromptSection(
           buildLatestPricesSummary((latestRows.data || []) as Array<{ artikulas: string; kaina_min: number | null; kaina_max: number | null; data: string }>),
+          5000
+        ),
+        materialList: truncatePromptSection(
+          buildMaterialListSummary((materialRows.data || []) as Array<{ artikulas: string; pavadinimas: string; vienetas: string }>),
           5000
         ),
       };
