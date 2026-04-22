@@ -1212,29 +1212,30 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
         : [];
 
       // Build chart points from actual data
-      let points: ChartPoint[] = entries.map(e => ({
+      const points: ChartPoint[] = entries.map(e => ({
         date: e.data,
         label: e.data, // full YYYY-MM-DD for axis
         kaina: e.kaina_min,
         predicted: undefined,
       }));
 
-      // Add prediction point
+      const lastActualPoint = points[points.length - 1];
+
+      // Add mathematical prediction points
       if (prediction) {
-        const lastPoint = points[points.length - 1];
         const mathTargetValue = (prediction.kaina_min + prediction.kaina_max) / 2;
         points.push({
-          date: lastPoint.date,
-          label: lastPoint.date,
-          kaina: lastPoint.kaina,
-          predicted: lastPoint.kaina!,
+          date: lastActualPoint.date,
+          label: lastActualPoint.date,
+          kaina: lastActualPoint.kaina,
+          predicted: lastActualPoint.kaina!,
         });
 
         if (aiToggle && aiPredSeries.length > 0) {
-          let lastProjectionDate = lastPoint.date;
+          let lastProjectionDate = lastActualPoint.date;
           aiPredSeries.forEach((aiPoint, idx) => {
             const ratio = (idx + 1) / aiPredSeries.length;
-            const interpolated = lastPoint.kaina! + (mathTargetValue - lastPoint.kaina!) * ratio;
+            const interpolated = lastActualPoint.kaina! + (mathTargetValue - lastActualPoint.kaina!) * ratio;
             const projectedDate = aiPoint.data > lastProjectionDate ? aiPoint.data : addDaysISO(lastProjectionDate, 1);
             lastProjectionDate = projectedDate;
             points.push({
@@ -1254,30 +1255,31 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
         }
       }
 
-      // Add AI prediction point if toggle is on
+      // Add AI prediction points directly from AI data:
+      // - first point is the last actual price (anchor)
+      // - each next point is AI forecast value on a strictly increasing date
       if (aiPredSeries.length > 0) {
-        const lastPoint = [...points].reverse().find((p) => p.kaina !== null) || points[points.length - 1];
         points.push({
-          date: lastPoint.date,
-          label: lastPoint.date,
-          kaina: lastPoint.kaina,
-          aiPredicted: lastPoint.kaina!,
+          date: lastActualPoint.date,
+          label: lastActualPoint.date,
+          kaina: lastActualPoint.kaina,
+          aiPredicted: lastActualPoint.kaina!,
         });
-        let lastAiDate = lastPoint.date;
+        let lastAiDate = lastActualPoint.date;
         for (const aiPred of aiPredSeries) {
-          const aiDate = aiPred.data > lastAiDate ? aiPred.data : addDaysISO(lastAiDate, 1);
-          lastAiDate = aiDate;
+          const targetDate = aiPred.data > lastAiDate ? aiPred.data : addDaysISO(lastAiDate, 1);
+          lastAiDate = targetDate;
           points.push({
-            date: aiDate,
-            label: aiDate,
+            date: targetDate,
+            label: targetDate,
             kaina: null,
             aiPredicted: aiPred.kaina,
           });
         }
       }
 
-      // Merge duplicate dates and enforce chronological ordering so AI/maths
-      // overlays are layered on the same timeline, not appended inline.
+      // Merge duplicate dates and enforce chronological ordering so overlays
+      // are layered on the same timeline.
       const byDate = new Map<string, ChartPoint>();
       for (const p of points) {
         const existing = byDate.get(p.date);
@@ -1292,10 +1294,24 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
           aiPredicted: p.aiPredicted !== undefined ? p.aiPredicted : existing.aiPredicted,
         });
       }
-      points = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+      const mergedPoints = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+      // Hard guarantee for visible AI line with a single forecast point:
+      // if after merge we only have one AI point, append one synthetic day ahead.
+      const aiVisiblePoints = mergedPoints.filter((p) => p.aiPredicted !== undefined);
+      if (aiPredSeries.length > 0 && aiVisiblePoints.length === 1) {
+        const only = aiVisiblePoints[0];
+        mergedPoints.push({
+          date: addDaysISO(only.date, 1),
+          label: addDaysISO(only.date, 1),
+          kaina: null,
+          aiPredicted: aiPredSeries[aiPredSeries.length - 1].kaina,
+        });
+      }
+
+      const finalPoints = mergedPoints.sort((a, b) => a.date.localeCompare(b.date));
 
       // Compute Y-axis domain
-      const lastActualForDomain = [...points].reverse().find(p => p.kaina !== null);
       const allValues = [
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
@@ -1314,7 +1330,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
         material: m,
         entries,
         prediction,
-        points,
+        points: finalPoints,
         minY,
         maxY,
         aiPredSeries,
@@ -1504,11 +1520,11 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
                   <Line
                     type="monotone"
                     dataKey="aiPredicted"
-                    stroke="url(#aiPredGradient)"
-                    strokeWidth={2}
+                    stroke="#7c3aed"
+                    strokeWidth={2.5}
                     strokeDasharray="4 4"
-                    dot={false}
-                    connectNulls={false}
+                    dot={{ r: 2.5, fill: '#7c3aed', strokeWidth: 0 }}
+                    connectNulls={true}
                     isAnimationActive={true}
                     animationBegin={1200}
                     animationDuration={1000}
@@ -1520,10 +1536,6 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med≈
                   <linearGradient id="predGradient" x1="0" y1="0" x2="1" y2="0">
                     <stop offset="0%" stopColor="#007AFF" stopOpacity={0.4} />
                     <stop offset="100%" stopColor="#007AFF" stopOpacity={1} />
-                  </linearGradient>
-                  <linearGradient id="aiPredGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#7c3aed" stopOpacity={1} />
                   </linearGradient>
                   <filter id="predGlow">
                     <feGaussianBlur stdDeviation="3" result="blur" />
