@@ -1227,6 +1227,7 @@ function NavButton({
   onClick: () => void;
 }) {
   const [isHovered, setIsHovered] = React.useState(false);
+  const isCommercialBridgeVariable = variable.variable_key === 'chat_commercial_offer_generation';
 
   return (
     <button
@@ -1235,10 +1236,22 @@ function NavButton({
       onMouseLeave={() => setIsHovered(false)}
       className="w-full text-left px-3 py-2.5 rounded-lg transition-all group"
       style={{
-        background: isSelected ? colors.bg.white : (isHovered ? colors.bg.white + '99' : 'transparent'),
+        background: isSelected
+          ? colors.bg.white
+          : isCommercialBridgeVariable
+            ? colors.bg.white + '66'
+            : (isHovered ? colors.bg.white + '99' : 'transparent'),
         boxShadow: isSelected ? '0 1px 3px 0 rgba(0, 0, 0, 0.05)' : 'none',
-        border: isSelected ? `1px solid ${colors.interactive.accent}33` : '1px solid transparent',
-        borderLeft: isSelected ? `2px solid ${colors.interactive.accent}` : '2px solid transparent'
+        border: isSelected
+          ? `1px solid ${colors.interactive.accent}33`
+          : isCommercialBridgeVariable
+            ? `1px solid ${colors.border.default}`
+            : '1px solid transparent',
+        borderLeft: isSelected
+          ? `2px solid ${colors.interactive.accent}`
+          : isCommercialBridgeVariable
+            ? `2px solid ${colors.border.default}`
+            : '2px solid transparent'
       }}
     >
       <div className="flex items-start space-x-3">
@@ -1253,6 +1266,11 @@ function NavButton({
           }}>
             {variable.variable_name}
           </p>
+          {isCommercialBridgeVariable && (
+            <p className="text-[11px] mt-0.5 font-medium" style={{ color: colors.text.tertiary }}>
+              Pagrindinis tiltas į .docx
+            </p>
+          )}
           {!variable.content && (
             <p className="text-xs mt-0.5" style={{ color: colors.status.warningText }}>Tuščia</p>
           )}
