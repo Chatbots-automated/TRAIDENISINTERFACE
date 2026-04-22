@@ -36,7 +36,7 @@ import {
 
 interface KainosInterfaceProps { user: AppUser; }
 
-const ANALYTICS_MODEL = 'claude-sonnet-4-5';
+const ANALYTICS_MODEL = 'claude-haiku-4-5';
 function addMonthsISO(dateIso: string, months: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, (m - 1) + months, d));
