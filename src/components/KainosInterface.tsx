@@ -17,6 +17,7 @@ import {
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
   saveMaterialForecasts,
+  fetchLatestMaterialForecasts,
   fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock, updateAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
@@ -1107,19 +1108,27 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
-      const fallbackDate = addMonthsISO(new Date().toISOString().slice(0, 10), 3);
-      const rawContent = analytics?.content || '';
-      if (!rawContent.trim()) {
-        onError?.('Nėra analizės turinio. Pirmiausia sugeneruokite analizę.');
-        setAiToggle(false);
-        return;
-      }
-
-      const payload = extractJsonPayload(rawContent);
-      const loaded = normalizeAnalysisForecasts(payload, medziagas, fallbackDate);
+      // Source of truth for graph AI points: Directus table medziagos_kainu_prognozes
+      // (persisted from 3rd-step JSON forecasts during analysis run).
+      const directusForecasts = await fetchLatestMaterialForecasts();
+      const loaded = directusForecasts
+        .map((row) => {
+          const kMin = Number(row.kaina_min);
+          const kMax = Number(row.kaina_max);
+          const kaina = Number.isFinite(kMin) && Number.isFinite(kMax) ? (kMin + kMax) / 2 : Number.isFinite(kMin) ? kMin : NaN;
+          if (!Number.isFinite(kaina)) return null;
+          return {
+            artikulas: row.artikulas,
+            data: row.data,
+            kaina,
+            reasoning: 'Prognozė užkrauta iš Directus meziagos_kainu_prognozes.',
+            confidence: typeof row.pasitikejimas === 'number' ? row.pasitikejimas : undefined,
+          } as AiPrediction;
+        })
+        .filter((item): item is AiPrediction => Boolean(item));
 
       if (loaded.length === 0) {
-        onError?.('Analizės content nerastos validžios AI prognozės grafui.');
+        onError?.('Directus tarpiniame prognozių faile (medziagos_kainu_prognozes) nerasta AI taškų grafui.');
         setAiToggle(false);
         return;
       }
@@ -1142,7 +1151,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, onError, analytics]);
+  }, [aiLoading, medziagas, istorija, onError]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
@@ -1197,12 +1206,15 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         });
 
         if (aiToggle && aiPredSeries.length > 0) {
+          let lastProjectionDate = lastPoint.date;
           aiPredSeries.forEach((aiPoint, idx) => {
             const ratio = (idx + 1) / aiPredSeries.length;
             const interpolated = lastPoint.kaina! + (mathTargetValue - lastPoint.kaina!) * ratio;
+            const projectedDate = aiPoint.data > lastProjectionDate ? aiPoint.data : addDaysISO(lastProjectionDate, 1);
+            lastProjectionDate = projectedDate;
             points.push({
-              date: aiPoint.data,
-              label: aiPoint.data,
+              date: projectedDate,
+              label: projectedDate,
               kaina: null,
               predicted: interpolated,
             });
@@ -1226,10 +1238,13 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
           kaina: lastPoint.kaina,
           aiPredicted: lastPoint.kaina!,
         });
+        let lastAiDate = lastPoint.date;
         for (const aiPred of aiPredSeries) {
+          const aiDate = aiPred.data > lastAiDate ? aiPred.data : addDaysISO(lastAiDate, 1);
+          lastAiDate = aiDate;
           points.push({
-            date: aiPred.data,
-            label: aiPred.data,
+            date: aiDate,
+            label: aiDate,
             kaina: null,
             aiPredicted: aiPred.kaina,
           });
