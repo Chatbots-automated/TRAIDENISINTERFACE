@@ -1100,6 +1100,8 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
   const infoRef = useRef<HTMLDivElement>(null);
   const [aiToggle, setAiToggle] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [projectionsVisible, setProjectionsVisible] = useState(false);
   const [aiPredictions, setAiPredictions] = useState<AiPrediction[]>([]);
   const [aiResponseCitations, setAiResponseCitations] = useState<ExtractedCitation[]>([]);
   // Close on outside click
@@ -1152,6 +1154,30 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
       fetchAiPredictions();
     }
   }, [aiToggle, aiPredictions.length, aiLoading, fetchAiPredictions]);
+
+  // Keep chart behavior stable while container is resizing.
+  useEffect(() => {
+    let resizeTimer: number | null = null;
+    const onResize = () => {
+      setIsResizing(true);
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        setIsResizing(false);
+      }, 180);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      if (resizeTimer) window.clearTimeout(resizeTimer);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
+
+  // Controlled reveal: draw historical line first, then projections.
+  useEffect(() => {
+    setProjectionsVisible(false);
+    const timer = window.setTimeout(() => setProjectionsVisible(true), 240);
+    return () => window.clearTimeout(timer);
+  }, [istorija, medziagas, aiToggle, aiPredictions]);
 
   // Group history by artikulas
   const byArt = useMemo(() => {
@@ -1394,14 +1420,14 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
               <span className="text-[10px]" style={{ color: '#8a857f' }}>
                 {entries.length} Ä¯raÅ¡{entries.length === 1 ? 'as' : 'ai'}
               </span>
-              {prediction && (
+              {prediction && projectionsVisible && (
                 <span className="prediction-badge text-[10px] px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
                   PrognozÄ— {prediction.data}: {prediction.kaina_min.toFixed(2)}â€“{prediction.kaina_max.toFixed(2)}
                   <span className="ml-1 opacity-60">({Math.round(prediction.confidence * 100)}%)</span>
                 </span>
               )}
-              {aiPredSeries.length > 0 && (
+              {aiPredSeries.length > 0 && projectionsVisible && (
                 <span className="prediction-badge text-[10px] px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(124,58,237,0.08)', color: '#7c3aed' }}
                   title={aiPredSeries[0].reasoning}>
@@ -1468,21 +1494,23 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
                   connectNulls={false}
                 />
                 {/* Prediction dashed line â€” delayed draw animation */}
-                <Line
-                  type="monotone"
-                  dataKey="predicted"
-                  stroke="url(#predGradient)"
-                  strokeWidth={2}
-                  strokeDasharray="6 3"
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={true}
-                  animationBegin={800}
-                  animationDuration={1200}
-                  animationEasing="ease-out"
-                />
+                {projectionsVisible && (
+                  <Line
+                    type="monotone"
+                    dataKey="predicted"
+                    stroke="url(#predGradient)"
+                    strokeWidth={2}
+                    strokeDasharray="6 3"
+                    dot={false}
+                    connectNulls={false}
+                    isAnimationActive={!isResizing}
+                    animationBegin={120}
+                    animationDuration={620}
+                    animationEasing="ease-out"
+                  />
+                )}
                 {/* AI prediction dashed line â€” purple */}
-                {aiPredSeries.length > 0 && (
+                {aiPredSeries.length > 0 && projectionsVisible && (
                   <Line
                     type="monotone"
                     dataKey="aiPredicted"
@@ -1491,9 +1519,9 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
                     strokeDasharray="4 4"
                     dot={{ r: 2.5, fill: '#7c3aed', strokeWidth: 0 }}
                     connectNulls={true}
-                    isAnimationActive={true}
-                    animationBegin={1200}
-                    animationDuration={1000}
+                    isAnimationActive={!isResizing}
+                    animationBegin={220}
+                    animationDuration={700}
                     animationEasing="ease-out"
                   />
                 )}
@@ -1512,7 +1540,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
                   </filter>
                 </defs>
                 {/* Prediction endpoint â€” pulsing glow dot */}
-                {prediction && points.length > 0 && (() => {
+                {prediction && projectionsVisible && points.length > 0 && (() => {
                   const predPoint = [...points].reverse().find(p => p.predicted !== undefined);
                   return predPoint ? (
                     <ReferenceDot x={predPoint.label} y={predPoint.predicted!} r={0} fill="transparent" stroke="transparent">
@@ -1521,7 +1549,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: MedÅ
                   ) : null;
                 })()}
                 {/* AI prediction endpoint â€” purple dot */}
-                {aiPredSeries.length > 0 && (() => {
+                {aiPredSeries.length > 0 && projectionsVisible && (() => {
                   const aiPoint = [...points].reverse().find(p => p.aiPredicted !== undefined && p.kaina === null);
                   return aiPoint ? (
                     <ReferenceDot x={aiPoint.label} y={aiPoint.aiPredicted!} r={0} fill="transparent" stroke="transparent">
