@@ -16,8 +16,6 @@ import {
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
   fetchGeneralAnalysis, saveGeneralAnalysis,
-  saveMaterialForecasts,
-  fetchLatestMaterialForecasts,
   fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock, updateAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
@@ -1121,28 +1119,8 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         }
       }
 
-      // Fallback: latest persisted batch table, if content is legacy/markdown-only.
       if (loaded.length === 0) {
-        const directusForecasts = await fetchLatestMaterialForecasts();
-        loaded = directusForecasts
-          .map((row) => {
-            const kMin = Number(row.kaina_min);
-            const kMax = Number(row.kaina_max);
-            const kaina = Number.isFinite(kMin) && Number.isFinite(kMax) ? (kMin + kMax) / 2 : Number.isFinite(kMin) ? kMin : NaN;
-            if (!Number.isFinite(kaina)) return null;
-            return {
-              artikulas: row.artikulas,
-              data: row.data,
-              kaina,
-              reasoning: 'Prognozė užkrauta iš Directus meziagos_kainu_prognozes.',
-              confidence: typeof row.pasitikejimas === 'number' ? row.pasitikejimas : undefined,
-            } as AiPrediction;
-          })
-          .filter((item): item is AiPrediction => Boolean(item));
-      }
-
-      if (loaded.length === 0) {
-        onError?.('Nerasta validžių AI prognozių nei medziagos_prognoze_internetas.content, nei medziagos_kainu_prognozes lentelėje.');
+        onError?.('Nerasta validžių AI prognozių medziagos_prognoze_internetas.content lauke.');
         setAiToggle(false);
         return;
       }
@@ -1848,17 +1826,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         }));
         debugState.stepStatus.analysis = 'ok';
 
-        if (sanitized.length > 0) {
-          await saveMaterialForecasts(
-            sanitized.map((item) => ({
-              artikulas: item.artikulas,
-              data: item.data,
-              kaina_min: item.kaina,
-              kaina_max: item.kaina,
-              pasitikejimas: item.confidence ?? null,
-            }))
-          );
-        }
       }
 
       await saveGeneralAnalysis(analysisText, geoText, naftaText);
