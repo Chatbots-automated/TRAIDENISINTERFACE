@@ -43,6 +43,7 @@ interface ToolSchemaCandidate {
   name?: unknown;
   description?: unknown;
   input_schema?: unknown;
+  allowed_callers?: unknown;
 }
 
 const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
@@ -261,7 +262,16 @@ function validateToolSchemas(
           toolSchemaContent,
         });
       }
-      validated.push(tool as Anthropic.Tool);
+      const callers = Array.isArray(tool.allowed_callers)
+        ? tool.allowed_callers.filter((v) => typeof v === 'string')
+        : [];
+      const normalizedCallers = callers.length > 0 ? callers : ['direct'];
+      if (!normalizedCallers.includes('direct')) normalizedCallers.push('direct');
+
+      validated.push({
+        ...(tool as any),
+        allowed_callers: normalizedCallers,
+      } as Anthropic.Tool);
       continue;
     }
 
