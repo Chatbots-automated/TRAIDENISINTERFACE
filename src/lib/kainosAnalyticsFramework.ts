@@ -81,11 +81,30 @@ export async function fetchAnalyticsPromptTemplates(): Promise<Record<AnalyticsS
   return templates;
 }
 
-export async function runSdkRequest(client: Anthropic, model: string, prompt: string, maxTokens: number): Promise<SdkStepResult> {
+export async function fetchKainosToolSchemas(): Promise<Anthropic.Tool[]> {
+  const schemaVar = await getInstructionVariable('kainos_ai_tool_schemas');
+  if (!schemaVar?.content?.trim()) return [];
+
+  const parsed = JSON.parse(schemaVar.content);
+  if (!Array.isArray(parsed)) {
+    throw new Error('kainos_ai_tool_schemas turi būti JSON masyvas');
+  }
+
+  return parsed as Anthropic.Tool[];
+}
+
+export async function runSdkRequest(
+  client: Anthropic,
+  model: string,
+  prompt: string,
+  maxTokens: number,
+  tools?: Anthropic.Tool[]
+): Promise<SdkStepResult> {
   const response = await client.messages.create({
     model,
     max_tokens: maxTokens,
     messages: [{ role: 'user', content: prompt }],
+    ...(tools && tools.length > 0 ? { tools } : {}),
   });
 
   const extracted = extractTextAndCitationsFromMessage(response.content as any[]);

@@ -30,6 +30,7 @@ import MaterialSlateView from './MaterialSlateView';
 import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer';
 import {
   fetchAnalyticsPromptTemplates,
+  fetchKainosToolSchemas,
   runSdkRequest,
   injectPromptVars,
   findUnresolvedPromptVars,
@@ -1677,8 +1678,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     });
     const { nafta: oilPromptTemplate, geo: geoPromptTemplate, analysis: analysisPromptTemplate } = await fetchAnalyticsPromptTemplates();
     const today = new Date().toISOString().split('T')[0];
+    const kainosToolSchemas = await fetchKainosToolSchemas();
+    if (kainosToolSchemas.length === 0) {
+      addNotif('info', 'Kainos schema', 'kainos_ai_tool_schemas nėra užpildyta Directus. Analizė vykdoma be papildomų SDK įrankių.');
+    }
     const runStepRequest = (params: { user: string; maxTokens: number; }): Promise<ExtractedResponseText> =>
-      runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens).then((result) => ({
+      runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, kainosToolSchemas).then((result) => ({
         text: result.text.trim(),
         citations: result.citations,
         stopReasons: result.stopReason ? [result.stopReason] : [],
