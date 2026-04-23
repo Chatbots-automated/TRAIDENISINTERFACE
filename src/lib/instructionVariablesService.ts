@@ -55,9 +55,16 @@ export const fetchInstructionVariables = async (): Promise<InstructionVariable[]
  * Parse template variables from {{variable_name}} placeholders.
  */
 export const extractTemplateVariableKeys = (promptTemplate: string): string[] => {
-  const matches = promptTemplate.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g) || [];
-  const keys = matches.map((m) => m.replace(/[{}]/g, '').trim());
-  return Array.from(new Set(keys));
+  const doubleBraceMatches = Array.from(
+    promptTemplate.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g),
+    (match) => match[1]
+  );
+  const singleBraceMatches = Array.from(
+    promptTemplate.matchAll(/(?<!\{)\{\s*([a-zA-Z0-9_]+)\s*\}(?!\})/g),
+    (match) => match[1]
+  );
+
+  return Array.from(new Set([...doubleBraceMatches, ...singleBraceMatches]));
 };
 
 /**
@@ -68,12 +75,15 @@ export const injectVariablesIntoPrompt = (
   promptTemplate: string,
   valuesByKey: Record<string, string>
 ): string => {
-  return promptTemplate.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_full, key: string) => {
+  const replaceWithKey = (_full: string, key: string): string => {
     if (!(key in valuesByKey)) {
       throw new Error(`Missing required variable: ${key}`);
     }
     return valuesByKey[key] ?? '';
-  });
+  };
+
+  const withDoubleBracesInjected = promptTemplate.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, replaceWithKey);
+  return withDoubleBracesInjected.replace(/(?<!\{)\{\s*([a-zA-Z0-9_]+)\s*\}(?!\})/g, replaceWithKey);
 };
 
 /**

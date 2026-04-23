@@ -4696,13 +4696,6 @@ Vartotojo instrukcija: ${instruction}`;
                 >
                   {showTemplateView ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
                 </button>
-                <button
-                  onClick={handleOpenPromptModal}
-                  className="btn btn-xs btn-soft"
-                  disabled={loadingPrompt}
-                >
-                  {loadingPrompt ? 'Kraunama...' : 'Preview'}
-                </button>
                 {user.is_admin && (
                   <button
                     onClick={() => {
