@@ -1,5 +1,5 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
-import { db, dbAdmin } from './database';
+import { dbAdmin } from './database';
 
 export interface InstructionVariable {
   id: string;
@@ -10,6 +10,12 @@ export interface InstructionVariable {
   created_at: string;
   updated_at: string;
   updated_by?: string;
+}
+
+interface TemplateRow {
+  id: string;
+  content: string;
+  updated_at?: string | null;
 }
 
 /**
@@ -81,44 +87,45 @@ export const injectVariablesIntoPrompt = (
 };
 
 /**
- * Get the prompt template from database (priority order):
- * 1. instruction_variables table (variable_key='template') - NEW SYSTEM
- * 2. prompt_template table - OLD SYSTEM (legacy fallback)
- * 3. Code default - HARDCODED FALLBACK
+ * Get prompt template from the ONLY runtime source of truth:
+ * instruction_variables table (variable_key='template').
+ *
+ * Runtime intentionally has no legacy fallback (prompt_template/code default),
+ * so SDK always fails loudly instead of silently using stale/deprecated prompt sources.
  */
 export const getPromptTemplate = async (): Promise<string> => {
   try {
-    // Try NEW system first: instruction_variables table
-    console.log('[getPromptTemplate] Checking instruction_variables for template...');
-    const { data: templateVar, error: varError } = await dbAdmin
-      .from('instruction_variables')
-      .select('content')
-      .eq('variable_key', 'template')
-      .single();
-
-    if (!varError && templateVar?.content) {
-      console.log('[getPromptTemplate] ✅ Found template in instruction_variables (NEW system)');
-      return templateVar.content;
-    }
-
-    console.log('[getPromptTemplate] Template not in instruction_variables, checking prompt_template (OLD system)...');
-
-    // Fallback to OLD system: prompt_template table
+    console.log('[getPromptTemplate] Loading template from instruction_variables...');
     const { data, error } = await dbAdmin
-      .from('prompt_template')
-      .select('template_content')
-      .single();
+      .from('instruction_variables')
+      .select('id, content, updated_at')
+      .eq('variable_key', 'template')
+      .order('updated_at', { ascending: false })
+      .limit(2);
 
     if (error) {
-      console.log('[getPromptTemplate] No custom template found, using code default');
-      return getDefaultPromptTemplate();
+      console.error('[getPromptTemplate] Failed querying instruction_variables:', error);
+      throw error;
     }
 
-    console.log('[getPromptTemplate] ✅ Found template in prompt_template (OLD system)');
-    return data?.template_content || getDefaultPromptTemplate();
+    const rows: TemplateRow[] = Array.isArray(data)
+      ? (data as TemplateRow[])
+      : (data ? [data as TemplateRow] : []);
+    if (rows.length === 0 || !rows[0]?.content?.trim()) {
+      throw new Error('instruction_variables.template is missing or empty');
+    }
+
+    if (rows.length > 1) {
+      console.warn('[getPromptTemplate] Duplicate template rows detected. Using most recently updated row.', {
+        ids: rows.map((r) => r.id),
+        updated_at: rows.map((r) => r.updated_at)
+      });
+    }
+
+    return rows[0].content;
   } catch (error) {
     console.error('[getPromptTemplate] Error loading template:', error);
-    return getDefaultPromptTemplate();
+    throw error;
   }
 };
 
@@ -152,7 +159,7 @@ export const savePromptTemplate = async (template: string): Promise<{ success: b
 /**
  * Get default prompt template
  */
-const getDefaultPromptTemplate = (): string => {
+export const getDefaultPromptTemplate = (): string => {
   return `User has just sent you the first message, reply to it.
 
 ## ROLE & IDENTITY

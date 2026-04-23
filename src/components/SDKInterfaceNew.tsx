@@ -33,7 +33,7 @@ import {
   Upload
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
-import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
+import { getSystemPrompt, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
 import RoboticArmLoader from './RoboticArmLoader';
 import { colors } from '../lib/designSystem';
@@ -401,17 +401,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const loadSystemPrompt = async () => {
     try {
       setLoadingPrompt(true);
-      const [fullPrompt, template, templateVar] = await Promise.all([
+      const [fullPrompt, template] = await Promise.all([
         getSystemPrompt(),
-        getPromptTemplate(),
-        fetchTemplateVariable() // Fetch template variable from instruction_variables
+        getPromptTemplate()
       ]);
       setSystemPrompt(fullPrompt);
       setPromptTemplate(template);
-      setTemplateFromDB(templateVar);
+      setTemplateFromDB(template);
       console.log('System prompt loaded, length:', fullPrompt.length);
       console.log('Template loaded, length:', template.length);
-      console.log('Template variable from DB loaded, length:', templateVar.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
       addErrorNotification('Klaida', err, 'Nepavyko užkrauti sistemos instrukcijų');
@@ -455,24 +453,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     };
   };
 
-  const fetchTemplateVariable = async (): Promise<string> => {
+  const fetchLatestPromptBundle = async (): Promise<{ fullPrompt: string; template: string }> => {
     try {
-      const { dbAdmin } = await import('../lib/database');
-      const { data, error } = await dbAdmin
-        .from('instruction_variables')
-        .select('content')
-        .eq('variable_key', 'template')
-        .single();
-
-      if (error) {
-        console.warn('[fetchTemplateVariable] No template variable found:', error);
-        return promptTemplate; // Fallback to code template
-      }
-
-      return data?.content || promptTemplate;
+      const [fullPrompt, template] = await Promise.all([getSystemPrompt(), getPromptTemplate()]);
+      setSystemPrompt(fullPrompt);
+      setPromptTemplate(template);
+      setTemplateFromDB(template);
+      return { fullPrompt, template };
     } catch (error) {
-      console.error('[fetchTemplateVariable] Error:', error);
-      return promptTemplate; // Fallback to code template
+      console.error('[fetchLatestPromptBundle] Error:', error);
+      throw error;
     }
   };
 
@@ -500,6 +490,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } catch (error) {
       console.error('[saveTemplateVariable] Exception:', error);
       return { success: false, error };
+    }
+  };
+
+  const handleOpenPromptModal = async () => {
+    try {
+      setLoadingPrompt(true);
+      await fetchLatestPromptBundle();
+      setShowPromptModal(true);
+    } catch (err) {
+      addErrorNotification('Klaida', err, 'Nepavyko atnaujinti instrukcijų iš Directus');
+    } finally {
+      setLoadingPrompt(false);
     }
   };
 
@@ -933,7 +935,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         });
       }
 
-      const contextualSystemPrompt = systemPrompt + (promptTemplate ? `\n\n${promptTemplate}` : '');
+      const { fullPrompt } = await fetchLatestPromptBundle();
+      const contextualSystemPrompt = fullPrompt;
 
       console.log('[Silent Button] Sending button value to API silently');
       const bounded = limitAnthropicContext(anthropicMessages);
@@ -1504,7 +1507,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   const handleSend = async (overrideMessage?: string) => {
     const messageText = overrideMessage ?? inputValue.trim();
-    if (!messageText || loading || !systemPrompt) return;
+    if (!messageText || loading) return;
 
     // If no conversation exists, create one first
     let conversation = currentConversation;
@@ -1754,8 +1757,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('═══════════════════════════════════════════════════════════════');
       console.log('');
 
+      const { fullPrompt } = await fetchLatestPromptBundle();
+
       // Build system prompt with artifact context if exists
-      let contextualSystemPrompt = systemPrompt;
+      let contextualSystemPrompt = fullPrompt;
       if (conversation.artifact) {
         contextualSystemPrompt += `\n\n---\n\n**CURRENT ARTIFACT CONTEXT:**\nAn active commercial offer artifact exists in this conversation with ID: \`${conversation.artifact.id}\`\n\n**CRITICAL:** When updating or modifying the commercial offer, you MUST reuse this artifact_id:\n\`\`\`xml\n<commercial_offer artifact_id="${conversation.artifact.id}">\n[updated content]\n</commercial_offer>\n\`\`\`\n\nDO NOT create a new artifact. Always use artifact_id="${conversation.artifact.id}" for updates.`;
       }
@@ -2856,7 +2861,7 @@ Vartotojo instrukcija: ${instruction}`;
 
         {/* Instructions Section */}
         <div
-          onClick={() => setShowPromptModal(true)}
+          onClick={handleOpenPromptModal}
           className="mx-3 mb-2 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
         >
           <div className="flex items-center gap-2">
