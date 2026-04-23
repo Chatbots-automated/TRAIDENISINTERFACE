@@ -239,7 +239,7 @@ export default function MessageContent({ content }: MessageContentProps) {
 }
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
   const visibleCalls = toolCalls.filter(c => c.name !== 'display_buttons');
@@ -250,12 +250,14 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
   const displayedCalls = showAll ? visibleCalls : visibleCalls.slice(0, COLLAPSED_LIMIT);
   const hiddenCount = visibleCalls.length - COLLAPSED_LIMIT;
 
-  const formatToolName = (name: string): string => {
-    return name
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
+  const formatToolName = (name: string): string => ({
+    get_products: 'Get Products',
+    get_prices: 'Get Prices',
+    get_multiplier: 'Get Multiplier'
+  }[name] ?? name
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' '));
 
   const getToolParam = (call: ToolCall): string => {
     try {
@@ -272,91 +274,92 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
     return cleaned.slice(0, 47) + '...';
   };
 
-  // formatResult removed - ToolResult component handles rendering now
+  const toolCounts = visibleCalls.reduce<Record<string, number>>((acc, call) => {
+    acc[call.name] = (acc[call.name] || 0) + 1;
+    return acc;
+  }, {});
 
-  const getGroupHeading = (): string => {
-    if (!allCompleted) {
-      return visibleCalls.length === 1
-        ? `Vykdoma: ${formatToolName(visibleCalls[0].name)}`
-        : `Vykdomi ${visibleCalls.length} veiksmai...`;
+  const getProductsCount = toolCounts.get_products || 0;
+  const getPricesCount = toolCounts.get_prices || 0;
+  const processedComponents = Math.max(getProductsCount, getPricesCount);
+
+  const metrics = visibleCalls.reduce((acc, call) => {
+    if (!call.result) return acc;
+    try {
+      const parsed = JSON.parse(call.result);
+      if (parsed?.success === false) {
+        acc.missing += 1;
+      }
+      if (call.name === 'get_products') {
+        const data = parsed?.data ?? parsed?.products ?? parsed?.items ?? parsed?.matches;
+        if (Array.isArray(data)) acc.matched += data.length;
+        else if (data && typeof data === 'object') acc.matched += 1;
+      }
+      if (call.name === 'get_prices') {
+        const data = parsed?.data ?? parsed?.prices ?? parsed?.price;
+        if (Array.isArray(data)) acc.prices += data.length;
+        else if (data !== undefined && data !== null) acc.prices += 1;
+      }
+    } catch {
+      // ignore non-JSON results
     }
-    return visibleCalls.length === 1
-      ? formatToolName(visibleCalls[0].name)
-      : `${visibleCalls.length} veiksmai atlikti`;
-  };
+    return acc;
+  }, { matched: 0, prices: 0, missing: 0 });
+
+  const phases: Array<{ title: string; subtitle?: string; state: 'active' | 'done' }> = [];
+  if (getProductsCount > 0 && getPricesCount > 0) {
+    phases.push({
+      title: 'Matching products and retrieving prices',
+      subtitle: processedComponents > 0 ? `Processing components ${processedComponents}` : undefined,
+      state: allCompleted ? 'done' : 'active'
+    });
+  } else {
+    if (getProductsCount > 0) phases.push({ title: 'Matching products', subtitle: `Calls: ${getProductsCount}`, state: allCompleted ? 'done' : 'active' });
+    if (getPricesCount > 0) phases.push({ title: 'Retrieving prices', subtitle: `Calls: ${getPricesCount}`, state: allCompleted ? 'done' : 'active' });
+  }
+  if ((toolCounts.get_multiplier || 0) > 0) {
+    phases.push({ title: 'Applying multiplier', subtitle: `Calls: ${toolCounts.get_multiplier}`, state: allCompleted ? 'done' : 'active' });
+  }
+  if (visibleCalls.length > 0) {
+    phases.push({ title: 'Building final response', state: allCompleted ? 'done' : 'active' });
+  }
 
   return (
-    <div className="my-2">
-      {!allCompleted && (
-        <style>{`
-          @keyframes tool-breathe {
-            0%, 100% { opacity: 0.5; }
-            50% { opacity: 1; }
-          }
-        `}</style>
-      )}
-
-      {/* Header row - plain text, clickable */}
-      <div
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 cursor-pointer select-none"
-        style={{ lineHeight: '1.4' }}
-      >
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
-        )}
-        <span
-          className="flex-shrink-0"
-          style={{
-            color: allCompleted ? '#8a857f' : '#6366f1',
-            fontSize: '11px',
-            animation: allCompleted ? 'none' : 'tool-breathe 2s ease-in-out infinite',
-          }}
-        >
-          ✦
-        </span>
-        <span className="text-xs" style={{ color: '#5a5550' }}>
-          {getGroupHeading()}
-        </span>
+    <div className="my-2 rounded-xl border border-base-content/10 bg-base-100/60 p-3">
+      <div className="space-y-2">
+        {phases.map((phase, idx) => (
+          <div key={`${phase.title}-${idx}`} className="flex items-start gap-2">
+            <span className={`mt-0.5 inline-block h-2 w-2 rounded-full ${phase.state === 'done' ? 'bg-emerald-500' : 'bg-primary animate-pulse'}`} />
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-base-content">{phase.title}</p>
+              {phase.subtitle && <p className="text-[11px] text-base-content/60">{phase.subtitle}</p>}
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Tool tree */}
-      {expanded && (
-        <div className="ml-[7px] mt-0.5">
-          {displayedCalls.map((call, idx) => {
-            const isLast = idx === displayedCalls.length - 1 && (showAll || visibleCalls.length <= COLLAPSED_LIMIT);
-            return (
-              <div key={idx} className="flex" style={{ minHeight: '20px' }}>
-                {/* Tree gutter: vertical line + branch */}
-                <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
-                  {/* Vertical line */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '3px',
-                      top: 0,
-                      bottom: isLast ? '50%' : 0,
-                      width: '1px',
-                      background: '#d4d1cc',
-                    }}
-                  />
-                  {/* Horizontal branch */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '3px',
-                      top: '50%',
-                      width: '10px',
-                      height: '1px',
-                      background: '#d4d1cc',
-                    }}
-                  />
-                </div>
+      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-base-content/65">
+        {metrics.matched > 0 && <span className="rounded-full border border-base-content/15 px-2 py-0.5">Matched products: {metrics.matched}</span>}
+        {metrics.prices > 0 && <span className="rounded-full border border-base-content/15 px-2 py-0.5">Found prices: {metrics.prices}</span>}
+        {metrics.missing > 0 && <span className="rounded-full border border-warning/40 px-2 py-0.5 text-warning">Missing items: {metrics.missing}</span>}
+      </div>
 
-                {/* Tool content */}
-                <div className="flex-1 py-0.5" style={{ minWidth: 0 }}>
+      <button
+        onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+        className="mt-2 inline-flex items-center gap-1 text-[11px] text-base-content/60 hover:text-base-content"
+      >
+        {showTechnicalDetails ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        Technical details
+        <span className="text-base-content/40">
+          · {Object.entries(toolCounts).map(([name, count]) => `${formatToolName(name)} × ${count}`).join(' · ')}
+        </span>
+      </button>
+
+      {showTechnicalDetails && (
+        <div className="mt-2 border-t border-base-content/10 pt-2">
+          {displayedCalls.map((call, idx) => {
+            return (
+              <div key={idx} className="py-1.5 border-b border-base-content/5 last:border-b-0">
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-semibold flex-shrink-0" style={{ color: '#3d3935' }}>
                       {formatToolName(call.name)}
@@ -367,32 +370,15 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
                       </span>
                     )}
                   </div>
-                  {/* Result */}
                   {call.result && (
                     <ToolResult text={call.result} />
                   )}
-                </div>
               </div>
             );
           })}
 
-          {/* Show more / Show less */}
           {hiddenCount > 0 && (
-            <div className="flex" style={{ minHeight: '20px' }}>
-              <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
-                {!showAll && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '3px',
-                      top: 0,
-                      bottom: '50%',
-                      width: '1px',
-                      background: '#d4d1cc',
-                    }}
-                  />
-                )}
-              </div>
+            <div className="pt-1">
               <button
                 onClick={() => setShowAll(!showAll)}
                 className="text-[11px] py-0.5 cursor-pointer"

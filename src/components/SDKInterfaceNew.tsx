@@ -232,6 +232,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
   const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>([]);
 
+  const getFriendlyToolPhaseLabel = (toolName: string): string => {
+    if (toolName === 'get_products') return 'Matching products';
+    if (toolName === 'get_prices') return 'Retrieving prices';
+    if (toolName === 'get_multiplier') return 'Applying multiplier';
+    if (toolName === 'display_buttons') return 'Waiting for user confirmation';
+    return 'Processing workflow';
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -3697,7 +3705,7 @@ Vartotojo instrukcija: ${instruction}`;
                 <div className="mb-4 flex items-center gap-2 ml-1 text-base-content/40">
                   <span className="text-sm">✦</span>
                   <span className="text-sm font-medium">
-                    Vykdoma: {toolUseName}...
+                    {getFriendlyToolPhaseLabel(toolUseName)}
                   </span>
                 </div>
               )}
