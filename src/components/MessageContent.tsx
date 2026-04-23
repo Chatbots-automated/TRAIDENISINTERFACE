@@ -281,7 +281,6 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
 
   const getProductsCount = toolCounts.get_products || 0;
   const getPricesCount = toolCounts.get_prices || 0;
-  const processedComponents = Math.max(getProductsCount, getPricesCount);
 
   const metrics = visibleCalls.reduce((acc, call) => {
     if (!call.result) return acc;
@@ -306,92 +305,107 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
     return acc;
   }, { matched: 0, prices: 0, missing: 0 });
 
-  const phases: Array<{ title: string; subtitle?: string; state: 'active' | 'done' }> = [];
+  const phases: Array<{ key: string; title: string; calls: number; failed?: number; state: 'active' | 'done' }> = [];
   if (getProductsCount > 0 && getPricesCount > 0) {
     phases.push({
-      title: 'Matching products and retrieving prices',
-      subtitle: processedComponents > 0 ? `Processing components ${processedComponents}` : undefined,
+      key: 'products_and_prices',
+      title: 'Renkamos komplektacijos ir kainos',
+      calls: getProductsCount + getPricesCount,
       state: allCompleted ? 'done' : 'active'
     });
   } else {
-    if (getProductsCount > 0) phases.push({ title: 'Matching products', subtitle: `Calls: ${getProductsCount}`, state: allCompleted ? 'done' : 'active' });
-    if (getPricesCount > 0) phases.push({ title: 'Retrieving prices', subtitle: `Calls: ${getPricesCount}`, state: allCompleted ? 'done' : 'active' });
+    if (getProductsCount > 0) phases.push({ key: 'products', title: 'Renkamos komplektacijos', calls: getProductsCount, state: allCompleted ? 'done' : 'active' });
+    if (getPricesCount > 0) phases.push({ key: 'prices', title: 'Skaičiuojamos dalių kainos', calls: getPricesCount, state: allCompleted ? 'done' : 'active' });
   }
   if ((toolCounts.get_multiplier || 0) > 0) {
-    phases.push({ title: 'Applying multiplier', subtitle: `Calls: ${toolCounts.get_multiplier}`, state: allCompleted ? 'done' : 'active' });
+    phases.push({ key: 'multiplier', title: 'Taikomas daugiklis', calls: toolCounts.get_multiplier, state: allCompleted ? 'done' : 'active' });
   }
-  if (visibleCalls.length > 0) {
-    phases.push({ title: 'Building final response', state: allCompleted ? 'done' : 'active' });
-  }
+
+  Object.entries(toolCounts).forEach(([name, count]) => {
+    if (['get_products', 'get_prices', 'get_multiplier'].includes(name)) return;
+    phases.push({
+      key: name,
+      title: formatToolName(name),
+      calls: count,
+      state: allCompleted ? 'done' : 'active'
+    });
+  });
 
   return (
-    <div className="my-2 rounded-xl border border-base-content/10 bg-base-100/60 p-3">
-      <div className="space-y-2">
+    <div className="my-2">
+      <div className="border-l border-base-content/15 pl-3">
         {phases.map((phase, idx) => (
-          <div key={`${phase.title}-${idx}`} className="flex items-start gap-2">
-            <span className={`mt-0.5 inline-block h-2 w-2 rounded-full ${phase.state === 'done' ? 'bg-emerald-500' : 'bg-primary animate-pulse'}`} />
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-base-content">{phase.title}</p>
-              {phase.subtitle && <p className="text-[11px] text-base-content/60">{phase.subtitle}</p>}
-            </div>
+          <div
+            key={phase.key}
+            className={`flex items-center gap-2 py-1 ${idx < phases.length - 1 ? 'border-b border-base-content/5' : ''}`}
+          >
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase.state === 'done' ? 'bg-base-content/50' : 'bg-base-content'}`} />
+            <p className="text-[12px] leading-5 text-base-content font-medium">
+              {phase.title}
+              <span className="text-base-content/55 font-normal"> · {phase.calls} {phase.calls === 1 ? 'call' : 'calls'}</span>
+              {phase.failed ? <span className="text-warning"> · failed {phase.failed}</span> : null}
+            </p>
           </div>
         ))}
-      </div>
+        {phases.length === 0 && (
+          <div className="py-1 text-[12px] text-base-content/70">Vykdomi veiksmai...</div>
+        )}
 
-      <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-base-content/65">
-        {metrics.matched > 0 && <span className="rounded-full border border-base-content/15 px-2 py-0.5">Matched products: {metrics.matched}</span>}
-        {metrics.prices > 0 && <span className="rounded-full border border-base-content/15 px-2 py-0.5">Found prices: {metrics.prices}</span>}
-        {metrics.missing > 0 && <span className="rounded-full border border-warning/40 px-2 py-0.5 text-warning">Missing items: {metrics.missing}</span>}
-      </div>
+        {(metrics.matched > 0 || metrics.prices > 0 || metrics.missing > 0) && (
+          <div className="py-1 border-t border-base-content/5 text-[11px] text-base-content/55">
+            {metrics.matched > 0 ? `Sutapimai: ${metrics.matched}` : ''}
+            {metrics.prices > 0 ? `${metrics.matched > 0 ? ' · ' : ''}Kainos: ${metrics.prices}` : ''}
+            {metrics.missing > 0 ? `${metrics.matched > 0 || metrics.prices > 0 ? ' · ' : ''}Trūksta: ${metrics.missing}` : ''}
+          </div>
+        )}
 
-      <button
-        onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-        className="mt-2 inline-flex items-center gap-1 text-[11px] text-base-content/60 hover:text-base-content"
-      >
-        {showTechnicalDetails ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-        Technical details
-        <span className="text-base-content/40">
-          · {Object.entries(toolCounts).map(([name, count]) => `${formatToolName(name)} × ${count}`).join(' · ')}
-        </span>
-      </button>
+        <button
+          onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+          className="py-1 inline-flex items-center gap-1 text-[11px] text-base-content/55 hover:text-base-content"
+        >
+          {showTechnicalDetails ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          Detalės
+          <span className="text-base-content/40">
+            ({Object.entries(toolCounts).map(([name, count]) => `${formatToolName(name)} ×${count}`).join(', ')})
+          </span>
+        </button>
 
-      {showTechnicalDetails && (
-        <div className="mt-2 border-t border-base-content/10 pt-2">
-          {displayedCalls.map((call, idx) => {
-            return (
-              <div key={idx} className="py-1.5 border-b border-base-content/5 last:border-b-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold flex-shrink-0" style={{ color: '#3d3935' }}>
-                      {formatToolName(call.name)}
+        {showTechnicalDetails && (
+          <div className="border-t border-base-content/10 pt-1">
+            {displayedCalls.map((call, idx) => (
+              <div key={idx} className="py-1 border-b border-base-content/5 last:border-b-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold flex-shrink-0 text-base-content/80">
+                    {formatToolName(call.name)}
+                  </span>
+                  {getToolParam(call) && (
+                    <span className="text-[11px] truncate" style={{ color: '#a09b95' }}>
+                      {getToolParam(call)}
                     </span>
-                    {getToolParam(call) && (
-                      <span className="text-[11px] truncate" style={{ color: '#a09b95' }}>
-                        {getToolParam(call)}
-                      </span>
-                    )}
-                  </div>
-                  {call.result && (
-                    <ToolResult text={call.result} />
                   )}
+                </div>
+                {call.result && (
+                  <ToolResult text={call.result} />
+                )}
               </div>
-            );
-          })}
+            ))}
 
-          {hiddenCount > 0 && (
-            <div className="pt-1">
-              <button
-                onClick={() => setShowAll(!showAll)}
-                className="text-[11px] py-0.5 cursor-pointer"
-                style={{ color: '#8a857f' }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
-              >
-                {showAll ? 'Rodyti mažiau' : `Rodyti dar ${hiddenCount}`}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            {hiddenCount > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowAll(!showAll)}
+                  className="text-[11px] py-0.5 cursor-pointer"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+                >
+                  {showAll ? 'Rodyti mažiau' : `Rodyti dar ${hiddenCount}`}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
