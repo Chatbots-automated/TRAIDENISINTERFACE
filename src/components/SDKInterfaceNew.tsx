@@ -4338,7 +4338,7 @@ Vartotojo instrukcija: ${instruction}`;
                           background: 'radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.96) 0%, rgba(251,249,246,0.98) 45%, rgba(245,242,238,0.96) 100%)'
                         }}
                       >
-                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(240px,270px)_1fr] 2xl:grid-cols-[300px_1fr] gap-4">
+                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(220px,245px)_1fr] 2xl:grid-cols-[270px_1fr] gap-4">
                           <div className="rounded-2xl border border-base-content/10 bg-white p-3.5 xl:p-4 shadow-[0_16px_30px_rgba(60,52,46,0.08)]">
                             <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Būsenos radaras</p>
                             <div className="mt-3 flex items-center justify-between gap-2">
