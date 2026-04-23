@@ -2442,12 +2442,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentConversation?.title,
   ]);
 
-  const yamlVariableRows = useMemo(() => {
-    return Object.entries(yamlVarsForUi)
-      .map(([key, raw]) => ({ key, value: raw === undefined || raw === null ? '' : String(raw) }))
-      .sort((a, b) => a.key.localeCompare(b.key));
-  }, [yamlVarsForUi]);
-
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
 
@@ -4242,7 +4236,7 @@ Vartotojo instrukcija: ${instruction}`;
                     {!isStreamingArtifact && currentConversation?.artifact && (
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
-                          Chat / YAML kintamųjų: {yamlVariableRows.length}
+                          Sugeneruotų YAML kintamųjų: {Object.keys(yamlVarsForUi).length}
                         </span>
                         {templateVariables.length > 0 && (
                           <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
@@ -4262,41 +4256,34 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                        <div className="rounded-lg border border-base-content/10 overflow-hidden">
-                          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60">
-                            Chat / YAML kintamieji
-                          </div>
-                          <div className="max-h-[360px] overflow-auto">
-                            {yamlVariableRows.length > 0 ? yamlVariableRows.map((row) => (
-                              <div key={row.key} className="px-3 py-2 border-t border-base-content/5 flex items-start justify-between gap-3 text-[12px]">
-                                <span className="font-mono text-base-content/60 break-all">{row.key}</span>
-                                <span className={`font-mono text-right break-all ${row.value ? 'text-base-content' : 'text-base-content/30 italic'}`}>
-                                  {row.value || 'tuščia'}
-                                </span>
-                              </div>
-                            )) : (
-                              <div className="px-3 py-4 text-[12px] text-base-content/40">Nėra YAML kintamųjų.</div>
-                            )}
-                          </div>
+                      <div className="rounded-lg border border-base-content/10 overflow-hidden">
+                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60 grid grid-cols-[1fr_auto_1fr_auto] gap-3 items-center">
+                          <span>Šablonas</span>
+                          <span className="opacity-50">↔</span>
+                          <span>Sugeneruota</span>
+                          <span className="text-right">Būsena</span>
                         </div>
-
-                        <div className="rounded-lg border border-base-content/10 overflow-hidden">
-                          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60">
-                            DOCX šablono kintamieji
-                          </div>
-                          <div className="max-h-[360px] overflow-auto">
-                            {templateVariablePreviewRows.length > 0 ? templateVariablePreviewRows.map((row) => (
-                              <div key={row.key} className="px-3 py-2 border-t border-base-content/5 flex items-start justify-between gap-3 text-[12px]">
-                                <span className="font-mono text-base-content/60 break-all">{row.key}</span>
-                                <span className={`font-mono text-right break-all ${row.value ? 'text-base-content' : 'text-base-content/30 italic'}`}>
-                                  {row.value || 'tuščia'}
+                        <div className="max-h-[420px] overflow-auto">
+                          {templateVariablePreviewRows.length > 0 ? templateVariablePreviewRows.map((row) => {
+                            const isMissing = !row.value;
+                            return (
+                              <div
+                                key={row.key}
+                                className={`px-3 py-2 border-t border-base-content/5 grid grid-cols-[1fr_auto_1fr_auto] gap-3 items-center text-[12px] ${isMissing ? 'bg-warning/5' : ''}`}
+                              >
+                                <span className="font-mono text-base-content/70 break-all">{row.key}</span>
+                                <span className={`text-[11px] ${isMissing ? 'text-warning' : 'text-success'}`}>●</span>
+                                <span className={`font-mono break-all rounded px-2 py-1 ${isMissing ? 'text-base-content/35 italic bg-base-content/[0.03]' : 'text-base-content bg-success/5'}`}>
+                                  {row.value || '\u00A0'}
+                                </span>
+                                <span className={`text-[10px] font-semibold uppercase tracking-wide ${isMissing ? 'text-warning' : 'text-success'}`}>
+                                  {isMissing ? 'trūksta' : 'atitinka'}
                                 </span>
                               </div>
-                            )) : (
-                              <div className="px-3 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
-                            )}
-                          </div>
+                            );
+                          }) : (
+                            <div className="px-3 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
+                          )}
                         </div>
                       </div>
                     ) : (
