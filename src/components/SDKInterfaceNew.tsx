@@ -2338,6 +2338,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
+  const lastAutoTechDescSignatureRef = useRef<string>('');
   useEffect(() => {
     if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
   }, [savedDocxFileId]);
@@ -2415,6 +2416,38 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalDocxFileId, currentConversation?.id, currentConversation?.artifact?.content, savedDocxFileId]);
+
+  useEffect(() => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    if (techDescLoading) return;
+    if (!templateVariables.includes('technological_description')) return;
+
+    const yamlVars = parseYAMLContent(currentConversation.artifact.content);
+    const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
+    if (!componentsList) return;
+
+    const currentTechDesc = String(
+      templateRowOverrides['technological_description']
+      ?? offerParameters['technological_description']
+      ?? yamlVars['technological_description']
+      ?? ''
+    ).trim();
+    if (currentTechDesc) return;
+
+    const signature = `${currentConversation.id}::${currentConversation.artifact.version}::${componentsList}`;
+    if (lastAutoTechDescSignatureRef.current === signature) return;
+    lastAutoTechDescSignatureRef.current = signature;
+
+    autoGenerateTechDescription(componentsList, currentConversation.id);
+  }, [
+    currentConversation?.id,
+    currentConversation?.artifact?.content,
+    currentConversation?.artifact?.version,
+    templateVariables,
+    offerParameters,
+    templateRowOverrides,
+    techDescLoading,
+  ]);
 
   const yamlVarsForUi = useMemo<Record<string, string>>(
     () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
@@ -2915,6 +2948,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         // Auto-save to offerParameters
         const updated = { ...offerParameters, technological_description: text };
         persistOfferParameters(conversationId, updated);
+        setTemplateRowOverrides((prev) => ({ ...prev, technological_description: text }));
+        setSkippedTemplateRows((prev) => ({ ...prev, technological_description: false }));
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
       }
