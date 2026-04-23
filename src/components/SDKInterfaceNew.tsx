@@ -4256,33 +4256,39 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div className="rounded-lg border border-base-content/10 overflow-hidden">
-                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60 grid grid-cols-[1fr_auto_1fr_auto] gap-3 items-center">
+                      <div className="rounded-xl border border-base-content/10 bg-base-100 shadow-sm p-3">
+                        <div className="px-1 pb-2 text-[11px] uppercase tracking-wide text-base-content/45 flex items-center justify-between">
                           <span>Šablonas</span>
-                          <span className="opacity-50">↔</span>
                           <span>Sugeneruota</span>
-                          <span className="text-right">Būsena</span>
                         </div>
-                        <div className="max-h-[420px] overflow-auto">
+                        <div className="max-h-[420px] overflow-auto pr-1">
                           {templateVariablePreviewRows.length > 0 ? templateVariablePreviewRows.map((row) => {
                             const isMissing = !row.value;
                             return (
                               <div
                                 key={row.key}
-                                className={`px-3 py-2 border-t border-base-content/5 grid grid-cols-[1fr_auto_1fr_auto] gap-3 items-center text-[12px] ${isMissing ? 'bg-warning/5' : ''}`}
+                                className="mb-2 rounded-lg bg-white border border-base-content/10 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2"
                               >
-                                <span className="font-mono text-base-content/70 break-all">{row.key}</span>
-                                <span className={`text-[11px] ${isMissing ? 'text-warning' : 'text-success'}`}>●</span>
-                                <span className={`font-mono break-all rounded px-2 py-1 ${isMissing ? 'text-base-content/35 italic bg-base-content/[0.03]' : 'text-base-content bg-success/5'}`}>
-                                  {row.value || '\u00A0'}
-                                </span>
-                                <span className={`text-[10px] font-semibold uppercase tracking-wide ${isMissing ? 'text-warning' : 'text-success'}`}>
-                                  {isMissing ? 'trūksta' : 'atitinka'}
-                                </span>
+                                <div className="flex items-start gap-3">
+                                  <div className="w-56 min-w-56 text-[12px] font-semibold text-base-content/75 break-all">
+                                    {row.key}
+                                  </div>
+                                  <div className="text-base-content/25 text-[11px] mt-0.5">↔</div>
+                                  <div className={`flex-1 text-[12px] leading-relaxed break-all ${isMissing ? 'text-base-content/35 italic' : 'text-base-content'}`}>
+                                    {row.value || 'tuščia'}
+                                  </div>
+                                  <div className="ml-2 mt-0.5">
+                                    {isMissing ? (
+                                      <AlertCircle className="w-4 h-4 text-warning" />
+                                    ) : (
+                                      <Check className="w-4 h-4 text-success" />
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             );
                           }) : (
-                            <div className="px-3 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
+                            <div className="px-2 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
                           )}
                         </div>
                       </div>
@@ -4293,10 +4299,11 @@ Vartotojo instrukcija: ${instruction}`;
                     )}
 
                     {!isStreamingArtifact && (
-                      <div className="mt-3 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-3 py-2">
+                      <div className="mt-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2">
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-[12px] font-medium text-base-content/70">
-                            {unresolvedTemplateVariables.length} template variables missing values
+                          <p className="text-[12px] font-medium text-warning flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            Trūksta {unresolvedTemplateVariables.length} kintamųjų
                           </p>
                           {unresolvedTemplateVariables.length > 0 && (
                             <button
