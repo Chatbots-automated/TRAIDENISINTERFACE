@@ -168,7 +168,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
   const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
   // Template editor: edit mode + image editing
@@ -3571,7 +3570,7 @@ Vartotojo instrukcija: ${instruction}`;
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+        <div className="flex-1 min-w-0" style={{ width: 'clamp(320px, 44vw, 760px)', maxWidth: '100%' }}>
           <div className="w-full flex flex-col h-screen bg-base-100">
             {/* Header — compact single row */}
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
@@ -3608,38 +3607,6 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="flex items-center gap-1">
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowDownloadMenu(prev => !prev)}
-                        className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                        title="Atsisiųsti dokumentą"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      {showDownloadMenu && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
-                          <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-content/10 rounded-lg shadow-lg py-1 min-w-[180px]">
-                            {savedDocxFileId ? (
-                              <a
-                                href={getDirectusFileUrl(savedDocxFileId)}
-                                download
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
-                                onClick={() => setShowDownloadMenu(false)}
-                              >
-                                <FileText className="w-4 h-4 text-blue-500" />
-                                Atsisiųsti .docx
-                              </a>
-                            ) : (
-                              <span className="px-3 py-2 text-sm text-base-content/40 flex items-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Dokumentas generuojamas...
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
                     {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
@@ -3672,6 +3639,19 @@ Vartotojo instrukcija: ${instruction}`;
                         : <RotateCcw className="w-3.5 h-3.5" />}
                       Atnaujinti šabloną
                     </button>
+                    {artifactTab === 'preview' && savedDocxFileId && (
+                      <button
+                        onClick={() => {
+                          setDocxPreviewLoading(true);
+                          setDocxPreviewTick((prev) => prev + 1);
+                        }}
+                        className="btn btn-sm btn-outline gap-1.5 ml-1"
+                        title="Perkrauti DOCX peržiūrą"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Atnaujinti peržiūrą
+                      </button>
+                    )}
                     {savedDocxFileId && (
                       <a
                         href={getDirectusFileUrl(savedDocxFileId)}
@@ -4381,7 +4361,7 @@ Vartotojo instrukcija: ${instruction}`;
                                 </div>
                                 <p className="mt-2 text-[12px] text-slate-600">
                                   {templateCompletion.missing === 0
-                                    ? 'Visi DOCX laukai užpildyti.'
+                                    ? 'Visi šablone užpildyti'
                                     : `Trūksta ${templateCompletion.missing} ${templateCompletion.missing === 1 ? 'lauko' : 'laukų'}.`}
                                 </p>
                               </div>
@@ -4434,21 +4414,21 @@ Vartotojo instrukcija: ${instruction}`;
                                                   skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
                                                 }`}
                                               >
-                                                <div className="flex items-start justify-between gap-3">
-                                                  <div className="min-w-0">
+                                                <div className="flex flex-col gap-2">
+                                                  <div className="min-w-0 w-full">
                                                     <span className="inline-flex rounded-full border border-warning/45 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
                                                     {isEditing ? (
                                                       <textarea
                                                         value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
                                                         onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
-                                                        className="mt-2 w-full min-h-[72px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                        className="mt-2 w-full min-h-[92px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
                                                         placeholder="Įveskite reikšmę..."
                                                       />
                                                     ) : (
                                                       <p className="mt-2 text-[12px] text-base-content/70">Reikšmė neįvesta.</p>
                                                     )}
                                                   </div>
-                                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                                     <button
                                                       type="button"
                                                       onClick={() => {
