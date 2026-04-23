@@ -4736,27 +4736,27 @@ Vartotojo instrukcija: ${instruction}`;
       )}
 
       {showInstructionNudge && (
-        <div className="fixed bottom-5 right-5 z-50 w-[320px] rounded-xl border border-base-content/10 bg-base-100 shadow-xl p-4">
-          <div className="text-sm font-semibold text-base-content mb-1">Atnaujintas DOCX šablonas</div>
-          <p className="text-xs text-base-content/60 leading-relaxed mb-3">
-            Peržiūrėkite instrukcijas/prompt preview, kad chat_template išliktų suderintas su nauju šablonu.
+        <div className="fixed bottom-6 right-6 z-50 w-[440px] max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/20 bg-base-100 shadow-2xl p-6">
+          <div className="text-base font-semibold text-base-content mb-2">Word šablonas atnaujintas</div>
+          <p className="text-sm text-base-content/70 leading-relaxed mb-5">
+            Ar norėtumėte peržiūrėti ar Agento Sistemos Instrukcijos suderinamos su nauju Word šablonu?
           </p>
           <div className="flex items-center justify-end gap-2">
             <button
               onClick={() => setShowInstructionNudge(false)}
-              className="btn btn-xs btn-soft"
+              className="btn btn-sm btn-soft min-w-[72px]"
             >
-              Skip
+              ne
             </button>
             <button
               onClick={() => {
                 setShowInstructionNudge(false);
                 setShowTemplateEditor(false);
-                handleOpenPromptModal();
+                navigate('/instrukcijos?variable=chat_commercial_offer_generation');
               }}
-              className="btn btn-xs btn-primary"
+              className="btn btn-sm btn-primary min-w-[72px]"
             >
-              Review Instructions
+              taip
             </button>
           </div>
         </div>
