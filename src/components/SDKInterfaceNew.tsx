@@ -193,11 +193,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
-  const [showMissingTemplateDetails, setShowMissingTemplateDetails] = useState(false);
   const [showOnlyMissingTemplateRows, setShowOnlyMissingTemplateRows] = useState(false);
   const [showFilledTemplateRows, setShowFilledTemplateRows] = useState(false);
-  const [selectedTemplateRowKey, setSelectedTemplateRowKey] = useState<string | null>(null);
+  const [showSkippedTemplateRows, setShowSkippedTemplateRows] = useState(false);
   const [expandedTemplateValues, setExpandedTemplateValues] = useState<Record<string, boolean>>({});
+  const [skippedTemplateRows, setSkippedTemplateRows] = useState<Record<string, boolean>>({});
+  const [editingTemplateRows, setEditingTemplateRows] = useState<Record<string, boolean>>({});
+  const [templateRowOverrides, setTemplateRowOverrides] = useState<Record<string, string>>({});
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -2428,11 +2430,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const templateVariablePreviewRows = useMemo(() => {
     if (!templateVariables.length) return [];
     const merged = mergeAllVariables();
+    const objectAndWaterKeys = new Set(
+      OFFER_PARAMETER_DEFINITIONS
+        .filter((p) => p.group === 'object')
+        .map((p) => p.key)
+    );
     return templateVariables.map((key) => {
+      if (objectAndWaterKeys.has(key)) return null;
       const raw = merged[key];
-      const value = raw === undefined || raw === null ? '' : String(raw);
+      const override = templateRowOverrides[key];
+      const value = override !== undefined
+        ? override
+        : (raw === undefined || raw === null ? '' : String(raw));
       return { key, value };
-    });
+    }).filter((row): row is { key: string; value: string } => row !== null);
   }, [
     templateVariables,
     currentConversation?.artifact?.content,
@@ -2444,13 +2455,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     user.phone,
     user.kodas,
     currentConversation?.title,
+    templateRowOverrides,
   ]);
 
   const visibleTemplateVariableRows = useMemo(
     () => showOnlyMissingTemplateRows
-      ? templateVariablePreviewRows.filter((row) => !row.value)
-      : templateVariablePreviewRows,
-    [templateVariablePreviewRows, showOnlyMissingTemplateRows]
+      ? templateVariablePreviewRows.filter((row) => !row.value && !skippedTemplateRows[row.key])
+      : templateVariablePreviewRows.filter((row) => !skippedTemplateRows[row.key]),
+    [templateVariablePreviewRows, showOnlyMissingTemplateRows, skippedTemplateRows]
   );
   const missingTemplateRows = useMemo(
     () => visibleTemplateVariableRows.filter((row) => !row.value),
@@ -2460,13 +2472,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     () => visibleTemplateVariableRows.filter((row) => !!row.value),
     [visibleTemplateVariableRows]
   );
+  const skippedTemplateVariableRows = useMemo(
+    () => templateVariablePreviewRows.filter((row) => skippedTemplateRows[row.key]),
+    [templateVariablePreviewRows, skippedTemplateRows]
+  );
   const templateCompletion = useMemo(() => {
-    const total = templateVariables.length || 0;
-    const missing = unresolvedTemplateVariables.length;
+    const total = templateVariablePreviewRows.length || 0;
+    const missing = templateVariablePreviewRows.filter((row) => !row.value && !skippedTemplateRows[row.key]).length;
     const filled = Math.max(total - missing, 0);
     const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
     return { total, missing, filled, percentage };
-  }, [templateVariables.length, unresolvedTemplateVariables.length]);
+  }, [templateVariablePreviewRows, skippedTemplateRows]);
 
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
@@ -4283,186 +4299,185 @@ Vartotojo instrukcija: ${instruction}`;
                       </div>
                     ) : currentConversation?.artifact ? (
                       <div
-                        className="rounded-[22px] border border-base-content/10 shadow-xl p-4 max-w-4xl mx-auto"
+                        className="rounded-[26px] border border-base-content/10 shadow-xl p-4 max-w-5xl mx-auto"
                         style={{
                           background: 'radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.96) 0%, rgba(251,249,246,0.98) 45%, rgba(245,242,238,0.96) 100%)'
                         }}
                       >
-                        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
-                          <div className="rounded-2xl border border-base-content/10 bg-base-100/75 backdrop-blur-sm p-3">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Status View</p>
+                        <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4">
+                          <div className="rounded-2xl border border-base-content/10 bg-base-100/80 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Būsenos radaras</p>
                             <div className="mt-2 rounded-xl border border-base-content/10 p-2.5 bg-base-100">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-success">+ Filled</span>
-                                <span className="text-[11px] font-semibold text-success">{templateCompletion.percentage}%</span>
+                              <div className="text-center">
+                                <p className="text-[28px] font-bold leading-none text-base-content">{templateCompletion.percentage}%</p>
+                                <p className="text-[11px] text-base-content/55 mt-1">užpildyta</p>
                               </div>
-                              <div className="mt-1.5 h-2 rounded-full bg-success/10 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-200"
-                                  style={{
-                                    width: `${templateCompletion.percentage}%`,
-                                    background: 'repeating-linear-gradient(135deg, rgba(34,197,94,0.85) 0 8px, rgba(21,128,61,0.85) 8px 16px)'
-                                  }}
-                                />
+                              <div className="mt-3 h-2 rounded-full bg-base-content/10 overflow-hidden">
+                                <div className="h-full transition-all duration-200 rounded-full" style={{ width: `${templateCompletion.percentage}%`, background: 'linear-gradient(90deg, #16a34a, #22c55e)' }} />
                               </div>
-                              <div className="mt-2.5 flex items-center justify-between">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-warning">- Missing</span>
-                                <span className="text-[11px] font-semibold text-warning">{Math.max(100 - templateCompletion.percentage, 0)}%</span>
-                              </div>
-                              <div className="mt-1.5 h-2 rounded-full bg-warning/10 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full transition-all duration-200"
-                                  style={{
-                                    width: `${Math.max(100 - templateCompletion.percentage, 0)}%`,
-                                    background: 'repeating-linear-gradient(135deg, rgba(251,146,60,0.9) 0 8px, rgba(194,65,12,0.9) 8px 16px)'
-                                  }}
-                                />
-                              </div>
-                              <div className="mt-3 rounded-lg px-2.5 py-2 text-center border border-base-content/10 bg-base-content/[0.03]">
-                                <span className="text-[11px] uppercase tracking-wider text-base-content/55">Difference</span>
-                                <p className="text-[22px] font-bold leading-none mt-1 text-base-content">{templateCompletion.filled - templateCompletion.missing}</p>
-                              </div>
+                              <p className="mt-3 text-[12px] font-semibold text-warning">
+                                Trūksta {templateCompletion.missing} laukų
+                              </p>
                             </div>
-                            <div className="mt-3 space-y-2">
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-base-content/55">Filled</span>
-                                <span className="font-semibold text-success">{templateCompletion.filled}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-base-content/55">Missing</span>
-                                <span className="font-semibold text-warning">{templateCompletion.missing}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-base-content/55">Total</span>
-                                <span className="font-semibold text-base-content/80">{templateCompletion.total}</span>
-                              </div>
+                            <div className="mt-3 space-y-1.5 text-[11px]">
+                              <div className="flex items-center justify-between"><span className="text-base-content/55">Užpildyta</span><span className="font-semibold text-success">{templateCompletion.filled}</span></div>
+                              <div className="flex items-center justify-between"><span className="text-base-content/55">Trūksta</span><span className="font-semibold text-warning">{templateCompletion.missing}</span></div>
+                              <div className="flex items-center justify-between"><span className="text-base-content/55">Iš viso</span><span className="font-semibold text-base-content/80">{templateCompletion.total}</span></div>
                             </div>
                           </div>
 
                           <div className="min-w-0">
-                            <div className={`rounded-2xl border p-3 transition-all duration-200 ${
-                              templateCompletion.missing === 0
-                                ? 'border-success/30 bg-success/10'
-                                : 'border-warning/30 bg-warning/10'
-                            }`}>
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-[14px] font-semibold tracking-tight text-base-content">
-                                  {templateCompletion.missing === 0
-                                    ? '✅ Everything is filled'
-                                    : `⚠ ${templateCompletion.missing} fields are missing`}
-                                </p>
-                                <button
-                                  onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
-                                  className={`btn btn-xs transition-all duration-200 ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
-                                >
-                                  {showOnlyMissingTemplateRows ? 'Show all' : 'Show only missing'}
-                                </button>
-                              </div>
-                              <p className="mt-1 text-[11px] text-base-content/55">
-                                This updates automatically based on your form values.
+                            <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-white/70 px-3 py-2">
+                              <p className="text-[13px] font-semibold text-base-content">
+                                {templateCompletion.missing === 0 ? '✅ Visi laukai užpildyti' : '⚠ Reikia papildyti trūkstamus laukus'}
                               </p>
+                              <button
+                                onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
+                                className={`btn btn-xs ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
+                              >
+                                {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
+                              </button>
                             </div>
 
-                            <div className="mt-3 max-h-[470px] overflow-auto pr-1 space-y-4">
+                            <div className="mt-3 max-h-[500px] overflow-auto pr-1 space-y-3">
                               {visibleTemplateVariableRows.length > 0 ? (
                                 <>
-                                  <div>
-                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-warning/90">Missing · Priority first</p>
+                                  <div className="rounded-2xl border border-warning/30 bg-warning/[0.04] p-3">
+                                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90 mb-2">Trūksta</p>
                                     {missingTemplateRows.length > 0 ? (
                                       <div className="space-y-2">
                                         {missingTemplateRows.map((row) => {
-                                          const isActive = selectedTemplateRowKey === row.key;
+                                          const isEditing = !!editingTemplateRows[row.key];
                                           return (
-                                            <button
-                                              type="button"
+                                            <div
                                               key={row.key}
-                                              onClick={() => {
-                                                setSelectedTemplateRowKey(row.key);
-                                                setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
-                                              }}
-                                              className={`group w-full text-left relative overflow-hidden rounded-xl border pl-3 pr-3 py-3 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/60 ${
-                                                isActive
-                                                  ? 'border-warning/70 bg-[linear-gradient(165deg,rgba(255,237,213,0.85),rgba(255,247,237,0.7))] shadow-[0_14px_30px_rgba(234,88,12,0.18)]'
-                                                  : 'border-warning/35 bg-[linear-gradient(165deg,rgba(255,247,237,0.95),rgba(255,251,245,0.8))] hover:-translate-y-0.5 hover:border-warning/55 hover:shadow-[0_10px_22px_rgba(234,88,12,0.14)]'
+                                              className={`rounded-2xl border border-warning/35 bg-[linear-gradient(160deg,rgba(255,248,240,0.98),rgba(255,241,226,0.85))] shadow-[0_10px_22px_rgba(234,88,12,0.12)] px-3 py-3 transition-all duration-200 ${
+                                                skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
                                               }`}
                                             >
-                                              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-warning/80" />
-                                              <div className="flex items-start justify-between gap-3 pl-1.5">
+                                              <div className="flex items-start justify-between gap-3">
                                                 <div className="min-w-0">
                                                   <span className="inline-flex rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
-                                                  <p className="mt-2 text-[12px] font-medium text-warning/90">No value yet</p>
-                                                  <p className="text-[11px] text-base-content/65 mt-0.5">Please fill this field to complete the file.</p>
+                                                  {isEditing ? (
+                                                    <textarea
+                                                      value={templateRowOverrides[row.key] ?? row.value}
+                                                      onChange={(e) => setTemplateRowOverrides((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                                      className="mt-2 w-full min-h-[72px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                      placeholder="Įveskite reikšmę..."
+                                                    />
+                                                  ) : (
+                                                    <p className="mt-2 text-[12px] text-base-content/70">Reikšmė neįvesta.</p>
+                                                  )}
                                                 </div>
-                                                <AlertCircle className="w-4 h-4 text-warning mt-1 flex-shrink-0" />
+                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                                                    className="btn btn-xs btn-soft"
+                                                  >
+                                                    {isEditing ? 'Baigti' : 'Redaguoti'}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
+                                                    className="btn btn-xs btn-outline"
+                                                  >
+                                                    ✓ Praleisti
+                                                  </button>
+                                                </div>
                                               </div>
-                                            </button>
+                                            </div>
                                           );
                                         })}
                                       </div>
                                     ) : (
-                                      <div className="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-2 text-[12px] text-success">
-                                        No missing fields.
-                                      </div>
+                                      <div className="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-2 text-[12px] text-success">Trūkstamų laukų nėra.</div>
                                     )}
                                   </div>
 
                                   {!showOnlyMissingTemplateRows && (
-                                    <div>
+                                    <div className="rounded-2xl border border-success/25 bg-success/[0.04] p-3">
                                       <button
                                         type="button"
                                         onClick={() => setShowFilledTemplateRows((prev) => !prev)}
-                                        className="w-full rounded-xl border border-base-content/10 bg-base-content/[0.03] px-3 py-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/60 transition-all duration-200 hover:bg-base-content/[0.06]"
+                                        className="w-full flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-success/90"
                                       >
-                                        <span>Filled · {filledTemplateRows.length}</span>
+                                        <span>Užpildyta ({filledTemplateRows.length})</span>
                                         {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                       </button>
-                                      <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1300px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+                                      <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1200px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
                                         <div className="space-y-2">
-                                          {filledTemplateRows.map((row, index) => {
+                                          {filledTemplateRows.map((row) => {
                                             const isExpanded = !!expandedTemplateValues[row.key];
-                                            const isActive = selectedTemplateRowKey === row.key;
+                                            const isEditing = !!editingTemplateRows[row.key];
                                             return (
-                                              <button
-                                                type="button"
-                                                key={row.key}
-                                                onClick={() => {
-                                                  setSelectedTemplateRowKey(row.key);
-                                                  setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
-                                                }}
-                                                className={`w-full text-left rounded-xl border px-3 py-3 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/60 relative overflow-hidden ${
-                                                  isActive
-                                                    ? 'border-success/70 bg-[linear-gradient(165deg,rgba(220,252,231,0.88),rgba(240,253,244,0.74))] shadow-[0_14px_30px_rgba(22,163,74,0.16)]'
-                                                    : 'border-success/25 bg-[linear-gradient(165deg,rgba(240,253,244,0.95),rgba(247,254,250,0.8))] hover:-translate-y-0.5 hover:border-success/45 hover:shadow-[0_10px_22px_rgba(22,163,74,0.12)]'
-                                                }`}
-                                              >
-                                                <div className="flex items-start gap-3">
-                                                  <span className="mt-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-[10px] font-semibold text-success flex-shrink-0">{index + 1}</span>
+                                              <div key={row.key} className="rounded-2xl border border-success/30 bg-[linear-gradient(160deg,rgba(239,253,245,0.95),rgba(228,250,237,0.8))] shadow-[0_8px_16px_rgba(22,163,74,0.12)] px-3 py-3">
+                                                <div className="flex items-start justify-between gap-3">
                                                   <div className="min-w-0 flex-1">
-                                                    <div className="flex items-start justify-between gap-3">
-                                                      <span className="inline-flex rounded-full border border-success/35 bg-success/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
-                                                      <Check className="w-4 h-4 text-success mt-1 flex-shrink-0" />
-                                                    </div>
-                                                    <p
-                                                      className="mt-2 text-[12px] leading-relaxed break-words text-base-content/90 bg-white/70 rounded-md px-2 py-1.5 border border-base-content/10"
-                                                      style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
-                                                    >
-                                                      {row.value}
-                                                    </p>
-                                                    {!isExpanded && row.value.length > 120 && (
-                                                      <span className="inline-flex mt-1 text-[11px] text-base-content/45">Click to expand</span>
+                                                    <span className="inline-flex rounded-full border border-success/35 bg-success/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
+                                                    {isEditing ? (
+                                                      <textarea
+                                                        value={templateRowOverrides[row.key] ?? row.value}
+                                                        onChange={(e) => setTemplateRowOverrides((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                                        className="mt-2 w-full min-h-[72px] rounded-lg border border-success/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                      />
+                                                    ) : (
+                                                      <p
+                                                        onClick={() => setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                                                        className="mt-2 text-[12px] leading-relaxed break-words text-base-content/90 bg-white/75 rounded-md px-2 py-1.5 border border-base-content/10 cursor-pointer"
+                                                        style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
+                                                      >
+                                                        {row.value}
+                                                      </p>
                                                     )}
                                                   </div>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                                                    className="btn btn-xs btn-soft"
+                                                  >
+                                                    {isEditing ? 'Baigti' : 'Redaguoti'}
+                                                  </button>
                                                 </div>
-                                              </button>
+                                              </div>
                                             );
                                           })}
                                         </div>
                                       </div>
                                     </div>
                                   )}
+
+                                  <div className="rounded-2xl border border-base-content/15 bg-base-100/80 p-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowSkippedTemplateRows((prev) => !prev)}
+                                      className="w-full flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/70"
+                                    >
+                                      <span>Praleisti ({skippedTemplateVariableRows.length})</span>
+                                      {showSkippedTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                    </button>
+                                    <div className={`overflow-hidden transition-all duration-200 ${showSkippedTemplateRows ? 'max-h-[900px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+                                      <div className="space-y-2">
+                                        {skippedTemplateVariableRows.length > 0 ? skippedTemplateVariableRows.map((row) => (
+                                          <div key={row.key} className="rounded-xl border border-base-content/15 bg-base-100 px-3 py-2 flex items-center justify-between gap-2">
+                                            <span className="font-mono text-[11px] text-base-content/75 break-all">{row.key}</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: false }))}
+                                              className="btn btn-xs btn-soft"
+                                            >
+                                              Grąžinti
+                                            </button>
+                                          </div>
+                                        )) : (
+                                          <p className="text-[12px] text-base-content/50">Nėra praleistų laukų.</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </>
                               ) : (
-                                <div className="px-2 py-4 text-[12px] text-base-content/40">No template fields found.</div>
+                                <div className="px-2 py-4 text-[12px] text-base-content/40">Nerasta šablono laukų.</div>
                               )}
                             </div>
                           </div>
@@ -4474,29 +4489,7 @@ Vartotojo instrukcija: ${instruction}`;
                       </p>
                     )}
 
-                    {!isStreamingArtifact && (
-                      <div className="mt-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-[12px] font-medium text-warning flex items-center gap-1.5">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            Trūksta {unresolvedTemplateVariables.length} kintamųjų
-                          </p>
-                          {unresolvedTemplateVariables.length > 0 && (
-                            <button
-                              onClick={() => setShowMissingTemplateDetails((prev) => !prev)}
-                              className="btn btn-xs btn-soft"
-                            >
-                              {showMissingTemplateDetails ? 'Slėpti' : 'Rodyti'}
-                            </button>
-                          )}
-                        </div>
-                        {showMissingTemplateDetails && unresolvedTemplateVariables.length > 0 && (
-                          <p className="text-[11px] mt-2 break-all text-base-content/60">
-                            {unresolvedTemplateVariables.join(', ')}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    
                   </div>
                 )}
               </div>
