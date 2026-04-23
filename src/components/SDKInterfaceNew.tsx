@@ -2311,6 +2311,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewTick, setDocxPreviewTick] = useState(0);
   const [templateVariables, setTemplateVariables] = useState<string[]>([]);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
+  const [isRefreshingTemplate, setIsRefreshingTemplate] = useState(false);
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
@@ -2355,14 +2356,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (cancelled) return;
         const yamlContent = artifactContent;
         const hnv = vars['economy_HNV'] || '';
+        const requestedInputs = buildRequestedInputsSnapshot();
         if (standartiniaiRecordId) {
           await updateStandartinisProjektas(standartiniaiRecordId, {
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
+            requested_inputs: requestedInputs,
+            template_file_id: globalDocxFileId || null,
           }, { userId: user.id, userEmail: user.email });
         } else {
           const created = await createStandartinisProjektas({
             conversation_id: currentConversation.id,
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
+            requested_inputs: requestedInputs,
+            template_file_id: globalDocxFileId || null,
           }, { userId: user.id, userEmail: user.email });
           if (!cancelled) setStandartiniaiRecordId(created.id);
         }
@@ -2414,6 +2420,27 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentConversation?.title,
   ]);
 
+  const templateVariablePreviewRows = useMemo(() => {
+    if (!templateVariables.length) return [];
+    const merged = mergeAllVariables();
+    return templateVariables.map((key) => {
+      const raw = merged[key];
+      const value = raw === undefined || raw === null ? '' : String(raw);
+      return { key, value };
+    });
+  }, [
+    templateVariables,
+    currentConversation?.artifact?.content,
+    offerParameters,
+    selectedManager?.id,
+    selectedEconomist?.id,
+    user.full_name,
+    user.email,
+    user.phone,
+    user.kodas,
+    currentConversation?.title,
+  ]);
+
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
 
@@ -2433,6 +2460,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // 3. Save record in standartiniai_projektai with the Directus file ID
       const yamlContent = currentConversation.artifact.content || '';
       const hnv = vars['economy_HNV'] || '';
+      const requestedInputs = buildRequestedInputsSnapshot();
 
       if (standartiniaiRecordId) {
         await updateStandartinisProjektas(standartiniaiRecordId, {
@@ -2440,6 +2468,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId || null,
         }, { userId: user.id, userEmail: user.email });
       } else {
         const created = await createStandartinisProjektas({
@@ -2448,6 +2478,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId || null,
         }, { userId: user.id, userEmail: user.email });
         setStandartiniaiRecordId(created.id);
       }
@@ -2459,6 +2491,80 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('error', 'Klaida', formatToastMessage('Nepavyko išsaugoti dokumento', err));
     } finally {
       setIsSavingToStandartiniai(false);
+    }
+  };
+
+  const buildRequestedInputsSnapshot = (): Record<string, string> => {
+    const entries = Object.entries(offerParameters || {}).map(([key, value]) => [key, String(value ?? '')]);
+    const snapshot = Object.fromEntries(entries) as Record<string, string>;
+    if (selectedManager?.full_name) snapshot.requested_manager = selectedManager.full_name;
+    if (selectedEconomist?.full_name) snapshot.requested_economist = selectedEconomist.full_name;
+    return snapshot;
+  };
+
+  const handleRefreshTemplateFromCurrentYaml = async () => {
+    if (!currentConversation?.artifact) return;
+    if (!globalDocxFileId) {
+      addNotification('error', 'DOCX šablonas', 'Nerastas aktyvus Word šablonas. Pirmiausia įkelkite .docx failą.');
+      return;
+    }
+
+    try {
+      setIsRefreshingTemplate(true);
+
+      const merged = mergeAllVariables();
+      const missingKeys = templateVariables.filter((key) => {
+        const value = merged[key];
+        return value === undefined || value === null || String(value).trim() === '';
+      });
+
+      if (missingKeys.length > 0) {
+        addNotification(
+          'info',
+          'Šablono suderinamumas',
+          `Šis pokalbis turi duomenų iš senesnio šablono. Trūksta ${missingKeys.length} kintamųjų naujam Word šablonui. Peržiūrėkite arba atnaujinkite duomenis prieš generuojant dokumentą.`
+        );
+        return;
+      }
+
+      const docxBlob = await buildDocxBlob(merged);
+      const previousFileId = savedDocxFileId || null;
+      const projektoKodas = merged['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+      const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+      const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, previousFileId);
+      const yamlContent = currentConversation.artifact.content || '';
+      const hnv = merged['economy_HNV'] || '';
+      const requestedInputs = buildRequestedInputsSnapshot();
+
+      if (standartiniaiRecordId) {
+        await updateStandartinisProjektas(standartiniaiRecordId, {
+          yaml_content: yamlContent,
+          projekto_kodas: projektoKodas,
+          hnv,
+          document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId,
+        }, { userId: user.id, userEmail: user.email });
+      } else {
+        const created = await createStandartinisProjektas({
+          conversation_id: currentConversation.id,
+          yaml_content: yamlContent,
+          projekto_kodas: projektoKodas,
+          hnv,
+          document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId,
+        }, { userId: user.id, userEmail: user.email });
+        setStandartiniaiRecordId(created.id);
+      }
+
+      setSavedDocxFileId(newFileId);
+      addNotification('success', 'Atnaujinti šabloną', 'Esamas YAML sėkmingai perrenderintas su naujausiu Word šablonu.');
+    } catch (err) {
+      console.error('Error refreshing DOCX with latest template:', err);
+      addNotification('error', 'Klaida', formatToastMessage('Nepavyko atnaujinti dokumento pagal naują šabloną', err));
+    } finally {
+      setIsRefreshingTemplate(false);
     }
   };
 
@@ -3465,13 +3571,15 @@ Vartotojo instrukcija: ${instruction}`;
                       <Copy className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={handleSaveToStandartiniai}
-                      disabled={isSavingToStandartiniai}
+                      onClick={savedDocxFileId ? handleRefreshTemplateFromCurrentYaml : handleSaveToStandartiniai}
+                      disabled={isSavingToStandartiniai || isRefreshingTemplate}
                       className="btn btn-sm btn-primary gap-1.5 ml-1"
-                      title="Išsaugoti DOCX į Directus"
+                      title={savedDocxFileId ? 'Pergeneruoti esamą YAML su naujausiu Word šablonu' : 'Išsaugoti DOCX į Directus'}
                     >
-                      {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                      {savedDocxFileId ? 'Atnaujinti' : 'Išsaugoti'}
+                      {(isSavingToStandartiniai || isRefreshingTemplate)
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Save className="w-3.5 h-3.5" />}
+                      {savedDocxFileId ? 'Atnaujinti šabloną' : 'Išsaugoti'}
                     </button>
                     {savedDocxFileId && (
                       <a
@@ -4141,6 +4249,24 @@ Vartotojo instrukcija: ${instruction}`;
                       <p className="text-xs py-4 text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
                         Pasiūlymo duomenys bus rodomi po generavimo.
                       </p>
+                    )}
+
+                    {!isStreamingArtifact && templateVariablePreviewRows.length > 0 && (
+                      <div className="mt-4 rounded-lg border border-base-content/10 overflow-hidden">
+                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60">
+                          DOCX šablono kintamieji
+                        </div>
+                        <div className="max-h-56 overflow-auto">
+                          {templateVariablePreviewRows.map((row) => (
+                            <div key={row.key} className="px-3 py-2 border-t border-base-content/5 flex items-start justify-between gap-3 text-[12px]">
+                              <span className="font-mono text-base-content/60 break-all">{row.key}</span>
+                              <span className={`font-mono text-right break-all ${row.value ? 'text-base-content' : 'text-base-content/30 italic'}`}>
+                                {row.value || 'tuščia'}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     )}
 
                     {!isStreamingArtifact && unresolvedTemplateVariables.length > 0 && (

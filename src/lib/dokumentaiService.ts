@@ -60,6 +60,8 @@ export const createStandartinisProjektas = async (record: {
   projekto_kodas: string;
   hnv: string;
   document?: string;
+  requested_inputs?: Record<string, string>;
+  template_file_id?: string | null;
 }, actor?: { userId?: string; userEmail?: string }): Promise<any> => {
   try {
     // Enforce one record per conversation: if record already exists, patch it instead of creating a duplicate.
@@ -71,6 +73,8 @@ export const createStandartinisProjektas = async (record: {
         projekto_kodas: record.projekto_kodas,
         hnv: record.hnv,
         document: record.document,
+        requested_inputs: record.requested_inputs,
+        template_file_id: record.template_file_id,
       }, actor);
     }
 
@@ -121,6 +125,8 @@ export const updateStandartinisProjektas = async (
     projekto_kodas?: string;
     hnv?: string;
     document?: string;
+    requested_inputs?: Record<string, string>;
+    template_file_id?: string | null;
   },
   actor?: { userId?: string; userEmail?: string }
 ): Promise<any> => {
