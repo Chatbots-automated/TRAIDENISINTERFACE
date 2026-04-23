@@ -193,6 +193,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
+  const [showMissingTemplateRows, setShowMissingTemplateRows] = useState(false);
   const [showFilledTemplateRows, setShowFilledTemplateRows] = useState(false);
   const [showSkippedTemplateRows, setShowSkippedTemplateRows] = useState(false);
   const [expandedTemplateValues, setExpandedTemplateValues] = useState<Record<string, boolean>>({});
@@ -4349,9 +4350,6 @@ Vartotojo instrukcija: ${instruction}`;
                             <div className="relative z-10">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">AI būsenos radaras</p>
-                                <span className="rounded-full border border-slate-300 bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                                  Neural Sync
-                                </span>
                               </div>
 
                               <div className="mt-3 flex items-center justify-between gap-2">
@@ -4412,39 +4410,48 @@ Vartotojo instrukcija: ${instruction}`;
                             <div className="max-h-[500px] overflow-auto pr-1 pb-6 space-y-3">
                               {visibleTemplateVariableRows.length > 0 ? (
                                 <>
-                                  <div className="rounded-2xl border border-warning/28 bg-white p-3 shadow-[0_8px_18px_rgba(234,88,12,0.08)]">
-                                    <div className="mb-2 flex items-center justify-between">
-                                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90">Trūksta</p>
-                                      <span className="rounded-full border border-warning/35 bg-white px-2 py-0.5 text-[10px] font-semibold text-warning">
-                                        {missingTemplateRows.length}
-                                      </span>
-                                    </div>
-                                    {missingTemplateRows.length > 0 ? (
-                                      <div className="space-y-2">
-                                        {missingTemplateRows.map((row) => {
-                                          const isEditing = !!editingTemplateRows[row.key];
-                                          return (
-                                            <div
-                                              key={row.key}
-                                              className={`rounded-2xl border border-warning/35 bg-white shadow-[0_10px_22px_rgba(234,88,12,0.1)] px-3 py-3 transition-all duration-200 ${
-                                                skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
-                                              }`}
-                                            >
-                                              <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                  <span className="inline-flex rounded-full border border-warning/45 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
-                                                  {isEditing ? (
-                                                    <textarea
-                                                      value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
-                                                      onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
-                                                      className="mt-2 w-full min-h-[72px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
-                                                      placeholder="Įveskite reikšmę..."
-                                                    />
-                                                  ) : (
-                                                    <p className="mt-2 text-[12px] text-base-content/70">Reikšmė neįvesta.</p>
-                                                  )}
-                                                </div>
-                                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  {missingTemplateRows.length > 0 && (
+                                    <div className="rounded-2xl border border-warning/28 bg-white p-3 shadow-[0_8px_18px_rgba(234,88,12,0.08)]">
+                                      <div className="mb-2 flex items-center justify-between">
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90">Trūksta</p>
+                                        <span className="rounded-full border border-warning/35 bg-white px-2 py-0.5 text-[10px] font-semibold text-warning">
+                                          {missingTemplateRows.length}
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowMissingTemplateRows((prev) => !prev)}
+                                        className="mx-auto mb-2 flex h-5 w-28 items-center justify-center rounded-full border border-warning/35 bg-white text-warning/90 shadow-sm transition-colors hover:bg-warning/10"
+                                        aria-label={showMissingTemplateRows ? 'Sutraukti trūkstamus laukus' : 'Išskleisti trūkstamus laukus'}
+                                      >
+                                        {showMissingTemplateRows ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      </button>
+                                      <div className={`overflow-hidden transition-all duration-200 ${showMissingTemplateRows ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                        <div className="space-y-2">
+                                          {missingTemplateRows.map((row) => {
+                                            const isEditing = !!editingTemplateRows[row.key];
+                                            return (
+                                              <div
+                                                key={row.key}
+                                                className={`rounded-2xl border border-warning/35 bg-white shadow-[0_10px_22px_rgba(234,88,12,0.1)] px-3 py-3 transition-all duration-200 ${
+                                                  skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="min-w-0">
+                                                    <span className="inline-flex rounded-full border border-warning/45 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
+                                                    {isEditing ? (
+                                                      <textarea
+                                                        value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
+                                                        onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                                        className="mt-2 w-full min-h-[72px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                        placeholder="Įveskite reikšmę..."
+                                                      />
+                                                    ) : (
+                                                      <p className="mt-2 text-[12px] text-base-content/70">Reikšmė neįvesta.</p>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex items-center gap-1.5 flex-shrink-0">
                                                     <button
                                                       type="button"
                                                       onClick={() => {
@@ -4455,32 +4462,31 @@ Vartotojo instrukcija: ${instruction}`;
                                                     >
                                                       {isEditing ? 'Baigti' : 'Redaguoti'}
                                                     </button>
-                                                  {isEditing && (
+                                                    {isEditing && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleTemplateRowSave(row.key, row.value)}
+                                                        className="inline-flex h-7 items-center rounded-lg border border-success/35 bg-white px-3 text-[11px] font-medium text-success shadow-sm transition-colors hover:bg-success/10"
+                                                      >
+                                                        Išsaugoti
+                                                      </button>
+                                                    )}
                                                     <button
-                                                      type="button"
-                                                      onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="inline-flex h-7 items-center rounded-lg border border-success/35 bg-white px-3 text-[11px] font-medium text-success shadow-sm transition-colors hover:bg-success/10"
-                                                    >
-                                                      Išsaugoti
-                                                    </button>
-                                                  )}
-                                                  <button
                                                       type="button"
                                                       onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
                                                       className="inline-flex h-7 items-center rounded-lg border border-warning/35 bg-white px-3 text-[11px] font-medium text-warning shadow-sm transition-colors hover:bg-warning/10"
                                                     >
                                                       ✓ Praleisti
                                                     </button>
+                                                  </div>
                                                 </div>
                                               </div>
-                                            </div>
-                                          );
-                                        })}
+                                            );
+                                          })}
+                                        </div>
                                       </div>
-                                    ) : (
-                                      <div className="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-2 text-[12px] text-success">Trūkstamų laukų nėra.</div>
-                                    )}
-                                  </div>
+                                    </div>
+                                  )}
 
                                   <div className="rounded-2xl border border-success/25 bg-white p-3 shadow-[0_8px_18px_rgba(22,163,74,0.08)]">
                                     <button
