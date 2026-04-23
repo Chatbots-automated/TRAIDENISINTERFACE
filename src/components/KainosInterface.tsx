@@ -1020,13 +1020,15 @@ function SablonaiTab() {
             </div>
           )}
 
-          {filteredSablonai.map(s => {
-            const cardKey = String(s.id);
+          {filteredSablonai.map((s, idx) => {
+            // Use a unique UI key per rendered card instance. This prevents
+            // accidental state sharing if backend data ever contains repeated ids.
+            const cardKey = `${s.id}-${idx}`;
             const isExpanded = !!expandedCards[cardKey];
 
             return (
               <div
-                key={s.id}
+                key={cardKey}
                 className={`group rounded-xl border p-3.5 transition-all flex flex-col ${isExpanded ? 'min-h-[180px]' : 'min-h-[60px]'}`}
                 style={{
                   borderColor: 'rgba(0,0,0,0.06)',
