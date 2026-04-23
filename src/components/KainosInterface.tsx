@@ -1066,7 +1066,7 @@ function SablonaiTab() {
                 {isExpanded && (
                   <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
                     {s.structured_json ? (
-                      <div className="max-h-[320px] overflow-y-auto">
+                      <div>
                         <MaterialSlateView data={s.structured_json} variant="panel" />
                       </div>
                     ) : (
@@ -1074,10 +1074,6 @@ function SablonaiTab() {
                         className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
                         style={{
                           color: '#5a5550',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 10,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
                         }}
                       >
                         {s.raw_text || 'Nėra teksto'}
