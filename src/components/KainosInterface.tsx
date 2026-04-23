@@ -1020,13 +1020,15 @@ function SablonaiTab() {
             </div>
           )}
 
-          {filteredSablonai.map(s => {
-            const cardKey = String(s.id);
+          {filteredSablonai.map((s, idx) => {
+            // Use a unique UI key per rendered card instance. This prevents
+            // accidental state sharing if backend data ever contains repeated ids.
+            const cardKey = `${s.id}-${idx}`;
             const isExpanded = !!expandedCards[cardKey];
 
             return (
               <div
-                key={s.id}
+                key={cardKey}
                 className={`group rounded-xl border p-3.5 transition-all flex flex-col ${isExpanded ? 'min-h-[180px]' : 'min-h-[60px]'}`}
                 style={{
                   borderColor: 'rgba(0,0,0,0.06)',
@@ -1064,7 +1066,7 @@ function SablonaiTab() {
                 {isExpanded && (
                   <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
                     {s.structured_json ? (
-                      <div className="max-h-[320px] overflow-y-auto">
+                      <div>
                         <MaterialSlateView data={s.structured_json} variant="panel" />
                       </div>
                     ) : (
@@ -1072,10 +1074,6 @@ function SablonaiTab() {
                         className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
                         style={{
                           color: '#5a5550',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 10,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden',
                         }}
                       >
                         {s.raw_text || 'Nėra teksto'}
