@@ -4404,8 +4404,13 @@ Vartotojo instrukcija: ${instruction}`;
                             <div className="mt-3 max-h-[500px] overflow-auto pr-1 pb-6 space-y-3">
                               {visibleTemplateVariableRows.length > 0 ? (
                                 <>
-                                  <div className="rounded-2xl border border-warning/30 bg-warning/[0.04] p-3">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90 mb-2">Trūksta</p>
+                                  <div className="rounded-2xl border border-warning/28 bg-[linear-gradient(160deg,rgba(255,249,241,0.74),rgba(255,244,231,0.6))] p-3 shadow-[0_8px_18px_rgba(234,88,12,0.08)]">
+                                    <div className="mb-2 flex items-center justify-between">
+                                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90">Trūksta</p>
+                                      <span className="rounded-full border border-warning/35 bg-warning/12 px-2 py-0.5 text-[10px] font-semibold text-warning">
+                                        {missingTemplateRows.length}
+                                      </span>
+                                    </div>
                                     {missingTemplateRows.length > 0 ? (
                                       <div className="space-y-2">
                                         {missingTemplateRows.map((row) => {
@@ -4413,7 +4418,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           return (
                                             <div
                                               key={row.key}
-                                              className={`rounded-2xl border border-warning/35 bg-[linear-gradient(160deg,rgba(255,248,240,0.98),rgba(255,241,226,0.85))] shadow-[0_10px_22px_rgba(234,88,12,0.12)] px-3 py-3 transition-all duration-200 ${
+                                              className={`rounded-2xl border border-warning/35 bg-[linear-gradient(160deg,rgba(255,250,245,0.98),rgba(255,244,233,0.92))] shadow-[0_10px_22px_rgba(234,88,12,0.1)] px-3 py-3 transition-all duration-200 ${
                                                 skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
                                               }`}
                                             >
@@ -4432,16 +4437,16 @@ Vartotojo instrukcija: ${instruction}`;
                                                   )}
                                                 </div>
                                                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
-                                                      setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
-                                                    }}
-                                                    className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
-                                                  >
-                                                    {isEditing ? 'Baigti' : 'Redaguoti'}
-                                                  </button>
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
+                                                        setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                                                      }}
+                                                      className="btn btn-xs border border-base-content/15 bg-white/80 backdrop-blur-md text-base-content/80 hover:bg-white shadow-sm"
+                                                    >
+                                                      {isEditing ? 'Baigti' : 'Redaguoti'}
+                                                    </button>
                                                   {isEditing && (
                                                     <button
                                                       type="button"
@@ -4452,12 +4457,12 @@ Vartotojo instrukcija: ${instruction}`;
                                                     </button>
                                                   )}
                                                   <button
-                                                    type="button"
-                                                    onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
-                                                    className="btn btn-xs border border-warning/30 bg-warning/12 backdrop-blur-md text-warning hover:bg-warning/20 shadow-sm"
-                                                  >
-                                                    ✓ Praleisti
-                                                  </button>
+                                                      type="button"
+                                                      onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
+                                                      className="btn btn-xs border border-warning/30 bg-warning/15 backdrop-blur-md text-warning hover:bg-warning/25 shadow-sm"
+                                                    >
+                                                      ✓ Praleisti
+                                                    </button>
                                                 </div>
                                               </div>
                                             </div>
@@ -4470,7 +4475,7 @@ Vartotojo instrukcija: ${instruction}`;
                                   </div>
 
                                   {!showOnlyMissingTemplateRows && (
-                                    <div className="rounded-2xl border border-success/25 bg-success/[0.04] p-3">
+                                    <div className="rounded-2xl border border-success/25 bg-[linear-gradient(160deg,rgba(241,253,246,0.72),rgba(230,250,238,0.58))] p-3 shadow-[0_8px_18px_rgba(22,163,74,0.08)]">
                                       <button
                                         type="button"
                                         onClick={() => setShowFilledTemplateRows((prev) => !prev)}
@@ -4485,7 +4490,7 @@ Vartotojo instrukcija: ${instruction}`;
                                             const isExpanded = !!expandedTemplateValues[row.key];
                                             const isEditing = !!editingTemplateRows[row.key];
                                             return (
-                                              <div key={row.key} className="rounded-2xl border border-success/30 bg-[linear-gradient(160deg,rgba(239,253,245,0.95),rgba(228,250,237,0.8))] shadow-[0_8px_16px_rgba(22,163,74,0.12)] px-3 py-3">
+                                              <div key={row.key} className="rounded-2xl border border-success/30 bg-[linear-gradient(160deg,rgba(242,254,247,0.98),rgba(231,251,239,0.9))] shadow-[0_8px_16px_rgba(22,163,74,0.1)] px-3 py-3">
                                                 <div className="flex items-start justify-between gap-3">
                                                   <div className="min-w-0 flex-1">
                                                     <span className="inline-flex rounded-full border border-success/35 bg-success/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
@@ -4511,7 +4516,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                       setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
                                                       setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                                     }}
-                                                    className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
+                                                    className="btn btn-xs border border-base-content/15 bg-white/80 backdrop-blur-md text-base-content/80 hover:bg-white shadow-sm"
                                                   >
                                                     {isEditing ? 'Baigti' : 'Redaguoti'}
                                                   </button>
@@ -4533,7 +4538,7 @@ Vartotojo instrukcija: ${instruction}`;
                                     </div>
                                   )}
 
-                                  <div className="rounded-2xl border border-base-content/15 bg-base-100/80 p-3">
+                                  <div className="rounded-2xl border border-base-content/15 bg-[linear-gradient(160deg,rgba(255,255,255,0.76),rgba(247,243,238,0.65))] p-3 shadow-[0_8px_18px_rgba(60,52,46,0.07)]">
                                     <button
                                       type="button"
                                       onClick={() => setShowSkippedTemplateRows((prev) => !prev)}
@@ -4545,12 +4550,12 @@ Vartotojo instrukcija: ${instruction}`;
                                     <div className={`overflow-hidden transition-all duration-200 ${showSkippedTemplateRows ? 'max-h-[900px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
                                       <div className="space-y-2">
                                         {skippedTemplateVariableRows.length > 0 ? skippedTemplateVariableRows.map((row) => (
-                                          <div key={row.key} className="rounded-xl border border-base-content/15 bg-base-100 px-3 py-2 flex items-center justify-between gap-2">
+                                          <div key={row.key} className="rounded-xl border border-base-content/15 bg-white/85 px-3 py-2 flex items-center justify-between gap-2">
                                             <span className="font-mono text-[11px] text-base-content/75 break-all">{row.key}</span>
                                             <button
                                               type="button"
                                               onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: false }))}
-                                              className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
+                                              className="btn btn-xs border border-base-content/15 bg-white/80 backdrop-blur-md text-base-content/80 hover:bg-white shadow-sm"
                                             >
                                               Grąžinti
                                             </button>
