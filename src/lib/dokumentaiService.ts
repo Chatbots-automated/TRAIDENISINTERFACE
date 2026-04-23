@@ -62,6 +62,7 @@ export const createStandartinisProjektas = async (record: {
   document?: string;
   requested_inputs?: Record<string, string>;
   template_file_id?: string | null;
+  app_user?: string | null;
 }, actor?: { userId?: string; userEmail?: string }): Promise<any> => {
   try {
     // Enforce one record per conversation: if record already exists, patch it instead of creating a duplicate.
@@ -78,9 +79,14 @@ export const createStandartinisProjektas = async (record: {
       }, actor);
     }
 
+    const payload = {
+      ...record,
+      app_user: actor?.userId ?? record.app_user ?? null,
+    };
+
     const { data, error } = await db
       .from('standartiniai_projektai')
-      .insert([record])
+      .insert([payload])
       .select()
       .single();
 
@@ -127,13 +133,18 @@ export const updateStandartinisProjektas = async (
     document?: string;
     requested_inputs?: Record<string, string>;
     template_file_id?: string | null;
+    app_user?: string | null;
   },
   actor?: { userId?: string; userEmail?: string }
 ): Promise<any> => {
   try {
+    const updatePayload = actor?.userId
+      ? { ...fields, app_user: actor.userId }
+      : fields;
+
     const { data, error } = await db
       .from('standartiniai_projektai')
-      .update(fields)
+      .update(updatePayload)
       .eq('id', recordId)
       .select()
       .single();
@@ -149,7 +160,7 @@ export const updateStandartinisProjektas = async (
       userEmail: actor?.userEmail,
       metadata: {
         id: recordId,
-        updated_fields: Object.keys(fields)
+        updated_fields: Object.keys(updatePayload)
       }
     });
 
