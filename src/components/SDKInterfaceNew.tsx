@@ -2238,7 +2238,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     const dd = String(now.getDate()).padStart(2, '0');
     const compositeCode = `U${mgrCode}${econCode}${techCode}${yy}/${mm}/${dd}`;
 
-    return {
+    const merged = {
       ...yamlVars,
       ...safeOfferParameters,
       'date_yyyy-month_men.-dd': ltDate,
@@ -2250,6 +2250,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       vadybininkas: selectedManager?.full_name || '',
       project_name: currentConversation?.title || '',
     };
+
+    // Respect manual overrides from the template variable editor.
+    Object.entries(templateRowOverrides).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        merged[key] = String(value);
+      }
+    });
+
+    // Respect "skip" decisions by forcing intentionally skipped keys to empty strings.
+    Object.entries(skippedTemplateRows).forEach(([key, skipped]) => {
+      if (skipped) {
+        merged[key] = merged[key] ?? '';
+      }
+    });
+
+    return merged;
   };
 
   /**
@@ -2567,10 +2583,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setIsRefreshingTemplate(true);
 
       const merged = mergeAllVariables();
-      const missingKeys = templateVariables.filter((key) => {
-        const value = merged[key];
-        return value === undefined || value === null || String(value).trim() === '';
-      });
+      const missingKeys = unresolvedTemplateVariables;
 
       if (missingKeys.length > 0) {
         addNotification(
