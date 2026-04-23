@@ -2339,11 +2339,35 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   const lastAutoTechDescSignatureRef = useRef<string>('');
+
+  const refreshDocxPreview = async (fileId: string) => {
+    setDocxPreviewError(null);
+    setDocxPreviewLoading(true);
+    const assetUrl = `${getDirectusAssetUrl(fileId)}&_preview_probe=${Date.now()}`;
+
+    let ready = false;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const resp = await fetch(assetUrl, { method: 'GET', cache: 'no-store' });
+        if (resp.ok) {
+          ready = true;
+          break;
+        }
+      } catch {
+        // Keep retrying: file might not be propagated yet.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
+    }
+
+    if (!ready) {
+      setDocxPreviewError('Preview source is not ready yet. Trying to render anyway...');
+    }
+    setDocxPreviewTick((prev) => prev + 1);
+  };
+
   useEffect(() => {
     if (savedDocxFileId) {
-      setDocxPreviewError(null);
-      setDocxPreviewLoading(true);
-      setDocxPreviewTick(prev => prev + 1);
+      void refreshDocxPreview(savedDocxFileId);
     }
   }, [savedDocxFileId]);
 
@@ -3630,8 +3654,7 @@ Vartotojo instrukcija: ${instruction}`;
                       onClick={() => {
                         setArtifactTab('preview');
                         if (savedDocxFileId) {
-                          setDocxPreviewLoading(true);
-                          setDocxPreviewTick((prev) => prev + 1);
+                          void refreshDocxPreview(savedDocxFileId);
                         }
                       }}
                       className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
@@ -3751,8 +3774,7 @@ Vartotojo instrukcija: ${instruction}`;
                           type="button"
                           onClick={() => {
                             setDocxPreviewError(null);
-                            setDocxPreviewLoading(true);
-                            setDocxPreviewTick((prev) => prev + 1);
+                            void refreshDocxPreview(savedDocxFileId);
                           }}
                           className="btn btn-sm btn-outline mt-3"
                         >
