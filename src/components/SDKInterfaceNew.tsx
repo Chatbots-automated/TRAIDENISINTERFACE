@@ -189,8 +189,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [globalDocxFileId, setGlobalDocxFileId] = useState<string | null>(null);
   const [docxUploading, setDocxUploading] = useState(false);
   const [tplEditorTab] = useState<'docx'>('docx');
-  const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
-  const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
+  // Artifact panel preview state (saved DOCX generated from YAML)
+  const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
+  const [artifactPreviewError, setArtifactPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
   const [showMissingTemplateRows, setShowMissingTemplateRows] = useState(false);
   const [showFilledTemplateRows, setShowFilledTemplateRows] = useState(false);
@@ -219,6 +220,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Technological description generator state
   const [techDescLoading, setTechDescLoading] = useState(false);
+  const techDescRequestInFlightRef = useRef(false);
 
   // AI-assisted variable editing state
   const [aiVarEditMode, setAiVarEditMode] = useState(false);
@@ -2332,7 +2334,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [standartiniaiRecordId, setStandartiniaiRecordId] = useState<number | null>(null);
   // Directus file ID of the saved .docx — enables download button
   const [savedDocxFileId, setSavedDocxFileId] = useState<string | null>(null);
-  const [docxPreviewTick, setDocxPreviewTick] = useState(0);
+  const [artifactPreviewTick, setArtifactPreviewTick] = useState(0);
   const [templateVariables, setTemplateVariables] = useState<string[]>([]);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
   const [isRefreshingTemplate, setIsRefreshingTemplate] = useState(false);
@@ -2340,12 +2342,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   const lastAutoTechDescSignatureRef = useRef<string>('');
-  const previewAutoRetryCountRef = useRef(0);
+  const artifactPreviewAutoRetryCountRef = useRef(0);
+  const artifactPreviewRequestIdRef = useRef(0);
 
   const refreshDocxPreview = async (fileId: string) => {
-    previewAutoRetryCountRef.current = 0;
-    setDocxPreviewError(null);
-    setDocxPreviewLoading(true);
+    artifactPreviewRequestIdRef.current += 1;
+    const requestId = artifactPreviewRequestIdRef.current;
+    artifactPreviewAutoRetryCountRef.current = 0;
+    setArtifactPreviewError(null);
+    setArtifactPreviewLoading(true);
     const assetUrl = `${getDirectusAssetUrl(fileId)}&_preview_probe=${Date.now()}`;
 
     let ready = false;
@@ -2362,10 +2367,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
     }
 
+    if (requestId !== artifactPreviewRequestIdRef.current) return;
     if (!ready) {
-      setDocxPreviewError('Preview source is not ready yet. Trying to render anyway...');
+      setArtifactPreviewError('Preview source is not ready yet. Trying to render anyway...');
     }
-    setDocxPreviewTick((prev) => prev + 1);
+    setArtifactPreviewTick((prev) => prev + 1);
   };
 
   useEffect(() => {
@@ -2375,18 +2381,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   }, [savedDocxFileId]);
 
   useEffect(() => {
-    if (!docxPreviewLoading || !savedDocxFileId) return;
+    if (!artifactPreviewLoading || !savedDocxFileId) return;
     const timeout = setTimeout(() => {
-      if (previewAutoRetryCountRef.current < 1) {
-        previewAutoRetryCountRef.current += 1;
-        setDocxPreviewTick((prev) => prev + 1);
+      if (artifactPreviewAutoRetryCountRef.current < 1) {
+        artifactPreviewAutoRetryCountRef.current += 1;
+        setArtifactPreviewTick((prev) => prev + 1);
         return;
       }
-      setDocxPreviewLoading(false);
-      setDocxPreviewError('DOCX preview is still not responding. Please try refresh again.');
+      setArtifactPreviewLoading(false);
+      setArtifactPreviewError('DOCX preview is still not responding. Please try refresh again.');
     }, 45000);
     return () => clearTimeout(timeout);
-  }, [docxPreviewLoading, savedDocxFileId, docxPreviewTick]);
+  }, [artifactPreviewLoading, savedDocxFileId, artifactPreviewTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2464,7 +2470,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   useEffect(() => {
     if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
-    if (techDescLoading) return;
+    if (techDescLoading || techDescRequestInFlightRef.current) return;
     if (!templateVariables.includes('technological_description')) return;
 
     const yamlVars = parseYAMLContent(currentConversation.artifact.content);
@@ -2838,24 +2844,31 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   };
 
   // Build Google Docs Viewer URL when switching to DOCX tab
-  const [docxViewerUrl, setDocxViewerUrl] = useState<string | null>(null);
+  const [templatePreviewViewerUrl, setTemplatePreviewViewerUrl] = useState<string | null>(null);
+  const [templatePreviewLoading, setTemplatePreviewLoading] = useState(false);
+  const [templatePreviewError, setTemplatePreviewError] = useState<string | null>(null);
+  const templatePreviewRequestIdRef = useRef(0);
   useEffect(() => {
     if (tplEditorTab === 'docx' && showTemplateEditor) {
-      setDocxPreviewLoading(true);
-      setDocxPreviewError(null);
+      templatePreviewRequestIdRef.current += 1;
+      const requestId = templatePreviewRequestIdRef.current;
+      setTemplatePreviewLoading(true);
+      setTemplatePreviewError(null);
       getDocxTemplateFileId().then(fileId => {
+        if (requestId !== templatePreviewRequestIdRef.current) return;
         if (!fileId) {
-          setDocxPreviewError('DOCX šablonas dar neįkeltas. Įkelkite .docx failą naudodami mygtuką viršuje.');
-          setDocxPreviewLoading(false);
+          setTemplatePreviewError('DOCX šablonas dar neįkeltas. Įkelkite .docx failą naudodami mygtuką viršuje.');
+          setTemplatePreviewLoading(false);
           return;
         }
         const assetUrl = getDocxTemplateUrl(fileId);
-        setDocxViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
+        setTemplatePreviewViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
       });
     } else if (!showTemplateEditor) {
-      setDocxPreviewLoading(false);
-      setDocxPreviewError(null);
-      setDocxViewerUrl(null);
+      templatePreviewRequestIdRef.current += 1;
+      setTemplatePreviewLoading(false);
+      setTemplatePreviewError(null);
+      setTemplatePreviewViewerUrl(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
@@ -2962,6 +2975,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   /** Auto-generate technological description after artifact creation — fire-and-forget. */
   const autoGenerateTechDescription = async (componentsList: string, conversationId: string) => {
+    if (techDescRequestInFlightRef.current) return;
+    techDescRequestInFlightRef.current = true;
     setTechDescLoading(true);
     try {
       if (!anthropicApiKey) throw new Error('API key not found');
@@ -3002,12 +3017,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.error('[AutoTechDesc] Failed:', err);
       addNotification('error', 'Technologinis aprašymas', 'Nepavyko automatiškai sugeneruoti.');
     } finally {
+      techDescRequestInFlightRef.current = false;
       setTechDescLoading(false);
     }
   };
 
   const handleManualTechDescriptionGenerate = async () => {
     if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    if (techDescRequestInFlightRef.current) return;
     const yamlVars = parseYAMLContent(currentConversation.artifact.content);
     const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
     if (!componentsList) {
@@ -3764,26 +3781,26 @@ Vartotojo instrukcija: ${instruction}`;
               {savedDocxFileId ? (
                 <div className="relative flex-1">
                   <iframe
-                    key={`${savedDocxFileId}-${docxPreviewTick}`}
-                    src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
+                    key={`${savedDocxFileId}-${artifactPreviewTick}`}
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${artifactPreviewTick}`)}&embedded=true`}
                     className="h-full w-full border-0"
                     title="DOCX peržiūra"
                     onLoad={() => {
-                      setDocxPreviewLoading(false);
-                      setDocxPreviewError(null);
-                      previewAutoRetryCountRef.current = 0;
+                      setArtifactPreviewLoading(false);
+                      setArtifactPreviewError(null);
+                      artifactPreviewAutoRetryCountRef.current = 0;
                     }}
                     onError={() => {
-                      if (previewAutoRetryCountRef.current < 1) {
-                        previewAutoRetryCountRef.current += 1;
-                        setDocxPreviewTick((prev) => prev + 1);
+                      if (artifactPreviewAutoRetryCountRef.current < 1) {
+                        artifactPreviewAutoRetryCountRef.current += 1;
+                        setArtifactPreviewTick((prev) => prev + 1);
                         return;
                       }
-                      setDocxPreviewLoading(false);
-                      setDocxPreviewError('Failed to load DOCX preview. Please try refresh again.');
+                      setArtifactPreviewLoading(false);
+                      setArtifactPreviewError('Failed to load DOCX preview. Please try refresh again.');
                     }}
                   />
-                  {docxPreviewLoading && (
+                  {artifactPreviewLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/80 backdrop-blur-[1px]">
                       <div className="flex items-center gap-2 rounded-lg border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
                         <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -3793,15 +3810,15 @@ Vartotojo instrukcija: ${instruction}`;
                       </div>
                     </div>
                   )}
-                  {docxPreviewError && !docxPreviewLoading && (
+                  {artifactPreviewError && !artifactPreviewLoading && (
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/90">
                       <div className="max-w-sm rounded-lg border border-error/25 bg-base-100 p-4 text-center shadow">
-                        <p className="text-sm text-error">{docxPreviewError}</p>
+                        <p className="text-sm text-error">{artifactPreviewError}</p>
                         <button
                           type="button"
                           onClick={() => {
-                            setDocxPreviewError(null);
-                            previewAutoRetryCountRef.current = 0;
+                            setArtifactPreviewError(null);
+                            artifactPreviewAutoRetryCountRef.current = 0;
                             void refreshDocxPreview(savedDocxFileId);
                           }}
                           className="btn btn-sm btn-outline mt-3"
@@ -5181,11 +5198,11 @@ Vartotojo instrukcija: ${instruction}`;
                 {/* DOCX preview panel — Google Docs Viewer iframe */}
                 {(
                   <div className="flex-1 flex flex-col bg-base-200/40">
-                    {docxPreviewError && (
+                    {templatePreviewError && (
                       <div className="flex-1 flex items-center justify-center">
                         <div className="text-center">
                           <AlertCircle className="w-8 h-8 text-warning mx-auto mb-2" />
-                          <p className="text-sm text-base-content/60">{docxPreviewError}</p>
+                          <p className="text-sm text-base-content/60">{templatePreviewError}</p>
                           <button
                             onClick={() => docxFileInputRef.current?.click()}
                             className="btn btn-soft btn-sm mt-3 gap-1.5"
@@ -5196,22 +5213,22 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     )}
-                    {docxPreviewLoading && !docxPreviewError && (
+                    {templatePreviewLoading && !templatePreviewError && (
                       <div className="flex-1 flex items-center justify-center">
                         <Loader2 className="w-6 h-6 animate-spin text-base-content/40 mr-2" />
                         <span className="text-sm text-base-content/40">Kraunama DOCX peržiūra...</span>
                       </div>
                     )}
-                    {docxViewerUrl && !docxPreviewError && (
+                    {templatePreviewViewerUrl && !templatePreviewError && (
                       <iframe
-                        key={docxViewerUrl}
-                        src={docxViewerUrl}
+                        key={templatePreviewViewerUrl}
+                        src={templatePreviewViewerUrl}
                         className="flex-1 w-full border-none"
                         title="DOCX peržiūra"
-                        onLoad={() => setDocxPreviewLoading(false)}
+                        onLoad={() => setTemplatePreviewLoading(false)}
                         onError={() => {
-                          setDocxPreviewLoading(false);
-                          setDocxPreviewError('Nepavyko užkrauti DOCX peržiūros. Pabandykite atidaryti iš naujo.');
+                          setTemplatePreviewLoading(false);
+                          setTemplatePreviewError('Nepavyko užkrauti DOCX peržiūros. Pabandykite atidaryti iš naujo.');
                         }}
                       />
                     )}
