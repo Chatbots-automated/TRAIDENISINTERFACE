@@ -4348,11 +4348,7 @@ Vartotojo instrukcija: ${instruction}`;
                             <div className="pointer-events-none absolute -top-24 -right-24 h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.26),rgba(59,130,246,0))]" />
 
                             <div className="relative z-10">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">AI būsenos radaras</p>
-                              </div>
-
-                              <div className="mt-3 flex items-center justify-between gap-2">
+                              <div className="mt-1 flex items-center justify-between gap-2">
                                 <div>
                                   <p className="text-[30px] xl:text-[34px] font-semibold leading-none text-slate-900">{templateCompletion.percentage}%</p>
                                   <p className="mt-1 text-[11px] text-slate-600">šablono parengtis</p>
@@ -4369,7 +4365,7 @@ Vartotojo instrukcija: ${instruction}`;
                               </div>
 
                               <div className="mt-4">
-                                <div className="h-2.5 rounded-full bg-slate-200/80 overflow-hidden border border-slate-300/40">
+                                <div className="relative h-4 rounded-full bg-slate-200/90 overflow-hidden border border-slate-300/50 shadow-inner">
                                   <div
                                     className="h-full transition-all duration-300 rounded-full shadow-[0_0_14px_rgba(56,189,248,0.45)]"
                                     style={{
@@ -4381,6 +4377,7 @@ Vartotojo instrukcija: ${instruction}`;
                                           : 'linear-gradient(90deg, #2563eb 0%, #f43f5e 100%)'
                                     }}
                                   />
+                                  <div className="pointer-events-none absolute inset-0 opacity-35" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.02))' }} />
                                 </div>
                                 <p className="mt-2 text-[12px] text-slate-600">
                                   {templateCompletion.missing === 0
@@ -4412,20 +4409,20 @@ Vartotojo instrukcija: ${instruction}`;
                                 <>
                                   {missingTemplateRows.length > 0 && (
                                     <div className={`rounded-2xl border border-warning/28 bg-white shadow-[0_8px_18px_rgba(234,88,12,0.08)] transition-all duration-200 ${showMissingTemplateRows ? 'p-3' : 'px-3 py-2'}`}>
-                                      <div className={`flex items-center justify-between ${showMissingTemplateRows ? 'mb-2' : 'mb-0.5'}`}>
+                                      <div className={`grid grid-cols-[1fr_auto_1fr] items-center ${showMissingTemplateRows ? 'mb-2' : 'mb-0.5'}`}>
                                         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90">Trūksta</p>
-                                        <span className="rounded-full border border-warning/35 bg-white px-2 py-0.5 text-[10px] font-semibold text-warning">
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowMissingTemplateRows((prev) => !prev)}
+                                          className={`mx-auto flex items-center justify-center rounded-full border border-warning/35 bg-white text-warning/90 shadow-sm transition-colors hover:bg-warning/10 ${showMissingTemplateRows ? 'h-5 w-24' : 'h-4 w-20'}`}
+                                          aria-label={showMissingTemplateRows ? 'Sutraukti trūkstamus laukus' : 'Išskleisti trūkstamus laukus'}
+                                        >
+                                          {showMissingTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                        </button>
+                                        <span className="justify-self-end rounded-full border border-warning/35 bg-white px-2 py-0.5 text-[10px] font-semibold text-warning">
                                           {missingTemplateRows.length}
                                         </span>
                                       </div>
-                                      <button
-                                        type="button"
-                                        onClick={() => setShowMissingTemplateRows((prev) => !prev)}
-                                        className={`mx-auto flex items-center justify-center rounded-full border border-warning/35 bg-white text-warning/90 shadow-sm transition-colors hover:bg-warning/10 ${showMissingTemplateRows ? 'mb-2 h-5 w-24' : 'mb-0.5 h-4 w-20'}`}
-                                        aria-label={showMissingTemplateRows ? 'Sutraukti trūkstamus laukus' : 'Išskleisti trūkstamus laukus'}
-                                      >
-                                        {showMissingTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                      </button>
                                       <div className={`overflow-hidden transition-all duration-200 ${showMissingTemplateRows ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'}`}>
                                         <div className="space-y-2">
                                           {missingTemplateRows.map((row) => {
