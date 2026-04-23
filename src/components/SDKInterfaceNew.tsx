@@ -3614,7 +3614,13 @@ Vartotojo instrukcija: ${instruction}`;
                 {currentConversation?.artifact && !isStreamingArtifact ? (
                   <div className="flex rounded-lg overflow-hidden border border-base-content/10">
                     <button
-                      onClick={() => setArtifactTab('preview')}
+                      onClick={() => {
+                        setArtifactTab('preview');
+                        if (savedDocxFileId) {
+                          setDocxPreviewLoading(true);
+                          setDocxPreviewTick((prev) => prev + 1);
+                        }
+                      }}
                       className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
                         artifactTab === 'preview' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
                       }`}
@@ -3674,19 +3680,6 @@ Vartotojo instrukcija: ${instruction}`;
                         : <RotateCcw className="w-3.5 h-3.5" />}
                       Atnaujinti šabloną
                     </button>
-                    {artifactTab === 'preview' && savedDocxFileId && (
-                      <button
-                        onClick={() => {
-                          setDocxPreviewLoading(true);
-                          setDocxPreviewTick((prev) => prev + 1);
-                        }}
-                        className="btn btn-sm btn-outline gap-1.5 ml-1"
-                        title="Perkrauti DOCX peržiūrą"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Atnaujinti peržiūrą
-                      </button>
-                    )}
                     {savedDocxFileId && (
                       <a
                         href={getDirectusFileUrl(savedDocxFileId)}
