@@ -168,7 +168,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
   // Per-chat document edit mode (lock/unlock)
   const [docEditMode, setDocEditMode] = useState(false);
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const templateEditorIframeRef = useRef<HTMLIFrameElement>(null);
   const templateEditorFileInputRef = useRef<HTMLInputElement>(null);
   // Template editor: edit mode + image editing
@@ -193,7 +192,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
-  const [showOnlyMissingTemplateRows, setShowOnlyMissingTemplateRows] = useState(false);
+  const [showMissingTemplateRows, setShowMissingTemplateRows] = useState(false);
   const [showFilledTemplateRows, setShowFilledTemplateRows] = useState(false);
   const [showSkippedTemplateRows, setShowSkippedTemplateRows] = useState(false);
   const [expandedTemplateValues, setExpandedTemplateValues] = useState<Record<string, boolean>>({});
@@ -2030,6 +2029,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
+      setArtifactTab('preview');
       // Keep the currently linked DOCX ID. YAML save flow below will replace the
       // existing Directus file (no orphan file clutter).
       localStorage.removeItem('doc_edit_' + conversation.id);
@@ -2238,7 +2238,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     const dd = String(now.getDate()).padStart(2, '0');
     const compositeCode = `U${mgrCode}${econCode}${techCode}${yy}/${mm}/${dd}`;
 
-    return {
+    const merged = {
       ...yamlVars,
       ...safeOfferParameters,
       'date_yyyy-month_men.-dd': ltDate,
@@ -2250,6 +2250,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       vadybininkas: selectedManager?.full_name || '',
       project_name: currentConversation?.title || '',
     };
+
+    // Respect manual overrides from the template variable editor.
+    Object.entries(templateRowOverrides).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        merged[key] = String(value);
+      }
+    });
+
+    // Respect "skip" decisions by forcing intentionally skipped keys to empty strings.
+    Object.entries(skippedTemplateRows).forEach(([key, skipped]) => {
+      if (skipped) {
+        merged[key] = merged[key] ?? '';
+      }
+    });
+
+    return merged;
   };
 
   /**
@@ -2323,9 +2339,54 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
+  const lastAutoTechDescSignatureRef = useRef<string>('');
+  const previewAutoRetryCountRef = useRef(0);
+
+  const refreshDocxPreview = async (fileId: string) => {
+    previewAutoRetryCountRef.current = 0;
+    setDocxPreviewError(null);
+    setDocxPreviewLoading(true);
+    const assetUrl = `${getDirectusAssetUrl(fileId)}&_preview_probe=${Date.now()}`;
+
+    let ready = false;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const resp = await fetch(assetUrl, { method: 'GET', cache: 'no-store' });
+        if (resp.ok) {
+          ready = true;
+          break;
+        }
+      } catch {
+        // Keep retrying: file might not be propagated yet.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 450 * (attempt + 1)));
+    }
+
+    if (!ready) {
+      setDocxPreviewError('Preview source is not ready yet. Trying to render anyway...');
+    }
+    setDocxPreviewTick((prev) => prev + 1);
+  };
+
   useEffect(() => {
-    if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
+    if (savedDocxFileId) {
+      void refreshDocxPreview(savedDocxFileId);
+    }
   }, [savedDocxFileId]);
+
+  useEffect(() => {
+    if (!docxPreviewLoading || !savedDocxFileId) return;
+    const timeout = setTimeout(() => {
+      if (previewAutoRetryCountRef.current < 1) {
+        previewAutoRetryCountRef.current += 1;
+        setDocxPreviewTick((prev) => prev + 1);
+        return;
+      }
+      setDocxPreviewLoading(false);
+      setDocxPreviewError('DOCX preview is still not responding. Please try refresh again.');
+    }, 45000);
+    return () => clearTimeout(timeout);
+  }, [docxPreviewLoading, savedDocxFileId, docxPreviewTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2401,6 +2462,38 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalDocxFileId, currentConversation?.id, currentConversation?.artifact?.content, savedDocxFileId]);
 
+  useEffect(() => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    if (techDescLoading) return;
+    if (!templateVariables.includes('technological_description')) return;
+
+    const yamlVars = parseYAMLContent(currentConversation.artifact.content);
+    const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
+    if (!componentsList) return;
+
+    const currentTechDesc = String(
+      templateRowOverrides['technological_description']
+      ?? offerParameters['technological_description']
+      ?? yamlVars['technological_description']
+      ?? ''
+    ).trim();
+    if (currentTechDesc) return;
+
+    const signature = `${currentConversation.id}::${currentConversation.artifact.version}::${componentsList}`;
+    if (lastAutoTechDescSignatureRef.current === signature) return;
+    lastAutoTechDescSignatureRef.current = signature;
+
+    autoGenerateTechDescription(componentsList, currentConversation.id);
+  }, [
+    currentConversation?.id,
+    currentConversation?.artifact?.content,
+    currentConversation?.artifact?.version,
+    templateVariables,
+    offerParameters,
+    templateRowOverrides,
+    techDescLoading,
+  ]);
+
   const yamlVarsForUi = useMemo<Record<string, string>>(
     () => (currentConversation?.artifact ? parseYAMLContent(currentConversation.artifact.content) : {}),
     [currentConversation?.artifact?.content]
@@ -2470,10 +2563,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   ]);
 
   const visibleTemplateVariableRows = useMemo(
-    () => showOnlyMissingTemplateRows
-      ? templateVariablePreviewRows.filter((row) => !row.value && !skippedTemplateRows[row.key])
-      : templateVariablePreviewRows.filter((row) => !skippedTemplateRows[row.key]),
-    [templateVariablePreviewRows, showOnlyMissingTemplateRows, skippedTemplateRows]
+    () => templateVariablePreviewRows.filter((row) => !skippedTemplateRows[row.key]),
+    [templateVariablePreviewRows, skippedTemplateRows]
   );
   const missingTemplateRows = useMemo(
     () => visibleTemplateVariableRows.filter((row) => !row.value),
@@ -2567,10 +2658,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setIsRefreshingTemplate(true);
 
       const merged = mergeAllVariables();
-      const missingKeys = templateVariables.filter((key) => {
-        const value = merged[key];
-        return value === undefined || value === null || String(value).trim() === '';
-      });
+      const missingKeys = unresolvedTemplateVariables;
 
       if (missingKeys.length > 0) {
         addNotification(
@@ -2878,9 +2966,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       if (!anthropicApiKey) throw new Error('API key not found');
 
-      const promptVar = await getInstructionVariable('tech_description_prompt');
+      const promptVar = await getInstructionVariable('chat_tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
-        console.warn('[AutoTechDesc] No tech_description_prompt found in DB, skipping.');
+        console.warn('[AutoTechDesc] No chat_tech_description_prompt found in DB, skipping.');
         return;
       }
 
@@ -2905,6 +2993,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         // Auto-save to offerParameters
         const updated = { ...offerParameters, technological_description: text };
         persistOfferParameters(conversationId, updated);
+        setTemplateRowOverrides((prev) => ({ ...prev, technological_description: text }));
+        setSkippedTemplateRows((prev) => ({ ...prev, technological_description: false }));
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
       }
@@ -2914,6 +3004,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } finally {
       setTechDescLoading(false);
     }
+  };
+
+  const handleManualTechDescriptionGenerate = async () => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    const yamlVars = parseYAMLContent(currentConversation.artifact.content);
+    const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
+    if (!componentsList) {
+      addNotification('warning', 'Technologinis aprašymas', 'Trūksta components_bulletlist reikšmės, todėl generuoti negalima.');
+      return;
+    }
+    await autoGenerateTechDescription(componentsList, currentConversation.id);
   };
 
   /** AI-assisted edit for a single YAML variable — dedicated API call, no full regeneration. */
@@ -3560,7 +3661,7 @@ Vartotojo instrukcija: ${instruction}`;
 
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
-        <div className="flex-1 min-w-0 flex-shrink-0" style={{ maxWidth: '50vw' }}>
+        <div className="flex-1 min-w-0" style={{ width: 'clamp(320px, 44vw, 760px)', maxWidth: '100%' }}>
           <div className="w-full flex flex-col h-screen bg-base-100">
             {/* Header — compact single row */}
             <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
@@ -3569,7 +3670,12 @@ Vartotojo instrukcija: ${instruction}`;
                 {currentConversation?.artifact && !isStreamingArtifact ? (
                   <div className="flex rounded-lg overflow-hidden border border-base-content/10">
                     <button
-                      onClick={() => setArtifactTab('preview')}
+                      onClick={() => {
+                        setArtifactTab('preview');
+                        if (savedDocxFileId) {
+                          void refreshDocxPreview(savedDocxFileId);
+                        }
+                      }}
                       className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
                         artifactTab === 'preview' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
                       }`}
@@ -3597,38 +3703,6 @@ Vartotojo instrukcija: ${instruction}`;
               <div className="flex items-center gap-1">
                 {!isStreamingArtifact && currentConversation?.artifact && (
                   <>
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowDownloadMenu(prev => !prev)}
-                        className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
-                        title="Atsisiųsti dokumentą"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      {showDownloadMenu && (
-                        <>
-                          <div className="fixed inset-0 z-40" onClick={() => setShowDownloadMenu(false)} />
-                          <div className="absolute right-0 top-full mt-1 z-50 bg-base-100 border border-base-content/10 rounded-lg shadow-lg py-1 min-w-[180px]">
-                            {savedDocxFileId ? (
-                              <a
-                                href={getDirectusFileUrl(savedDocxFileId)}
-                                download
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-base-content/5 flex items-center gap-2"
-                                onClick={() => setShowDownloadMenu(false)}
-                              >
-                                <FileText className="w-4 h-4 text-blue-500" />
-                                Atsisiųsti .docx
-                              </a>
-                            ) : (
-                              <span className="px-3 py-2 text-sm text-base-content/40 flex items-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                Dokumentas generuojamas...
-                              </span>
-                            )}
-                          </div>
-                        </>
-                      )}
-                    </div>
                     {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
@@ -3688,16 +3762,62 @@ Vartotojo instrukcija: ${instruction}`;
             {/* Content area — Preview (always mounted for iframe persistence) + Data */}
             <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
               {savedDocxFileId ? (
-                <iframe
-                  key={`${savedDocxFileId}-${docxPreviewTick}`}
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
-                  className="flex-1 w-full border-0"
-                  title="DOCX peržiūra"
-                />
+                <div className="relative flex-1">
+                  <iframe
+                    key={`${savedDocxFileId}-${docxPreviewTick}`}
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
+                    className="h-full w-full border-0"
+                    title="DOCX peržiūra"
+                    onLoad={() => {
+                      setDocxPreviewLoading(false);
+                      setDocxPreviewError(null);
+                      previewAutoRetryCountRef.current = 0;
+                    }}
+                    onError={() => {
+                      if (previewAutoRetryCountRef.current < 1) {
+                        previewAutoRetryCountRef.current += 1;
+                        setDocxPreviewTick((prev) => prev + 1);
+                        return;
+                      }
+                      setDocxPreviewLoading(false);
+                      setDocxPreviewError('Failed to load DOCX preview. Please try refresh again.');
+                    }}
+                  />
+                  {docxPreviewLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/80 backdrop-blur-[1px]">
+                      <div className="flex items-center gap-2 rounded-lg border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        <span className="text-sm text-base-content/60">
+                          {techDescLoading ? 'Generuojamas technologinis aprašymas...' : 'Kraunama dokumento peržiūra...'}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {docxPreviewError && !docxPreviewLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/90">
+                      <div className="max-w-sm rounded-lg border border-error/25 bg-base-100 p-4 text-center shadow">
+                        <p className="text-sm text-error">{docxPreviewError}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocxPreviewError(null);
+                            previewAutoRetryCountRef.current = 0;
+                            void refreshDocxPreview(savedDocxFileId);
+                          }}
+                          className="btn btn-sm btn-outline mt-3"
+                        >
+                          Bandyti dar kartą
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : autoSaving ? (
                 <div className="flex-1 flex items-center justify-center gap-2">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span className="text-sm text-base-content/50">Generuojamas dokumentas...</span>
+                  <span className="text-sm text-base-content/50">
+                    {techDescLoading ? 'Generuojamas technologinis aprašymas...' : 'Generuojamas dokumentas...'}
+                  </span>
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-center px-6">
@@ -4328,168 +4448,153 @@ Vartotojo instrukcija: ${instruction}`;
                           background: 'radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.96) 0%, rgba(251,249,246,0.98) 45%, rgba(245,242,238,0.96) 100%)'
                         }}
                       >
-                        <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4">
-                          <div className="rounded-2xl border border-base-content/10 bg-base-100/80 p-3">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Būsenos radaras</p>
-                            <div className="mt-2 rounded-xl border border-base-content/10 p-2.5 bg-base-100">
-                              <div className="text-center">
-                                <p className="text-[28px] font-bold leading-none text-base-content">{templateCompletion.percentage}%</p>
-                                <p className="text-[11px] text-base-content/55 mt-1">užpildyta</p>
+                        <div className="grid grid-cols-1 xl:grid-cols-[minmax(220px,245px)_1fr] 2xl:grid-cols-[270px_1fr] gap-4">
+                          <div className="relative overflow-hidden rounded-2xl border border-slate-300/70 bg-[linear-gradient(165deg,#ffffff_0%,#f7fafc_58%,#eef6ff_100%)] p-3.5 xl:p-4 shadow-[0_16px_30px_rgba(25,40,65,0.12)]">
+                            <div className="pointer-events-none absolute inset-0 opacity-[0.14]" style={{
+                              backgroundImage: 'linear-gradient(rgba(30,41,59,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(30,41,59,0.35) 1px, transparent 1px)',
+                              backgroundSize: '18px 18px'
+                            }} />
+                            <div className="pointer-events-none absolute -top-24 -right-24 h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(59,130,246,0.26),rgba(59,130,246,0))]" />
+
+                            <div className="relative z-10">
+                              <div className="mt-1 flex items-center justify-between gap-2">
+                                <div>
+                                  <p className="text-[30px] xl:text-[34px] font-semibold leading-none text-slate-900">{templateCompletion.percentage}%</p>
+                                  <p className="mt-1 text-[11px] text-slate-600">šablono parengtis</p>
+                                </div>
+                                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border bg-white ${
+                                  templateCompletion.missing === 0
+                                    ? 'border-success/35 text-success'
+                                    : templateCompletion.percentage >= 70
+                                      ? 'border-warning/35 text-warning'
+                                      : 'border-error/35 text-error'
+                                }`}>
+                                  {templateCompletion.missing === 0 ? 'Paruošta' : 'Reikia papildyti'}
+                                </span>
                               </div>
-                              <div className="mt-3 h-2 rounded-full bg-base-content/10 overflow-hidden">
-                                <div className="h-full transition-all duration-200 rounded-full" style={{ width: `${templateCompletion.percentage}%`, background: 'linear-gradient(90deg, #16a34a, #22c55e)' }} />
+
+                              <div className="mt-4">
+                                <div className="relative h-4 rounded-full bg-slate-200/90 overflow-hidden border border-slate-300/50 shadow-inner">
+                                  <div
+                                    className="h-full transition-all duration-300 rounded-full shadow-[0_0_14px_rgba(56,189,248,0.45)]"
+                                    style={{
+                                      width: `${templateCompletion.percentage}%`,
+                                      background: templateCompletion.missing === 0
+                                        ? 'linear-gradient(90deg, #0891b2 0%, #22c55e 100%)'
+                                        : templateCompletion.percentage >= 70
+                                          ? 'linear-gradient(90deg, #0ea5e9 0%, #f59e0b 100%)'
+                                          : 'linear-gradient(90deg, #2563eb 0%, #f43f5e 100%)'
+                                    }}
+                                  />
+                                  <div className="pointer-events-none absolute inset-0 opacity-35" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.02))' }} />
+                                </div>
+                                <p className="mt-2 text-[12px] text-slate-600">
+                                  {templateCompletion.missing === 0
+                                    ? 'Visi šablone užpildyti'
+                                    : `Trūksta ${templateCompletion.missing} ${templateCompletion.missing === 1 ? 'lauko' : 'laukų'}.`}
+                                </p>
                               </div>
-                              <p className="mt-3 text-[12px] font-semibold text-warning">
-                                Trūksta {templateCompletion.missing} laukų
-                              </p>
-                            </div>
-                            <div className="mt-3 space-y-1.5 text-[11px]">
-                              <div className="flex items-center justify-between"><span className="text-base-content/55">Užpildyta</span><span className="font-semibold text-success">{templateCompletion.filled}</span></div>
-                              <div className="flex items-center justify-between"><span className="text-base-content/55">Trūksta</span><span className="font-semibold text-warning">{templateCompletion.missing}</span></div>
-                              <div className="flex items-center justify-between"><span className="text-base-content/55">Iš viso</span><span className="font-semibold text-base-content/80">{templateCompletion.total}</span></div>
+
+                              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-2 text-[11px]">
+                                <div className="rounded-xl border border-slate-300/60 bg-white/90 px-3 py-2 flex items-center justify-between">
+                                  <span className="text-slate-600">Užpildyta</span>
+                                  <span className="font-semibold text-cyan-700">{templateCompletion.filled}</span>
+                                </div>
+                                <div className="rounded-xl border border-slate-300/60 bg-white/90 px-3 py-2 flex items-center justify-between">
+                                  <span className="text-slate-600">Trūksta</span>
+                                  <span className={`font-semibold ${templateCompletion.missing === 0 ? 'text-cyan-700' : 'text-amber-600'}`}>{templateCompletion.missing}</span>
+                                </div>
+                                <div className="rounded-xl border border-slate-300/60 bg-white/90 px-3 py-2 flex items-center justify-between">
+                                  <span className="text-slate-600">Iš viso</span>
+                                  <span className="font-semibold text-slate-800">{templateCompletion.total}</span>
+                                </div>
+                              </div>
                             </div>
                           </div>
 
                           <div className="min-w-0">
-                            <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-white/70 px-3 py-2">
-                              <p className="text-[13px] font-semibold text-base-content">
-                                {templateCompletion.missing === 0 ? '✅ Visi laukai užpildyti' : '⚠ Reikia papildyti trūkstamus laukus'}
-                              </p>
-                              <button
-                                onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
-                                className={`btn btn-xs border backdrop-blur-md shadow-sm transition-all ${
-                                  showOnlyMissingTemplateRows
-                                    ? 'border-primary/35 bg-primary/20 text-primary hover:bg-primary/25'
-                                    : 'border-white/60 bg-white/65 text-base-content/80 hover:bg-white/80'
-                                }`}
-                              >
-                                {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
-                              </button>
-                            </div>
-
-                            <div className="mt-3 max-h-[500px] overflow-auto pr-1 pb-6 space-y-3">
+                            <div className="max-h-[500px] overflow-auto pr-1 pb-6 space-y-3">
                               {visibleTemplateVariableRows.length > 0 ? (
                                 <>
-                                  <div className="rounded-2xl border border-warning/30 bg-warning/[0.04] p-3">
-                                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90 mb-2">Trūksta</p>
-                                    {missingTemplateRows.length > 0 ? (
-                                      <div className="space-y-2">
-                                        {missingTemplateRows.map((row) => {
-                                          const isEditing = !!editingTemplateRows[row.key];
-                                          return (
-                                            <div
-                                              key={row.key}
-                                              className={`rounded-2xl border border-warning/35 bg-[linear-gradient(160deg,rgba(255,248,240,0.98),rgba(255,241,226,0.85))] shadow-[0_10px_22px_rgba(234,88,12,0.12)] px-3 py-3 transition-all duration-200 ${
-                                                skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
-                                              }`}
-                                            >
-                                              <div className="flex items-start justify-between gap-3">
-                                                <div className="min-w-0">
-                                                  <span className="inline-flex rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
-                                                  {isEditing ? (
-                                                    <textarea
-                                                      value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
-                                                      onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
-                                                      className="mt-2 w-full min-h-[72px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
-                                                      placeholder="Įveskite reikšmę..."
-                                                    />
-                                                  ) : (
-                                                    <p className="mt-2 text-[12px] text-base-content/70">Reikšmė neįvesta.</p>
-                                                  )}
-                                                </div>
-                                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
-                                                      setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
-                                                    }}
-                                                    className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
-                                                  >
-                                                    {isEditing ? 'Baigti' : 'Redaguoti'}
-                                                  </button>
-                                                  {isEditing && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="btn btn-xs border border-success/35 bg-success/15 backdrop-blur-md text-success hover:bg-success/20 shadow-sm"
-                                                    >
-                                                      Išsaugoti
-                                                    </button>
-                                                  )}
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
-                                                    className="btn btn-xs border border-warning/30 bg-warning/12 backdrop-blur-md text-warning hover:bg-warning/20 shadow-sm"
-                                                  >
-                                                    ✓ Praleisti
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
+                                  {missingTemplateRows.length > 0 && (
+                                    <div className={`rounded-2xl border border-warning/28 bg-white shadow-[0_8px_18px_rgba(234,88,12,0.08)] transition-all duration-200 ${showMissingTemplateRows ? 'p-3' : 'px-3 py-2'}`}>
+                                      <div className={`grid grid-cols-[1fr_auto_1fr] items-center ${showMissingTemplateRows ? 'mb-2' : 'mb-0.5'}`}>
+                                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-warning/90">Trūksta</p>
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowMissingTemplateRows((prev) => !prev)}
+                                          className={`mx-auto flex items-center justify-center rounded-full border border-warning/35 bg-white text-warning/90 shadow-sm transition-colors hover:bg-warning/10 ${showMissingTemplateRows ? 'h-5 w-24' : 'h-4 w-20'}`}
+                                          aria-label={showMissingTemplateRows ? 'Sutraukti trūkstamus laukus' : 'Išskleisti trūkstamus laukus'}
+                                        >
+                                          {showMissingTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                        </button>
+                                        <span className="justify-self-end rounded-full border border-warning/35 bg-white px-2 py-0.5 text-[10px] font-semibold text-warning">
+                                          {missingTemplateRows.length}
+                                        </span>
                                       </div>
-                                    ) : (
-                                      <div className="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-2 text-[12px] text-success">Trūkstamų laukų nėra.</div>
-                                    )}
-                                  </div>
-
-                                  {!showOnlyMissingTemplateRows && (
-                                    <div className="rounded-2xl border border-success/25 bg-success/[0.04] p-3">
-                                      <button
-                                        type="button"
-                                        onClick={() => setShowFilledTemplateRows((prev) => !prev)}
-                                        className="w-full flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-success/90"
-                                      >
-                                        <span>Užpildyta ({filledTemplateRows.length})</span>
-                                        {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                      </button>
-                                      <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1200px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-                                        <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 pb-3">
-                                          {filledTemplateRows.map((row) => {
-                                            const isExpanded = !!expandedTemplateValues[row.key];
+                                      <div className={`overflow-hidden transition-all duration-200 ${showMissingTemplateRows ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                        <div className="space-y-2">
+                                          {missingTemplateRows.map((row) => {
                                             const isEditing = !!editingTemplateRows[row.key];
                                             return (
-                                              <div key={row.key} className="rounded-2xl border border-success/30 bg-[linear-gradient(160deg,rgba(239,253,245,0.95),rgba(228,250,237,0.8))] shadow-[0_8px_16px_rgba(22,163,74,0.12)] px-3 py-3">
-                                                <div className="flex items-start justify-between gap-3">
-                                                  <div className="min-w-0 flex-1">
-                                                    <span className="inline-flex rounded-full border border-success/35 bg-success/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
+                                              <div
+                                                key={row.key}
+                                                className={`rounded-2xl border border-warning/35 bg-white shadow-[0_10px_22px_rgba(234,88,12,0.1)] px-3 py-3 transition-all duration-200 ${
+                                                  skippedTemplateRows[row.key] ? 'opacity-0 scale-95 pointer-events-none h-0 p-0 m-0 overflow-hidden' : 'opacity-100'
+                                                }`}
+                                              >
+                                                <div className="flex flex-col gap-2">
+                                                  <div className="min-w-0 w-full">
+                                                    <span className="inline-flex rounded-full border border-warning/45 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
                                                     {isEditing ? (
                                                       <textarea
                                                         value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
                                                         onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
-                                                        className="mt-2 w-full min-h-[72px] rounded-lg border border-success/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                        className="mt-2 w-full min-h-[92px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                        placeholder="Įveskite reikšmę..."
                                                       />
                                                     ) : (
-                                                      <p
-                                                        onClick={() => setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
-                                                        className="mt-2 text-[12px] leading-relaxed break-words text-base-content/90 bg-white/75 rounded-md px-2 py-1.5 border border-base-content/10 cursor-pointer"
-                                                        style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
-                                                      >
-                                                        {row.value}
-                                                      </p>
+                                                      <p className="mt-2 text-[12px] text-base-content/70">Reikšmė neįvesta.</p>
                                                     )}
                                                   </div>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
-                                                      setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
-                                                    }}
-                                                    className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
-                                                  >
-                                                    {isEditing ? 'Baigti' : 'Redaguoti'}
-                                                  </button>
-                                                  {isEditing && (
+                                                  <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                                    {row.key === 'technological_description' && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={handleManualTechDescriptionGenerate}
+                                                        disabled={techDescLoading}
+                                                        className="inline-flex h-7 items-center rounded-lg border border-cyan-400/50 bg-white px-3 text-[11px] font-medium text-cyan-700 shadow-sm transition-colors hover:bg-cyan-50 disabled:opacity-60"
+                                                      >
+                                                        {techDescLoading ? 'Generuojama...' : 'Generuoti'}
+                                                      </button>
+                                                    )}
                                                     <button
                                                       type="button"
-                                                      onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="btn btn-xs border border-success/35 bg-success/15 backdrop-blur-md text-success hover:bg-success/20 shadow-sm"
+                                                      onClick={() => {
+                                                        setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
+                                                        setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                                                      }}
+                                                      className="inline-flex h-7 items-center rounded-lg border border-base-content/20 bg-white/90 px-3 text-[11px] font-medium text-base-content/80 shadow-sm transition-colors hover:bg-white"
                                                     >
-                                                      Išsaugoti
+                                                      {isEditing ? 'Baigti' : 'Redaguoti'}
                                                     </button>
-                                                  )}
+                                                    {isEditing && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleTemplateRowSave(row.key, row.value)}
+                                                        className="inline-flex h-7 items-center rounded-lg border border-success/35 bg-white px-3 text-[11px] font-medium text-success shadow-sm transition-colors hover:bg-success/10"
+                                                      >
+                                                        Išsaugoti
+                                                      </button>
+                                                    )}
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
+                                                      className="inline-flex h-7 items-center rounded-lg border border-warning/35 bg-white px-3 text-[11px] font-medium text-warning shadow-sm transition-colors hover:bg-warning/10"
+                                                    >
+                                                      ✓ Praleisti
+                                                    </button>
+                                                  </div>
                                                 </div>
                                               </div>
                                             );
@@ -4499,7 +4604,69 @@ Vartotojo instrukcija: ${instruction}`;
                                     </div>
                                   )}
 
-                                  <div className="rounded-2xl border border-base-content/15 bg-base-100/80 p-3">
+                                  <div className="rounded-2xl border border-success/25 bg-white p-3 shadow-[0_8px_18px_rgba(22,163,74,0.08)]">
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowFilledTemplateRows((prev) => !prev)}
+                                      className="w-full flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-success/90"
+                                    >
+                                      <span>Užpildyta ({filledTemplateRows.length})</span>
+                                      {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                    </button>
+                                    <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1200px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+                                      <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 pb-3">
+                                        {filledTemplateRows.map((row) => {
+                                          const isExpanded = !!expandedTemplateValues[row.key];
+                                          const isEditing = !!editingTemplateRows[row.key];
+                                          return (
+                                            <div key={row.key} className="rounded-2xl border border-success/30 bg-white shadow-[0_8px_16px_rgba(22,163,74,0.1)] px-3 py-3">
+                                              <div className="flex items-start justify-between gap-3">
+                                                <div className="min-w-0 flex-1">
+                                                  <span className="inline-flex rounded-full border border-success/35 bg-white px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
+                                                  {isEditing ? (
+                                                    <textarea
+                                                      value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
+                                                      onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                                      className="mt-2 w-full min-h-[72px] rounded-lg border border-success/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
+                                                    />
+                                                  ) : (
+                                                    <p
+                                                      onClick={() => setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
+                                                      className="mt-2 text-[12px] leading-relaxed break-words text-base-content/90 bg-white/75 rounded-md px-2 py-1.5 border border-base-content/10 cursor-pointer"
+                                                      style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
+                                                    >
+                                                      {row.value}
+                                                    </p>
+                                                  )}
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
+                                                    setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                                                  }}
+                                                  className="inline-flex h-7 items-center rounded-lg border border-base-content/20 bg-white/90 px-3 text-[11px] font-medium text-base-content/80 shadow-sm transition-colors hover:bg-white"
+                                                >
+                                                  {isEditing ? 'Baigti' : 'Redaguoti'}
+                                                </button>
+                                                {isEditing && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleTemplateRowSave(row.key, row.value)}
+                                                    className="inline-flex h-7 items-center rounded-lg border border-success/35 bg-white px-3 text-[11px] font-medium text-success shadow-sm transition-colors hover:bg-success/10"
+                                                  >
+                                                    Išsaugoti
+                                                  </button>
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="rounded-2xl border border-base-content/15 bg-white p-3 shadow-[0_8px_18px_rgba(60,52,46,0.07)]">
                                     <button
                                       type="button"
                                       onClick={() => setShowSkippedTemplateRows((prev) => !prev)}
@@ -4511,12 +4678,12 @@ Vartotojo instrukcija: ${instruction}`;
                                     <div className={`overflow-hidden transition-all duration-200 ${showSkippedTemplateRows ? 'max-h-[900px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
                                       <div className="space-y-2">
                                         {skippedTemplateVariableRows.length > 0 ? skippedTemplateVariableRows.map((row) => (
-                                          <div key={row.key} className="rounded-xl border border-base-content/15 bg-base-100 px-3 py-2 flex items-center justify-between gap-2">
+                                          <div key={row.key} className="rounded-xl border border-base-content/15 bg-white/85 px-3 py-2 flex items-center justify-between gap-2">
                                             <span className="font-mono text-[11px] text-base-content/75 break-all">{row.key}</span>
                                             <button
                                               type="button"
                                               onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: false }))}
-                                              className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
+                                              className="inline-flex h-7 items-center rounded-lg border border-base-content/20 bg-white/90 px-3 text-[11px] font-medium text-base-content/80 shadow-sm transition-colors hover:bg-white"
                                             >
                                               Grąžinti
                                             </button>
