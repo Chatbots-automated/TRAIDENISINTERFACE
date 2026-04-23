@@ -2339,8 +2339,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   const lastAutoTechDescSignatureRef = useRef<string>('');
+  const previewAutoRetryCountRef = useRef(0);
 
   const refreshDocxPreview = async (fileId: string) => {
+    previewAutoRetryCountRef.current = 0;
     setDocxPreviewError(null);
     setDocxPreviewLoading(true);
     const assetUrl = `${getDirectusAssetUrl(fileId)}&_preview_probe=${Date.now()}`;
@@ -2374,9 +2376,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   useEffect(() => {
     if (!docxPreviewLoading || !savedDocxFileId) return;
     const timeout = setTimeout(() => {
+      if (previewAutoRetryCountRef.current < 1) {
+        previewAutoRetryCountRef.current += 1;
+        setDocxPreviewTick((prev) => prev + 1);
+        return;
+      }
       setDocxPreviewLoading(false);
-      setDocxPreviewError('DOCX peržiūra užtruko per ilgai. Pabandykite atnaujinti peržiūrą.');
-    }, 15000);
+      setDocxPreviewError('DOCX preview is still not responding. Please try refresh again.');
+    }, 45000);
     return () => clearTimeout(timeout);
   }, [docxPreviewLoading, savedDocxFileId, docxPreviewTick]);
 
@@ -3752,10 +3759,16 @@ Vartotojo instrukcija: ${instruction}`;
                     onLoad={() => {
                       setDocxPreviewLoading(false);
                       setDocxPreviewError(null);
+                      previewAutoRetryCountRef.current = 0;
                     }}
                     onError={() => {
+                      if (previewAutoRetryCountRef.current < 1) {
+                        previewAutoRetryCountRef.current += 1;
+                        setDocxPreviewTick((prev) => prev + 1);
+                        return;
+                      }
                       setDocxPreviewLoading(false);
-                      setDocxPreviewError('Nepavyko užkrauti DOCX peržiūros. Pabandykite atnaujinti peržiūrą.');
+                      setDocxPreviewError('Failed to load DOCX preview. Please try refresh again.');
                     }}
                   />
                   {docxPreviewLoading && (
@@ -3774,6 +3787,7 @@ Vartotojo instrukcija: ${instruction}`;
                           type="button"
                           onClick={() => {
                             setDocxPreviewError(null);
+                            previewAutoRetryCountRef.current = 0;
                             void refreshDocxPreview(savedDocxFileId);
                           }}
                           className="btn btn-sm btn-outline mt-3"
