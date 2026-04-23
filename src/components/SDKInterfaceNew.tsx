@@ -4289,21 +4289,38 @@ Vartotojo instrukcija: ${instruction}`;
                         }}
                       >
                         <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
-                          <div className="rounded-2xl border border-base-content/10 bg-base-100/70 backdrop-blur-sm p-3">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Validation Radar</p>
-                            <div className="mt-2 h-28 rounded-xl border border-base-content/10 relative overflow-hidden bg-base-100">
-                              <div className="absolute inset-0 opacity-50" style={{ background: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0 1px, transparent 1px 22px)' }} />
-                              <div
-                                className="absolute bottom-0 left-0 right-0 transition-all duration-200"
-                                style={{
-                                  height: `${templateCompletion.percentage}%`,
-                                  background: templateCompletion.missing === 0
-                                    ? 'linear-gradient(180deg, rgba(34,197,94,0.2), rgba(34,197,94,0.55))'
-                                    : 'linear-gradient(180deg, rgba(251,146,60,0.22), rgba(251,146,60,0.62))'
-                                }}
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="text-2xl font-semibold tracking-tight text-base-content">{templateCompletion.percentage}%</span>
+                          <div className="rounded-2xl border border-base-content/10 bg-base-100/75 backdrop-blur-sm p-3">
+                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Validation Radar Δ</p>
+                            <div className="mt-2 rounded-xl border border-base-content/10 p-2.5 bg-base-100">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-success">+ Užpildyta</span>
+                                <span className="text-[11px] font-semibold text-success">{templateCompletion.percentage}%</span>
+                              </div>
+                              <div className="mt-1.5 h-2 rounded-full bg-success/10 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-200"
+                                  style={{
+                                    width: `${templateCompletion.percentage}%`,
+                                    background: 'repeating-linear-gradient(135deg, rgba(34,197,94,0.85) 0 8px, rgba(21,128,61,0.85) 8px 16px)'
+                                  }}
+                                />
+                              </div>
+                              <div className="mt-2.5 flex items-center justify-between">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-warning">- Trūksta</span>
+                                <span className="text-[11px] font-semibold text-warning">{Math.max(100 - templateCompletion.percentage, 0)}%</span>
+                              </div>
+                              <div className="mt-1.5 h-2 rounded-full bg-warning/10 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full transition-all duration-200"
+                                  style={{
+                                    width: `${Math.max(100 - templateCompletion.percentage, 0)}%`,
+                                    background: 'repeating-linear-gradient(135deg, rgba(251,146,60,0.9) 0 8px, rgba(194,65,12,0.9) 8px 16px)'
+                                  }}
+                                />
+                              </div>
+                              <div className="mt-3 rounded-lg px-2.5 py-2 text-center border border-base-content/10 bg-base-content/[0.03]">
+                                <span className="text-[11px] uppercase tracking-wider text-base-content/55">Delta</span>
+                                <p className="text-[22px] font-bold leading-none mt-1 text-base-content">{templateCompletion.filled - templateCompletion.missing}</p>
                               </div>
                             </div>
                             <div className="mt-3 space-y-2">
@@ -4329,7 +4346,7 @@ Vartotojo instrukcija: ${instruction}`;
                                 : 'border-warning/30 bg-warning/10'
                             }`}>
                               <div className="flex items-center justify-between gap-3">
-                                <p className="text-[14px] font-semibold">
+                                <p className="text-[14px] font-semibold tracking-tight text-base-content">
                                   {templateCompletion.missing === 0
                                     ? '✅ Viskas užpildyta'
                                     : `⚠ Trūksta ${templateCompletion.missing} kintamųjų`}
@@ -4372,8 +4389,9 @@ Vartotojo instrukcija: ${instruction}`;
                                               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-warning/80" />
                                               <div className="flex items-start justify-between gap-3 pl-1.5">
                                                 <div className="min-w-0">
-                                                  <span className="inline-flex rounded-full border border-warning/45 bg-warning/10 px-2.5 py-1 font-mono text-[11px] font-semibold break-all">{row.key}</span>
-                                                  <p className="mt-2 text-[12px] italic text-base-content/55">Nėra reikšmės — reikia užpildyti</p>
+                                                  <span className="inline-flex rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
+                                                  <p className="mt-2 text-[12px] font-medium text-warning/90">Nėra reikšmės</p>
+                                                  <p className="text-[11px] text-base-content/65 mt-0.5">Šis laukas būtinas dokumento užpildymui.</p>
                                                 </div>
                                                 <AlertCircle className="w-4 h-4 text-warning mt-1 flex-shrink-0" />
                                               </div>
@@ -4421,11 +4439,11 @@ Vartotojo instrukcija: ${instruction}`;
                                                   <span className="mt-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-[10px] font-semibold text-success flex-shrink-0">{index + 1}</span>
                                                   <div className="min-w-0 flex-1">
                                                     <div className="flex items-start justify-between gap-3">
-                                                      <span className="inline-flex rounded-full border border-success/35 bg-success/10 px-2.5 py-1 font-mono text-[11px] font-semibold break-all">{row.key}</span>
+                                                      <span className="inline-flex rounded-full border border-success/35 bg-success/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
                                                       <Check className="w-4 h-4 text-success mt-1 flex-shrink-0" />
                                                     </div>
                                                     <p
-                                                      className="mt-2 text-[12px] leading-relaxed break-words text-base-content/80"
+                                                      className="mt-2 text-[12px] leading-relaxed break-words text-base-content/90 bg-white/70 rounded-md px-2 py-1.5 border border-base-content/10"
                                                       style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
                                                     >
                                                       {row.value}
