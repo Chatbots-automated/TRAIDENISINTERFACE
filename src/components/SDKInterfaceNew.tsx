@@ -478,7 +478,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           updated_at: new Date().toISOString(),
           updated_by: user.email
         })
-        .eq('variable_key', 'template');
+        .eq('variable_key', 'chat_template');
 
       if (error) {
         console.error('[saveTemplateVariable] Error:', error);

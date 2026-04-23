@@ -18,6 +18,11 @@ interface TemplateRow {
   updated_at?: string | null;
 }
 
+interface InstructionVariableValueRow {
+  variable_key: string;
+  content: string;
+}
+
 /**
  * Fetch all instruction variables from the database
  */
@@ -47,43 +52,28 @@ export const fetchInstructionVariables = async (): Promise<InstructionVariable[]
 };
 
 /**
- * Inject variables into a prompt template
- * Replaces {variable_name} placeholders with actual values
+ * Parse template variables from {{variable_name}} placeholders.
+ */
+export const extractTemplateVariableKeys = (promptTemplate: string): string[] => {
+  const matches = promptTemplate.match(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g) || [];
+  const keys = matches.map((m) => m.replace(/[{}]/g, '').trim());
+  return Array.from(new Set(keys));
+};
+
+/**
+ * Inject variables into a prompt template.
+ * Replaces {{variable_name}} placeholders with actual values.
  */
 export const injectVariablesIntoPrompt = (
   promptTemplate: string,
-  variables: InstructionVariable[]
+  valuesByKey: Record<string, string>
 ): string => {
-  let injectedPrompt = promptTemplate;
-  const replacements: { placeholder: string; found: number }[] = [];
-
-  variables.forEach((variable) => {
-    const placeholder = `{${variable.variable_key}}`;
-    // Handle null/undefined values by using empty string as fallback
-    const variableValue = variable.content || '';
-
-    if (!variableValue) {
-      console.warn(`⚠️ Variable '${variable.variable_key}' (${variable.variable_name}) has empty/null value`);
+  return promptTemplate.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_full, key: string) => {
+    if (!(key in valuesByKey)) {
+      throw new Error(`Missing required variable: ${key}`);
     }
-
-    const occurrences = promptTemplate.split(placeholder).length - 1;
-    injectedPrompt = injectedPrompt.split(placeholder).join(variableValue);
-
-    replacements.push({
-      placeholder: variable.variable_key,
-      found: occurrences
-    });
+    return valuesByKey[key] ?? '';
   });
-
-  console.log('Variable injection results:', replacements);
-
-  // Check for unreplaced variables
-  const unreplacedMatches = injectedPrompt.match(/\{[^}]+\}/g);
-  if (unreplacedMatches) {
-    console.warn('Unreplaced variables found in prompt:', unreplacedMatches);
-  }
-
-  return injectedPrompt;
 };
 
 /**
@@ -95,11 +85,11 @@ export const injectVariablesIntoPrompt = (
  */
 export const getPromptTemplate = async (): Promise<string> => {
   try {
-    console.log('[getPromptTemplate] Loading template from instruction_variables...');
+    console.log('[getPromptTemplate] Loading chat_template from instruction_variables...');
     const { data, error } = await dbAdmin
       .from('instruction_variables')
       .select('id, content, updated_at')
-      .eq('variable_key', 'template')
+      .eq('variable_key', 'chat_template')
       .order('updated_at', { ascending: false })
       .limit(2);
 
@@ -112,7 +102,7 @@ export const getPromptTemplate = async (): Promise<string> => {
       ? (data as TemplateRow[])
       : (data ? [data as TemplateRow] : []);
     if (rows.length === 0 || !rows[0]?.content?.trim()) {
-      throw new Error('instruction_variables.template is missing or empty');
+      throw new Error('instruction_variables.chat_template is missing or empty');
     }
 
     if (rows.length > 1) {
@@ -134,14 +124,14 @@ export const getPromptTemplate = async (): Promise<string> => {
  */
 export const savePromptTemplate = async (template: string): Promise<{ success: boolean; error?: any }> => {
   try {
-    // Update the template record by ID (always id=1)
+    // Update the chat template row in instruction_variables
     const { error } = await dbAdmin
-      .from('prompt_template')
+      .from('instruction_variables')
       .update({
-        template_content: template,
+        content: template,
         updated_at: new Date().toISOString()
       })
-      .eq('id', 1);
+      .eq('variable_key', 'chat_template');
 
     if (error) {
       console.error('[savePromptTemplate] Error saving template:', error);
@@ -535,32 +525,36 @@ export const getSystemPrompt = async (): Promise<string> => {
   console.log('═══════════════════════════════════════════════════');
 
   const promptTemplate = await getPromptTemplate();
-  console.log('[getSystemPrompt] Template loaded, length:', promptTemplate.length);
-  console.log('[getSystemPrompt] Template source:',
-    promptTemplate.includes('{role_and_identity}') ? 'instruction_variables (NEW)' :
-    promptTemplate.includes('ROLE & IDENTITY') ? 'prompt_template or code (OLD)' :
-    'UNKNOWN'
-  );
+  const requiredKeys = extractTemplateVariableKeys(promptTemplate);
+  console.log('[getSystemPrompt] Template loaded. Length:', promptTemplate.length, 'Required keys:', requiredKeys.join(', '));
 
-  const variables = await fetchInstructionVariables();
-  console.log('[getSystemPrompt] Fetched variables count:', variables.length);
-  console.log('[getSystemPrompt] Variables:', variables.map(v => v.variable_key).join(', '));
+  const valuesByKey: Record<string, string> = {};
+  if (requiredKeys.length > 0) {
+    const { data, error } = await dbAdmin
+      .from('instruction_variables')
+      .select('variable_key, content')
+      .in('variable_key', requiredKeys);
 
-  const injectedPrompt = injectVariablesIntoPrompt(promptTemplate, variables);
-  console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
-  console.log('[getSystemPrompt] Length changed by:', injectedPrompt.length - promptTemplate.length, 'characters');
-
-  // Verify PHASE 5 is present
-  if (injectedPrompt.includes('PHASE 5: COMMERCIAL OFFER GENERATION')) {
-    console.log('[getSystemPrompt] ✅ PHASE 5 is present in system prompt');
-    if (injectedPrompt.includes('WRONG FORMAT - DO NOT USE THIS')) {
-      console.log('[getSystemPrompt] ✅ WRONG vs RIGHT comparison is present');
-    } else {
-      console.warn('[getSystemPrompt] ⚠️ WRONG vs RIGHT comparison NOT found!');
+    if (error) {
+      console.error('[getSystemPrompt] Failed querying required variables:', error);
+      throw error;
     }
-  } else {
-    console.error('[getSystemPrompt] ❌ PHASE 5 NOT FOUND in system prompt!');
+
+    const rows: InstructionVariableValueRow[] = Array.isArray(data)
+      ? (data as InstructionVariableValueRow[])
+      : (data ? [data as InstructionVariableValueRow] : []);
+    for (const row of rows) {
+      valuesByKey[row.variable_key] = row.content ?? '';
+    }
+
+    const missingKeys = requiredKeys.filter((key) => !(key in valuesByKey));
+    if (missingKeys.length > 0) {
+      throw new Error(`[getSystemPrompt] Missing required instruction_variables: ${missingKeys.join(', ')}`);
+    }
   }
+
+  const injectedPrompt = injectVariablesIntoPrompt(promptTemplate, valuesByKey);
+  console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
 
   console.log('═══════════════════════════════════════════════════');
   return injectedPrompt;
