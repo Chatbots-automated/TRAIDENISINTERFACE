@@ -1219,7 +1219,11 @@ function GrafaTab({ medziagas, istorija, analysisContent, onError }: { medziagas
   const charts = useMemo(() => {
     return medziagas.map(m => {
       const entries = (byArt.get(m.artikulas) || [])
-        .filter(e => e.kaina_min !== null)
+        .map((e) => ({
+          ...e,
+          kaina_min: e.kaina_min ?? e.kaina_max ?? null,
+        }))
+        .filter((e) => e.kaina_min !== null)
         .sort((a, b) => a.data.localeCompare(b.data));
 
       if (entries.length === 0) return null;
