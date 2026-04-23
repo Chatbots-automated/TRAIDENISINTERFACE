@@ -2340,8 +2340,21 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   const lastAutoTechDescSignatureRef = useRef<string>('');
   useEffect(() => {
-    if (savedDocxFileId) setDocxPreviewTick(prev => prev + 1);
+    if (savedDocxFileId) {
+      setDocxPreviewError(null);
+      setDocxPreviewLoading(true);
+      setDocxPreviewTick(prev => prev + 1);
+    }
   }, [savedDocxFileId]);
+
+  useEffect(() => {
+    if (!docxPreviewLoading || !savedDocxFileId) return;
+    const timeout = setTimeout(() => {
+      setDocxPreviewLoading(false);
+      setDocxPreviewError('DOCX peržiūra užtruko per ilgai. Pabandykite atnaujinti peržiūrą.');
+    }, 15000);
+    return () => clearTimeout(timeout);
+  }, [docxPreviewLoading, savedDocxFileId, docxPreviewTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3707,12 +3720,48 @@ Vartotojo instrukcija: ${instruction}`;
             {/* Content area — Preview (always mounted for iframe persistence) + Data */}
             <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
               {savedDocxFileId ? (
-                <iframe
-                  key={`${savedDocxFileId}-${docxPreviewTick}`}
-                  src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
-                  className="flex-1 w-full border-0"
-                  title="DOCX peržiūra"
-                />
+                <div className="relative flex-1">
+                  <iframe
+                    key={`${savedDocxFileId}-${docxPreviewTick}`}
+                    src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${docxPreviewTick}`)}&embedded=true`}
+                    className="h-full w-full border-0"
+                    title="DOCX peržiūra"
+                    onLoad={() => {
+                      setDocxPreviewLoading(false);
+                      setDocxPreviewError(null);
+                    }}
+                    onError={() => {
+                      setDocxPreviewLoading(false);
+                      setDocxPreviewError('Nepavyko užkrauti DOCX peržiūros. Pabandykite atnaujinti peržiūrą.');
+                    }}
+                  />
+                  {docxPreviewLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/80 backdrop-blur-[1px]">
+                      <div className="flex items-center gap-2 rounded-lg border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
+                        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                        <span className="text-sm text-base-content/60">Kraunama dokumento peržiūra...</span>
+                      </div>
+                    </div>
+                  )}
+                  {docxPreviewError && !docxPreviewLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/90">
+                      <div className="max-w-sm rounded-lg border border-error/25 bg-base-100 p-4 text-center shadow">
+                        <p className="text-sm text-error">{docxPreviewError}</p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDocxPreviewError(null);
+                            setDocxPreviewLoading(true);
+                            setDocxPreviewTick((prev) => prev + 1);
+                          }}
+                          className="btn btn-sm btn-outline mt-3"
+                        >
+                          Bandyti dar kartą
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : autoSaving ? (
                 <div className="flex-1 flex items-center justify-center gap-2">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
