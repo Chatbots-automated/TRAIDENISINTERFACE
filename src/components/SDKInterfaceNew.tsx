@@ -2029,6 +2029,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setCurrentConversation({ ...conversation, artifact: newArtifact });
       setShowArtifact(true);
+      setArtifactTab('preview');
       // Keep the currently linked DOCX ID. YAML save flow below will replace the
       // existing Directus file (no orphan file clutter).
       localStorage.removeItem('doc_edit_' + conversation.id);
@@ -2965,9 +2966,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       if (!anthropicApiKey) throw new Error('API key not found');
 
-      const promptVar = await getInstructionVariable('tech_description_prompt');
+      const promptVar = await getInstructionVariable('chat_tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
-        console.warn('[AutoTechDesc] No tech_description_prompt found in DB, skipping.');
+        console.warn('[AutoTechDesc] No chat_tech_description_prompt found in DB, skipping.');
         return;
       }
 
@@ -3775,7 +3776,9 @@ Vartotojo instrukcija: ${instruction}`;
                     <div className="absolute inset-0 z-10 flex items-center justify-center bg-base-100/80 backdrop-blur-[1px]">
                       <div className="flex items-center gap-2 rounded-lg border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
                         <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                        <span className="text-sm text-base-content/60">Kraunama dokumento peržiūra...</span>
+                        <span className="text-sm text-base-content/60">
+                          {techDescLoading ? 'Generuojamas technologinis aprašymas...' : 'Kraunama dokumento peržiūra...'}
+                        </span>
                       </div>
                     </div>
                   )}
@@ -3801,7 +3804,9 @@ Vartotojo instrukcija: ${instruction}`;
               ) : autoSaving ? (
                 <div className="flex-1 flex items-center justify-center gap-2">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                  <span className="text-sm text-base-content/50">Generuojamas dokumentas...</span>
+                  <span className="text-sm text-base-content/50">
+                    {techDescLoading ? 'Generuojamas technologinis aprašymas...' : 'Generuojamas dokumentas...'}
+                  </span>
                 </div>
               ) : (
                 <div className="flex-1 flex items-center justify-center text-center px-6">
