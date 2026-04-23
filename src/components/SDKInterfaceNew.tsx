@@ -2460,6 +2460,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     () => visibleTemplateVariableRows.filter((row) => !!row.value),
     [visibleTemplateVariableRows]
   );
+  const templateCompletion = useMemo(() => {
+    const total = templateVariables.length || 0;
+    const missing = unresolvedTemplateVariables.length;
+    const filled = Math.max(total - missing, 0);
+    const percentage = total > 0 ? Math.round((filled / total) * 100) : 0;
+    return { total, missing, filled, percentage };
+  }, [templateVariables.length, unresolvedTemplateVariables.length]);
 
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
@@ -4275,98 +4282,78 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div className="rounded-2xl border border-base-content/10 bg-base-100/95 shadow-sm p-4 max-w-3xl mx-auto">
-                        <div className={`mb-3 rounded-xl border px-3 py-3 transition-all duration-200 ${
-                          unresolvedTemplateVariables.length === 0
-                            ? 'border-success/25 bg-success/10'
-                            : 'border-warning/30 bg-warning/10'
-                        }`}>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                              {unresolvedTemplateVariables.length === 0 ? (
-                                <Check className="w-4 h-4 text-success" />
-                              ) : (
-                                <AlertCircle className="w-4 h-4 text-warning" />
-                              )}
-                              <p className="text-[13px] font-semibold text-base-content">
-                                {unresolvedTemplateVariables.length === 0
-                                  ? '✅ Viskas užpildyta'
-                                  : `⚠ Trūksta ${unresolvedTemplateVariables.length} kintamųjų`}
+                      <div
+                        className="rounded-[22px] border border-base-content/10 shadow-xl p-4 max-w-4xl mx-auto"
+                        style={{
+                          background: 'radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.96) 0%, rgba(251,249,246,0.98) 45%, rgba(245,242,238,0.96) 100%)'
+                        }}
+                      >
+                        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
+                          <div className="rounded-2xl border border-base-content/10 bg-base-100/70 backdrop-blur-sm p-3">
+                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Validation Radar</p>
+                            <div className="mt-2 h-28 rounded-xl border border-base-content/10 relative overflow-hidden bg-base-100">
+                              <div className="absolute inset-0 opacity-50" style={{ background: 'repeating-linear-gradient(90deg, rgba(0,0,0,0.04) 0 1px, transparent 1px 22px)' }} />
+                              <div
+                                className="absolute bottom-0 left-0 right-0 transition-all duration-200"
+                                style={{
+                                  height: `${templateCompletion.percentage}%`,
+                                  background: templateCompletion.missing === 0
+                                    ? 'linear-gradient(180deg, rgba(34,197,94,0.2), rgba(34,197,94,0.55))'
+                                    : 'linear-gradient(180deg, rgba(251,146,60,0.22), rgba(251,146,60,0.62))'
+                                }}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-2xl font-semibold tracking-tight text-base-content">{templateCompletion.percentage}%</span>
+                              </div>
+                            </div>
+                            <div className="mt-3 space-y-2">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-base-content/55">Užpildyta</span>
+                                <span className="font-semibold text-success">{templateCompletion.filled}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-base-content/55">Trūksta</span>
+                                <span className="font-semibold text-warning">{templateCompletion.missing}</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="text-base-content/55">Iš viso</span>
+                                <span className="font-semibold text-base-content/80">{templateCompletion.total}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="min-w-0">
+                            <div className={`rounded-2xl border p-3 transition-all duration-200 ${
+                              templateCompletion.missing === 0
+                                ? 'border-success/30 bg-success/10'
+                                : 'border-warning/30 bg-warning/10'
+                            }`}>
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-[14px] font-semibold">
+                                  {templateCompletion.missing === 0
+                                    ? '✅ Viskas užpildyta'
+                                    : `⚠ Trūksta ${templateCompletion.missing} kintamųjų`}
+                                </p>
+                                <button
+                                  onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
+                                  className={`btn btn-xs transition-all duration-200 ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
+                                >
+                                  {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
+                                </button>
+                              </div>
+                              <p className="mt-1 text-[11px] text-base-content/55">
+                                Būsena atnaujinama gyvai pagal sugeneruotą YAML ir šablono laukus.
                               </p>
                             </div>
-                            <button
-                              onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
-                              className={`btn btn-xs transition-all duration-200 ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
-                            >
-                              {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
-                            </button>
-                          </div>
-                          <p className="mt-1 text-[11px] text-base-content/55">
-                            Šablono kintamieji: {templateVariables.length} · Užpildyta: {templateVariables.length - unresolvedTemplateVariables.length}
-                          </p>
-                        </div>
 
-                        <div className="transition-all duration-200">
-                          <div className="max-h-[460px] overflow-auto pr-1 space-y-4">
-                            {visibleTemplateVariableRows.length > 0 ? (
-                              <>
-                                <div>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <p className="text-[11px] font-semibold uppercase tracking-wider text-warning">Trūksta ({missingTemplateRows.length})</p>
-                                  </div>
-                                  {missingTemplateRows.length > 0 ? (
-                                    <div className="space-y-2">
-                                      {missingTemplateRows.map((row) => {
-                                        const isActive = selectedTemplateRowKey === row.key;
-                                        return (
-                                          <button
-                                            type="button"
-                                            key={row.key}
-                                            onClick={() => {
-                                              setSelectedTemplateRowKey(row.key);
-                                              setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
-                                            }}
-                                            className={`w-full text-left rounded-xl border bg-warning/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.04)] pl-0 pr-3 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_6px_14px_rgba(0,0,0,0.08)] ${
-                                              isActive ? 'border-warning/60 ring-2 ring-warning/25' : 'border-warning/35 hover:border-warning/50'
-                                            }`}
-                                          >
-                                            <div className="flex items-start gap-3">
-                                              <span className="w-1.5 self-stretch rounded-l-xl bg-warning/80" />
-                                              <div className="min-w-0 flex-1">
-                                                <div className="flex items-start justify-between gap-3">
-                                                  <span className="inline-flex max-w-full rounded-full border border-warning/35 bg-warning/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-base-content/80 break-all">
-                                                    {row.key}
-                                                  </span>
-                                                  <AlertCircle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
-                                                </div>
-                                                <p className="mt-2 text-[12px] italic text-base-content/45 leading-relaxed">tuščia</p>
-                                              </div>
-                                            </div>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <div className="rounded-lg border border-success/20 bg-success/[0.08] px-3 py-2 text-[12px] text-success">
-                                      Visi privalomi kintamieji užpildyti.
-                                    </div>
-                                  )}
-                                </div>
-
-                                {!showOnlyMissingTemplateRows && (
+                            <div className="mt-3 max-h-[470px] overflow-auto pr-1 space-y-4">
+                              {visibleTemplateVariableRows.length > 0 ? (
+                                <>
                                   <div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowFilledTemplateRows((prev) => !prev)}
-                                      className="w-full flex items-center justify-between rounded-lg bg-base-content/[0.03] px-3 py-2 mb-2 text-[11px] font-semibold uppercase tracking-wider text-base-content/60 transition-colors hover:bg-base-content/[0.05]"
-                                    >
-                                      <span>Užpildyta ({filledTemplateRows.length})</span>
-                                      {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                    </button>
-                                    <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-warning/90">Trūksta · prioritetas</p>
+                                    {missingTemplateRows.length > 0 ? (
                                       <div className="space-y-2">
-                                        {filledTemplateRows.map((row) => {
-                                          const isExpanded = !!expandedTemplateValues[row.key];
+                                        {missingTemplateRows.map((row) => {
                                           const isActive = selectedTemplateRowKey === row.key;
                                           return (
                                             <button
@@ -4376,43 +4363,90 @@ Vartotojo instrukcija: ${instruction}`;
                                                 setSelectedTemplateRowKey(row.key);
                                                 setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                               }}
-                                              className={`w-full text-left rounded-xl border bg-success/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.04)] pl-0 pr-3 py-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_6px_14px_rgba(0,0,0,0.08)] ${
-                                                isActive ? 'border-success/55 ring-2 ring-success/20' : 'border-success/25 hover:border-success/45'
+                                              className={`group w-full text-left relative overflow-hidden rounded-xl border pl-3 pr-3 py-3 transition-all duration-200 ${
+                                                isActive
+                                                  ? 'border-warning/70 bg-warning/[0.13] shadow-[0_10px_24px_rgba(234,88,12,0.18)]'
+                                                  : 'border-warning/35 bg-warning/[0.07] hover:-translate-y-0.5 hover:border-warning/55 hover:shadow-[0_8px_16px_rgba(234,88,12,0.12)]'
                                               }`}
                                             >
-                                              <div className="flex items-start gap-3">
-                                                <span className="w-1.5 self-stretch rounded-l-xl bg-success/80" />
-                                                <div className="min-w-0 flex-1">
-                                                  <div className="flex items-start justify-between gap-3">
-                                                    <span className="inline-flex max-w-full rounded-full border border-success/30 bg-success/10 px-2.5 py-1 font-mono text-[11px] font-semibold text-base-content/80 break-all">
-                                                      {row.key}
-                                                    </span>
-                                                    <Check className="w-4 h-4 text-success mt-0.5 flex-shrink-0" />
-                                                  </div>
-                                                  <p
-                                                    className={`mt-2 text-[12px] leading-relaxed break-words text-base-content/75 ${
-                                                      isExpanded ? '' : 'line-clamp-2'
-                                                    }`}
-                                                    style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
-                                                  >
-                                                    {row.value}
-                                                  </p>
-                                                  {!isExpanded && row.value.length > 120 && (
-                                                    <span className="inline-flex mt-1 text-[11px] text-base-content/45">Spauskite išplėsti</span>
-                                                  )}
+                                              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-warning/80" />
+                                              <div className="flex items-start justify-between gap-3 pl-1.5">
+                                                <div className="min-w-0">
+                                                  <span className="inline-flex rounded-full border border-warning/45 bg-warning/10 px-2.5 py-1 font-mono text-[11px] font-semibold break-all">{row.key}</span>
+                                                  <p className="mt-2 text-[12px] italic text-base-content/55">Nėra reikšmės — reikia užpildyti</p>
                                                 </div>
+                                                <AlertCircle className="w-4 h-4 text-warning mt-1 flex-shrink-0" />
                                               </div>
                                             </button>
                                           );
                                         })}
                                       </div>
-                                    </div>
+                                    ) : (
+                                      <div className="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-2 text-[12px] text-success">
+                                        Nėra trūkstamų kintamųjų.
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </>
-                            ) : (
-                              <div className="px-2 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
-                            )}
+
+                                  {!showOnlyMissingTemplateRows && (
+                                    <div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setShowFilledTemplateRows((prev) => !prev)}
+                                        className="w-full rounded-xl border border-base-content/10 bg-base-content/[0.03] px-3 py-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/60 transition-all duration-200 hover:bg-base-content/[0.06]"
+                                      >
+                                        <span>Užpildyta · {filledTemplateRows.length}</span>
+                                        {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                      </button>
+                                      <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1300px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+                                        <div className="space-y-2">
+                                          {filledTemplateRows.map((row, index) => {
+                                            const isExpanded = !!expandedTemplateValues[row.key];
+                                            const isActive = selectedTemplateRowKey === row.key;
+                                            return (
+                                              <button
+                                                type="button"
+                                                key={row.key}
+                                                onClick={() => {
+                                                  setSelectedTemplateRowKey(row.key);
+                                                  setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                                                }}
+                                                className={`w-full text-left rounded-xl border px-3 py-3 transition-all duration-200 ${
+                                                  isActive
+                                                    ? 'border-success/70 bg-success/[0.14] shadow-[0_10px_24px_rgba(22,163,74,0.16)]'
+                                                    : 'border-success/25 bg-success/[0.07] hover:-translate-y-0.5 hover:border-success/45 hover:shadow-[0_8px_16px_rgba(22,163,74,0.10)]'
+                                                }`}
+                                              >
+                                                <div className="flex items-start gap-3">
+                                                  <span className="mt-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-[10px] font-semibold text-success flex-shrink-0">{index + 1}</span>
+                                                  <div className="min-w-0 flex-1">
+                                                    <div className="flex items-start justify-between gap-3">
+                                                      <span className="inline-flex rounded-full border border-success/35 bg-success/10 px-2.5 py-1 font-mono text-[11px] font-semibold break-all">{row.key}</span>
+                                                      <Check className="w-4 h-4 text-success mt-1 flex-shrink-0" />
+                                                    </div>
+                                                    <p
+                                                      className="mt-2 text-[12px] leading-relaxed break-words text-base-content/80"
+                                                      style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}
+                                                    >
+                                                      {row.value}
+                                                    </p>
+                                                    {!isExpanded && row.value.length > 120 && (
+                                                      <span className="inline-flex mt-1 text-[11px] text-base-content/45">Spauskite, kad išplėstumėte</span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="px-2 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
