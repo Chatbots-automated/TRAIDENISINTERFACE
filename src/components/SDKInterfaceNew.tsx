@@ -4328,32 +4328,66 @@ Vartotojo instrukcija: ${instruction}`;
                           background: 'radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.96) 0%, rgba(251,249,246,0.98) 45%, rgba(245,242,238,0.96) 100%)'
                         }}
                       >
-                        <div className="grid grid-cols-1 xl:grid-cols-[260px_1fr] gap-4">
-                          <div className="rounded-2xl border border-base-content/10 bg-base-100/80 p-3">
+                        <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-4">
+                          <div className="rounded-2xl border border-base-content/10 bg-[linear-gradient(168deg,rgba(255,255,255,0.95),rgba(250,247,243,0.88))] p-4 shadow-[0_16px_30px_rgba(60,52,46,0.08)]">
                             <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Būsenos radaras</p>
-                            <div className="mt-2 rounded-xl border border-base-content/10 p-2.5 bg-base-100">
-                              <div className="text-center">
-                                <p className="text-[28px] font-bold leading-none text-base-content">{templateCompletion.percentage}%</p>
-                                <p className="text-[11px] text-base-content/55 mt-1">užpildyta</p>
+                            <div className="mt-3 flex items-end justify-between">
+                              <div>
+                                <p className="text-[34px] font-semibold leading-none text-base-content">{templateCompletion.percentage}%</p>
+                                <p className="mt-1 text-[11px] text-base-content/60">šablono parengtis</p>
                               </div>
-                              <div className="mt-3 h-2 rounded-full bg-base-content/10 overflow-hidden">
-                                <div className="h-full transition-all duration-200 rounded-full" style={{ width: `${templateCompletion.percentage}%`, background: 'linear-gradient(90deg, #16a34a, #22c55e)' }} />
+                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border ${
+                                templateCompletion.missing === 0
+                                  ? 'border-success/35 bg-success/12 text-success'
+                                  : templateCompletion.percentage >= 70
+                                    ? 'border-warning/35 bg-warning/12 text-warning'
+                                    : 'border-error/35 bg-error/12 text-error'
+                              }`}>
+                                {templateCompletion.missing === 0 ? 'Paruošta' : 'Reikia papildyti'}
+                              </span>
+                            </div>
+
+                            <div className="mt-4">
+                              <div className="h-2.5 rounded-full bg-base-content/10 overflow-hidden">
+                                <div
+                                  className="h-full transition-all duration-300 rounded-full"
+                                  style={{
+                                    width: `${templateCompletion.percentage}%`,
+                                    background: templateCompletion.missing === 0
+                                      ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)'
+                                      : templateCompletion.percentage >= 70
+                                        ? 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)'
+                                        : 'linear-gradient(90deg, #dc2626 0%, #f43f5e 100%)'
+                                  }}
+                                />
                               </div>
-                              <p className="mt-3 text-[12px] font-semibold text-warning">
-                                Trūksta {templateCompletion.missing} laukų
+                              <p className="mt-2 text-[12px] text-base-content/70">
+                                {templateCompletion.missing === 0
+                                  ? 'Visi DOCX laukai užpildyti.'
+                                  : `Trūksta ${templateCompletion.missing} ${templateCompletion.missing === 1 ? 'lauko' : 'laukų'}.`}
                               </p>
                             </div>
-                            <div className="mt-3 space-y-1.5 text-[11px]">
-                              <div className="flex items-center justify-between"><span className="text-base-content/55">Užpildyta</span><span className="font-semibold text-success">{templateCompletion.filled}</span></div>
-                              <div className="flex items-center justify-between"><span className="text-base-content/55">Trūksta</span><span className="font-semibold text-warning">{templateCompletion.missing}</span></div>
-                              <div className="flex items-center justify-between"><span className="text-base-content/55">Iš viso</span><span className="font-semibold text-base-content/80">{templateCompletion.total}</span></div>
+
+                            <div className="mt-4 space-y-2 text-[11px]">
+                              <div className="rounded-xl border border-base-content/10 bg-white/70 px-3 py-2 flex items-center justify-between">
+                                <span className="text-base-content/60">Užpildyta</span>
+                                <span className="font-semibold text-success">{templateCompletion.filled}</span>
+                              </div>
+                              <div className="rounded-xl border border-base-content/10 bg-white/70 px-3 py-2 flex items-center justify-between">
+                                <span className="text-base-content/60">Trūksta</span>
+                                <span className={`font-semibold ${templateCompletion.missing === 0 ? 'text-success' : 'text-warning'}`}>{templateCompletion.missing}</span>
+                              </div>
+                              <div className="rounded-xl border border-base-content/10 bg-white/70 px-3 py-2 flex items-center justify-between">
+                                <span className="text-base-content/60">Iš viso</span>
+                                <span className="font-semibold text-base-content/80">{templateCompletion.total}</span>
+                              </div>
                             </div>
                           </div>
 
                           <div className="min-w-0">
-                            <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-white/70 px-3 py-2">
+                            <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.82),rgba(248,244,239,0.75))] px-3 py-2.5 shadow-[0_8px_18px_rgba(60,52,46,0.06)]">
                               <p className="text-[13px] font-semibold text-base-content">
-                                {templateCompletion.missing === 0 ? '✅ Visi laukai užpildyti' : '⚠ Reikia papildyti trūkstamus laukus'}
+                                {templateCompletion.missing === 0 ? '✅ Visi laukai užpildyti' : '⚠ Reikalingas papildymas prieš dokumento generavimą'}
                               </p>
                               <button
                                 onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
