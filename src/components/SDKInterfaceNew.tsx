@@ -4290,10 +4290,10 @@ Vartotojo instrukcija: ${instruction}`;
                       >
                         <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
                           <div className="rounded-2xl border border-base-content/10 bg-base-100/75 backdrop-blur-sm p-3">
-                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Validation Radar Δ</p>
+                            <p className="text-[10px] uppercase tracking-[0.18em] text-base-content/45">Status View</p>
                             <div className="mt-2 rounded-xl border border-base-content/10 p-2.5 bg-base-100">
                               <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-success">+ Užpildyta</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-success">+ Filled</span>
                                 <span className="text-[11px] font-semibold text-success">{templateCompletion.percentage}%</span>
                               </div>
                               <div className="mt-1.5 h-2 rounded-full bg-success/10 overflow-hidden">
@@ -4306,7 +4306,7 @@ Vartotojo instrukcija: ${instruction}`;
                                 />
                               </div>
                               <div className="mt-2.5 flex items-center justify-between">
-                                <span className="text-[10px] font-semibold uppercase tracking-wider text-warning">- Trūksta</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-warning">- Missing</span>
                                 <span className="text-[11px] font-semibold text-warning">{Math.max(100 - templateCompletion.percentage, 0)}%</span>
                               </div>
                               <div className="mt-1.5 h-2 rounded-full bg-warning/10 overflow-hidden">
@@ -4319,21 +4319,21 @@ Vartotojo instrukcija: ${instruction}`;
                                 />
                               </div>
                               <div className="mt-3 rounded-lg px-2.5 py-2 text-center border border-base-content/10 bg-base-content/[0.03]">
-                                <span className="text-[11px] uppercase tracking-wider text-base-content/55">Delta</span>
+                                <span className="text-[11px] uppercase tracking-wider text-base-content/55">Difference</span>
                                 <p className="text-[22px] font-bold leading-none mt-1 text-base-content">{templateCompletion.filled - templateCompletion.missing}</p>
                               </div>
                             </div>
                             <div className="mt-3 space-y-2">
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-base-content/55">Užpildyta</span>
+                                <span className="text-base-content/55">Filled</span>
                                 <span className="font-semibold text-success">{templateCompletion.filled}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-base-content/55">Trūksta</span>
+                                <span className="text-base-content/55">Missing</span>
                                 <span className="font-semibold text-warning">{templateCompletion.missing}</span>
                               </div>
                               <div className="flex items-center justify-between text-[11px]">
-                                <span className="text-base-content/55">Iš viso</span>
+                                <span className="text-base-content/55">Total</span>
                                 <span className="font-semibold text-base-content/80">{templateCompletion.total}</span>
                               </div>
                             </div>
@@ -4348,18 +4348,18 @@ Vartotojo instrukcija: ${instruction}`;
                               <div className="flex items-center justify-between gap-3">
                                 <p className="text-[14px] font-semibold tracking-tight text-base-content">
                                   {templateCompletion.missing === 0
-                                    ? '✅ Viskas užpildyta'
-                                    : `⚠ Trūksta ${templateCompletion.missing} kintamųjų`}
+                                    ? '✅ Everything is filled'
+                                    : `⚠ ${templateCompletion.missing} fields are missing`}
                                 </p>
                                 <button
                                   onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
                                   className={`btn btn-xs transition-all duration-200 ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
                                 >
-                                  {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
+                                  {showOnlyMissingTemplateRows ? 'Show all' : 'Show only missing'}
                                 </button>
                               </div>
                               <p className="mt-1 text-[11px] text-base-content/55">
-                                Būsena atnaujinama gyvai pagal sugeneruotą YAML ir šablono laukus.
+                                This updates automatically based on your form values.
                               </p>
                             </div>
 
@@ -4367,7 +4367,7 @@ Vartotojo instrukcija: ${instruction}`;
                               {visibleTemplateVariableRows.length > 0 ? (
                                 <>
                                   <div>
-                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-warning/90">Trūksta · prioritetas</p>
+                                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-warning/90">Missing · Priority first</p>
                                     {missingTemplateRows.length > 0 ? (
                                       <div className="space-y-2">
                                         {missingTemplateRows.map((row) => {
@@ -4380,18 +4380,18 @@ Vartotojo instrukcija: ${instruction}`;
                                                 setSelectedTemplateRowKey(row.key);
                                                 setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                               }}
-                                              className={`group w-full text-left relative overflow-hidden rounded-xl border pl-3 pr-3 py-3 transition-all duration-200 ${
+                                              className={`group w-full text-left relative overflow-hidden rounded-xl border pl-3 pr-3 py-3 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/60 ${
                                                 isActive
-                                                  ? 'border-warning/70 bg-warning/[0.13] shadow-[0_10px_24px_rgba(234,88,12,0.18)]'
-                                                  : 'border-warning/35 bg-warning/[0.07] hover:-translate-y-0.5 hover:border-warning/55 hover:shadow-[0_8px_16px_rgba(234,88,12,0.12)]'
+                                                  ? 'border-warning/70 bg-[linear-gradient(165deg,rgba(255,237,213,0.85),rgba(255,247,237,0.7))] shadow-[0_14px_30px_rgba(234,88,12,0.18)]'
+                                                  : 'border-warning/35 bg-[linear-gradient(165deg,rgba(255,247,237,0.95),rgba(255,251,245,0.8))] hover:-translate-y-0.5 hover:border-warning/55 hover:shadow-[0_10px_22px_rgba(234,88,12,0.14)]'
                                               }`}
                                             >
                                               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-warning/80" />
                                               <div className="flex items-start justify-between gap-3 pl-1.5">
                                                 <div className="min-w-0">
                                                   <span className="inline-flex rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
-                                                  <p className="mt-2 text-[12px] font-medium text-warning/90">Nėra reikšmės</p>
-                                                  <p className="text-[11px] text-base-content/65 mt-0.5">Šis laukas būtinas dokumento užpildymui.</p>
+                                                  <p className="mt-2 text-[12px] font-medium text-warning/90">No value yet</p>
+                                                  <p className="text-[11px] text-base-content/65 mt-0.5">Please fill this field to complete the file.</p>
                                                 </div>
                                                 <AlertCircle className="w-4 h-4 text-warning mt-1 flex-shrink-0" />
                                               </div>
@@ -4401,7 +4401,7 @@ Vartotojo instrukcija: ${instruction}`;
                                       </div>
                                     ) : (
                                       <div className="rounded-lg border border-success/25 bg-success/[0.08] px-3 py-2 text-[12px] text-success">
-                                        Nėra trūkstamų kintamųjų.
+                                        No missing fields.
                                       </div>
                                     )}
                                   </div>
@@ -4413,7 +4413,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         onClick={() => setShowFilledTemplateRows((prev) => !prev)}
                                         className="w-full rounded-xl border border-base-content/10 bg-base-content/[0.03] px-3 py-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.12em] text-base-content/60 transition-all duration-200 hover:bg-base-content/[0.06]"
                                       >
-                                        <span>Užpildyta · {filledTemplateRows.length}</span>
+                                        <span>Filled · {filledTemplateRows.length}</span>
                                         {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                       </button>
                                       <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1300px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
@@ -4429,10 +4429,10 @@ Vartotojo instrukcija: ${instruction}`;
                                                   setSelectedTemplateRowKey(row.key);
                                                   setExpandedTemplateValues((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                                 }}
-                                                className={`w-full text-left rounded-xl border px-3 py-3 transition-all duration-200 ${
+                                                className={`w-full text-left rounded-xl border px-3 py-3 transition-all duration-200 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-white/60 relative overflow-hidden ${
                                                   isActive
-                                                    ? 'border-success/70 bg-success/[0.14] shadow-[0_10px_24px_rgba(22,163,74,0.16)]'
-                                                    : 'border-success/25 bg-success/[0.07] hover:-translate-y-0.5 hover:border-success/45 hover:shadow-[0_8px_16px_rgba(22,163,74,0.10)]'
+                                                    ? 'border-success/70 bg-[linear-gradient(165deg,rgba(220,252,231,0.88),rgba(240,253,244,0.74))] shadow-[0_14px_30px_rgba(22,163,74,0.16)]'
+                                                    : 'border-success/25 bg-[linear-gradient(165deg,rgba(240,253,244,0.95),rgba(247,254,250,0.8))] hover:-translate-y-0.5 hover:border-success/45 hover:shadow-[0_10px_22px_rgba(22,163,74,0.12)]'
                                                 }`}
                                               >
                                                 <div className="flex items-start gap-3">
@@ -4449,7 +4449,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                       {row.value}
                                                     </p>
                                                     {!isExpanded && row.value.length > 120 && (
-                                                      <span className="inline-flex mt-1 text-[11px] text-base-content/45">Spauskite, kad išplėstumėte</span>
+                                                      <span className="inline-flex mt-1 text-[11px] text-base-content/45">Click to expand</span>
                                                     )}
                                                   </div>
                                                 </div>
@@ -4462,7 +4462,7 @@ Vartotojo instrukcija: ${instruction}`;
                                   )}
                                 </>
                               ) : (
-                                <div className="px-2 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
+                                <div className="px-2 py-4 text-[12px] text-base-content/40">No template fields found.</div>
                               )}
                             </div>
                           </div>
