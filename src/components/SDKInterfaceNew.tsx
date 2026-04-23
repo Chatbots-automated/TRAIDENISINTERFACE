@@ -194,6 +194,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
   const [showMissingTemplateDetails, setShowMissingTemplateDetails] = useState(false);
+  const [showOnlyMissingTemplateRows, setShowOnlyMissingTemplateRows] = useState(false);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -2442,6 +2443,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentConversation?.title,
   ]);
 
+  const visibleTemplateVariableRows = useMemo(
+    () => showOnlyMissingTemplateRows
+      ? templateVariablePreviewRows.filter((row) => !row.value)
+      : templateVariablePreviewRows,
+    [templateVariablePreviewRows, showOnlyMissingTemplateRows]
+  );
+
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
 
@@ -4256,25 +4264,37 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div className="rounded-xl border border-base-content/10 bg-base-100 shadow-sm p-3">
-                        <div className="px-1 pb-2 text-[11px] uppercase tracking-wide text-base-content/45 flex items-center justify-between">
-                          <span>Šablonas</span>
-                          <span>Sugeneruota</span>
+                      <div className="rounded-xl border border-base-content/10 bg-base-100 shadow-sm p-3 max-w-5xl mx-auto">
+                        <div className="px-1 pb-2 text-[11px] uppercase tracking-wide text-base-content/45 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-6">
+                            <span>Šablonas</span>
+                            <span>Sugeneruota</span>
+                          </div>
+                          <button
+                            onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
+                            className={`btn btn-xs ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
+                          >
+                            {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
+                          </button>
                         </div>
                         <div className="max-h-[420px] overflow-auto pr-1">
-                          {templateVariablePreviewRows.length > 0 ? templateVariablePreviewRows.map((row) => {
+                          {visibleTemplateVariableRows.length > 0 ? visibleTemplateVariableRows.map((row) => {
                             const isMissing = !row.value;
                             return (
                               <div
                                 key={row.key}
-                                className="mb-2 rounded-lg bg-white border border-base-content/10 shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2"
+                                className={`mb-3 rounded-lg bg-white border shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-3 transition-all duration-150 hover:shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:border-base-content/20 ${
+                                  isMissing ? 'border-warning/35 border-l-2 border-l-warning/80 bg-warning/[0.06]' : 'border-base-content/10'
+                                }`}
                               >
                                 <div className="flex items-start gap-3">
-                                  <div className="w-56 min-w-56 text-[12px] font-semibold text-base-content/75 break-all">
-                                    {row.key}
+                                  <div className="w-56 min-w-56">
+                                    <span className="inline-flex max-w-full rounded-md border border-base-content/15 bg-base-content/[0.02] px-2 py-1 font-mono text-[12px] font-semibold text-base-content/80 break-all">
+                                      {row.key}
+                                    </span>
                                   </div>
-                                  <div className="text-base-content/25 text-[11px] mt-0.5">↔</div>
-                                  <div className={`flex-1 text-[12px] leading-relaxed break-all ${isMissing ? 'text-base-content/35 italic' : 'text-base-content'}`}>
+                                  <div className="text-base-content/20 text-[10px] mt-1">↔</div>
+                                  <div className={`flex-1 max-w-[520px] text-[12px] leading-relaxed break-words ${isMissing ? 'text-base-content/35 italic' : 'text-base-content/80'}`}>
                                     {row.value || 'tuščia'}
                                   </div>
                                   <div className="ml-2 mt-0.5">
