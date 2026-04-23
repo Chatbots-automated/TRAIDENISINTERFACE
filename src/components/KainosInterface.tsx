@@ -486,80 +486,76 @@ function extractJsonPayload(text: string): unknown {
 }
 
 function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
-  const byCode = new Map(medziagas.map((m) => [m.artikulas.toLowerCase(), m.artikulas]));
-  const byCodeNormalized = new Map(medziagas.map((m) => [normalizeName(m.artikulas), m.artikulas]));
-  const byNameNormalized = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
-  const normalizedCodeEntries = medziagas.map((m) => ({ normalized: normalizeName(m.artikulas), artikulas: m.artikulas }));
-  const artikulasList = medziagas.map((m) => m.artikulas.trim()).filter(Boolean).sort((a, b) => b.length - a.length);
+  const knownArtikulas = medziagas
+    .map((m) => m.artikulas.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const knownSet = new Set(knownArtikulas);
 
-  const resolveArtikulas = (rawCode: string): string | null => {
-    const normalizedRaw = normalizeName(rawCode);
-    return byCode.get(rawCode.toLowerCase())
-      || byCodeNormalized.get(normalizedRaw)
-      || byNameNormalized.get(normalizedRaw)
-      // Fallback for prefixed/suffixed codes in AI payloads (e.g. "MAT-101-1", "101-1 resin")
-      || normalizedCodeEntries.find((entry) => (
-        normalizedRaw.includes(entry.normalized) || entry.normalized.includes(normalizedRaw)
-      ))?.artikulas
-      || null;
+  const extractKnownArtikulasFromText = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+    if (knownSet.has(text)) return text;
+
+    for (const artikulas of knownArtikulas) {
+      const tokenMatch = new RegExp(`(^|[^A-Za-z0-9-])${escapeRegExp(artikulas)}([^A-Za-z0-9-]|$)`).test(text);
+      if (tokenMatch) return artikulas;
+    }
+    return null;
   };
 
-  const toPredictions = (item: any): AiPrediction[] => {
+  const resolveItemArtikulas = (item: unknown): string | null => {
+    if (!item || typeof item !== 'object') return null;
+    const row = item as Record<string, unknown>;
+
+    const strictArtikulas = extractKnownArtikulasFromText(row.artikulas);
+    if (strictArtikulas) return strictArtikulas;
+
+    const materialCode = extractKnownArtikulasFromText(row.material_code);
+    if (materialCode) return materialCode;
+
+    const materialLabel = extractKnownArtikulasFromText(row.material);
+    if (materialLabel) return materialLabel;
+
+    const nameLabel = extractKnownArtikulasFromText(row.name);
+    if (nameLabel) return nameLabel;
+
+    return null;
+  };
+
+  const toPredictions = (item: unknown): AiPrediction[] => {
     if (!item || typeof item !== 'object') return [];
-
-    const sourceFields = [item?.artikulas, item?.material, item?.material_code, item?.name]
-      .filter((v: unknown): v is string => typeof v === 'string')
-      .map((v) => v.trim())
-      .filter(Boolean);
-
-    const candidateCodes = new Set<string>();
-    for (const source of sourceFields) {
-      candidateCodes.add(source);
-
-      // Explicitly look for any known artikulas token inside the AI material string
-      // (e.g. "101-14 | derva Derakane 441-400" -> "101-14").
-      for (const artikulas of artikulasList) {
-        const tokenMatch = new RegExp(`(^|[^A-Za-z0-9-])${escapeRegExp(artikulas)}([^A-Za-z0-9-]|$)`).test(source);
-        if (tokenMatch) candidateCodes.add(artikulas);
-      }
-
-      const beforePipe = source.split('|')[0]?.trim();
-      if (beforePipe) candidateCodes.add(beforePipe);
-      const bracketCode = source.match(/\[([A-Za-z0-9-]+)\]/)?.[1]?.trim();
-      if (bracketCode) candidateCodes.add(bracketCode);
-      const leadingCode = source.match(/^([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)\b/)?.[1]?.trim();
-      if (leadingCode) candidateCodes.add(leadingCode);
-    }
-
-    const artikulas = Array.from(candidateCodes)
-      .map((candidate) => resolveArtikulas(candidate))
-      .find((resolved): resolved is string => Boolean(resolved)) || null;
+    const row = item as Record<string, unknown>;
+    const artikulas = resolveItemArtikulas(row);
     if (!artikulas) return [];
 
-    const reasoning = typeof item?.reasoning === 'string'
-      ? item.reasoning
+    const reasoning = typeof row.reasoning === 'string'
+      ? row.reasoning
       : 'Prognozė pagal naftos ir geopolitinį kontekstą.';
 
-    let kaina = coerceFiniteNumber(item?.kaina ?? item?.price ?? item?.value);
-    let data = normalizeIsoDate(item?.data ?? item?.date, fallbackDate);
-
-    if (Array.isArray(item?.points)) {
-      const normalizedPoints: AiPrediction[] = item.points
-        .map((p: any) => ({
-          artikulas,
-          kaina: coerceFiniteNumber(p?.price ?? p?.kaina ?? p?.value),
-          data: normalizeIsoDate(p?.date ?? p?.data, fallbackDate),
-          reasoning,
-        }))
-        .filter((p: any) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
+    if (Array.isArray(row.points)) {
+      const normalizedPoints: AiPrediction[] = row.points
+        .map((p: unknown) => {
+          const point = (p && typeof p === 'object') ? (p as Record<string, unknown>) : {};
+          return {
+            artikulas,
+            kaina: coerceFiniteNumber(point.price ?? point.kaina ?? point.value),
+            data: normalizeIsoDate(point.date ?? point.data, fallbackDate),
+            reasoning,
+          };
+        })
+        .filter((p) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
       if (normalizedPoints.length > 0) return normalizedPoints;
     }
+
+    const kaina = coerceFiniteNumber(row.kaina ?? row.price ?? row.value);
     if (kaina === null || kaina < 0) return [];
 
     return [{
       artikulas,
       kaina,
-      data,
+      data: normalizeIsoDate(row.data ?? row.date, fallbackDate),
       reasoning,
     }];
   };
