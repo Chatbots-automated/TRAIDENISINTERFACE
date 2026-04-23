@@ -199,6 +199,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [expandedTemplateValues, setExpandedTemplateValues] = useState<Record<string, boolean>>({});
   const [skippedTemplateRows, setSkippedTemplateRows] = useState<Record<string, boolean>>({});
   const [editingTemplateRows, setEditingTemplateRows] = useState<Record<string, boolean>>({});
+  const [templateRowDrafts, setTemplateRowDrafts] = useState<Record<string, string>>({});
   const [templateRowOverrides, setTemplateRowOverrides] = useState<Record<string, string>>({});
 
   // Floating variable editor state (interactive preview)
@@ -2408,8 +2409,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const unresolvedTemplateVariables = useMemo<string[]>(() => {
     if (!templateVariables.length) return [];
     const merged = mergeAllVariables();
+    const objectAndWaterKeys = new Set(
+      OFFER_PARAMETER_DEFINITIONS
+        .filter((p) => p.group === 'object')
+        .map((p) => p.key)
+    );
     return templateVariables.filter((key) => {
-      const value = merged[key];
+      if (objectAndWaterKeys.has(key)) return false;
+      if (skippedTemplateRows[key]) return false;
+      const override = templateRowOverrides[key];
+      const value = override !== undefined ? override : merged[key];
       if (value === undefined || value === null) return true;
       const normalized = String(value).trim();
       return normalized === '' || normalized.toLowerCase() === 'undefined';
@@ -2425,6 +2434,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     user.phone,
     user.kodas,
     currentConversation?.title,
+    skippedTemplateRows,
+    templateRowOverrides,
   ]);
 
   const templateVariablePreviewRows = useMemo(() => {
@@ -2846,6 +2857,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     setEditingVariable(null);
     documentPreviewRef.current?.clearActiveVariable();
+  };
+
+  const handleTemplateRowSave = async (key: string, fallbackValue: string) => {
+    const draft = templateRowDrafts[key];
+    const nextValue = (draft !== undefined ? draft : fallbackValue).trim();
+    setTemplateRowOverrides((prev) => ({ ...prev, [key]: nextValue }));
+    await handleVariableSave(key, nextValue);
+    setEditingTemplateRows((prev) => ({ ...prev, [key]: false }));
+    setTemplateRowDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   /** Auto-generate technological description after artifact creation — fire-and-forget. */
@@ -4339,7 +4363,7 @@ Vartotojo instrukcija: ${instruction}`;
                               </button>
                             </div>
 
-                            <div className="mt-3 max-h-[500px] overflow-auto pr-1 space-y-3">
+                            <div className="mt-3 max-h-[500px] overflow-auto pr-1 pb-6 space-y-3">
                               {visibleTemplateVariableRows.length > 0 ? (
                                 <>
                                   <div className="rounded-2xl border border-warning/30 bg-warning/[0.04] p-3">
@@ -4360,8 +4384,8 @@ Vartotojo instrukcija: ${instruction}`;
                                                   <span className="inline-flex rounded-full border border-warning/45 bg-warning/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
                                                   {isEditing ? (
                                                     <textarea
-                                                      value={templateRowOverrides[row.key] ?? row.value}
-                                                      onChange={(e) => setTemplateRowOverrides((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                                      value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
+                                                      onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
                                                       className="mt-2 w-full min-h-[72px] rounded-lg border border-warning/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
                                                       placeholder="Įveskite reikšmę..."
                                                     />
@@ -4372,15 +4396,29 @@ Vartotojo instrukcija: ${instruction}`;
                                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                                   <button
                                                     type="button"
-                                                    onClick={() => setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
-                                                    className="btn btn-xs btn-soft"
+                                                    onClick={() => {
+                                                      setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
+                                                      setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                                                    }}
+                                                    className="btn btn-xs border-0 text-white"
+                                                    style={{ background: '#8b5e34' }}
                                                   >
                                                     {isEditing ? 'Baigti' : 'Redaguoti'}
                                                   </button>
+                                                  {isEditing && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleTemplateRowSave(row.key, row.value)}
+                                                      className="btn btn-xs border-0 text-white"
+                                                      style={{ background: '#0f766e' }}
+                                                    >
+                                                      Išsaugoti
+                                                    </button>
+                                                  )}
                                                   <button
                                                     type="button"
                                                     onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
-                                                    className="btn btn-xs btn-outline"
+                                                    className="btn btn-xs border border-warning/30 bg-warning/10 text-warning"
                                                   >
                                                     ✓ Praleisti
                                                   </button>
@@ -4406,7 +4444,7 @@ Vartotojo instrukcija: ${instruction}`;
                                         {showFilledTemplateRows ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                       </button>
                                       <div className={`overflow-hidden transition-all duration-200 ${showFilledTemplateRows ? 'max-h-[1200px] opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
-                                        <div className="space-y-2">
+                                        <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 pb-3">
                                           {filledTemplateRows.map((row) => {
                                             const isExpanded = !!expandedTemplateValues[row.key];
                                             const isEditing = !!editingTemplateRows[row.key];
@@ -4417,8 +4455,8 @@ Vartotojo instrukcija: ${instruction}`;
                                                     <span className="inline-flex rounded-full border border-success/35 bg-success/15 px-2.5 py-1 font-mono text-[11px] font-semibold break-all text-base-content">{row.key}</span>
                                                     {isEditing ? (
                                                       <textarea
-                                                        value={templateRowOverrides[row.key] ?? row.value}
-                                                        onChange={(e) => setTemplateRowOverrides((prev) => ({ ...prev, [row.key]: e.target.value }))}
+                                                        value={templateRowDrafts[row.key] ?? templateRowOverrides[row.key] ?? row.value}
+                                                        onChange={(e) => setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: e.target.value }))}
                                                         className="mt-2 w-full min-h-[72px] rounded-lg border border-success/30 bg-white/90 px-2 py-1.5 text-[12px] text-base-content"
                                                       />
                                                     ) : (
@@ -4433,11 +4471,25 @@ Vartotojo instrukcija: ${instruction}`;
                                                   </div>
                                                   <button
                                                     type="button"
-                                                    onClick={() => setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }))}
-                                                    className="btn btn-xs btn-soft"
+                                                    onClick={() => {
+                                                      setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
+                                                      setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
+                                                    }}
+                                                    className="btn btn-xs border-0 text-white"
+                                                    style={{ background: '#8b5e34' }}
                                                   >
                                                     {isEditing ? 'Baigti' : 'Redaguoti'}
                                                   </button>
+                                                  {isEditing && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleTemplateRowSave(row.key, row.value)}
+                                                      className="btn btn-xs border-0 text-white"
+                                                      style={{ background: '#0f766e' }}
+                                                    >
+                                                      Išsaugoti
+                                                    </button>
+                                                  )}
                                                 </div>
                                               </div>
                                             );
