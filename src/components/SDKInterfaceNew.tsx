@@ -4391,10 +4391,10 @@ Vartotojo instrukcija: ${instruction}`;
                               </p>
                               <button
                                 onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
-                                className={`btn btn-xs border backdrop-blur-md shadow-sm transition-all ${
+                                className={`inline-flex h-7 items-center rounded-lg border px-3 text-[11px] font-medium backdrop-blur-md shadow-sm transition-all ${
                                   showOnlyMissingTemplateRows
-                                    ? 'border-primary/35 bg-primary/20 text-primary hover:bg-primary/25'
-                                    : 'border-white/60 bg-white/65 text-base-content/80 hover:bg-white/80'
+                                    ? 'border-primary/35 bg-primary/18 text-primary hover:bg-primary/25'
+                                    : 'border-base-content/15 bg-white/80 text-base-content/80 hover:bg-white'
                                 }`}
                               >
                                 {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
@@ -4443,7 +4443,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                         setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
                                                         setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                                       }}
-                                                      className="btn btn-xs border border-base-content/15 bg-white/80 backdrop-blur-md text-base-content/80 hover:bg-white shadow-sm"
+                                                      className="inline-flex h-7 items-center rounded-lg border border-base-content/20 bg-white/90 px-3 text-[11px] font-medium text-base-content/80 shadow-sm transition-colors hover:bg-white"
                                                     >
                                                       {isEditing ? 'Baigti' : 'Redaguoti'}
                                                     </button>
@@ -4451,7 +4451,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                     <button
                                                       type="button"
                                                       onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="btn btn-xs border border-success/35 bg-success/15 backdrop-blur-md text-success hover:bg-success/20 shadow-sm"
+                                                      className="inline-flex h-7 items-center rounded-lg border border-success/35 bg-success/15 px-3 text-[11px] font-medium text-success shadow-sm transition-colors hover:bg-success/22"
                                                     >
                                                       Išsaugoti
                                                     </button>
@@ -4459,7 +4459,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                   <button
                                                       type="button"
                                                       onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
-                                                      className="btn btn-xs border border-warning/30 bg-warning/15 backdrop-blur-md text-warning hover:bg-warning/25 shadow-sm"
+                                                      className="inline-flex h-7 items-center rounded-lg border border-warning/35 bg-warning/15 px-3 text-[11px] font-medium text-warning shadow-sm transition-colors hover:bg-warning/22"
                                                     >
                                                       ✓ Praleisti
                                                     </button>
@@ -4516,7 +4516,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                       setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
                                                       setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                                     }}
-                                                    className="btn btn-xs border border-base-content/15 bg-white/80 backdrop-blur-md text-base-content/80 hover:bg-white shadow-sm"
+                                                    className="inline-flex h-7 items-center rounded-lg border border-base-content/20 bg-white/90 px-3 text-[11px] font-medium text-base-content/80 shadow-sm transition-colors hover:bg-white"
                                                   >
                                                     {isEditing ? 'Baigti' : 'Redaguoti'}
                                                   </button>
@@ -4524,7 +4524,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                     <button
                                                       type="button"
                                                       onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="btn btn-xs border border-success/35 bg-success/15 backdrop-blur-md text-success hover:bg-success/20 shadow-sm"
+                                                      className="inline-flex h-7 items-center rounded-lg border border-success/35 bg-success/15 px-3 text-[11px] font-medium text-success shadow-sm transition-colors hover:bg-success/22"
                                                     >
                                                       Išsaugoti
                                                     </button>
@@ -4555,7 +4555,7 @@ Vartotojo instrukcija: ${instruction}`;
                                             <button
                                               type="button"
                                               onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: false }))}
-                                              className="btn btn-xs border border-base-content/15 bg-white/80 backdrop-blur-md text-base-content/80 hover:bg-white shadow-sm"
+                                              className="inline-flex h-7 items-center rounded-lg border border-base-content/20 bg-white/90 px-3 text-[11px] font-medium text-base-content/80 shadow-sm transition-colors hover:bg-white"
                                             >
                                               Grąžinti
                                             </button>
