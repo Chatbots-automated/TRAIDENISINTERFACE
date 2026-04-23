@@ -33,7 +33,7 @@ import {
   Upload
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
-import { getSystemPrompt, savePromptTemplate, getPromptTemplate } from '../lib/instructionVariablesService';
+import { getSystemPrompt, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
 import RoboticArmLoader from './RoboticArmLoader';
 import { colors } from '../lib/designSystem';
@@ -111,6 +111,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [promptTemplate, setPromptTemplate] = useState<string>('');
   const [templateFromDB, setTemplateFromDB] = useState<string>(''); // Template variable from instruction_variables
   const [loadingPrompt, setLoadingPrompt] = useState(true);
+  const [promptPreviewError, setPromptPreviewError] = useState<string | null>(null);
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showTemplateView, setShowTemplateView] = useState(false);
   const [showArtifact, setShowArtifact] = useState(session.showArtifact ?? false);
@@ -191,6 +192,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [tplEditorTab] = useState<'docx'>('docx');
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
+  const [showInstructionNudge, setShowInstructionNudge] = useState(false);
+  const [showMissingTemplateDetails, setShowMissingTemplateDetails] = useState(false);
+  const [showOnlyMissingTemplateRows, setShowOnlyMissingTemplateRows] = useState(false);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -401,17 +405,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const loadSystemPrompt = async () => {
     try {
       setLoadingPrompt(true);
-      const [fullPrompt, template, templateVar] = await Promise.all([
+      const [fullPrompt, template] = await Promise.all([
         getSystemPrompt(),
-        getPromptTemplate(),
-        fetchTemplateVariable() // Fetch template variable from instruction_variables
+        getPromptTemplate()
       ]);
       setSystemPrompt(fullPrompt);
       setPromptTemplate(template);
-      setTemplateFromDB(templateVar);
+      setTemplateFromDB(template);
       console.log('System prompt loaded, length:', fullPrompt.length);
       console.log('Template loaded, length:', template.length);
-      console.log('Template variable from DB loaded, length:', templateVar.length);
     } catch (err) {
       console.error('Error loading system prompt:', err);
       addErrorNotification('Klaida', err, 'Nepavyko užkrauti sistemos instrukcijų');
@@ -455,24 +457,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     };
   };
 
-  const fetchTemplateVariable = async (): Promise<string> => {
+  const fetchLatestPromptBundle = async (): Promise<{ fullPrompt: string; template: string }> => {
     try {
-      const { dbAdmin } = await import('../lib/database');
-      const { data, error } = await dbAdmin
-        .from('instruction_variables')
-        .select('content')
-        .eq('variable_key', 'template')
-        .single();
-
-      if (error) {
-        console.warn('[fetchTemplateVariable] No template variable found:', error);
-        return promptTemplate; // Fallback to code template
-      }
-
-      return data?.content || promptTemplate;
+      const [fullPrompt, template] = await Promise.all([getSystemPrompt(), getPromptTemplate()]);
+      setSystemPrompt(fullPrompt);
+      setPromptTemplate(template);
+      setTemplateFromDB(template);
+      return { fullPrompt, template };
     } catch (error) {
-      console.error('[fetchTemplateVariable] Error:', error);
-      return promptTemplate; // Fallback to code template
+      console.error('[fetchLatestPromptBundle] Error:', error);
+      throw error;
     }
   };
 
@@ -488,7 +482,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           updated_at: new Date().toISOString(),
           updated_by: user.email
         })
-        .eq('variable_key', 'template');
+        .eq('variable_key', 'chat_template');
 
       if (error) {
         console.error('[saveTemplateVariable] Error:', error);
@@ -500,6 +494,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     } catch (error) {
       console.error('[saveTemplateVariable] Exception:', error);
       return { success: false, error };
+    }
+  };
+
+  const handleOpenPromptModal = async () => {
+    try {
+      setLoadingPrompt(true);
+      setPromptPreviewError(null);
+      await fetchLatestPromptBundle();
+      setShowPromptModal(true);
+    } catch (err) {
+      const message = formatErrorForToast(err, 'Nepavyko sugeneruoti galutinio prompt iš chat_template');
+      setPromptPreviewError(message);
+      setShowPromptModal(true);
+      addErrorNotification('Klaida', err, 'Preview nepavyko: trūksta kintamųjų arba šablonas nekorektiškas');
+    } finally {
+      setLoadingPrompt(false);
     }
   };
 
@@ -933,7 +943,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         });
       }
 
-      const contextualSystemPrompt = systemPrompt + (promptTemplate ? `\n\n${promptTemplate}` : '');
+      const { fullPrompt } = await fetchLatestPromptBundle();
+      const contextualSystemPrompt = fullPrompt;
 
       console.log('[Silent Button] Sending button value to API silently');
       const bounded = limitAnthropicContext(anthropicMessages);
@@ -1504,7 +1515,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   const handleSend = async (overrideMessage?: string) => {
     const messageText = overrideMessage ?? inputValue.trim();
-    if (!messageText || loading || !systemPrompt) return;
+    if (!messageText || loading) return;
 
     // If no conversation exists, create one first
     let conversation = currentConversation;
@@ -1754,8 +1765,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('═══════════════════════════════════════════════════════════════');
       console.log('');
 
+      const { fullPrompt } = await fetchLatestPromptBundle();
+
       // Build system prompt with artifact context if exists
-      let contextualSystemPrompt = systemPrompt;
+      let contextualSystemPrompt = fullPrompt;
       if (conversation.artifact) {
         contextualSystemPrompt += `\n\n---\n\n**CURRENT ARTIFACT CONTEXT:**\nAn active commercial offer artifact exists in this conversation with ID: \`${conversation.artifact.id}\`\n\n**CRITICAL:** When updating or modifying the commercial offer, you MUST reuse this artifact_id:\n\`\`\`xml\n<commercial_offer artifact_id="${conversation.artifact.id}">\n[updated content]\n</commercial_offer>\n\`\`\`\n\nDO NOT create a new artifact. Always use artifact_id="${conversation.artifact.id}" for updates.`;
       }
@@ -2300,6 +2313,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewTick, setDocxPreviewTick] = useState(0);
   const [templateVariables, setTemplateVariables] = useState<string[]>([]);
   const [isSavingToStandartiniai, setIsSavingToStandartiniai] = useState(false);
+  const [isRefreshingTemplate, setIsRefreshingTemplate] = useState(false);
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
@@ -2344,14 +2358,19 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (cancelled) return;
         const yamlContent = artifactContent;
         const hnv = vars['economy_HNV'] || '';
+        const requestedInputs = buildRequestedInputsSnapshot();
         if (standartiniaiRecordId) {
           await updateStandartinisProjektas(standartiniaiRecordId, {
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
+            requested_inputs: requestedInputs,
+            template_file_id: globalDocxFileId || null,
           }, { userId: user.id, userEmail: user.email });
         } else {
           const created = await createStandartinisProjektas({
             conversation_id: currentConversation.id,
             yaml_content: yamlContent, projekto_kodas: projektoKodas, hnv, document: newFileId,
+            requested_inputs: requestedInputs,
+            template_file_id: globalDocxFileId || null,
           }, { userId: user.id, userEmail: user.email });
           if (!cancelled) setStandartiniaiRecordId(created.id);
         }
@@ -2403,6 +2422,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentConversation?.title,
   ]);
 
+  const templateVariablePreviewRows = useMemo(() => {
+    if (!templateVariables.length) return [];
+    const merged = mergeAllVariables();
+    return templateVariables.map((key) => {
+      const raw = merged[key];
+      const value = raw === undefined || raw === null ? '' : String(raw);
+      return { key, value };
+    });
+  }, [
+    templateVariables,
+    currentConversation?.artifact?.content,
+    offerParameters,
+    selectedManager?.id,
+    selectedEconomist?.id,
+    user.full_name,
+    user.email,
+    user.phone,
+    user.kodas,
+    currentConversation?.title,
+  ]);
+
+  const visibleTemplateVariableRows = useMemo(
+    () => showOnlyMissingTemplateRows
+      ? templateVariablePreviewRows.filter((row) => !row.value)
+      : templateVariablePreviewRows,
+    [templateVariablePreviewRows, showOnlyMissingTemplateRows]
+  );
+
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
 
@@ -2422,6 +2469,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // 3. Save record in standartiniai_projektai with the Directus file ID
       const yamlContent = currentConversation.artifact.content || '';
       const hnv = vars['economy_HNV'] || '';
+      const requestedInputs = buildRequestedInputsSnapshot();
 
       if (standartiniaiRecordId) {
         await updateStandartinisProjektas(standartiniaiRecordId, {
@@ -2429,6 +2477,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId || null,
         }, { userId: user.id, userEmail: user.email });
       } else {
         const created = await createStandartinisProjektas({
@@ -2437,6 +2487,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           projekto_kodas: projektoKodas,
           hnv: hnv,
           document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId || null,
         }, { userId: user.id, userEmail: user.email });
         setStandartiniaiRecordId(created.id);
       }
@@ -2448,6 +2500,80 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       addNotification('error', 'Klaida', formatToastMessage('Nepavyko išsaugoti dokumento', err));
     } finally {
       setIsSavingToStandartiniai(false);
+    }
+  };
+
+  const buildRequestedInputsSnapshot = (): Record<string, string> => {
+    const entries = Object.entries(offerParameters || {}).map(([key, value]) => [key, String(value ?? '')]);
+    const snapshot = Object.fromEntries(entries) as Record<string, string>;
+    if (selectedManager?.full_name) snapshot.requested_manager = selectedManager.full_name;
+    if (selectedEconomist?.full_name) snapshot.requested_economist = selectedEconomist.full_name;
+    return snapshot;
+  };
+
+  const handleRefreshTemplateFromCurrentYaml = async () => {
+    if (!currentConversation?.artifact) return;
+    if (!globalDocxFileId) {
+      addNotification('error', 'DOCX šablonas', 'Nerastas aktyvus Word šablonas. Pirmiausia įkelkite .docx failą.');
+      return;
+    }
+
+    try {
+      setIsRefreshingTemplate(true);
+
+      const merged = mergeAllVariables();
+      const missingKeys = templateVariables.filter((key) => {
+        const value = merged[key];
+        return value === undefined || value === null || String(value).trim() === '';
+      });
+
+      if (missingKeys.length > 0) {
+        addNotification(
+          'info',
+          'Šablono suderinamumas',
+          `Šis pokalbis turi duomenų iš senesnio šablono. Trūksta ${missingKeys.length} kintamųjų naujam Word šablonui. Peržiūrėkite arba atnaujinkite duomenis prieš generuojant dokumentą.`
+        );
+        return;
+      }
+
+      const docxBlob = await buildDocxBlob(merged);
+      const previousFileId = savedDocxFileId || null;
+      const projektoKodas = merged['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+      const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+      const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, previousFileId);
+      const yamlContent = currentConversation.artifact.content || '';
+      const hnv = merged['economy_HNV'] || '';
+      const requestedInputs = buildRequestedInputsSnapshot();
+
+      if (standartiniaiRecordId) {
+        await updateStandartinisProjektas(standartiniaiRecordId, {
+          yaml_content: yamlContent,
+          projekto_kodas: projektoKodas,
+          hnv,
+          document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId,
+        }, { userId: user.id, userEmail: user.email });
+      } else {
+        const created = await createStandartinisProjektas({
+          conversation_id: currentConversation.id,
+          yaml_content: yamlContent,
+          projekto_kodas: projektoKodas,
+          hnv,
+          document: newFileId,
+          requested_inputs: requestedInputs,
+          template_file_id: globalDocxFileId,
+        }, { userId: user.id, userEmail: user.email });
+        setStandartiniaiRecordId(created.id);
+      }
+
+      setSavedDocxFileId(newFileId);
+      addNotification('success', 'Atnaujinti šabloną', 'Esamas YAML sėkmingai perrenderintas su naujausiu Word šablonu.');
+    } catch (err) {
+      console.error('Error refreshing DOCX with latest template:', err);
+      addNotification('error', 'Klaida', formatToastMessage('Nepavyko atnaujinti dokumento pagal naują šabloną', err));
+    } finally {
+      setIsRefreshingTemplate(false);
     }
   };
 
@@ -2856,7 +2982,7 @@ Vartotojo instrukcija: ${instruction}`;
 
         {/* Instructions Section */}
         <div
-          onClick={() => setShowPromptModal(true)}
+          onClick={handleOpenPromptModal}
           className="mx-3 mb-2 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
         >
           <div className="flex items-center gap-2">
@@ -3455,12 +3581,27 @@ Vartotojo instrukcija: ${instruction}`;
                     </button>
                     <button
                       onClick={handleSaveToStandartiniai}
-                      disabled={isSavingToStandartiniai}
+                      disabled={isSavingToStandartiniai || isRefreshingTemplate}
                       className="btn btn-sm btn-primary gap-1.5 ml-1"
-                      title="Išsaugoti DOCX į Directus"
+                      title="Išsaugoti DOCX į Directus šiam komerciniam projektui"
                     >
-                      {isSavingToStandartiniai ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                      {savedDocxFileId ? 'Atnaujinti' : 'Išsaugoti'}
+                      {isSavingToStandartiniai
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Save className="w-3.5 h-3.5" />}
+                      Išsaugoti failą
+                    </button>
+                    <button
+                      onClick={handleRefreshTemplateFromCurrentYaml}
+                      disabled={!savedDocxFileId || isSavingToStandartiniai || isRefreshingTemplate}
+                      className="btn btn-sm btn-outline gap-1.5 ml-1"
+                      title={!savedDocxFileId
+                        ? 'Pirmiausia išsaugokite failą'
+                        : 'Pergeneruoti esamą YAML su naujausiu Word šablonu'}
+                    >
+                      {isRefreshingTemplate
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <RotateCcw className="w-3.5 h-3.5" />}
+                      Atnaujinti šabloną
                     </button>
                     {savedDocxFileId && (
                       <a
@@ -3470,7 +3611,7 @@ Vartotojo instrukcija: ${instruction}`;
                         title="Atsisiųsti DOCX iš Directus"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        .docx
+                        Atsisiųsti
                       </a>
                     )}
                   </>
@@ -4103,11 +4244,11 @@ Vartotojo instrukcija: ${instruction}`;
                     {!isStreamingArtifact && currentConversation?.artifact && (
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
-                          Aptikta YAML kintamųjų: {Object.keys(yamlVarsForUi).length}
+                          Sugeneruotų YAML kintamųjų: {Object.keys(yamlVarsForUi).length}
                         </span>
                         {templateVariables.length > 0 && (
                           <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
-                            Šablono kintamųjų: {templateVariables.length}
+                            DOCX šablono kintamųjų: {templateVariables.length}
                           </span>
                         )}
                       </div>
@@ -4123,8 +4264,53 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                        {renderInteractiveYAML(currentConversation.artifact.content)}
+                      <div className="rounded-xl border border-base-content/10 bg-base-100 shadow-sm p-3 max-w-5xl mx-auto">
+                        <div className="px-1 pb-2 text-[11px] uppercase tracking-wide text-base-content/45 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-6">
+                            <span>Šablonas</span>
+                            <span>Sugeneruota</span>
+                          </div>
+                          <button
+                            onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
+                            className={`btn btn-xs ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
+                          >
+                            {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
+                          </button>
+                        </div>
+                        <div className="max-h-[420px] overflow-auto pr-1">
+                          {visibleTemplateVariableRows.length > 0 ? visibleTemplateVariableRows.map((row) => {
+                            const isMissing = !row.value;
+                            return (
+                              <div
+                                key={row.key}
+                                className={`mb-3 rounded-lg bg-white border shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-3 transition-all duration-150 hover:shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:border-base-content/20 ${
+                                  isMissing ? 'border-warning/35 border-l-2 border-l-warning/80 bg-warning/[0.06]' : 'border-base-content/10'
+                                }`}
+                              >
+                                <div className="flex items-start gap-3">
+                                  <div className="w-56 min-w-56">
+                                    <span className="inline-flex max-w-full rounded-md border border-base-content/15 bg-base-content/[0.02] px-2 py-1 font-mono text-[12px] font-semibold text-base-content/80 break-all">
+                                      {row.key}
+                                    </span>
+                                  </div>
+                                  <div className="text-base-content/20 text-[10px] mt-1">↔</div>
+                                  <div className={`flex-1 max-w-[520px] text-[12px] leading-relaxed break-words ${isMissing ? 'text-base-content/35 italic' : 'text-base-content/80'}`}>
+                                    {row.value || 'tuščia'}
+                                  </div>
+                                  <div className="ml-2 mt-0.5">
+                                    {isMissing ? (
+                                      <AlertCircle className="w-4 h-4 text-warning" />
+                                    ) : (
+                                      <Check className="w-4 h-4 text-success" />
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          }) : (
+                            <div className="px-2 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <p className="text-xs py-4 text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
@@ -4132,18 +4318,27 @@ Vartotojo instrukcija: ${instruction}`;
                       </p>
                     )}
 
-                    {!isStreamingArtifact && unresolvedTemplateVariables.length > 0 && (
-                      <div className="mt-3 rounded-lg border px-3 py-2" style={{ borderColor: '#fbbf24', background: '#fffbeb' }}>
-                        <p className="text-[12px] font-medium" style={{ color: '#92400e' }}>
-                          Kai kurie DOCX šablono kintamieji neturi reikšmės ({unresolvedTemplateVariables.length}).
-                        </p>
-                        <p className="text-[11px] mt-1" style={{ color: '#92400e', opacity: 0.9 }}>
-                          Jei reikšmė neateina iš YAML arba objekto parametrų, dokumente ji bus tuščia (anksčiau galėjo rodytis „undefined“).
-                        </p>
-                        <p className="text-[11px] mt-1 break-all" style={{ color: '#b45309' }}>
-                          {unresolvedTemplateVariables.slice(0, 8).join(', ')}
-                          {unresolvedTemplateVariables.length > 8 ? ` ir dar ${unresolvedTemplateVariables.length - 8}...` : ''}
-                        </p>
+                    {!isStreamingArtifact && (
+                      <div className="mt-3 rounded-lg border border-warning/25 bg-warning/10 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[12px] font-medium text-warning flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5" />
+                            Trūksta {unresolvedTemplateVariables.length} kintamųjų
+                          </p>
+                          {unresolvedTemplateVariables.length > 0 && (
+                            <button
+                              onClick={() => setShowMissingTemplateDetails((prev) => !prev)}
+                              className="btn btn-xs btn-soft"
+                            >
+                              {showMissingTemplateDetails ? 'Slėpti' : 'Rodyti'}
+                            </button>
+                          )}
+                        </div>
+                        {showMissingTemplateDetails && unresolvedTemplateVariables.length > 0 && (
+                          <p className="text-[11px] mt-2 break-all text-base-content/60">
+                            {unresolvedTemplateVariables.join(', ')}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -4450,12 +4645,17 @@ Vartotojo instrukcija: ${instruction}`;
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
+                      const hadTemplateBeforeUpload = hasDocxTemplate;
                       try {
                         setDocxUploading(true);
                         await uploadDocxTemplate(file);
                         setHasDocxTemplate(true);
                         getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
+                        setShowInstructionNudge(true);
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
+                        if (hadTemplateBeforeUpload) {
+                          addNotification('info', 'Instrukcijos', 'Atnaujintas DOCX šablonas. Peržiūrėkite instrukcijas, kad prompt atitiktų šabloną.');
+                        }
                       } catch (err) {
                         addNotification('error', 'Klaida', formatToastMessage('Nepavyko įkelti DOCX', formatErrorForToast(err)));
                       } finally {
@@ -4471,7 +4671,7 @@ Vartotojo instrukcija: ${instruction}`;
                     disabled={docxUploading}
                   >
                     {docxUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                    {hasDocxTemplate ? '.docx ✓' : '.docx'}
+                    Įkelti naują šabloną
                   </button>
                   <button
                     onClick={() => setShowTemplateEditor(false)}
@@ -4704,10 +4904,44 @@ Vartotojo instrukcija: ${instruction}`;
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-base-content">
-                {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
-              </pre>
+              {promptPreviewError ? (
+                <div className="alert alert-soft alert-error text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{promptPreviewError}</span>
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-base-content">
+                  {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
+                </pre>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showInstructionNudge && (
+        <div className="fixed bottom-6 right-6 z-50 w-[440px] max-w-[calc(100vw-2rem)] rounded-2xl border border-primary/20 bg-base-100 shadow-2xl p-6">
+          <div className="text-base font-semibold text-base-content mb-2">Word šablonas atnaujintas</div>
+          <p className="text-sm text-base-content/70 leading-relaxed mb-5">
+            Ar norėtumėte peržiūrėti ar Agento Sistemos Instrukcijos suderinamos su nauju Word šablonu?
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setShowInstructionNudge(false)}
+              className="btn btn-sm btn-soft min-w-[72px]"
+            >
+              ne
+            </button>
+            <button
+              onClick={() => {
+                setShowInstructionNudge(false);
+                setShowTemplateEditor(false);
+                navigate('/instrukcijos?variable=chat_commercial_offer_generation');
+              }}
+              className="btn btn-sm btn-primary min-w-[72px]"
+            >
+              taip
+            </button>
           </div>
         </div>
       )}

@@ -1,5 +1,5 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
-import { db, dbAdmin } from './database';
+import { dbAdmin } from './database';
 
 export interface InstructionVariable {
   id: string;
@@ -10,6 +10,17 @@ export interface InstructionVariable {
   created_at: string;
   updated_at: string;
   updated_by?: string;
+}
+
+interface TemplateRow {
+  id: string;
+  content: string;
+  updated_at?: string | null;
+}
+
+interface InstructionVariableValueRow {
+  variable_key: string;
+  content: string;
 }
 
 /**
@@ -41,84 +52,80 @@ export const fetchInstructionVariables = async (): Promise<InstructionVariable[]
 };
 
 /**
- * Inject variables into a prompt template
- * Replaces {variable_name} placeholders with actual values
+ * Parse template variables from {{variable_name}} placeholders.
  */
-export const injectVariablesIntoPrompt = (
-  promptTemplate: string,
-  variables: InstructionVariable[]
-): string => {
-  let injectedPrompt = promptTemplate;
-  const replacements: { placeholder: string; found: number }[] = [];
+export const extractTemplateVariableKeys = (promptTemplate: string): string[] => {
+  const doubleBraceMatches = Array.from(
+    promptTemplate.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g),
+    (match) => match[1]
+  );
+  const singleBraceMatches = Array.from(
+    promptTemplate.matchAll(/(?<!\{)\{\s*([a-zA-Z0-9_]+)\s*\}(?!\})/g),
+    (match) => match[1]
+  );
 
-  variables.forEach((variable) => {
-    const placeholder = `{${variable.variable_key}}`;
-    // Handle null/undefined values by using empty string as fallback
-    const variableValue = variable.content || '';
-
-    if (!variableValue) {
-      console.warn(`⚠️ Variable '${variable.variable_key}' (${variable.variable_name}) has empty/null value`);
-    }
-
-    const occurrences = promptTemplate.split(placeholder).length - 1;
-    injectedPrompt = injectedPrompt.split(placeholder).join(variableValue);
-
-    replacements.push({
-      placeholder: variable.variable_key,
-      found: occurrences
-    });
-  });
-
-  console.log('Variable injection results:', replacements);
-
-  // Check for unreplaced variables
-  const unreplacedMatches = injectedPrompt.match(/\{[^}]+\}/g);
-  if (unreplacedMatches) {
-    console.warn('Unreplaced variables found in prompt:', unreplacedMatches);
-  }
-
-  return injectedPrompt;
+  return Array.from(new Set([...doubleBraceMatches, ...singleBraceMatches]));
 };
 
 /**
- * Get the prompt template from database (priority order):
- * 1. instruction_variables table (variable_key='template') - NEW SYSTEM
- * 2. prompt_template table - OLD SYSTEM (legacy fallback)
- * 3. Code default - HARDCODED FALLBACK
+ * Inject variables into a prompt template.
+ * Replaces {{variable_name}} placeholders with actual values.
+ */
+export const injectVariablesIntoPrompt = (
+  promptTemplate: string,
+  valuesByKey: Record<string, string>
+): string => {
+  const replaceWithKey = (_full: string, key: string): string => {
+    if (!(key in valuesByKey)) {
+      throw new Error(`Missing required variable: ${key}`);
+    }
+    return valuesByKey[key] ?? '';
+  };
+
+  const withDoubleBracesInjected = promptTemplate.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, replaceWithKey);
+  return withDoubleBracesInjected.replace(/(?<!\{)\{\s*([a-zA-Z0-9_]+)\s*\}(?!\})/g, replaceWithKey);
+};
+
+/**
+ * Get prompt template from the ONLY runtime source of truth:
+ * instruction_variables table (variable_key='template').
+ *
+ * Runtime intentionally has no legacy fallback (prompt_template/code default),
+ * so SDK always fails loudly instead of silently using stale/deprecated prompt sources.
  */
 export const getPromptTemplate = async (): Promise<string> => {
   try {
-    // Try NEW system first: instruction_variables table
-    console.log('[getPromptTemplate] Checking instruction_variables for template...');
-    const { data: templateVar, error: varError } = await dbAdmin
-      .from('instruction_variables')
-      .select('content')
-      .eq('variable_key', 'template')
-      .single();
-
-    if (!varError && templateVar?.content) {
-      console.log('[getPromptTemplate] ✅ Found template in instruction_variables (NEW system)');
-      return templateVar.content;
-    }
-
-    console.log('[getPromptTemplate] Template not in instruction_variables, checking prompt_template (OLD system)...');
-
-    // Fallback to OLD system: prompt_template table
+    console.log('[getPromptTemplate] Loading chat_template from instruction_variables...');
     const { data, error } = await dbAdmin
-      .from('prompt_template')
-      .select('template_content')
-      .single();
+      .from('instruction_variables')
+      .select('id, content, updated_at')
+      .eq('variable_key', 'chat_template')
+      .order('updated_at', { ascending: false })
+      .limit(2);
 
     if (error) {
-      console.log('[getPromptTemplate] No custom template found, using code default');
-      return getDefaultPromptTemplate();
+      console.error('[getPromptTemplate] Failed querying instruction_variables:', error);
+      throw error;
     }
 
-    console.log('[getPromptTemplate] ✅ Found template in prompt_template (OLD system)');
-    return data?.template_content || getDefaultPromptTemplate();
+    const rows: TemplateRow[] = Array.isArray(data)
+      ? (data as TemplateRow[])
+      : (data ? [data as TemplateRow] : []);
+    if (rows.length === 0 || !rows[0]?.content?.trim()) {
+      throw new Error('instruction_variables.chat_template is missing or empty');
+    }
+
+    if (rows.length > 1) {
+      console.warn('[getPromptTemplate] Duplicate template rows detected. Using most recently updated row.', {
+        ids: rows.map((r) => r.id),
+        updated_at: rows.map((r) => r.updated_at)
+      });
+    }
+
+    return rows[0].content;
   } catch (error) {
     console.error('[getPromptTemplate] Error loading template:', error);
-    return getDefaultPromptTemplate();
+    throw error;
   }
 };
 
@@ -127,14 +134,14 @@ export const getPromptTemplate = async (): Promise<string> => {
  */
 export const savePromptTemplate = async (template: string): Promise<{ success: boolean; error?: any }> => {
   try {
-    // Update the template record by ID (always id=1)
+    // Update the chat template row in instruction_variables
     const { error } = await dbAdmin
-      .from('prompt_template')
+      .from('instruction_variables')
       .update({
-        template_content: template,
+        content: template,
         updated_at: new Date().toISOString()
       })
-      .eq('id', 1);
+      .eq('variable_key', 'chat_template');
 
     if (error) {
       console.error('[savePromptTemplate] Error saving template:', error);
@@ -152,7 +159,7 @@ export const savePromptTemplate = async (template: string): Promise<{ success: b
 /**
  * Get default prompt template
  */
-const getDefaultPromptTemplate = (): string => {
+export const getDefaultPromptTemplate = (): string => {
   return `User has just sent you the first message, reply to it.
 
 ## ROLE & IDENTITY
@@ -528,32 +535,36 @@ export const getSystemPrompt = async (): Promise<string> => {
   console.log('═══════════════════════════════════════════════════');
 
   const promptTemplate = await getPromptTemplate();
-  console.log('[getSystemPrompt] Template loaded, length:', promptTemplate.length);
-  console.log('[getSystemPrompt] Template source:',
-    promptTemplate.includes('{role_and_identity}') ? 'instruction_variables (NEW)' :
-    promptTemplate.includes('ROLE & IDENTITY') ? 'prompt_template or code (OLD)' :
-    'UNKNOWN'
-  );
+  const requiredKeys = extractTemplateVariableKeys(promptTemplate);
+  console.log('[getSystemPrompt] Template loaded. Length:', promptTemplate.length, 'Required keys:', requiredKeys.join(', '));
 
-  const variables = await fetchInstructionVariables();
-  console.log('[getSystemPrompt] Fetched variables count:', variables.length);
-  console.log('[getSystemPrompt] Variables:', variables.map(v => v.variable_key).join(', '));
+  const valuesByKey: Record<string, string> = {};
+  if (requiredKeys.length > 0) {
+    const { data, error } = await dbAdmin
+      .from('instruction_variables')
+      .select('variable_key, content')
+      .in('variable_key', requiredKeys);
 
-  const injectedPrompt = injectVariablesIntoPrompt(promptTemplate, variables);
-  console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
-  console.log('[getSystemPrompt] Length changed by:', injectedPrompt.length - promptTemplate.length, 'characters');
-
-  // Verify PHASE 5 is present
-  if (injectedPrompt.includes('PHASE 5: COMMERCIAL OFFER GENERATION')) {
-    console.log('[getSystemPrompt] ✅ PHASE 5 is present in system prompt');
-    if (injectedPrompt.includes('WRONG FORMAT - DO NOT USE THIS')) {
-      console.log('[getSystemPrompt] ✅ WRONG vs RIGHT comparison is present');
-    } else {
-      console.warn('[getSystemPrompt] ⚠️ WRONG vs RIGHT comparison NOT found!');
+    if (error) {
+      console.error('[getSystemPrompt] Failed querying required variables:', error);
+      throw error;
     }
-  } else {
-    console.error('[getSystemPrompt] ❌ PHASE 5 NOT FOUND in system prompt!');
+
+    const rows: InstructionVariableValueRow[] = Array.isArray(data)
+      ? (data as InstructionVariableValueRow[])
+      : (data ? [data as InstructionVariableValueRow] : []);
+    for (const row of rows) {
+      valuesByKey[row.variable_key] = row.content ?? '';
+    }
+
+    const missingKeys = requiredKeys.filter((key) => !(key in valuesByKey));
+    if (missingKeys.length > 0) {
+      throw new Error(`[getSystemPrompt] Missing required instruction_variables: ${missingKeys.join(', ')}`);
+    }
   }
+
+  const injectedPrompt = injectVariablesIntoPrompt(promptTemplate, valuesByKey);
+  console.log('[getSystemPrompt] Final prompt length after injection:', injectedPrompt.length);
 
   console.log('═══════════════════════════════════════════════════');
   return injectedPrompt;

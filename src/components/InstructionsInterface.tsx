@@ -160,12 +160,15 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const schemaParam = params.get('schema');
+    const variableParam = params.get('variable');
     if (schemaParam === 'sdk') {
       openCombinedEditor('schema', 'sdk_chat_tool_schemas');
     } else if (schemaParam === 'kainos') {
       openCombinedEditor('schema', 'kainos_ai_tool_schemas');
     } else if (schemaParam === 'kainos-prompt') {
       openCombinedEditor('kainos_prompt');
+    } else if (variableParam) {
+      loadVariables(variableParam);
     }
   }, [location.search]);
 
