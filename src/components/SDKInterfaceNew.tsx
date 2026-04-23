@@ -155,6 +155,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   const {
     offerParameters,
+    offerParametersReady,
     sectionCollapsed,
     setSectionCollapsed,
     persistOfferParameters,
@@ -2342,6 +2343,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
   const lastAutoTechDescSignatureRef = useRef<string>('');
+  const lastTechDescDocxSyncSignatureRef = useRef<string>('');
   const artifactPreviewAutoRetryCountRef = useRef(0);
   const artifactPreviewRequestIdRef = useRef(0);
 
@@ -2470,6 +2472,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   useEffect(() => {
     if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    if (!offerParametersReady) return;
     if (techDescLoading || techDescRequestInFlightRef.current) return;
     if (!templateVariables.includes('technological_description')) return;
 
@@ -2495,9 +2498,87 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentConversation?.artifact?.content,
     currentConversation?.artifact?.version,
     templateVariables,
+    offerParametersReady,
     offerParameters,
     templateRowOverrides,
     techDescLoading,
+  ]);
+
+  // Keep saved DOCX preview in sync when technological_description changes.
+  // Without this, auto-generation may succeed but the preview still shows stale DOCX.
+  useEffect(() => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    if (!globalDocxFileId || !savedDocxFileId) return;
+    if (techDescRequestInFlightRef.current) return;
+
+    const merged = mergeAllVariables();
+    const techDesc = String(merged.technological_description || '').trim();
+    if (!techDesc) return;
+
+    const signature = `${currentConversation.id}::${currentConversation.artifact.version}::${techDesc}`;
+    if (lastTechDescDocxSyncSignatureRef.current === signature) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const docxBlob = await buildDocxBlob(merged);
+        if (cancelled) return;
+
+        const projektoKodas = merged['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+        const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
+        if (cancelled) return;
+
+        const yamlContent = currentConversation.artifact?.content || '';
+        const hnv = merged['economy_HNV'] || '';
+        const requestedInputs = buildRequestedInputsSnapshot();
+        let linkedStandartiniaiId = standartiniaiRecordId;
+
+        if (linkedStandartiniaiId) {
+          await updateStandartinisProjektas(linkedStandartiniaiId, {
+            yaml_content: yamlContent,
+            projekto_kodas: projektoKodas,
+            hnv,
+            document: newFileId,
+            requested_inputs: requestedInputs,
+            template_file_id: globalDocxFileId || null,
+          }, { userId: user.id, userEmail: user.email });
+        } else {
+          const created = await createStandartinisProjektas({
+            conversation_id: currentConversation.id,
+            yaml_content: yamlContent,
+            projekto_kodas: projektoKodas,
+            hnv,
+            document: newFileId,
+            requested_inputs: requestedInputs,
+            template_file_id: globalDocxFileId || null,
+          }, { userId: user.id, userEmail: user.email });
+          linkedStandartiniaiId = created.id;
+          if (!cancelled) setStandartiniaiRecordId(created.id);
+        }
+
+        if (!cancelled) {
+          lastTechDescDocxSyncSignatureRef.current = signature;
+          setSavedDocxFileId(newFileId);
+          void refreshDocxPreview(newFileId);
+        }
+      } catch (err) {
+        console.error('[TechDesc] Failed to sync DOCX preview:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentConversation?.id,
+    currentConversation?.artifact?.content,
+    currentConversation?.artifact?.version,
+    globalDocxFileId,
+    savedDocxFileId,
+    offerParameters,
+    templateRowOverrides,
+    selectedManager?.id,
+    selectedEconomist?.id,
   ]);
 
   const yamlVarsForUi = useMemo<Record<string, string>>(
