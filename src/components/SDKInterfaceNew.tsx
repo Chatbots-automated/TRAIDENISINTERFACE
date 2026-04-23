@@ -3006,6 +3006,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
   };
 
+  const handleManualTechDescriptionGenerate = async () => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
+    const yamlVars = parseYAMLContent(currentConversation.artifact.content);
+    const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
+    if (!componentsList) {
+      addNotification('warning', 'Technologinis aprašymas', 'Trūksta components_bulletlist reikšmės, todėl generuoti negalima.');
+      return;
+    }
+    await autoGenerateTechDescription(componentsList, currentConversation.id);
+  };
+
   /** AI-assisted edit for a single YAML variable — dedicated API call, no full regeneration. */
   const handleAIVariableEdit = async () => {
     if (!editingVariable || !currentConversation?.artifact) return;
@@ -4547,6 +4558,16 @@ Vartotojo instrukcija: ${instruction}`;
                                                     )}
                                                   </div>
                                                   <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                                    {row.key === 'technological_description' && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={handleManualTechDescriptionGenerate}
+                                                        disabled={techDescLoading}
+                                                        className="inline-flex h-7 items-center rounded-lg border border-cyan-400/50 bg-white px-3 text-[11px] font-medium text-cyan-700 shadow-sm transition-colors hover:bg-cyan-50 disabled:opacity-60"
+                                                      >
+                                                        {techDescLoading ? 'Generuojama...' : 'Generuoti'}
+                                                      </button>
+                                                    )}
                                                     <button
                                                       type="button"
                                                       onClick={() => {
