@@ -7,7 +7,6 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceDot,
   CartesianGrid,
 } from 'recharts';
-import Anthropic from '@anthropic-ai/sdk';
 import * as XLSX from 'xlsx';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
@@ -15,28 +14,28 @@ import {
   fetchMedziagas, fetchIstorija,
   insertMedžiaga, updateMedžiaga, deleteMedžiaga,
   insertIrašas, updateIrašas, deleteIrašas,
-  fetchGeneralAnalysis, saveGeneralAnalysis,
-  fetchAnalysisGenerationLock, tryAcquireAnalysisGenerationLock, releaseAnalysisGenerationLock, updateAnalysisGenerationLock,
   bulkInsertMedziagas, bulkInsertIstorija,
   formatPrice, relativeTime, computePrediction,
 } from '../lib/kainosService';
-import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction, AnalysisGenerationLock } from '../lib/kainosService';
+import type { Medžiaga, KainuIrašas, PrognozėInternetas, ComputedPrediction } from '../lib/kainosService';
 import {
   fetchSablonai, createSablonas, updateSablonas, deleteSablonas, generateStructuredJson,
 } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
 import { renderMarkdown as renderMarkdownHtml } from './analize/markdownRenderer';
+import { type ExtractedCitation } from '../lib/kainosAnalyticsFramework';
 import {
-  fetchAnalyticsPromptTemplates,
-  fetchKainosToolSchemas,
-  runSdkRequest,
-  type ExtractedCitation,
-} from '../lib/kainosAnalyticsFramework';
+  fetchInternetAnalyses,
+  InternetAnalysisConfigError,
+  parseTokenUsage,
+  runInternetAnalysis,
+  type InternetAnalysisId,
+  type InternetAnalysisRecord,
+} from '../lib/internetAnalysisService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
-const ANALYTICS_MODEL = 'claude-haiku-4-5';
 function addMonthsISO(dateIso: string, months: number): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const dt = new Date(Date.UTC(y, (m - 1) + months, d));
@@ -55,6 +54,10 @@ function normalizeName(value: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 
@@ -406,87 +409,153 @@ function getAnalysisMarkdownForDisplay(content: string): string {
 function extractJsonPayload(text: string): unknown {
   const stripped = text
     .replace(/```json/gi, '```')
-    .replace(/```/g, '')
     .trim();
 
-  try {
-    return JSON.parse(stripped);
-  } catch {
-    // fallback to broad block extraction for partially wrapped responses
+  const jsonBlocks = Array.from(stripped.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi))
+    .map((m) => (m[1] || '').trim())
+    .filter(Boolean);
+
+  const candidates = [
+    stripped.replace(/```/g, '').trim(),
+    ...jsonBlocks,
+  ].filter(Boolean);
+
+  const tryParse = (raw: string): unknown | null => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
+  for (const candidate of candidates) {
+    const parsed = tryParse(candidate);
+    if (parsed !== null) return parsed;
+  }
+
+  const forecastsIdx = stripped.search(/"forecasts"\s*:/i);
+  if (forecastsIdx >= 0) {
+    const objectStart = stripped.lastIndexOf('{', forecastsIdx);
+    if (objectStart >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = objectStart; i < stripped.length; i += 1) {
+        const ch = stripped[i];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (ch === '\\') {
+            escaped = true;
+          } else if (ch === '"') {
+            inString = false;
+          }
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === '{') depth += 1;
+        if (ch === '}') {
+          depth -= 1;
+          if (depth === 0) {
+            const chunk = stripped.slice(objectStart, i + 1);
+            const parsed = tryParse(chunk);
+            if (parsed !== null) return parsed;
+            break;
+          }
+        }
+      }
+    }
   }
 
   const objectMatch = stripped.match(/\{[\s\S]*\}/);
   if (objectMatch) {
-    try {
-      return JSON.parse(objectMatch[0]);
-    } catch {
-      // continue
-    }
+    const parsed = tryParse(objectMatch[0]);
+    if (parsed !== null) return parsed;
   }
 
   const arrayMatch = stripped.match(/\[[\s\S]*\]/);
   if (arrayMatch) {
-    return JSON.parse(arrayMatch[0]);
+    const parsed = tryParse(arrayMatch[0]);
+    if (parsed !== null) return parsed;
   }
 
   throw new Error('AI negrąžino atpažįstamo JSON');
 }
 
 function normalizeAnalysisForecasts(payload: unknown, medziagas: Medžiaga[], fallbackDate: string): AiPrediction[] {
-  const byCode = new Map(medziagas.map((m) => [m.artikulas.toLowerCase(), m.artikulas]));
-  const byCodeNormalized = new Map(medziagas.map((m) => [normalizeName(m.artikulas), m.artikulas]));
-  const byNameNormalized = new Map(medziagas.map((m) => [normalizeName(m.pavadinimas), m.artikulas]));
-  const normalizedCodeEntries = medziagas.map((m) => ({ normalized: normalizeName(m.artikulas), artikulas: m.artikulas }));
+  const knownArtikulas = medziagas
+    .map((m) => m.artikulas.trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const knownSet = new Set(knownArtikulas);
 
-  const resolveArtikulas = (rawCode: string): string | null => {
-    const normalizedRaw = normalizeName(rawCode);
-    return byCode.get(rawCode.toLowerCase())
-      || byCodeNormalized.get(normalizedRaw)
-      || byNameNormalized.get(normalizedRaw)
-      // Fallback for prefixed/suffixed codes in AI payloads (e.g. "MAT-101-1", "101-1 resin")
-      || normalizedCodeEntries.find((entry) => (
-        normalizedRaw.includes(entry.normalized) || entry.normalized.includes(normalizedRaw)
-      ))?.artikulas
-      || null;
+  const extractKnownArtikulasFromText = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+    if (knownSet.has(text)) return text;
+
+    for (const artikulas of knownArtikulas) {
+      const tokenMatch = new RegExp(`(^|[^A-Za-z0-9-])${escapeRegExp(artikulas)}([^A-Za-z0-9-]|$)`).test(text);
+      if (tokenMatch) return artikulas;
+    }
+    return null;
   };
 
-  const toPredictions = (item: any): AiPrediction[] => {
+  const resolveItemArtikulas = (item: unknown): string | null => {
+    if (!item || typeof item !== 'object') return null;
+    const row = item as Record<string, unknown>;
+
+    const strictArtikulas = extractKnownArtikulasFromText(row.artikulas);
+    if (strictArtikulas) return strictArtikulas;
+
+    const materialCode = extractKnownArtikulasFromText(row.material_code);
+    if (materialCode) return materialCode;
+
+    const materialLabel = extractKnownArtikulasFromText(row.material);
+    if (materialLabel) return materialLabel;
+
+    const nameLabel = extractKnownArtikulasFromText(row.name);
+    if (nameLabel) return nameLabel;
+
+    return null;
+  };
+
+  const toPredictions = (item: unknown): AiPrediction[] => {
     if (!item || typeof item !== 'object') return [];
-    const rawCode = typeof item?.artikulas === 'string'
-      ? item.artikulas.trim()
-      : (typeof item?.material === 'string'
-        ? item.material.trim()
-        : (typeof item?.material_code === 'string'
-          ? item.material_code.trim()
-          : (typeof item?.name === 'string' ? item.name.trim() : '')));
-    if (!rawCode) return [];
-    const artikulas = resolveArtikulas(rawCode);
+    const row = item as Record<string, unknown>;
+    const artikulas = resolveItemArtikulas(row);
     if (!artikulas) return [];
 
-    const reasoning = typeof item?.reasoning === 'string'
-      ? item.reasoning
+    const reasoning = typeof row.reasoning === 'string'
+      ? row.reasoning
       : 'Prognozė pagal naftos ir geopolitinį kontekstą.';
 
-    let kaina = coerceFiniteNumber(item?.kaina);
-    let data = normalizeIsoDate(item?.data, fallbackDate);
-
-    if (Array.isArray(item?.points)) {
-      const normalizedPoints: AiPrediction[] = item.points
-        .map((p: any) => ({
-          artikulas,
-          kaina: coerceFiniteNumber(p?.price),
-          data: normalizeIsoDate(p?.date, fallbackDate),
-          reasoning,
-        }))
-        .filter((p: any) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
+    if (Array.isArray(row.points)) {
+      const normalizedPoints: AiPrediction[] = row.points
+        .map((p: unknown) => {
+          const point = (p && typeof p === 'object') ? (p as Record<string, unknown>) : {};
+          return {
+            artikulas,
+            kaina: coerceFiniteNumber(point.price ?? point.kaina ?? point.value),
+            data: normalizeIsoDate(point.date ?? point.data, fallbackDate),
+            reasoning,
+          };
+        })
+        .filter((p) => p.kaina !== null && p.kaina >= 0) as AiPrediction[];
       if (normalizedPoints.length > 0) return normalizedPoints;
     }
+
+    const kaina = coerceFiniteNumber(row.kaina ?? row.price ?? row.value);
     if (kaina === null || kaina < 0) return [];
 
     return [{
       artikulas,
       kaina,
-      data,
+      data: normalizeIsoDate(row.data ?? row.date, fallbackDate),
       reasoning,
     }];
   };
@@ -1037,7 +1106,7 @@ function SablonaiTab() {
 }
 
 
-function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analytics: PrognozėInternetas | null; onError?: (msg: string) => void }) {
+function GrafaTab({ medziagas, istorija, analysisContent, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analysisContent: string; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
   const [aiToggle, setAiToggle] = useState(false);
@@ -1061,9 +1130,9 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     if (aiLoading || medziagas.length === 0) return;
     setAiLoading(true);
     try {
-      // Primary source of truth: Directus medziagos_prognoze_internetas.content (3-step JSON payload).
+      // Primary source of truth: third-step analysis content from medziagos_analize_internetas (id = "kainos").
       const fallbackDate = addMonthsISO(new Date().toISOString().slice(0, 10), 3);
-      const rawContent = analytics?.content || '';
+      const rawContent = analysisContent || '';
       let loaded: AiPrediction[] = [];
       if (rawContent.trim()) {
         try {
@@ -1074,8 +1143,18 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
         }
       }
 
+      if (loaded.length === 0 && rawContent.trim()) {
+        const fromMarkdown = parseForecastsFromMarkdownTable(rawContent, medziagas, fallbackDate);
+        const fromNarrative = parseForecastsFromNarrativeText(rawContent, medziagas, fallbackDate);
+        const deduped = new Map<string, AiPrediction>();
+        for (const pred of [...fromMarkdown, ...fromNarrative]) {
+          deduped.set(`${pred.artikulas}|${pred.data}`, pred);
+        }
+        loaded = Array.from(deduped.values());
+      }
+
       if (loaded.length === 0) {
-        onError?.('Nerasta validžių AI prognozių medziagos_prognoze_internetas.content lauke.');
+        onError?.('Nerasta validžių AI prognozių tarp 3-ios analizės JSON/teksto duomenų.');
         setAiToggle(false);
         return;
       }
@@ -1089,7 +1168,7 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
     } finally {
       setAiLoading(false);
     }
-  }, [aiLoading, medziagas, istorija, onError, analytics]);
+  }, [aiLoading, medziagas, istorija, onError, analysisContent]);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
@@ -1136,7 +1215,11 @@ function GrafaTab({ medziagas, istorija, analytics, onError }: { medziagas: Med�
   const charts = useMemo(() => {
     return medziagas.map(m => {
       const entries = (byArt.get(m.artikulas) || [])
-        .filter(e => e.kaina_min !== null)
+        .map((e) => ({
+          ...e,
+          kaina_min: e.kaina_min ?? e.kaina_max ?? null,
+        }))
+        .filter((e) => e.kaina_min !== null)
         .sort((a, b) => a.data.localeCompare(b.data));
 
       if (entries.length === 0) return null;
@@ -1547,7 +1630,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [streamNafta, setStreamNafta] = useState('');
   const [streamGeo, setStreamGeo] = useState('');
   const [streamAnalysis, setStreamAnalysis] = useState('');
-  const [sharedAnalysisLock, setSharedAnalysisLock] = useState<AnalysisGenerationLock | null>(null);
+  const [runningSections, setRunningSections] = useState<Record<'nafta' | 'geo' | 'analysis', boolean>>({
+    nafta: false,
+    geo: false,
+    analysis: false,
+  });
+  const [internetAnalyses, setInternetAnalyses] = useState<Record<InternetAnalysisId, InternetAnalysisRecord | null>>({
+    nafta: null,
+    politika: null,
+    kainos: null,
+  });
   const [analysisMeta, setAnalysisMeta] = useState<{
     nafta: AnalysisSectionMeta;
     geo: AnalysisSectionMeta;
@@ -1571,6 +1663,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     analysis: false,
   });
   const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
+  const analysisFetchVersionRef = useRef(0);
+  const [configWarning, setConfigWarning] = useState<{
+    reason: string;
+    promptContent: string;
+    toolSchemaContent: string;
+    resolvedPrompt?: string;
+  } | null>(null);
 
   // ---- notifications ----
   const [notifs, setNotifs] = useState<Notification[]>([]);
@@ -1596,224 +1695,70 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [med, ist, ana] = await Promise.all([
-        fetchMedziagas(), fetchIstorija(), fetchGeneralAnalysis(),
+      const [med, ist] = await Promise.all([
+        fetchMedziagas(), fetchIstorija(),
       ]);
-      setMedziagas(med); setIstorija(ist); setAnalytics(ana);
-      return { med, ist, ana };
+      setMedziagas(med);
+      setIstorija(ist);
+      // Legacy __general__ endpoint is no longer required for internet analysis UI.
+      setAnalytics(null);
+      return { med, ist, ana: null };
     } catch (err: any) {
       addNotif('error', 'Klaida', err.message || 'Nepavyko įkelti duomenų');
       return { med: [], ist: [], ana: null };
     } finally { setLoading(false); }
   }, []);
 
-  // ---- analytics generation (web search + citations + safety metadata) ----
-  const syncSharedAnalysisState = useCallback(async () => {
+  // ---- internet analysis (single request per action) ----
+  const loadInternetAnalysisState = useCallback(async (notifyOnError: boolean = false) => {
+    const requestVersion = ++analysisFetchVersionRef.current;
     try {
-      const [latestAnalysis, lock] = await Promise.all([
-        fetchGeneralAnalysis(),
-        fetchAnalysisGenerationLock(),
-      ]);
-      setAnalytics(latestAnalysis);
-      setSharedAnalysisLock(lock);
+      const rows = await fetchInternetAnalyses();
+      if (requestVersion !== analysisFetchVersionRef.current) return;
+      setInternetAnalyses({
+        nafta: rows.find((r) => r.id === 'nafta') || null,
+        politika: rows.find((r) => r.id === 'politika') || null,
+        kainos: rows.find((r) => r.id === 'kainos') || null,
+      });
     } catch (error) {
-      console.warn('Nepavyko sinchronizuoti analytics būsenos:', error);
+      if (notifyOnError) {
+        addNotif('error', 'Klaida', error instanceof Error ? error.message : 'Nepavyko įkelti analizės būsenos.');
+      }
     }
   }, []);
 
   useEffect(() => {
-    syncSharedAnalysisState();
-    const interval = window.setInterval(syncSharedAnalysisState, 8000);
+    loadInternetAnalysisState();
+    const interval = window.setInterval(loadInternetAnalysisState, 8000);
     return () => window.clearInterval(interval);
-  }, [syncSharedAnalysisState]);
+  }, [loadInternetAnalysisState]);
 
-  const generateAnalyticsFromData = useCallback(async (
-    meds: Medžiaga[],
-    hist: KainuIrašas[],
-    sections: Array<'nafta' | 'geo' | 'analysis'> = ['nafta', 'geo', 'analysis']
-  ) => {
-    if (genLoading) return;
-    const runId = crypto.randomUUID();
-    const lockAttempt = await tryAcquireAnalysisGenerationLock({
-      runId,
-      startedBy: user?.email || user?.display_name || 'Nežinomas vartotojas',
-      sections,
-    });
-    if (!lockAttempt.acquired) {
-      setSharedAnalysisLock(lockAttempt.lock);
-      const owner = lockAttempt.lock?.startedBy || 'kitas vartotojas';
-      addNotif('info', 'Analizė jau generuojama', `Šiuo metu analizę generuoja ${owner}. Palaukite, kol procesas baigsis.`);
-      return;
-    }
-
-    setSharedAnalysisLock(lockAttempt.lock);
+  const generateSingleAnalysis = useCallback(async (section: 'nafta' | 'geo' | 'analysis') => {
+    if (genLoading || runningSections[section]) return;
     setGenLoading(true);
-    let currentStep: 'idle' | 'nafta' | 'geo' | 'analysis' = 'idle';
-    const heartbeatInterval = window.setInterval(() => {
-      updateAnalysisGenerationLock({ runId, step: currentStep, sections }).catch(() => undefined);
-    }, 5000);
-    const setGenerationStep = async (step: 'idle' | 'nafta' | 'geo' | 'analysis') => {
-      currentStep = step;
-      setGenStep(step);
-      await updateAnalysisGenerationLock({ runId, step, sections });
-    };
-    await updateAnalysisGenerationLock({ runId, step: 'idle', sections });
-    const targetSections = new Set(sections);
-    if (targetSections.has('nafta')) setStreamNafta('');
-    if (targetSections.has('geo')) setStreamGeo('');
-    if (targetSections.has('analysis')) setStreamAnalysis('');
-    const client = new Anthropic({
-      apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-      dangerouslyAllowBrowser: true,
-    });
-    const { nafta: oilPromptTemplate, geo: geoPromptTemplate, analysis: analysisPromptTemplate } = await fetchAnalyticsPromptTemplates();
-    const today = new Date().toISOString().split('T')[0];
-    const kainosToolSchemas = await fetchKainosToolSchemas();
-    if (kainosToolSchemas.length === 0) {
-      addNotif('info', 'Kainos schema', 'kainos_ai_tool_schemas nėra užpildyta Directus. Analizė vykdoma be papildomų SDK įrankių.');
-    }
-    const runStepRequest = (params: { user: string; maxTokens: number; step: AnalysisSectionKey; }): Promise<ExtractedResponseText> =>
-      runSdkRequest(client, ANALYTICS_MODEL, params.user, params.maxTokens, kainosToolSchemas).then((result) => ({
-        text: result.text.trim(),
-        citations: result.citations,
-        stopReasons: result.stopReason ? [result.stopReason] : [],
-        hitTokenLimit: result.stopReason === 'max_tokens',
-      }));
-
-    const debugState: AnalysisDebugState = {
-      lastRunAt: new Date().toISOString(),
-      stepStatus: {
-        nafta: targetSections.has('nafta') ? 'error' : 'skipped',
-        geo: targetSections.has('geo') ? 'error' : 'skipped',
-        analysis: targetSections.has('analysis') ? 'error' : 'skipped',
-      },
-      promptIssues: [],
-      parser: null,
-      missingForecastCodes: [],
-      error: null,
-    };
+    setGenStep(section);
+    setRunningSections((prev) => ({ ...prev, [section]: true }));
     try {
-      let naftaText = analytics?.nafta || '';
-      let geoText = analytics?.geoevents || '';
-      let analysisText = '';
-      let analysisRawContent = '';
-
-      if (targetSections.has('nafta')) {
-        // -- Step 1: Oil prices (Brent crude + Eastern Europe) --
-        await setGenerationStep('nafta');
-        const naftaResult = await runStepRequest({
-          step: 'nafta',
-          maxTokens: 500,
-          user: oilPromptTemplate,
-        });
-        naftaText = naftaResult.text;
-        setStreamNafta(naftaText);
-        setAnalysisMeta((prev) => ({
-          ...prev,
-          nafta: { confidence: Math.min(95, 40 + naftaResult.citations.length * 10), citations: naftaResult.citations },
-        }));
-        debugState.stepStatus.nafta = 'ok';
-      }
-
-      if (targetSections.has('geo')) {
-        // -- Step 2: Geopolitical events --
-        await setGenerationStep('geo');
-        const geoResult = await runStepRequest({
-          step: 'geo',
-          maxTokens: 450,
-          user: geoPromptTemplate,
-        });
-        geoText = geoResult.text;
-        setStreamGeo(geoText);
-        setAnalysisMeta((prev) => ({
-          ...prev,
-          geo: { confidence: Math.min(95, 40 + geoResult.citations.length * 10), citations: geoResult.citations },
-        }));
-        debugState.stepStatus.geo = 'ok';
-      }
-
-      if (targetSections.has('analysis')) {
-        // -- Step 3: One prompt, one response --
-        await setGenerationStep('analysis');
-        const fallbackDate = addMonthsISO(today, 3);
-        const analysisResult = await runStepRequest({
-          step: 'analysis',
-          maxTokens: 900,
-          user: analysisPromptTemplate,
-        });
-
-        analysisRawContent = analysisResult.text.trim();
-        analysisText = analysisRawContent;
-        let mergedForecasts: AiPrediction[] = [];
-        try {
-          const analysisPayload = extractJsonPayload(analysisResult.text);
-          const parsed = analysisPayload as AnalysisForecastResponsePayload;
-          mergedForecasts = normalizeAnalysisForecasts(analysisPayload, meds, fallbackDate);
-          if (typeof parsed?.analysis_markdown === 'string' && parsed.analysis_markdown.trim()) {
-            analysisText = parsed.analysis_markdown.trim();
-          }
-          debugState.parser = { total: 1, json: 1, markdown: 0, failed: 0 };
-        } catch {
-          const markdownForecasts = parseForecastsFromMarkdownTable(analysisResult.text, meds, fallbackDate);
-          const narrativeForecasts = markdownForecasts.length > 0 ? [] : parseForecastsFromNarrativeText(analysisResult.text, meds, fallbackDate);
-          mergedForecasts = markdownForecasts.length > 0 ? markdownForecasts : narrativeForecasts;
-          debugState.parser = { total: 1, json: 0, markdown: mergedForecasts.length > 0 ? 1 : 0, failed: mergedForecasts.length > 0 ? 0 : 1 };
-          if (mergedForecasts.length <= 0) {
-            addNotif('error', 'AI prognozės formatas', 'Nepavyko išgauti struktūruotų AI kainų prognozių.');
-          }
-        }
-
-        const missing = meds.filter((m) => !new Set(mergedForecasts.map((f) => f.artikulas)).has(m.artikulas));
-        if (missing.length > 0) {
-          debugState.missingForecastCodes = missing.map((m) => m.artikulas);
-          addNotif('info', 'AI prognozės formatas', `AI negrąžino prognozių daliai medžiagų (${missing.length} trūksta).`);
-        }
-
-        setStreamAnalysis(analysisText);
-        setAnalysisMeta((prev) => ({
-          ...prev,
-          analysis: { confidence: Math.min(95, 35 + analysisResult.citations.length * 6), citations: analysisResult.citations },
-        }));
-        debugState.stepStatus.analysis = 'ok';
-
-      }
-
-      await saveGeneralAnalysis(analysisRawContent || analysisText, geoText, naftaText);
-      const freshAnalysis = await fetchGeneralAnalysis();
-      setAnalytics(freshAnalysis);
-
+      const targetId: InternetAnalysisId = section === 'nafta' ? 'nafta' : section === 'geo' ? 'politika' : 'kainos';
+      await runInternetAnalysis(targetId);
+      await loadInternetAnalysisState(true);
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
-      console.error('Analytics error:', err);
-      debugState.error = err?.message || 'Nepavyko sugeneruoti analizės';
-      if (targetSections.has('analysis') && debugState.stepStatus.analysis !== 'ok') debugState.stepStatus.analysis = 'error';
-      if (targetSections.has('nafta') && debugState.stepStatus.nafta !== 'ok') debugState.stepStatus.nafta = 'error';
-      if (targetSections.has('geo') && debugState.stepStatus.geo !== 'ok') debugState.stepStatus.geo = 'error';
-      if (err?.status === 429) {
-        addNotif(
-          'error',
-          'Viršytas DI limitas',
-          'Anthropic limitas viršytas. Sumažinome užklausos dydį ir bandome pakartotinai, bet šiuo metu reikia palaukti 1-2 min. arba sumažinti analizuojamų duomenų kiekį.'
-        );
-      } else {
-        addNotif('error', 'Klaida', err.message || 'Nepavyko sugeneruoti analizės');
+      if (err instanceof InternetAnalysisConfigError) {
+        setConfigWarning({
+          reason: err.reason,
+          promptContent: err.promptContent,
+          toolSchemaContent: err.toolSchemaContent,
+          resolvedPrompt: err.resolvedPrompt,
+        });
       }
+      addNotif('error', 'Klaida', err?.message || 'Nepavyko sugeneruoti analizės');
     } finally {
-      setAnalysisDebug(debugState);
       setGenLoading(false);
       setGenStep('idle');
-      window.clearInterval(heartbeatInterval);
-      await releaseAnalysisGenerationLock(runId);
-      await syncSharedAnalysisState();
+      setRunningSections((prev) => ({ ...prev, [section]: false }));
     }
-  }, [genLoading, analytics, syncSharedAnalysisState, user]);
-
-  const generateAnalytics = useCallback(() =>
-    generateAnalyticsFromData(medziagas, istorija), [generateAnalyticsFromData, medziagas, istorija]);
-  const regenerateAnalysisSection = useCallback((section: 'nafta' | 'geo' | 'analysis') => {
-    const sections: Array<'nafta' | 'geo' | 'analysis'> = section === 'analysis' ? ['analysis'] : [section, 'analysis'];
-    return generateAnalyticsFromData(medziagas, istorija, sections);
-  }, [generateAnalyticsFromData, medziagas, istorija]);
+  }, [genLoading, loadInternetAnalysisState, runningSections]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
@@ -2020,14 +1965,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     />
   );
 
-  const naftaDisplay = streamNafta || analytics?.nafta || '';
-  const geoDisplay = streamGeo || analytics?.geoevents || '';
-  const analysisDisplay = streamAnalysis || ((genLoading && genStep === 'analysis') ? '' : getAnalysisMarkdownForDisplay(analytics?.content || ''));
-  const lastUpdated = analytics?.sukurta_at ?? null;
-  const sharedGenerationActive = Boolean(sharedAnalysisLock);
-  const lockOwnerLabel = sharedAnalysisLock?.startedBy || 'kitas vartotojas';
-  const sharedStep = sharedAnalysisLock?.step || 'idle';
-  const isGenerationBlocked = genLoading || sharedGenerationActive;
+  const naftaDisplay = streamNafta || internetAnalyses.nafta?.content || '';
+  const geoDisplay = streamGeo || internetAnalyses.politika?.content || '';
+  const analysisDisplay = streamAnalysis || internetAnalyses.kainos?.content || '';
+  const lastUpdated = internetAnalyses.kainos?.date_updated || internetAnalyses.politika?.date_updated || internetAnalyses.nafta?.date_updated || null;
+  const isGenerationBlocked = genLoading;
   const renderCitations = (meta: AnalysisSectionMeta, displayText: string) => {
     const fallbackCitations = extractUrlCitationsFromText(displayText || '');
     const merged = [...meta.citations];
@@ -2216,7 +2158,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <SablonaiTab />
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
-          <GrafaTab medziagas={medziagas} istorija={istorija} analytics={analytics} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
+          <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="space-y-5">
@@ -2224,27 +2166,37 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               style={{ border: '1px solid #e5e7eb', boxShadow: '0 14px 34px rgba(15,23,42,0.08)', background: 'linear-gradient(135deg,#ffffff 0%,#f8fafc 100%)' }}>
               <div className="px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#64748b' }}>Web analizė • 3 etapų srautas</p>
-                  <h3 className="text-lg font-semibold mt-1" style={{ color: '#1f2937' }}>Žaliavų rinkos signalų valdymo centras</h3>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#64748b' }}>Web analizė</p>
+                  <h3 className="text-lg font-semibold mt-1" style={{ color: '#1f2937' }}>AI analizės valdymas</h3>
                   <p className="text-xs mt-1.5" style={{ color: '#6b7280' }}>
                     {lastUpdated ? `Paskutinį kartą atnaujinta ${relativeTime(lastUpdated)}.` : 'Dar nėra sugeneruotos analizės.'}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={generateAnalytics} disabled={isGenerationBlocked}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={() => generateSingleAnalysis('nafta')} disabled={isGenerationBlocked}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
                     style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
-                    {isGenerationBlocked ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    {isGenerationBlocked ? 'Vykdoma...' : 'Paleisti pilną analizę'}
+                    {isGenerationBlocked && genStep === 'nafta' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Oil Analysis
+                  </button>
+                  <button onClick={() => generateSingleAnalysis('geo')} disabled={isGenerationBlocked}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
+                    style={{ background: 'linear-gradient(135deg,#0ea5e9 0%,#0369a1 100%)' }}>
+                    {isGenerationBlocked && genStep === 'geo' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Geopolitical Analysis
+                  </button>
+                  <button onClick={() => generateSingleAnalysis('analysis')} disabled={isGenerationBlocked}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
+                    style={{ background: 'linear-gradient(135deg,#16a34a 0%,#15803d 100%)' }}>
+                    {isGenerationBlocked && genStep === 'analysis' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Price Prediction
                   </button>
                 </div>
               </div>
-              {isGenerationBlocked && (
+              {genLoading && (
                 <div className="px-6 py-3" style={{ borderTop: '1px solid #dbeafe', background: '#eff6ff' }}>
                   <p className="text-xs font-medium" style={{ color: '#1e40af' }}>
-                    {genLoading
-                      ? (genStep === 'nafta' ? '1/3 • Renkamos naftos kainos ir rinkos signalai' : genStep === 'geo' ? '2/3 • Renkami geopolitiniai įvykiai' : '3/3 • Skaičiuojamos medžiagų prognozės')
-                      : `Analizę šiuo metu vykdo ${lockOwnerLabel}${sharedStep !== 'idle' ? ` (${sharedStep})` : ''}.`}
+                    {genStep === 'nafta' ? 'Vykdoma naftos analizė…' : genStep === 'geo' ? 'Vykdoma geopolitinė analizė…' : 'Vykdoma kainų prognozė…'}
                   </p>
                 </div>
               )}
@@ -2254,9 +2206,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               <aside className="rounded-2xl bg-white p-3"
                 style={{ border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
                 {([
-                  { key: 'nafta', label: 'Nafta ir dervos ryšys', sub: '1 etapas', icon: BarChart2, bg: '#fff7ed', color: '#9a3412', confBg: '#ffedd5', confidence: analysisMeta.nafta.confidence },
-                  { key: 'geo', label: 'Geopolitikos signalai', sub: '2 etapas', icon: Globe, bg: '#eff6ff', color: '#1e40af', confBg: '#dbeafe', confidence: analysisMeta.geo.confidence },
-                  { key: 'analysis', label: 'Kainų prognozė', sub: '3 etapas', icon: TrendingUp, bg: '#ecfdf5', color: '#065f46', confBg: '#d1fae5', confidence: analysisMeta.analysis.confidence },
+                  { key: 'nafta', label: 'Oil Analysis', sub: 'nafta', icon: BarChart2, bg: '#fff7ed', color: '#9a3412', confBg: '#ffedd5', confidence: 100 },
+                  { key: 'geo', label: 'Geopolitical Analysis', sub: 'politika', icon: Globe, bg: '#eff6ff', color: '#1e40af', confBg: '#dbeafe', confidence: 100 },
+                  { key: 'analysis', label: 'Price Prediction', sub: 'kainos', icon: TrendingUp, bg: '#ecfdf5', color: '#065f46', confBg: '#d1fae5', confidence: 100 },
                 ] as const).map((item) => {
                   const active = analysisFocus === item.key;
                   const Icon = item.icon;
@@ -2289,7 +2241,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               </aside>
 
               <div className="rounded-2xl overflow-hidden bg-white"
-                style={{ border: '1px solid #e5e7eb', boxShadow: '0 10px 25px rgba(15,23,42,0.06)' }}>
+                style={{
+                  border: genLoading && genStep === analysisFocus ? '1px solid #bfdbfe' : '1px solid #e5e7eb',
+                  boxShadow: genLoading && genStep === analysisFocus
+                    ? '0 10px 25px rgba(59,130,246,0.10)'
+                    : '0 10px 25px rgba(15,23,42,0.06)',
+                }}>
                 <div className="px-5 py-3 flex items-center justify-between"
                   style={{
                     background: analysisFocus === 'nafta' ? '#fff7ed' : analysisFocus === 'geo' ? '#eff6ff' : '#ecfdf5',
@@ -2303,12 +2260,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => regenerateAnalysisSection(analysisFocus)}
+                      onClick={() => generateSingleAnalysis(analysisFocus)}
                       disabled={isGenerationBlocked}
                       className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
                       style={{ color: '#334155', background: '#fff' }}
                     >
-                      Regeneruoti etapą
+                      Generuoti
                     </button>
                     <button
                       onClick={() => setCollapsedSections(prev => ({ ...prev, [analysisFocus]: !prev[analysisFocus] }))}
@@ -2333,7 +2290,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           return (
                             <div className="flex items-center gap-2 py-1">
                               <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                              <span className="text-xs" style={{ color: '#8a857f' }}>Šio etapo analizė dar nesugeneruota.</span>
+                              <span className="text-xs" style={{ color: '#8a857f' }}>No analysis generated yet.</span>
                             </div>
                           );
                         }
@@ -2344,10 +2301,19 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                       })()}
                     </>
                   )}
-                  {!isGenerationBlocked && genStep !== analysisFocus && renderCitations(
-                    analysisFocus === 'nafta' ? analysisMeta.nafta : analysisFocus === 'geo' ? analysisMeta.geo : analysisMeta.analysis,
-                    analysisFocus === 'nafta' ? naftaDisplay : analysisFocus === 'geo' ? geoDisplay : analysisDisplay
-                  )}
+                  {(() => {
+                    const tokenData = analysisFocus === 'nafta'
+                      ? parseTokenUsage(internetAnalyses.nafta?.tokens || null)
+                      : analysisFocus === 'geo'
+                        ? parseTokenUsage(internetAnalyses.politika?.tokens || null)
+                        : parseTokenUsage(internetAnalyses.kainos?.tokens || null);
+                    if (!tokenData) return null;
+                    return (
+                      <div className="mt-3 pt-2 border-t border-slate-200 text-[11px]" style={{ color: '#64748b' }}>
+                        Input: {tokenData.input.toLocaleString('lt-LT')} · Output: {tokenData.output.toLocaleString('lt-LT')} · Total: {tokenData.total.toLocaleString('lt-LT')}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -2466,6 +2432,50 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       {editingIras && (
         <PriceModal medziagas={medziagas} initial={editingIras}
           onSave={handleUpdatePrice} onClose={() => setEditingIras(null)} />
+      )}
+
+      {configWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(15,23,42,0.45)' }}
+          onClick={() => setConfigWarning(null)}>
+          <div
+            className="w-full max-w-3xl bg-white rounded-2xl overflow-hidden"
+            style={{ boxShadow: '0 24px 60px rgba(15,23,42,0.22)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid #e2e8f0' }}>
+              <div>
+                <h4 className="text-sm font-semibold" style={{ color: '#0f172a' }}>Konfigūracijos klaida</h4>
+                <p className="text-xs mt-1" style={{ color: '#64748b' }}>{configWarning.reason}</p>
+              </div>
+              <button onClick={() => setConfigWarning(null)} className="p-1.5 rounded hover:bg-slate-100">
+                <X className="w-4 h-4" style={{ color: '#64748b' }} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-auto">
+              <div>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#334155' }}>Prompt content</p>
+                <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#0f172a' }}>
+                  {configWarning.promptContent?.trim() ? configWarning.promptContent : '[Prompt is empty]'}
+                </pre>
+              </div>
+              {configWarning.resolvedPrompt && (
+                <div>
+                  <p className="text-xs font-semibold mb-1" style={{ color: '#334155' }}>Resolved prompt (runtime)</p>
+                  <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#0f172a' }}>
+                    {configWarning.resolvedPrompt}
+                  </pre>
+                </div>
+              )}
+              <div>
+                <p className="text-xs font-semibold mb-1" style={{ color: '#334155' }}>Tool schema content</p>
+                <pre className="text-xs whitespace-pre-wrap rounded-lg p-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#0f172a' }}>
+                  {configWarning.toolSchemaContent?.trim() ? configWarning.toolSchemaContent : '[Tool schema is empty → analysis runs without tools]'}
+                </pre>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <NotificationContainer notifications={notifs} onRemove={removeNotif} />

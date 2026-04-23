@@ -32,14 +32,9 @@ import {
 import { dbAdmin } from '../lib/database';
 import { colors } from '../lib/designSystem';
 import { tools as defaultSdkTools } from '../lib/toolDefinitions';
-import {
-  fetchMedziagas,
-  fetchIstorija,
-  fetchGeneralAnalysis,
-  formatPrice,
-} from '../lib/kainosService';
 import NotificationContainer from './NotificationContainer';
 import { useNotifications } from './sdk/useNotifications';
+import { buildLatestPricesSummary, buildMaterialListSummary, validatePromptVariablesForEditor } from '../lib/internetAnalysisService';
 
 interface InstructionsInterfaceProps {
   user: AppUser;
@@ -61,30 +56,22 @@ const DEFAULT_KAINOS_GEO_PROMPT = `Šiandien yra {{today}}. Ieškokite internete
 
 Sutelkite dėmesį į: naftą, sankcijas, tarifus, energetiką, tiekimo grandines.
 Pateikite 4-6 konkrečius punktus lietuvių kalba.`;
-const DEFAULT_KAINOS_ANALYSIS_PROMPT = `Šiandien yra {{today}}. Įvertinkite žaliavų kainų prognozes.
+const DEFAULT_KAINOS_ANALYSIS_PROMPT = `Šiandien yra {{today}}. Įvertinkite kainų prognozę pagal jau sugeneruotą kontekstą.
 
-MEDŽIAGŲ SĄRAŠAS ({{chunkInfo}}):
-{{materialList}}
-
-DABARTINĖS / PASKUTINĖS KAINOS:
-{{latestPrices}}
-
-KAINŲ TENDENCIJOS:
-{{trendData}}
-
-ISTORINIAI KAINŲ DUOMENYS:
-{{priceData}}
-
-NAFTOS KAINŲ KONTEKSTAS:
-{{oilAnalysisContext}}
+NAFTOS ANALIZĖ:
+{{oilAnalysis}}
 
 GEOPOLITINIS KONTEKSTAS:
-{{geoPoliticalContext}}
+{{geoPolitical}}
 
-Atsakykite TIK JSON formatu su:
-- analysis_markdown
-- forecasts[] (artikulas, kaina, data, confidence, reasoning).`;
-type KainosPromptKey = 'kainos_ai_nafta_prompt' | 'kainos_ai_geo_prompt' | 'kainos_ai_analysis_prompt';
+NAUJAUSIOS MEDŽIAGŲ KAINOS:
+{{latestPrices}}
+
+AUKŠTO LYGIO MEDŽIAGŲ SĄRAŠAS:
+{{materialList}}
+
+Atsakykite aiškiai, struktūruotai, lietuvių kalba.`;
+type KainosPromptKey = 'kainos_ai_nafta_prompt' | 'kainos_ai_geo_prompt' | 'kainos_ai_prediction_prompt';
 const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; defaultContent: string }> = {
   kainos_ai_nafta_prompt: {
     label: 'Nafta',
@@ -96,9 +83,9 @@ const KAINOS_PROMPTS: Record<KainosPromptKey, { label: string; help: string; def
     help: 'Placeholderiai: {{today}}',
     defaultContent: DEFAULT_KAINOS_GEO_PROMPT,
   },
-  kainos_ai_analysis_prompt: {
+  kainos_ai_prediction_prompt: {
     label: 'Prognozė',
-    help: 'Placeholderiai: {{today}} {{chunkInfo}} {{materialList}} {{latestPrices}} {{trendData}} {{priceData}} {{oilAnalysisContext}} {{geoPoliticalContext}} (alias: {{boundedNaftaText}} {{boundedGeoText}})',
+    help: 'Placeholderiai: {{today}} {{oilAnalysis}} {{geoPolitical}} {{latestPrices}} {{materialList}}',
     defaultContent: DEFAULT_KAINOS_ANALYSIS_PROMPT,
   },
 };
@@ -119,15 +106,6 @@ function findUnresolvedPromptVars(text: string): string[] {
 function truncatePromptSection(text: string, maxChars: number): string {
   if (!text || text.length <= maxChars) return text;
   return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
-}
-
-function chunkArray<T>(items: T[], chunkSize: number): T[][] {
-  if (chunkSize <= 0) return [items];
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += chunkSize) {
-    chunks.push(items.slice(i, i + chunkSize));
-  }
-  return chunks;
 }
 
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
@@ -156,7 +134,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [schemaError, setSchemaError] = useState<string | null>(null);
   const [schemaSuccess, setSchemaSuccess] = useState<string | null>(null);
   const [kainosPromptContent, setKainosPromptContent] = useState('');
-  const [kainosPromptKey, setKainosPromptKey] = useState<KainosPromptKey>('kainos_ai_analysis_prompt');
+  const [kainosPromptKey, setKainosPromptKey] = useState<KainosPromptKey>('kainos_ai_prediction_prompt');
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptSaving, setPromptSaving] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
@@ -365,6 +343,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const item = parsed[i];
       if (!item || typeof item !== 'object') return `Įrašas #${i + 1} turi būti objektas`;
       if (!item.name || typeof item.name !== 'string') return `Įrašas #${i + 1} neturi teisingo "name"`;
+      if (typeof item.type === 'string' && item.type.trim().length > 0) {
+        if (!item.type.startsWith('web_search_')) return `Įrašas #${i + 1} turi nepalaikomą "type": ${item.type}`;
+        continue;
+      }
       if (!item.input_schema || typeof item.input_schema !== 'object') return `Įrašas #${i + 1} neturi "input_schema" objekto`;
     }
     return null;
@@ -379,6 +361,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const validationError = validateSchemaArray(parsed);
       if (validationError) {
         setSchemaError(validationError);
+        addErrorNotification('Schema klaida', validationError);
         return;
       }
 
@@ -403,10 +386,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
       setSchemaContent(normalized);
       setSchemaSuccess('Schema išsaugota');
+      addNotification('success', 'Schema', 'Schema išsaugota');
       setTimeout(() => setSchemaSuccess(null), 3000);
     } catch (err: any) {
       console.error('[SchemaEditor] Save failed:', err);
       setSchemaError(err?.message || 'Nepavyko išsaugoti schemos');
+      addErrorNotification('Schema klaida', err?.message || 'Nepavyko išsaugoti schemos');
     } finally {
       setSchemaSaving(false);
     }
@@ -471,6 +456,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const content = kainosPromptContent.trim();
       if (!content) {
         setPromptError('Prompt negali būti tuščias');
+        addErrorNotification('Prompt klaida', 'Prompt negali būti tuščias');
+        return;
+      }
+      const invalidVars = validatePromptVariablesForEditor(content);
+      if (invalidVars.length > 0) {
+        setPromptError(`Neleistini kintamieji: ${invalidVars.join(', ')}. Leidžiami: {{today}}, {{oilAnalysis}}, {{geoPolitical}}, {{latestPrices}}, {{materialList}}.`);
+        addErrorNotification('Prompt klaida', `Neleistini kintamieji: ${invalidVars.join(', ')}`);
         return;
       }
       const existing = await getInstructionVariable(kainosPromptKey);
@@ -490,10 +482,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         if (insertError) throw insertError;
       }
       setPromptSuccess('Prompt išsaugotas');
+      addNotification('success', 'Prompt', 'Prompt išsaugotas');
       setTimeout(() => setPromptSuccess(null), 3000);
     } catch (err: any) {
       console.error('[KainosPrompt] Save failed:', err);
       setPromptError(err?.message || 'Nepavyko išsaugoti prompt');
+      addErrorNotification('Prompt klaida', err?.message || 'Nepavyko išsaugoti prompt');
     } finally {
       setPromptSaving(false);
     }
@@ -506,7 +500,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     try {
       const template = kainosPromptContent || KAINOS_PROMPTS[kainosPromptKey].defaultContent;
       const today = new Date().toISOString().split('T')[0];
-      if (kainosPromptKey !== 'kainos_ai_analysis_prompt') {
+      if (kainosPromptKey !== 'kainos_ai_prediction_prompt') {
         const rendered = injectPromptVars(template, { today });
         setPromptPreviewText(rendered);
         setPromptPreviewMissing(findUnresolvedPromptVars(rendered));
@@ -514,62 +508,24 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         return;
       }
 
-      const [medziagos, istorija, analytics] = await Promise.all([
-        fetchMedziagas(),
-        fetchIstorija(),
-        fetchGeneralAnalysis(),
+      const [oilAnalysis, geoPolitical, latestRows, materialRows] = await Promise.all([
+        dbAdmin.from('medziagos_analize_internetas').select('content').eq('id', 'nafta').single(),
+        dbAdmin.from('medziagos_analize_internetas').select('content').eq('id', 'politika').single(),
+        dbAdmin.from('medziagos_kainu_istorija').select('artikulas,kaina_min,kaina_max,data').limit(-1),
+        dbAdmin.from('medziagos').select('artikulas,pavadinimas,vienetas').limit(-1),
       ]);
-      const MAX_MATERIALS_PER_ANALYSIS_REQUEST = 15;
-      const materialChunks = chunkArray(medziagos, MAX_MATERIALS_PER_ANALYSIS_REQUEST);
-      const chunk = materialChunks[0] || [];
-      const chunkCodes = new Set(chunk.map((m) => m.artikulas));
-      const chunkHist = istorija.filter((h) => chunkCodes.has(h.artikulas));
-      const latestPrices = chunk
-        .map((m) => {
-          const latest = chunkHist
-            .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
-            .sort((a, b) => b.data.localeCompare(a.data))[0];
-          if (!latest) return `- ${m.artikulas} (${m.pavadinimas}): nėra kainos`;
-          return `- ${m.artikulas} (${m.pavadinimas}): ${formatPrice(latest)} @ ${latest.data}`;
-        })
-        .join('\n') || 'Nėra kainų duomenų.';
-      const trendData = chunk
-        .map((m) => {
-          const entries = chunkHist
-            .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
-            .sort((a, b) => a.data.localeCompare(b.data));
-          if (entries.length < 2) return `- ${m.artikulas}: nepakanka istorijos trendui`;
-          const first = Number(entries[0].kaina_min);
-          const last = Number(entries[entries.length - 1].kaina_min);
-          if (!Number.isFinite(first) || !Number.isFinite(last) || first === 0) return `- ${m.artikulas}: trendas nenustatytas`;
-          const deltaPct = ((last - first) / first) * 100;
-          return `- ${m.artikulas}: pokytis ${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(2)}% (${entries[0].data} → ${entries[entries.length - 1].data})`;
-        })
-        .join('\n') || 'Tendencijai nepakanka duomenų.';
-      const priceData = chunk
-        .map((m) => {
-          const entries = chunkHist
-            .filter((e) => e.artikulas === m.artikulas && e.kaina_min != null)
-            .sort((a, b) => a.data.localeCompare(b.data));
-          if (!entries.length) return null;
-          return `${m.pavadinimas} [${m.artikulas}] (${m.vienetas}): ${entries.map(e => `${e.data}: ${formatPrice(e)}`).join(' | ')}`;
-        })
-        .filter(Boolean)
-        .join('\n') || 'Nėra kainų duomenų.';
-
-      const boundedNaftaText = truncatePromptSection(analytics?.nafta || '', 2500);
-      const boundedGeoText = truncatePromptSection(analytics?.geoevents || '', 2200);
       const vars = {
         today,
-        chunkInfo: materialChunks.length > 0 ? `DALIS 1/${materialChunks.length}` : 'DALIS 1/1',
-        materialList: chunk.map(m => `- ${m.artikulas}: ${m.pavadinimas} (${m.vienetas})`).join('\n') || 'Nėra medžiagų',
-        latestPrices: truncatePromptSection(latestPrices, 4500),
-        trendData: truncatePromptSection(trendData, 9000),
-        priceData: truncatePromptSection(priceData, 7000),
-        boundedNaftaText,
-        boundedGeoText,
-        oilAnalysisContext: boundedNaftaText,
-        geoPoliticalContext: boundedGeoText,
+        oilAnalysis: truncatePromptSection(String(oilAnalysis.data?.content || ''), 4000),
+        geoPolitical: truncatePromptSection(String(geoPolitical.data?.content || ''), 4000),
+        latestPrices: truncatePromptSection(
+          buildLatestPricesSummary((latestRows.data || []) as Array<{ artikulas: string; kaina_min: number | null; kaina_max: number | null; data: string }>),
+          5000
+        ),
+        materialList: truncatePromptSection(
+          buildMaterialListSummary((materialRows.data || []) as Array<{ artikulas: string; pavadinimas: string; vienetas: string }>),
+          5000
+        ),
       };
       const rendered = injectPromptVars(template, vars);
       setPromptPreviewText(rendered);
@@ -1053,6 +1009,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                 </div>
               </div>
               {!editorUnlocked && editorPasswordError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>}
+              {editorTab === 'schema' && schemaError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{schemaError}</p>}
+              {editorTab === 'schema' && schemaSuccess && <p className="text-[10px]" style={{ color: '#16a34a' }}>{schemaSuccess}</p>}
+              {editorTab === 'kainos_prompt' && promptError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{promptError}</p>}
+              {editorTab === 'kainos_prompt' && promptSuccess && <p className="text-[10px]" style={{ color: '#16a34a' }}>{promptSuccess}</p>}
             </div>
 
             <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
