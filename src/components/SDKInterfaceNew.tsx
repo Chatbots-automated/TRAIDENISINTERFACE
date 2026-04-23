@@ -3571,15 +3571,28 @@ Vartotojo instrukcija: ${instruction}`;
                       <Copy className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={savedDocxFileId ? handleRefreshTemplateFromCurrentYaml : handleSaveToStandartiniai}
+                      onClick={handleSaveToStandartiniai}
                       disabled={isSavingToStandartiniai || isRefreshingTemplate}
                       className="btn btn-sm btn-primary gap-1.5 ml-1"
-                      title={savedDocxFileId ? 'Pergeneruoti esamą YAML su naujausiu Word šablonu' : 'Išsaugoti DOCX į Directus'}
+                      title="Išsaugoti DOCX į Directus šiam komerciniam projektui"
                     >
-                      {(isSavingToStandartiniai || isRefreshingTemplate)
+                      {isSavingToStandartiniai
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         : <Save className="w-3.5 h-3.5" />}
-                      {savedDocxFileId ? 'Atnaujinti šabloną' : 'Išsaugoti'}
+                      Išsaugoti failą
+                    </button>
+                    <button
+                      onClick={handleRefreshTemplateFromCurrentYaml}
+                      disabled={!savedDocxFileId || isSavingToStandartiniai || isRefreshingTemplate}
+                      className="btn btn-sm btn-outline gap-1.5 ml-1"
+                      title={!savedDocxFileId
+                        ? 'Pirmiausia išsaugokite failą'
+                        : 'Pergeneruoti esamą YAML su naujausiu Word šablonu'}
+                    >
+                      {isRefreshingTemplate
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <RotateCcw className="w-3.5 h-3.5" />}
+                      Atnaujinti šabloną
                     </button>
                     {savedDocxFileId && (
                       <a
