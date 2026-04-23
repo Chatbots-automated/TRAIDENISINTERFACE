@@ -111,6 +111,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [promptTemplate, setPromptTemplate] = useState<string>('');
   const [templateFromDB, setTemplateFromDB] = useState<string>(''); // Template variable from instruction_variables
   const [loadingPrompt, setLoadingPrompt] = useState(true);
+  const [promptPreviewError, setPromptPreviewError] = useState<string | null>(null);
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showTemplateView, setShowTemplateView] = useState(false);
   const [showArtifact, setShowArtifact] = useState(session.showArtifact ?? false);
@@ -191,6 +192,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [tplEditorTab] = useState<'docx'>('docx');
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
+  const [showInstructionNudge, setShowInstructionNudge] = useState(false);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -496,10 +498,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const handleOpenPromptModal = async () => {
     try {
       setLoadingPrompt(true);
+      setPromptPreviewError(null);
       await fetchLatestPromptBundle();
       setShowPromptModal(true);
     } catch (err) {
-      addErrorNotification('Klaida', err, 'Nepavyko atnaujinti instrukcijų iš Directus');
+      const message = formatErrorForToast(err, 'Nepavyko sugeneruoti galutinio prompt iš chat_template');
+      setPromptPreviewError(message);
+      setShowPromptModal(true);
+      addErrorNotification('Klaida', err, 'Preview nepavyko: trūksta kintamųjų arba šablonas nekorektiškas');
     } finally {
       setLoadingPrompt(false);
     }
@@ -4455,12 +4461,17 @@ Vartotojo instrukcija: ${instruction}`;
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
+                      const hadTemplateBeforeUpload = hasDocxTemplate;
                       try {
                         setDocxUploading(true);
                         await uploadDocxTemplate(file);
                         setHasDocxTemplate(true);
                         getDocxTemplateFileId().then(id => setGlobalDocxFileId(id));
+                        setShowInstructionNudge(true);
                         addNotification('success', 'DOCX šablonas', 'Word šablonas sėkmingai įkeltas.');
+                        if (hadTemplateBeforeUpload) {
+                          addNotification('info', 'Instrukcijos', 'Atnaujintas DOCX šablonas. Peržiūrėkite instrukcijas, kad prompt atitiktų šabloną.');
+                        }
                       } catch (err) {
                         addNotification('error', 'Klaida', formatToastMessage('Nepavyko įkelti DOCX', formatErrorForToast(err)));
                       } finally {
@@ -4685,6 +4696,13 @@ Vartotojo instrukcija: ${instruction}`;
                 >
                   {showTemplateView ? 'Rodyti pilną prompt' : 'Rodyti šabloną'}
                 </button>
+                <button
+                  onClick={handleOpenPromptModal}
+                  className="btn btn-xs btn-soft"
+                  disabled={loadingPrompt}
+                >
+                  {loadingPrompt ? 'Kraunama...' : 'Preview'}
+                </button>
                 {user.is_admin && (
                   <button
                     onClick={() => {
@@ -4709,10 +4727,44 @@ Vartotojo instrukcija: ${instruction}`;
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-base-content">
-                {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
-              </pre>
+              {promptPreviewError ? (
+                <div className="alert alert-soft alert-error text-sm">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{promptPreviewError}</span>
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-base-content">
+                  {showTemplateView ? (templateFromDB || promptTemplate) : systemPrompt}
+                </pre>
+              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showInstructionNudge && (
+        <div className="fixed bottom-5 right-5 z-50 w-[320px] rounded-xl border border-base-content/10 bg-base-100 shadow-xl p-4">
+          <div className="text-sm font-semibold text-base-content mb-1">Atnaujintas DOCX šablonas</div>
+          <p className="text-xs text-base-content/60 leading-relaxed mb-3">
+            Peržiūrėkite instrukcijas/prompt preview, kad chat_template išliktų suderintas su nauju šablonu.
+          </p>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              onClick={() => setShowInstructionNudge(false)}
+              className="btn btn-xs btn-soft"
+            >
+              Skip
+            </button>
+            <button
+              onClick={() => {
+                setShowInstructionNudge(false);
+                setShowTemplateEditor(false);
+                handleOpenPromptModal();
+              }}
+              className="btn btn-xs btn-primary"
+            >
+              Review Instructions
+            </button>
           </div>
         </div>
       )}
