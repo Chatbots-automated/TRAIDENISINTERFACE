@@ -3,17 +3,14 @@ import { getDefaultOfferParameters, loadOfferParameters, saveOfferParameters } f
 
 export function useOfferParameters(currentConversationId?: string) {
   const [offerParameters, setOfferParameters] = useState<Record<string, string>>(getDefaultOfferParameters());
-  const [offerParametersReady, setOfferParametersReady] = useState(false);
   const [sectionCollapsed, setSectionCollapsed] = useState<Record<string, boolean>>({ offerData: true, objectParams: true });
 
   useEffect(() => {
-    setOfferParametersReady(false);
     if (currentConversationId) {
       setOfferParameters(loadOfferParameters(currentConversationId));
     } else {
       setOfferParameters(getDefaultOfferParameters());
     }
-    setOfferParametersReady(true);
   }, [currentConversationId]);
 
   const persistOfferParameters = useCallback((conversationId: string | undefined, updated: Record<string, string>) => {
@@ -35,7 +32,6 @@ export function useOfferParameters(currentConversationId?: string) {
 
   return {
     offerParameters,
-    offerParametersReady,
     setOfferParameters,
     sectionCollapsed,
     setSectionCollapsed,

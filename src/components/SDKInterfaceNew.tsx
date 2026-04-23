@@ -155,7 +155,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   const {
     offerParameters,
-    offerParametersReady,
     sectionCollapsed,
     setSectionCollapsed,
     persistOfferParameters,
@@ -194,6 +193,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [artifactPreviewLoading, setArtifactPreviewLoading] = useState(false);
   const [artifactPreviewError, setArtifactPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
+  const [showTechDescPrompt, setShowTechDescPrompt] = useState(false);
+  const [pendingPreviewAfterTechDesc, setPendingPreviewAfterTechDesc] = useState(false);
   const [showMissingTemplateRows, setShowMissingTemplateRows] = useState(false);
   const [showFilledTemplateRows, setShowFilledTemplateRows] = useState(false);
   const [showSkippedTemplateRows, setShowSkippedTemplateRows] = useState(false);
@@ -2342,7 +2343,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // Auto-save: generate and persist DOCX when artifact is ready and no saved file exists yet
   const [autoSaving, setAutoSaving] = useState(false);
   const lastAutoSyncedArtifactSignatureRef = useRef<string>('');
-  const lastAutoTechDescSignatureRef = useRef<string>('');
   const lastTechDescDocxSyncSignatureRef = useRef<string>('');
   const artifactPreviewAutoRetryCountRef = useRef(0);
   const artifactPreviewRequestIdRef = useRef(0);
@@ -2470,39 +2470,64 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalDocxFileId, currentConversation?.id, currentConversation?.artifact?.content, savedDocxFileId]);
 
-  useEffect(() => {
-    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
-    if (!offerParametersReady) return;
-    if (techDescLoading || techDescRequestInFlightRef.current) return;
-    if (!templateVariables.includes('technological_description')) return;
-
-    const yamlVars = parseYAMLContent(currentConversation.artifact.content);
-    const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
-    if (!componentsList) return;
-
-    const currentTechDesc = String(
+  const getCurrentTechDescriptionValue = (yamlContent: string): string => {
+    const yamlVars = parseYAMLContent(yamlContent);
+    return String(
       templateRowOverrides['technological_description']
       ?? offerParameters['technological_description']
       ?? yamlVars['technological_description']
       ?? ''
     ).trim();
-    if (currentTechDesc) return;
+  };
 
-    const signature = `${currentConversation.id}::${currentConversation.artifact.version}::${componentsList}`;
-    if (lastAutoTechDescSignatureRef.current === signature) return;
-    lastAutoTechDescSignatureRef.current = signature;
+  const syncDocxWithLatestVariables = async (
+    mergedVariables: Record<string, string>,
+    options?: { forceRefreshPreview?: boolean }
+  ): Promise<string | null> => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return null;
+    if (!globalDocxFileId || !savedDocxFileId) return null;
 
-    autoGenerateTechDescription(componentsList, currentConversation.id);
-  }, [
-    currentConversation?.id,
-    currentConversation?.artifact?.content,
-    currentConversation?.artifact?.version,
-    templateVariables,
-    offerParametersReady,
-    offerParameters,
-    templateRowOverrides,
-    techDescLoading,
-  ]);
+    const docxBlob = await buildDocxBlob(mergedVariables);
+    const projektoKodas = mergedVariables['code_yy/mm/dd'] || 'komercinis-pasiulymas';
+    const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
+    const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
+
+    const yamlContent = currentConversation.artifact?.content || '';
+    const hnv = mergedVariables['economy_HNV'] || '';
+    const requestedInputs = buildRequestedInputsSnapshot();
+    let linkedStandartiniaiId = standartiniaiRecordId;
+
+    if (linkedStandartiniaiId) {
+      await updateStandartinisProjektas(linkedStandartiniaiId, {
+        yaml_content: yamlContent,
+        projekto_kodas: projektoKodas,
+        hnv,
+        document: newFileId,
+        requested_inputs: requestedInputs,
+        template_file_id: globalDocxFileId || null,
+      }, { userId: user.id, userEmail: user.email });
+    } else {
+      const created = await createStandartinisProjektas({
+        conversation_id: currentConversation.id,
+        yaml_content: yamlContent,
+        projekto_kodas: projektoKodas,
+        hnv,
+        document: newFileId,
+        requested_inputs: requestedInputs,
+        template_file_id: globalDocxFileId || null,
+      }, { userId: user.id, userEmail: user.email });
+      linkedStandartiniaiId = created.id;
+      setStandartiniaiRecordId(created.id);
+    }
+
+    setSavedDocxFileId(newFileId);
+    if (options?.forceRefreshPreview) {
+      await refreshDocxPreview(newFileId);
+    } else {
+      void refreshDocxPreview(newFileId);
+    }
+    return newFileId;
+  };
 
   // Keep saved DOCX preview in sync when technological_description changes.
   // Without this, auto-generation may succeed but the preview still shows stale DOCX.
@@ -2521,46 +2546,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     let cancelled = false;
     (async () => {
       try {
-        const docxBlob = await buildDocxBlob(merged);
+        const newFileId = await syncDocxWithLatestVariables(merged);
         if (cancelled) return;
-
-        const projektoKodas = merged['code_yy/mm/dd'] || 'komercinis-pasiulymas';
-        const filename = `${projektoKodas.replace(/\//g, '-')}.docx`;
-        const newFileId = await uploadDocxBlobToDirectus(docxBlob, filename, savedDocxFileId || null);
-        if (cancelled) return;
-
-        const yamlContent = currentConversation.artifact?.content || '';
-        const hnv = merged['economy_HNV'] || '';
-        const requestedInputs = buildRequestedInputsSnapshot();
-        let linkedStandartiniaiId = standartiniaiRecordId;
-
-        if (linkedStandartiniaiId) {
-          await updateStandartinisProjektas(linkedStandartiniaiId, {
-            yaml_content: yamlContent,
-            projekto_kodas: projektoKodas,
-            hnv,
-            document: newFileId,
-            requested_inputs: requestedInputs,
-            template_file_id: globalDocxFileId || null,
-          }, { userId: user.id, userEmail: user.email });
-        } else {
-          const created = await createStandartinisProjektas({
-            conversation_id: currentConversation.id,
-            yaml_content: yamlContent,
-            projekto_kodas: projektoKodas,
-            hnv,
-            document: newFileId,
-            requested_inputs: requestedInputs,
-            template_file_id: globalDocxFileId || null,
-          }, { userId: user.id, userEmail: user.email });
-          linkedStandartiniaiId = created.id;
-          if (!cancelled) setStandartiniaiRecordId(created.id);
-        }
+        if (!newFileId) return;
 
         if (!cancelled) {
           lastTechDescDocxSyncSignatureRef.current = signature;
-          setSavedDocxFileId(newFileId);
-          void refreshDocxPreview(newFileId);
         }
       } catch (err) {
         console.error('[TechDesc] Failed to sync DOCX preview:', err);
@@ -2587,14 +2578,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   );
 
   const unresolvedTemplateVariables = useMemo<string[]>(() => {
-    if (!templateVariables.length) return [];
+    const keysToEvaluate = Array.from(new Set([...templateVariables, 'technological_description']));
+    if (!keysToEvaluate.length) return [];
     const merged = mergeAllVariables();
     const objectAndWaterKeys = new Set(
       OFFER_PARAMETER_DEFINITIONS
         .filter((p) => p.group === 'object')
         .map((p) => p.key)
     );
-    return templateVariables.filter((key) => {
+    return keysToEvaluate.filter((key) => {
       if (objectAndWaterKeys.has(key)) return false;
       if (skippedTemplateRows[key]) return false;
       const override = templateRowOverrides[key];
@@ -2619,14 +2611,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   ]);
 
   const templateVariablePreviewRows = useMemo(() => {
-    if (!templateVariables.length) return [];
+    const allTemplateKeys = Array.from(new Set([...templateVariables, 'technological_description']));
+    if (!allTemplateKeys.length) return [];
     const merged = mergeAllVariables();
     const objectAndWaterKeys = new Set(
       OFFER_PARAMETER_DEFINITIONS
         .filter((p) => p.group === 'object')
         .map((p) => p.key)
     );
-    return templateVariables.map((key) => {
+    return allTemplateKeys.map((key) => {
       if (objectAndWaterKeys.has(key)) return null;
       const raw = merged[key];
       const override = templateRowOverrides[key];
@@ -3054,9 +3047,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     });
   };
 
-  /** Auto-generate technological description after artifact creation — fire-and-forget. */
-  const autoGenerateTechDescription = async (componentsList: string, conversationId: string) => {
-    if (techDescRequestInFlightRef.current) return;
+  /** Generate technological description on demand. */
+  const autoGenerateTechDescription = async (componentsList: string, conversationId: string): Promise<string | null> => {
+    if (techDescRequestInFlightRef.current) return null;
     techDescRequestInFlightRef.current = true;
     setTechDescLoading(true);
     try {
@@ -3065,7 +3058,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const promptVar = await getInstructionVariable('chat_tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
         console.warn('[AutoTechDesc] No chat_tech_description_prompt found in DB, skipping.');
-        return;
+        return null;
       }
 
       const anthropic = new Anthropic({
@@ -3093,26 +3086,49 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setSkippedTemplateRows((prev) => ({ ...prev, technological_description: false }));
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
+        return text;
       }
+      return null;
     } catch (err: any) {
       console.error('[AutoTechDesc] Failed:', err);
       addNotification('error', 'Technologinis aprašymas', 'Nepavyko automatiškai sugeneruoti.');
+      return null;
     } finally {
       techDescRequestInFlightRef.current = false;
       setTechDescLoading(false);
     }
   };
 
-  const handleManualTechDescriptionGenerate = async () => {
-    if (!currentConversation?.id || !currentConversation?.artifact?.content) return;
-    if (techDescRequestInFlightRef.current) return;
+  const handleManualTechDescriptionGenerate = async (): Promise<boolean> => {
+    if (!currentConversation?.id || !currentConversation?.artifact?.content) return false;
+    if (techDescRequestInFlightRef.current) return false;
     const yamlVars = parseYAMLContent(currentConversation.artifact.content);
     const componentsList = String(yamlVars['components_bulletlist'] || '').trim();
     if (!componentsList) {
       addNotification('warning', 'Technologinis aprašymas', 'Trūksta components_bulletlist reikšmės, todėl generuoti negalima.');
+      return false;
+    }
+    const generatedText = await autoGenerateTechDescription(componentsList, currentConversation.id);
+    if (!generatedText) return false;
+
+    const merged = mergeAllVariables();
+    merged.technological_description = generatedText;
+    await syncDocxWithLatestVariables(merged, { forceRefreshPreview: true });
+    return true;
+  };
+
+  const handlePreviewTabRequest = () => {
+    if (!currentConversation?.artifact) return;
+    const techDescValue = getCurrentTechDescriptionValue(currentConversation.artifact.content || '');
+    if (!techDescValue) {
+      setPendingPreviewAfterTechDesc(true);
+      setShowTechDescPrompt(true);
       return;
     }
-    await autoGenerateTechDescription(componentsList, currentConversation.id);
+    setArtifactTab('preview');
+    if (savedDocxFileId) {
+      void refreshDocxPreview(savedDocxFileId);
+    }
   };
 
   /** AI-assisted edit for a single YAML variable — dedicated API call, no full regeneration. */
@@ -3768,12 +3784,7 @@ Vartotojo instrukcija: ${instruction}`;
                 {currentConversation?.artifact && !isStreamingArtifact ? (
                   <div className="flex rounded-lg overflow-hidden border border-base-content/10">
                     <button
-                      onClick={() => {
-                        setArtifactTab('preview');
-                        if (savedDocxFileId) {
-                          void refreshDocxPreview(savedDocxFileId);
-                        }
-                      }}
+                      onClick={handlePreviewTabRequest}
                       className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
                         artifactTab === 'preview' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
                       }`}
@@ -5321,6 +5332,59 @@ Vartotojo instrukcija: ${instruction}`;
           </div>
         );
       })()}
+
+      {showTechDescPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45" onClick={() => !techDescLoading && setShowTechDescPrompt(false)}>
+          <div
+            className="w-full max-w-md rounded-2xl border border-base-content/15 bg-base-100 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-base-content">Sugeneruoti technologinį aprašymą?</h3>
+            <p className="mt-2 text-sm text-base-content/70">
+              Technologinio aprašymo trūksta. Galime jį sugeneruoti prieš atidarant dokumento peržiūrą.
+            </p>
+            {techDescLoading && (
+              <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Generuojamas technologinis aprašymas ir atnaujinama dokumento peržiūra...
+              </div>
+            )}
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={techDescLoading}
+                onClick={() => {
+                  setShowTechDescPrompt(false);
+                  if (pendingPreviewAfterTechDesc) {
+                    setArtifactTab('preview');
+                    if (savedDocxFileId) void refreshDocxPreview(savedDocxFileId);
+                  }
+                  setPendingPreviewAfterTechDesc(false);
+                }}
+              >
+                Praleisti
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm gap-2"
+                disabled={techDescLoading}
+                onClick={async () => {
+                  const success = await handleManualTechDescriptionGenerate();
+                  if (success && pendingPreviewAfterTechDesc) {
+                    setArtifactTab('preview');
+                  }
+                  setShowTechDescPrompt(false);
+                  setPendingPreviewAfterTechDesc(false);
+                }}
+              >
+                {techDescLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Generuoti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Prompt Modal */}
       {showPromptModal && (
