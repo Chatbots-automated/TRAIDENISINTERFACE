@@ -3609,7 +3609,7 @@ Vartotojo instrukcija: ${instruction}`;
                         title="Atsisiųsti DOCX iš Directus"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        .docx
+                        Atsisiųsti
                       </a>
                     )}
                   </>
@@ -4657,7 +4657,7 @@ Vartotojo instrukcija: ${instruction}`;
                     disabled={docxUploading}
                   >
                     {docxUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                    {hasDocxTemplate ? '.docx ✓' : '.docx'}
+                    Įkelti naują šabloną
                   </button>
                   <button
                     onClick={() => setShowTemplateEditor(false)}
