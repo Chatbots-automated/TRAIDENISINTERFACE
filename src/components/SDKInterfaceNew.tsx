@@ -4357,7 +4357,11 @@ Vartotojo instrukcija: ${instruction}`;
                               </p>
                               <button
                                 onClick={() => setShowOnlyMissingTemplateRows((prev) => !prev)}
-                                className={`btn btn-xs ${showOnlyMissingTemplateRows ? 'btn-primary' : 'btn-soft'}`}
+                                className={`btn btn-xs border backdrop-blur-md shadow-sm transition-all ${
+                                  showOnlyMissingTemplateRows
+                                    ? 'border-primary/35 bg-primary/20 text-primary hover:bg-primary/25'
+                                    : 'border-white/60 bg-white/65 text-base-content/80 hover:bg-white/80'
+                                }`}
                               >
                                 {showOnlyMissingTemplateRows ? 'Rodyti visus' : 'Rodyti tik trūkstamus'}
                               </button>
@@ -4400,8 +4404,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                       setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
                                                       setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                                     }}
-                                                    className="btn btn-xs border-0 text-white"
-                                                    style={{ background: '#8b5e34' }}
+                                                    className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
                                                   >
                                                     {isEditing ? 'Baigti' : 'Redaguoti'}
                                                   </button>
@@ -4409,8 +4412,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                     <button
                                                       type="button"
                                                       onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="btn btn-xs border-0 text-white"
-                                                      style={{ background: '#0f766e' }}
+                                                      className="btn btn-xs border border-success/35 bg-success/15 backdrop-blur-md text-success hover:bg-success/20 shadow-sm"
                                                     >
                                                       Išsaugoti
                                                     </button>
@@ -4418,7 +4420,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                   <button
                                                     type="button"
                                                     onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: true }))}
-                                                    className="btn btn-xs border border-warning/30 bg-warning/10 text-warning"
+                                                    className="btn btn-xs border border-warning/30 bg-warning/12 backdrop-blur-md text-warning hover:bg-warning/20 shadow-sm"
                                                   >
                                                     ✓ Praleisti
                                                   </button>
@@ -4475,8 +4477,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                       setTemplateRowDrafts((prev) => ({ ...prev, [row.key]: prev[row.key] ?? templateRowOverrides[row.key] ?? row.value }));
                                                       setEditingTemplateRows((prev) => ({ ...prev, [row.key]: !prev[row.key] }));
                                                     }}
-                                                    className="btn btn-xs border-0 text-white"
-                                                    style={{ background: '#8b5e34' }}
+                                                    className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
                                                   >
                                                     {isEditing ? 'Baigti' : 'Redaguoti'}
                                                   </button>
@@ -4484,8 +4485,7 @@ Vartotojo instrukcija: ${instruction}`;
                                                     <button
                                                       type="button"
                                                       onClick={() => handleTemplateRowSave(row.key, row.value)}
-                                                      className="btn btn-xs border-0 text-white"
-                                                      style={{ background: '#0f766e' }}
+                                                      className="btn btn-xs border border-success/35 bg-success/15 backdrop-blur-md text-success hover:bg-success/20 shadow-sm"
                                                     >
                                                       Išsaugoti
                                                     </button>
@@ -4516,7 +4516,7 @@ Vartotojo instrukcija: ${instruction}`;
                                             <button
                                               type="button"
                                               onClick={() => setSkippedTemplateRows((prev) => ({ ...prev, [row.key]: false }))}
-                                              className="btn btn-xs btn-soft"
+                                              className="btn btn-xs border border-white/55 bg-white/70 backdrop-blur-md text-base-content/80 hover:bg-white/85 shadow-sm"
                                             >
                                               Grąžinti
                                             </button>
