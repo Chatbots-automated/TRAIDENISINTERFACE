@@ -193,6 +193,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [docxPreviewLoading, setDocxPreviewLoading] = useState(false);
   const [docxPreviewError, setDocxPreviewError] = useState<string | null>(null);
   const [showInstructionNudge, setShowInstructionNudge] = useState(false);
+  const [showMissingTemplateDetails, setShowMissingTemplateDetails] = useState(false);
 
   // Floating variable editor state (interactive preview)
   const [editingVariable, setEditingVariable] = useState<{
@@ -2441,6 +2442,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentConversation?.title,
   ]);
 
+  const yamlVariableRows = useMemo(() => {
+    return Object.entries(yamlVarsForUi)
+      .map(([key, raw]) => ({ key, value: raw === undefined || raw === null ? '' : String(raw) }))
+      .sort((a, b) => a.key.localeCompare(b.key));
+  }, [yamlVarsForUi]);
+
   const handleSaveToStandartiniai = async () => {
     if (!currentConversation?.artifact) return;
 
@@ -4235,11 +4242,11 @@ Vartotojo instrukcija: ${instruction}`;
                     {!isStreamingArtifact && currentConversation?.artifact && (
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
-                          Aptikta YAML kintamųjų: {Object.keys(yamlVarsForUi).length}
+                          Chat / YAML kintamųjų: {yamlVariableRows.length}
                         </span>
                         {templateVariables.length > 0 && (
                           <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.45 }}>
-                            Šablono kintamųjų: {templateVariables.length}
+                            DOCX šablono kintamųjų: {templateVariables.length}
                           </span>
                         )}
                       </div>
@@ -4255,8 +4262,42 @@ Vartotojo instrukcija: ${instruction}`;
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
-                        {renderInteractiveYAML(currentConversation.artifact.content)}
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div className="rounded-lg border border-base-content/10 overflow-hidden">
+                          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60">
+                            Chat / YAML kintamieji
+                          </div>
+                          <div className="max-h-[360px] overflow-auto">
+                            {yamlVariableRows.length > 0 ? yamlVariableRows.map((row) => (
+                              <div key={row.key} className="px-3 py-2 border-t border-base-content/5 flex items-start justify-between gap-3 text-[12px]">
+                                <span className="font-mono text-base-content/60 break-all">{row.key}</span>
+                                <span className={`font-mono text-right break-all ${row.value ? 'text-base-content' : 'text-base-content/30 italic'}`}>
+                                  {row.value || 'tuščia'}
+                                </span>
+                              </div>
+                            )) : (
+                              <div className="px-3 py-4 text-[12px] text-base-content/40">Nėra YAML kintamųjų.</div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-base-content/10 overflow-hidden">
+                          <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60">
+                            DOCX šablono kintamieji
+                          </div>
+                          <div className="max-h-[360px] overflow-auto">
+                            {templateVariablePreviewRows.length > 0 ? templateVariablePreviewRows.map((row) => (
+                              <div key={row.key} className="px-3 py-2 border-t border-base-content/5 flex items-start justify-between gap-3 text-[12px]">
+                                <span className="font-mono text-base-content/60 break-all">{row.key}</span>
+                                <span className={`font-mono text-right break-all ${row.value ? 'text-base-content' : 'text-base-content/30 italic'}`}>
+                                  {row.value || 'tuščia'}
+                                </span>
+                              </div>
+                            )) : (
+                              <div className="px-3 py-4 text-[12px] text-base-content/40">Nėra aptiktų DOCX placeholderių.</div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <p className="text-xs py-4 text-center" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
@@ -4264,36 +4305,26 @@ Vartotojo instrukcija: ${instruction}`;
                       </p>
                     )}
 
-                    {!isStreamingArtifact && templateVariablePreviewRows.length > 0 && (
-                      <div className="mt-4 rounded-lg border border-base-content/10 overflow-hidden">
-                        <div className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wider bg-base-content/[0.03] text-base-content/60">
-                          DOCX šablono kintamieji
+                    {!isStreamingArtifact && (
+                      <div className="mt-3 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[12px] font-medium text-base-content/70">
+                            {unresolvedTemplateVariables.length} template variables missing values
+                          </p>
+                          {unresolvedTemplateVariables.length > 0 && (
+                            <button
+                              onClick={() => setShowMissingTemplateDetails((prev) => !prev)}
+                              className="btn btn-xs btn-soft"
+                            >
+                              {showMissingTemplateDetails ? 'Slėpti' : 'Rodyti'}
+                            </button>
+                          )}
                         </div>
-                        <div className="max-h-56 overflow-auto">
-                          {templateVariablePreviewRows.map((row) => (
-                            <div key={row.key} className="px-3 py-2 border-t border-base-content/5 flex items-start justify-between gap-3 text-[12px]">
-                              <span className="font-mono text-base-content/60 break-all">{row.key}</span>
-                              <span className={`font-mono text-right break-all ${row.value ? 'text-base-content' : 'text-base-content/30 italic'}`}>
-                                {row.value || 'tuščia'}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {!isStreamingArtifact && unresolvedTemplateVariables.length > 0 && (
-                      <div className="mt-3 rounded-lg border px-3 py-2" style={{ borderColor: '#fbbf24', background: '#fffbeb' }}>
-                        <p className="text-[12px] font-medium" style={{ color: '#92400e' }}>
-                          Kai kurie DOCX šablono kintamieji neturi reikšmės ({unresolvedTemplateVariables.length}).
-                        </p>
-                        <p className="text-[11px] mt-1" style={{ color: '#92400e', opacity: 0.9 }}>
-                          Jei reikšmė neateina iš YAML arba objekto parametrų, dokumente ji bus tuščia (anksčiau galėjo rodytis „undefined“).
-                        </p>
-                        <p className="text-[11px] mt-1 break-all" style={{ color: '#b45309' }}>
-                          {unresolvedTemplateVariables.slice(0, 8).join(', ')}
-                          {unresolvedTemplateVariables.length > 8 ? ` ir dar ${unresolvedTemplateVariables.length - 8}...` : ''}
-                        </p>
+                        {showMissingTemplateDetails && unresolvedTemplateVariables.length > 0 && (
+                          <p className="text-[11px] mt-2 break-all text-base-content/60">
+                            {unresolvedTemplateVariables.join(', ')}
+                          </p>
+                        )}
                       </div>
                     )}
                   </div>

@@ -335,26 +335,16 @@ export async function extractDocxTemplateVariables(): Promise<string[]> {
   const zip = new PizZip(arrayBuffer);
 
   const vars = new Set<string>();
-  const placeholderRegex = /\{\{\s*([^{}]+?)\s*\}\}/g;
+  const placeholderRegex = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
 
   for (const [name, entry] of Object.entries(zip.files)) {
     if (!name.endsWith('.xml') || entry.dir) continue;
     const content = entry.asText();
     let match: RegExpExecArray | null = null;
     while ((match = placeholderRegex.exec(content)) !== null) {
-      const raw = match[1]?.trim();
-      if (!raw) continue;
-      const cleaned = raw
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&[a-zA-Z0-9#]+;/g, ' ')
-        .trim();
-      const candidates = cleaned.split(/[\s,;]+/).map(part => part.trim()).filter(Boolean);
-      for (const key of candidates) {
-        if (!/^[A-Za-z0-9_./-]+$/.test(key)) continue;
-        if (key.length > 80) continue;
-        if (key.startsWith('w:')) continue;
-        vars.add(key);
-      }
+      const key = match[1]?.trim();
+      if (!key) continue;
+      vars.add(key);
     }
   }
 
