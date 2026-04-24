@@ -669,7 +669,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const filteredData = useMemo(() => {
     let rows: any[] = isTalpos ? talposData : isNestandartiniai ? nestandartiniaiData : standartiniaiData;
 
-    if (searchQuery.trim()) {
+    const hasPillFilters = metadataSearchPills.some((pill) => pill.value.trim().length > 0);
+    if (searchQuery.trim() || hasPillFilters) {
       // Split into keywords for AND logic — every keyword must match somewhere in the record
       const tokens = searchQuery.trim().split(/\s+/).filter(Boolean);
       const keywords: string[] = [];
