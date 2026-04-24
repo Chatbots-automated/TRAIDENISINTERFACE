@@ -44,6 +44,8 @@ import {
   getSDKConversation,
   addMessageToConversation,
   updateConversationArtifact,
+  updateConversationArtifactUIState,
+  addConversationTokenUsage,
   deleteSDKConversation,
   renameSDKConversation,
   updateMessageButtonSelection,
@@ -51,7 +53,8 @@ import {
   type SDKConversation,
   type SDKMessage,
   type CommercialOfferArtifact,
-  type VariableCitation
+  type VariableCitation,
+  type ArtifactUIState
 } from '../lib/sdkConversationService';
 import { appLogger } from '../lib/appLogger';
 import { createStandartinisProjektas, updateStandartinisProjektas, getStandartinisByConversationId } from '../lib/dokumentaiService';
@@ -231,6 +234,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
   const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
   const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>([]);
+  const artifactUiSaveInFlightRef = useRef(false);
+  const pendingArtifactUiStateRef = useRef<ArtifactUIState | null>(null);
+  const lastSavedArtifactUiStateRef = useRef('');
+
+  const buildArtifactUiStatePayload = (): ArtifactUIState => ({
+    skipped_template_rows: Object.fromEntries(Object.entries(skippedTemplateRows).filter(([, v]) => !!v)),
+    template_row_overrides: Object.fromEntries(
+      Object.entries(templateRowOverrides).filter(([, v]) => typeof v === 'string' && v.length > 0)
+    ),
+    updated_at: new Date().toISOString(),
+    updated_by: user.email
+  });
 
   const getFriendlyToolPhaseLabel = (toolName: string): string => {
     if (toolName === 'get_products') return 'Matching products';
@@ -309,6 +324,68 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   useEffect(() => { saveSession({ showArtifact }); }, [showArtifact]);
   useEffect(() => { saveSession({ artifactTab }); }, [artifactTab]);
   useEffect(() => { saveSession({ sidebarCollapsed }); }, [sidebarCollapsed]);
+
+  // Hydrate template variable side-panel state per conversation from Directus.
+  useEffect(() => {
+    const uiState = currentConversation?.artifact_ui_state;
+    setSkippedTemplateRows(uiState?.skipped_template_rows || {});
+    setTemplateRowOverrides(uiState?.template_row_overrides || {});
+    setTemplateRowDrafts({});
+    setEditingTemplateRows({});
+    lastSavedArtifactUiStateRef.current = JSON.stringify({
+      skipped_template_rows: uiState?.skipped_template_rows || {},
+      template_row_overrides: uiState?.template_row_overrides || {}
+    });
+    pendingArtifactUiStateRef.current = null;
+  }, [currentConversation?.id, currentConversation?.artifact_ui_state]);
+
+  // Persist skip/fill UI state so reload/device switch keeps user decisions.
+  useEffect(() => {
+    if (!currentConversation?.id) return;
+    const timeout = setTimeout(async () => {
+      const payload = buildArtifactUiStatePayload();
+      const comparablePayload = JSON.stringify({
+        skipped_template_rows: payload.skipped_template_rows || {},
+        template_row_overrides: payload.template_row_overrides || {}
+      });
+
+      if (comparablePayload === lastSavedArtifactUiStateRef.current) return;
+      pendingArtifactUiStateRef.current = payload;
+
+      const flushPendingState = async () => {
+        if (artifactUiSaveInFlightRef.current) return;
+        const nextPayload = pendingArtifactUiStateRef.current;
+        if (!nextPayload) return;
+
+        artifactUiSaveInFlightRef.current = true;
+        pendingArtifactUiStateRef.current = null;
+
+        const { data } = await updateConversationArtifactUIState(currentConversation.id, nextPayload);
+        artifactUiSaveInFlightRef.current = false;
+
+        if (data) {
+          lastSavedArtifactUiStateRef.current = JSON.stringify({
+            skipped_template_rows: nextPayload.skipped_template_rows || {},
+            template_row_overrides: nextPayload.template_row_overrides || {}
+          });
+          setCurrentConversation((prev) => prev && prev.id === currentConversation.id
+            ? { ...prev, artifact_ui_state: nextPayload }
+            : prev);
+          setConversations((prev) => prev.map((conv) =>
+            conv.id === currentConversation.id ? { ...conv, artifact_ui_state: nextPayload } : conv
+          ));
+        }
+
+        if (pendingArtifactUiStateRef.current) {
+          void flushPendingState();
+        }
+      };
+
+      void flushPendingState();
+    }, 350);
+
+    return () => clearTimeout(timeout);
+  }, [currentConversation?.id, skippedTemplateRows, templateRowOverrides]);
 
   // Auto-exit document edit mode when switching conversations or tabs
   useEffect(() => { setDocEditMode(false); }, [currentConversation?.id, artifactTab]);
@@ -1226,6 +1303,39 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           content_blocks: finalMessage.content.length
         }
       });
+      const usage = (finalMessage as any)?.usage;
+      if (usage) {
+        const usageDelta = {
+          input_tokens: Number(usage.input_tokens || 0),
+          output_tokens: Number(usage.output_tokens || 0),
+          cache_creation_tokens: Number(usage.cache_creation_input_tokens || usage.cache_creation_tokens || 0),
+          cache_read_tokens: Number(usage.cache_read_input_tokens || usage.cache_read_tokens || 0)
+        };
+
+        await addConversationTokenUsage(conversation.id, usageDelta);
+
+        setCurrentConversation((prev) => {
+          if (!prev || prev.id !== conversation.id) return prev;
+          return {
+            ...prev,
+            total_input_tokens: (prev.total_input_tokens || 0) + usageDelta.input_tokens,
+            total_output_tokens: (prev.total_output_tokens || 0) + usageDelta.output_tokens,
+            total_cache_creation_tokens: (prev.total_cache_creation_tokens || 0) + usageDelta.cache_creation_tokens,
+            total_cache_read_tokens: (prev.total_cache_read_tokens || 0) + usageDelta.cache_read_tokens
+          };
+        });
+        setConversations((prev) => prev.map((conv) =>
+          conv.id === conversation.id
+            ? {
+                ...conv,
+                total_input_tokens: (conv.total_input_tokens || 0) + usageDelta.input_tokens,
+                total_output_tokens: (conv.total_output_tokens || 0) + usageDelta.output_tokens,
+                total_cache_creation_tokens: (conv.total_cache_creation_tokens || 0) + usageDelta.cache_creation_tokens,
+                total_cache_read_tokens: (conv.total_cache_read_tokens || 0) + usageDelta.cache_read_tokens
+              }
+            : conv
+        ));
+      }
       console.log('[Stream] Final message role:', finalMessage.role);
       console.log('[Stream] Final message content blocks:', finalMessage.content.length);
       console.log('[Stream] Final message stop_reason:', finalMessage.stop_reason);
@@ -1592,7 +1702,24 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     await addMessageToConversation(conversation.id, userMessage);
     const updatedMessages = [...dismissedMessages, userMessage];
-    setCurrentConversation({ ...conversation, messages: updatedMessages });
+    const userMessageConversation: SDKConversation = {
+      ...conversation,
+      messages: updatedMessages,
+      message_count: updatedMessages.length,
+      last_message_at: userMessage.timestamp,
+      updated_at: new Date().toISOString()
+    };
+    setCurrentConversation(userMessageConversation);
+    setConversations(prev => prev.map(conv =>
+      conv.id === conversation.id
+        ? {
+            ...conv,
+            message_count: updatedMessages.length,
+            last_message_at: userMessage.timestamp,
+            updated_at: userMessageConversation.updated_at
+          }
+        : conv
+    ));
     setInputValue('');
     setLoading(true);
     setConversationStreamingContent(conversation.id, '');
@@ -2974,7 +3101,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation) {
         updateOfferParameter(currentConversation.id, key, value);
       }
-    } else if (category === 'yaml') {
+    }
+
+    if (category === 'yaml' || category === 'tech_description') {
       // Surgical replacement: directly modify YAML without AI round-trip
       if (currentConversation?.artifact) {
         try {
@@ -3092,6 +3221,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         persistOfferParameters(conversationId, updated);
         setTemplateRowOverrides((prev) => ({ ...prev, technological_description: text }));
         setSkippedTemplateRows((prev) => ({ ...prev, technological_description: false }));
+        if (currentConversation?.id === conversationId) {
+          await handleVariableSave('technological_description', text);
+        }
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
         return text;
@@ -3380,7 +3512,9 @@ Vartotojo instrukcija: ${instruction}`;
                             className="flex-1 min-w-0 text-sm bg-transparent border-b border-base-content/20 outline-none text-base-content py-0"
                           />
                         ) : (
-                          <p className="flex-1 min-w-0 text-sm truncate text-base-content">{conv.title}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate text-base-content">{conv.title}</p>
+                          </div>
                         )}
                         {/* Date - hidden on hover/active, replaced by actions */}
                         {!isActive && !isRenaming && (

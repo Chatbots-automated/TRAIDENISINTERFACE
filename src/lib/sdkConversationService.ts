@@ -14,6 +14,11 @@ export interface SDKConversation {
   last_message_at: string;
   messages: SDKMessage[];
   artifact?: CommercialOfferArtifact;
+  artifact_ui_state?: ArtifactUIState | null;
+  total_input_tokens?: number;
+  total_output_tokens?: number;
+  total_cache_creation_tokens?: number;
+  total_cache_read_tokens?: number;
 }
 
 export interface SDKMessage {
@@ -48,6 +53,13 @@ export interface CommercialOfferArtifact {
   variable_citations?: Record<string, VariableCitation>;
 }
 
+export interface ArtifactUIState {
+  skipped_template_rows?: Record<string, boolean>;
+  template_row_overrides?: Record<string, string>;
+  updated_at?: string;
+  updated_by?: string;
+}
+
 export interface DiffEntry {
   version: number;
   timestamp: string;
@@ -78,7 +90,12 @@ export const createSDKConversation = async (
         message_count: 0,
         last_message_at: new Date().toISOString(),
         messages: [],
-        artifact: null
+        artifact: null,
+        artifact_ui_state: null,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
+        total_cache_creation_tokens: 0,
+        total_cache_read_tokens: 0
       }])
       .select()
       .single();
@@ -264,6 +281,75 @@ export const updateConversationArtifact = async (
       error: error as any,
       metadata: { conversation_id: conversationId, artifact_id: artifact?.id }
     });
+    return { data: false, error };
+  }
+};
+
+/**
+ * Persist artifact-side panel UI state for a conversation.
+ */
+export const updateConversationArtifactUIState = async (
+  conversationId: string,
+  uiState: ArtifactUIState
+): Promise<{ data: boolean; error: any }> => {
+  try {
+    const { error } = await dbAdmin
+      .from('sdk_conversations')
+      .update({
+        artifact_ui_state: uiState,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversationId);
+
+    if (error) throw error;
+    return { data: true, error: null };
+  } catch (error) {
+    console.error('Error in updateConversationArtifactUIState:', error);
+    return { data: false, error };
+  }
+};
+
+/**
+ * Accumulate token usage counters for a conversation.
+ */
+export const addConversationTokenUsage = async (
+  conversationId: string,
+  usage: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_tokens?: number;
+    cache_read_tokens?: number;
+  }
+): Promise<{ data: boolean; error: any }> => {
+  try {
+    const { data: row, error: fetchError } = await dbAdmin
+      .from('sdk_conversations')
+      .select('total_input_tokens,total_output_tokens,total_cache_creation_tokens,total_cache_read_tokens')
+      .eq('id', conversationId)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const nextInput = (row?.total_input_tokens || 0) + (usage.input_tokens || 0);
+    const nextOutput = (row?.total_output_tokens || 0) + (usage.output_tokens || 0);
+    const nextCacheCreation = (row?.total_cache_creation_tokens || 0) + (usage.cache_creation_tokens || 0);
+    const nextCacheRead = (row?.total_cache_read_tokens || 0) + (usage.cache_read_tokens || 0);
+
+    const { error: updateError } = await dbAdmin
+      .from('sdk_conversations')
+      .update({
+        total_input_tokens: nextInput,
+        total_output_tokens: nextOutput,
+        total_cache_creation_tokens: nextCacheCreation,
+        total_cache_read_tokens: nextCacheRead,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', conversationId);
+
+    if (updateError) throw updateError;
+    return { data: true, error: null };
+  } catch (error) {
+    console.error('Error in addConversationTokenUsage:', error);
     return { data: false, error };
   }
 };
