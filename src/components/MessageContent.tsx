@@ -143,7 +143,17 @@ export default function MessageContent({ content }: MessageContentProps) {
       }
     }
 
-    return parts.length > 0 ? parts : [{ type: 'text', content: text }];
+    const mergedParts = parts.reduce<typeof parts>((acc, part) => {
+      const prev = acc[acc.length - 1];
+      if (part.type === 'tools' && prev?.type === 'tools' && part.toolCalls && prev.toolCalls) {
+        prev.toolCalls = [...prev.toolCalls, ...part.toolCalls];
+        return acc;
+      }
+      acc.push(part);
+      return acc;
+    }, []);
+
+    return mergedParts.length > 0 ? mergedParts : [{ type: 'text', content: text }];
   };
 
   const parts = parseContent(content);
@@ -330,38 +340,33 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
       state: allCompleted ? 'done' : 'active'
     });
   });
+  if (phases.length > 0 && metrics.missing > 0) {
+    phases[0].failed = metrics.missing;
+  }
 
   return (
-    <div className="my-2">
-      <div className="border-l border-base-content/15 pl-3">
+    <div className="my-0.5">
+      <div className="border-l border-base-content/10 pl-2.5">
         {phases.map((phase, idx) => (
           <div
             key={phase.key}
-            className={`flex items-center gap-2 py-1 ${idx < phases.length - 1 ? 'border-b border-base-content/5' : ''}`}
+            className={`flex items-center gap-1.5 py-0.5 ${idx < phases.length - 1 ? 'border-b border-base-content/[0.04]' : ''}`}
           >
-            <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase.state === 'done' ? 'bg-base-content/50' : 'bg-base-content'}`} />
-            <p className="text-[12px] leading-5 text-base-content font-medium">
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase.state === 'done' ? 'bg-base-content/45' : 'bg-base-content'}`} />
+            <p className="text-[11px] leading-4 text-base-content font-medium">
               {phase.title}
-              <span className="text-base-content/55 font-normal"> · {phase.calls} {phase.calls === 1 ? 'call' : 'calls'}</span>
+              <span className="text-base-content/50 font-normal"> · {phase.calls}</span>
               {phase.failed ? <span className="text-warning"> · failed {phase.failed}</span> : null}
             </p>
           </div>
         ))}
         {phases.length === 0 && (
-          <div className="py-1 text-[12px] text-base-content/70">Vykdomi veiksmai...</div>
-        )}
-
-        {(metrics.matched > 0 || metrics.prices > 0 || metrics.missing > 0) && (
-          <div className="py-1 border-t border-base-content/5 text-[11px] text-base-content/55">
-            {metrics.matched > 0 ? `Sutapimai: ${metrics.matched}` : ''}
-            {metrics.prices > 0 ? `${metrics.matched > 0 ? ' · ' : ''}Kainos: ${metrics.prices}` : ''}
-            {metrics.missing > 0 ? `${metrics.matched > 0 || metrics.prices > 0 ? ' · ' : ''}Trūksta: ${metrics.missing}` : ''}
-          </div>
+          <div className="py-0.5 text-[11px] text-base-content/70">Vykdomi veiksmai...</div>
         )}
 
         <button
           onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-          className="py-1 inline-flex items-center gap-1 text-[11px] text-base-content/55 hover:text-base-content"
+          className="py-0.5 inline-flex items-center gap-1 text-[11px] text-base-content/45 hover:text-base-content/75"
         >
           {showTechnicalDetails ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
           Detalės
@@ -371,9 +376,9 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
         </button>
 
         {showTechnicalDetails && (
-          <div className="border-t border-base-content/10 pt-1">
+          <div className="border-t border-base-content/10 pt-0.5">
             {displayedCalls.map((call, idx) => (
-              <div key={idx} className="py-1 border-b border-base-content/5 last:border-b-0">
+              <div key={idx} className="py-0.5 border-b border-base-content/5 last:border-b-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] font-semibold flex-shrink-0 text-base-content/80">
                     {formatToolName(call.name)}
