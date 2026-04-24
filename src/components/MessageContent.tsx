@@ -143,7 +143,17 @@ export default function MessageContent({ content }: MessageContentProps) {
       }
     }
 
-    return parts.length > 0 ? parts : [{ type: 'text', content: text }];
+    const mergedParts = parts.reduce<typeof parts>((acc, part) => {
+      const prev = acc[acc.length - 1];
+      if (part.type === 'tools' && prev?.type === 'tools' && part.toolCalls && prev.toolCalls) {
+        prev.toolCalls = [...prev.toolCalls, ...part.toolCalls];
+        return acc;
+      }
+      acc.push(part);
+      return acc;
+    }, []);
+
+    return mergedParts.length > 0 ? mergedParts : [{ type: 'text', content: text }];
   };
 
   const parts = parseContent(content);
@@ -239,7 +249,7 @@ export default function MessageContent({ content }: MessageContentProps) {
 }
 
 function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
-  const [expanded, setExpanded] = useState(false);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
   const visibleCalls = toolCalls.filter(c => c.name !== 'display_buttons');
@@ -250,12 +260,14 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
   const displayedCalls = showAll ? visibleCalls : visibleCalls.slice(0, COLLAPSED_LIMIT);
   const hiddenCount = visibleCalls.length - COLLAPSED_LIMIT;
 
-  const formatToolName = (name: string): string => {
-    return name
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  };
+  const formatToolName = (name: string): string => ({
+    get_products: 'Get Products',
+    get_prices: 'Get Prices',
+    get_multiplier: 'Get Multiplier'
+  }[name] ?? name
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' '));
 
   const getToolParam = (call: ToolCall): string => {
     try {
@@ -272,147 +284,140 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
     return cleaned.slice(0, 47) + '...';
   };
 
-  // formatResult removed - ToolResult component handles rendering now
+  const toolCounts = visibleCalls.reduce<Record<string, number>>((acc, call) => {
+    acc[call.name] = (acc[call.name] || 0) + 1;
+    return acc;
+  }, {});
 
-  const getGroupHeading = (): string => {
-    if (!allCompleted) {
-      return visibleCalls.length === 1
-        ? `Vykdoma: ${formatToolName(visibleCalls[0].name)}`
-        : `Vykdomi ${visibleCalls.length} veiksmai...`;
+  const getProductsCount = toolCounts.get_products || 0;
+  const getPricesCount = toolCounts.get_prices || 0;
+
+  const metrics = visibleCalls.reduce((acc, call) => {
+    if (!call.result) return acc;
+    try {
+      const parsed = JSON.parse(call.result);
+      if (parsed?.success === false) {
+        acc.missing += 1;
+      }
+      if (call.name === 'get_products') {
+        const data = parsed?.data ?? parsed?.products ?? parsed?.items ?? parsed?.matches;
+        if (Array.isArray(data)) acc.matched += data.length;
+        else if (data && typeof data === 'object') acc.matched += 1;
+      }
+      if (call.name === 'get_prices') {
+        const data = parsed?.data ?? parsed?.prices ?? parsed?.price;
+        if (Array.isArray(data)) acc.prices += data.length;
+        else if (data !== undefined && data !== null) acc.prices += 1;
+      }
+    } catch {
+      // ignore non-JSON results
     }
-    return visibleCalls.length === 1
-      ? formatToolName(visibleCalls[0].name)
-      : `${visibleCalls.length} veiksmai atlikti`;
-  };
+    return acc;
+  }, { matched: 0, prices: 0, missing: 0 });
+
+  const phases: Array<{ key: string; title: string; calls: number; failed?: number; state: 'active' | 'done' }> = [];
+  if (getProductsCount > 0 && getPricesCount > 0) {
+    phases.push({
+      key: 'products_and_prices',
+      title: 'Renkamos komplektacijos ir kainos',
+      calls: getProductsCount + getPricesCount,
+      state: allCompleted ? 'done' : 'active'
+    });
+  } else {
+    if (getProductsCount > 0) phases.push({ key: 'products', title: 'Renkamos komplektacijos', calls: getProductsCount, state: allCompleted ? 'done' : 'active' });
+    if (getPricesCount > 0) phases.push({ key: 'prices', title: 'Skaičiuojamos dalių kainos', calls: getPricesCount, state: allCompleted ? 'done' : 'active' });
+  }
+  if ((toolCounts.get_multiplier || 0) > 0) {
+    phases.push({ key: 'multiplier', title: 'Taikomas daugiklis', calls: toolCounts.get_multiplier, state: allCompleted ? 'done' : 'active' });
+  }
+
+  Object.entries(toolCounts).forEach(([name, count]) => {
+    if (['get_products', 'get_prices', 'get_multiplier'].includes(name)) return;
+    phases.push({
+      key: name,
+      title: formatToolName(name),
+      calls: count,
+      state: allCompleted ? 'done' : 'active'
+    });
+  });
+  if (phases.length > 0 && metrics.missing > 0) {
+    phases[0].failed = metrics.missing;
+  }
 
   return (
-    <div className="my-2">
-      {!allCompleted && (
-        <style>{`
-          @keyframes tool-breathe {
-            0%, 100% { opacity: 0.5; }
-            50% { opacity: 1; }
-          }
-        `}</style>
-      )}
-
-      {/* Header row - plain text, clickable */}
-      <div
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 cursor-pointer select-none"
-        style={{ lineHeight: '1.4' }}
-      >
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#8a857f' }} />
+    <div className="my-0.5">
+      <div className="border-l border-base-content/10 pl-2.5">
+        {phases.map((phase, idx) => (
+          <div
+            key={phase.key}
+            className={`flex items-center gap-1.5 py-0.5 ${idx < phases.length - 1 ? 'border-b border-base-content/[0.04]' : ''}`}
+          >
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${phase.state === 'done' ? 'bg-base-content/45' : 'bg-base-content'}`} />
+            <p className="text-[11px] leading-4 text-base-content font-medium">
+              {phase.title}
+              <span className="text-base-content/50 font-normal"> · {phase.calls}</span>
+              {phase.failed ? <span className="text-warning"> · failed {phase.failed}</span> : null}
+            </p>
+          </div>
+        ))}
+        {phases.length === 0 && (
+          <div className="py-0.5 text-[11px] text-base-content/70">Vykdomi veiksmai...</div>
         )}
-        <span
-          className="flex-shrink-0"
-          style={{
-            color: allCompleted ? '#8a857f' : '#6366f1',
-            fontSize: '11px',
-            animation: allCompleted ? 'none' : 'tool-breathe 2s ease-in-out infinite',
-          }}
+
+        <button
+          onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
+          className="py-0.5 inline-flex items-center gap-1 text-[11px] text-base-content/45 hover:text-base-content/75"
         >
-          ✦
-        </span>
-        <span className="text-xs" style={{ color: '#5a5550' }}>
-          {getGroupHeading()}
-        </span>
-      </div>
+          {showTechnicalDetails ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          Detalės
+          <span className="text-base-content/40">
+            ({Object.entries(toolCounts).map(([name, count]) => `${formatToolName(name)} ×${count}`).join(', ')})
+          </span>
+        </button>
 
-      {/* Tool tree */}
-      {expanded && (
-        <div className="ml-[7px] mt-0.5">
-          {displayedCalls.map((call, idx) => {
-            const isLast = idx === displayedCalls.length - 1 && (showAll || visibleCalls.length <= COLLAPSED_LIMIT);
-            return (
-              <div key={idx} className="flex" style={{ minHeight: '20px' }}>
-                {/* Tree gutter: vertical line + branch */}
-                <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
-                  {/* Vertical line */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '3px',
-                      top: 0,
-                      bottom: isLast ? '50%' : 0,
-                      width: '1px',
-                      background: '#d4d1cc',
-                    }}
-                  />
-                  {/* Horizontal branch */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '3px',
-                      top: '50%',
-                      width: '10px',
-                      height: '1px',
-                      background: '#d4d1cc',
-                    }}
-                  />
-                </div>
-
-                {/* Tool content */}
-                <div className="flex-1 py-0.5" style={{ minWidth: 0 }}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-semibold flex-shrink-0" style={{ color: '#3d3935' }}>
-                      {formatToolName(call.name)}
-                    </span>
-                    {getToolParam(call) && (
-                      <span className="text-[11px] truncate" style={{ color: '#a09b95' }}>
-                        {getToolParam(call)}
-                      </span>
-                    )}
-                  </div>
-                  {/* Result */}
+        {showTechnicalDetails && (
+          <div className="border-t border-base-content/10 pt-0.5">
+            {displayedCalls.map((call, idx) => (
+              <div key={idx} className="py-0">
+                <div className="flex items-center gap-1 min-h-5">
+                  <span className="text-[11px] font-semibold flex-shrink-0 text-base-content/80">
+                    {formatToolName(call.name)}
+                  </span>
                   {call.result && (
-                    <ToolResult text={call.result} />
+                    <ToolResult text={call.result} compact />
+                  )}
+                  {getToolParam(call) && (
+                    <span className="text-[11px] truncate min-w-0" style={{ color: '#a09b95' }}>
+                      {getToolParam(call)}
+                    </span>
                   )}
                 </div>
               </div>
-            );
-          })}
+            ))}
 
-          {/* Show more / Show less */}
-          {hiddenCount > 0 && (
-            <div className="flex" style={{ minHeight: '20px' }}>
-              <div className="flex-shrink-0 relative" style={{ width: '16px' }}>
-                {!showAll && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '3px',
-                      top: 0,
-                      bottom: '50%',
-                      width: '1px',
-                      background: '#d4d1cc',
-                    }}
-                  />
-                )}
+            {hiddenCount > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowAll(!showAll)}
+                  className="text-[11px] py-0.5 cursor-pointer"
+                  style={{ color: '#8a857f' }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
+                >
+                  {showAll ? 'Rodyti mažiau' : `Rodyti dar ${hiddenCount}`}
+                </button>
               </div>
-              <button
-                onClick={() => setShowAll(!showAll)}
-                className="text-[11px] py-0.5 cursor-pointer"
-                style={{ color: '#8a857f' }}
-                onMouseEnter={(e) => e.currentTarget.style.color = '#5a5550'}
-                onMouseLeave={(e) => e.currentTarget.style.color = '#8a857f'}
-              >
-                {showAll ? 'Rodyti mažiau' : `Rodyti dar ${hiddenCount}`}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // Collapsible JSON tree - objects/arrays auto-collapsed, click to expand
-function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: number; keyName?: string }) {
-  const [open, setOpen] = useState(depth < 1);
+function CollapsibleJson({ data, depth = 0, keyName, defaultOpenDepth = -1 }: { data: any; depth?: number; keyName?: string; defaultOpenDepth?: number }) {
+  const [open, setOpen] = useState(depth < defaultOpenDepth);
 
   const keyPrefix = keyName !== undefined ? (
     <span style={{ color: '#8a857f' }}>{`"${keyName}": `}</span>
@@ -472,6 +477,7 @@ function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: numb
               data={value}
               depth={depth + 1}
               keyName={isArray ? undefined : key}
+              defaultOpenDepth={defaultOpenDepth}
             />
             {i < entries.length - 1 && <span style={{ color: '#c4c0bb' }}>,</span>}
           </div>
@@ -491,7 +497,7 @@ function CollapsibleJson({ data, depth = 0, keyName }: { data: any; depth?: numb
 }
 
 // Tool result: gradient fade with "daugiau" expand, collapsible JSON
-function ToolResult({ text }: { text: string }) {
+function ToolResult({ text, compact = false }: { text: string; compact?: boolean }) {
   const [resultExpanded, setResultExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -514,9 +520,20 @@ function ToolResult({ text }: { text: string }) {
   // JSON object/array: render as collapsible tree
   if (parsed) {
     return (
-      <div className="text-[11px] mt-0.5 font-mono" style={{ lineHeight: '1.5' }}>
-        <CollapsibleJson data={parsed} />
+      <div className={`text-[11px] font-mono ${compact ? '' : 'mt-0.5'}`} style={{ lineHeight: compact ? '1.1' : '1.5' }}>
+        <div className="inline-block max-w-[260px] align-middle" style={{ color: '#a09b95' }}>
+          <CollapsibleJson data={parsed} defaultOpenDepth={-1} />
+        </div>
       </div>
+    );
+  }
+
+  if (compact) {
+    const compactText = text.replace(/\s+/g, ' ').trim();
+    return (
+      <span className="text-[11px] max-w-[260px] truncate" style={{ color: '#a09b95' }}>
+        {compactText}
+      </span>
     );
   }
 

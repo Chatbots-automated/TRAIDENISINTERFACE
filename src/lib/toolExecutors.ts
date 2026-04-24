@@ -22,6 +22,32 @@ const TOOL_WEBHOOK_KEYS: Record<string, string> = {
   get_multiplier: 'n8n_get_multiplier'
 };
 
+async function buildWebhookErrorMessage(response: Response): Promise<string> {
+  const responseText = await response.text();
+  const trimmedResponseText = responseText.trim();
+
+  if (!trimmedResponseText) {
+    return `Webhook returned ${response.status}: ${response.statusText || 'No status text returned'}`;
+  }
+
+  let parsedBody: unknown;
+
+  try {
+    parsedBody = JSON.parse(trimmedResponseText);
+  } catch {
+    parsedBody = null;
+  }
+
+  if (parsedBody && typeof parsedBody === 'object' && 'error' in parsedBody) {
+    const parsedError = (parsedBody as { error?: unknown }).error;
+    if (typeof parsedError === 'string' && parsedError.trim().length > 0) {
+      return `Webhook returned ${response.status}: ${parsedError}`;
+    }
+  }
+
+  return `Webhook returned ${response.status}: ${trimmedResponseText}`;
+}
+
 /**
  * Execute get_products tool (via n8n webhook)
  */
@@ -48,9 +74,17 @@ export async function executeGetProductsTool(input: { product_code: string }): P
     console.log('[Tool: get_products] Response status:', response.status);
 
     if (!response.ok) {
+      const errorMessage = await buildWebhookErrorMessage(response);
+      console.error('[Tool: get_products] Request failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        product_code: input.product_code,
+        errorMessage
+      });
+
       return JSON.stringify({
         success: false,
-        error: `Webhook returned ${response.status}: ${response.statusText}`
+        error: errorMessage
       });
     }
 
@@ -111,9 +145,17 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
     console.log('[Tool: get_prices] Response status:', response.status);
 
     if (!response.ok) {
+      const errorMessage = await buildWebhookErrorMessage(response);
+      console.error('[Tool: get_prices] Request failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        id: input.id,
+        errorMessage
+      });
+
       return JSON.stringify({
         success: false,
-        error: `Webhook returned ${response.status}: ${response.statusText}`
+        error: errorMessage
       });
     }
 
@@ -158,9 +200,16 @@ export async function executeGetMultiplierTool(): Promise<string> {
     console.log('[Tool: get_multiplier] Response status:', response.status);
 
     if (!response.ok) {
+      const errorMessage = await buildWebhookErrorMessage(response);
+      console.error('[Tool: get_multiplier] Request failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorMessage
+      });
+
       return JSON.stringify({
         success: false,
-        error: `Webhook returned ${response.status}: ${response.statusText}`
+        error: errorMessage
       });
     }
 
