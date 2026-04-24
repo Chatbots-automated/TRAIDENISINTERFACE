@@ -378,18 +378,18 @@ function GroupedToolCalls({ toolCalls }: { toolCalls: ToolCall[] }) {
         {showTechnicalDetails && (
           <div className="border-t border-base-content/10 pt-0.5">
             {displayedCalls.map((call, idx) => (
-              <div key={idx} className="py-0 border-b border-base-content/[0.04] last:border-b-0">
+              <div key={idx} className="py-0">
                 <div className="flex items-center gap-1 min-h-5">
                   <span className="text-[11px] font-semibold flex-shrink-0 text-base-content/80">
                     {formatToolName(call.name)}
                   </span>
-                  {getToolParam(call) && (
-                    <span className="text-[11px] truncate flex-1 min-w-0" style={{ color: '#a09b95' }}>
-                      {getToolParam(call)}
-                    </span>
-                  )}
                   {call.result && (
                     <ToolResult text={call.result} compact />
+                  )}
+                  {getToolParam(call) && (
+                    <span className="text-[11px] truncate min-w-0" style={{ color: '#a09b95' }}>
+                      {getToolParam(call)}
+                    </span>
                   )}
                 </div>
               </div>
@@ -520,7 +520,7 @@ function ToolResult({ text, compact = false }: { text: string; compact?: boolean
   // JSON object/array: render as collapsible tree
   if (parsed) {
     return (
-      <div className={`text-[11px] font-mono ${compact ? 'text-right' : 'mt-0.5'}`} style={{ lineHeight: compact ? '1.1' : '1.5' }}>
+      <div className={`text-[11px] font-mono ${compact ? '' : 'mt-0.5'}`} style={{ lineHeight: compact ? '1.1' : '1.5' }}>
         <div className="inline-block max-w-[260px] align-middle" style={{ color: '#a09b95' }}>
           <CollapsibleJson data={parsed} defaultOpenDepth={-1} />
         </div>
