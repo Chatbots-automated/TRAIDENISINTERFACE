@@ -28,6 +28,11 @@ interface MetadataFilters {
   metadataSearch: string;
 }
 
+interface MetadataSearchPill {
+  key: string;
+  value: string;
+}
+
 const EMPTY_FILTERS: MetadataFilters = {
   orientacija: '',
   derva: '',
@@ -533,6 +538,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
   const [showColConfig, setShowColConfig] = useState(false);
   const [showMetaSearchMenu, setShowMetaSearchMenu] = useState(false);
+  const [metadataSearchPills, setMetadataSearchPills] = useState<MetadataSearchPill[]>([]);
   const colConfigRef = useRef<HTMLDivElement>(null);
   const metaSearchMenuRef = useRef<HTMLDivElement>(null);
   const dragColRef = useRef<string | null>(null);
@@ -679,6 +685,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           keywords.push(token.toLowerCase());
         }
       }
+      for (const pill of metadataSearchPills) {
+        const value = pill.value.trim().toLowerCase();
+        if (value) metadataKeyFilters.push({ key: pill.key, value });
+      }
 
       if (isTalpos) {
         // Exact ID match: if the query matches a row id exactly, return only that row
@@ -766,7 +776,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
 
     return rows;
-  }, [isTalpos, isNestandartiniai, talposData, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters]);
+  }, [isTalpos, isNestandartiniai, talposData, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters, metadataSearchPills]);
 
   // Sorting
   const sortedData = useMemo(() => {
@@ -892,11 +902,16 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
   const totalCount = isTalpos ? talposData.length : isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
   const addMetadataSearchToken = (key: string) => {
-    setSearchQuery(prev => {
-      const trimmed = prev.trim();
-      return trimmed.length === 0 ? `${key}=` : `${trimmed} ${key}=`;
-    });
+    setMetadataSearchPills(prev => [...prev, { key, value: '' }]);
     setShowMetaSearchMenu(false);
+  };
+
+  const updateMetadataPillValue = (index: number, value: string) => {
+    setMetadataSearchPills(prev => prev.map((pill, i) => (i === index ? { ...pill, value } : pill)));
+  };
+
+  const removeMetadataPill = (index: number) => {
+    setMetadataSearchPills(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -961,50 +976,76 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
           {/* Search */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
-            <input
-              type="text"
-              placeholder="Ieškoti..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className={`w-full h-9 text-sm rounded-macos pl-9 outline-none transition-all ${isNestandartiniai ? 'pr-10' : 'pr-3'}`}
-              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
-              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-            />
-            {isNestandartiniai && (
-              <div className="absolute right-2 top-1/2 -translate-y-1/2" ref={metaSearchMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowMetaSearchMenu(v => !v)}
-                  className="inline-flex items-center justify-center w-6 h-6 rounded-md transition-all hover:bg-black/5"
-                  title="Pridėti metadata raktą (key=value)"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                {showMetaSearchMenu && (
-                  <div className="absolute right-0 top-full mt-1 w-56 max-h-64 overflow-auto rounded-lg border border-base-content/10 bg-base-100 shadow-lg z-50">
-                    <div className="px-2.5 py-2 text-[11px] font-semibold text-base-content/50 border-b border-base-content/10">
-                      Metadata raktai
+            <div className="w-full min-h-9 rounded-macos px-2 flex items-center gap-1.5 flex-wrap" style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+              {isNestandartiniai && (
+                <div className="relative" ref={metaSearchMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowMetaSearchMenu(v => !v)}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-md transition-all hover:bg-black/5"
+                    title="Pridėti metadata raktą (key=value)"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  {showMetaSearchMenu && (
+                    <div className="absolute left-0 top-full mt-1 w-56 max-h-64 overflow-auto rounded-lg border border-base-content/10 bg-base-100 shadow-lg z-50">
+                      <div className="px-2.5 py-2 text-[11px] font-semibold text-base-content/50 border-b border-base-content/10">
+                        Metadata raktai
+                      </div>
+                      {metadataSearchKeys.length === 0 ? (
+                        <div className="px-2.5 py-2 text-xs text-base-content/50">Nėra raktų</div>
+                      ) : (
+                        metadataSearchKeys.map((key) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => addMetadataSearchToken(key)}
+                            className="w-full text-left px-2.5 py-2 text-xs hover:bg-base-200/60"
+                          >
+                            {key}
+                          </button>
+                        ))
+                      )}
                     </div>
-                    {metadataSearchKeys.length === 0 ? (
-                      <div className="px-2.5 py-2 text-xs text-base-content/50">Nėra raktų</div>
-                    ) : (
-                      metadataSearchKeys.map((key) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => addMetadataSearchToken(key)}
-                          className="w-full text-left px-2.5 py-2 text-xs hover:bg-base-200/60"
-                        >
-                          {key}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
+              <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
+              {isNestandartiniai && metadataSearchPills.map((pill, idx) => (
+                <div key={`${pill.key}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-base-content/20 bg-white text-xs">
+                  <span className="font-medium">{pill.key}=</span>
+                  <input
+                    value={pill.value}
+                    onChange={(e) => updateMetadataPillValue(idx, e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Backspace' || e.key === 'Delete') && !pill.value) {
+                        e.preventDefault();
+                        removeMetadataPill(idx);
+                      }
+                    }}
+                    placeholder="reikšmė"
+                    className="w-24 bg-transparent outline-none"
+                  />
+                  <button type="button" onClick={() => removeMetadataPill(idx)} className="text-base-content/50 hover:text-base-content">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              <input
+                type="text"
+                placeholder="Ieškoti..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (isNestandartiniai && e.key === 'Backspace' && !searchQuery && metadataSearchPills.length > 0) {
+                    e.preventDefault();
+                    removeMetadataPill(metadataSearchPills.length - 1);
+                  }
+                }}
+                className="flex-1 min-w-[160px] h-8 text-sm bg-transparent outline-none"
+                style={{ color: '#3d3935' }}
+              />
+            </div>
           </div>
 
           {/* Column config button — only for standartiniai */}
