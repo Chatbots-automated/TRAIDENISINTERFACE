@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download, Plus } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos, TALPOS_TABLE_FIELDS } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
@@ -303,6 +303,16 @@ function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string):
   return Array.from(set).sort();
 }
 
+function getMetaValueByDynamicKey(meta: Record<string, any> | null, key: string): string | undefined {
+  if (!meta) return undefined;
+  if (meta[key] !== undefined && meta[key] !== null && meta[key] !== '') return String(meta[key]);
+  const keyLower = key.toLowerCase();
+  for (const [k, v] of Object.entries(meta)) {
+    if (k.toLowerCase() === keyLower && v !== undefined && v !== null && v !== '') return String(v);
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // FilterDropdown
 // ---------------------------------------------------------------------------
@@ -522,7 +532,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const orderedCols = orderedColsStand;
 
   const [showColConfig, setShowColConfig] = useState(false);
+  const [showMetaSearchMenu, setShowMetaSearchMenu] = useState(false);
   const colConfigRef = useRef<HTMLDivElement>(null);
+  const metaSearchMenuRef = useRef<HTMLDivElement>(null);
   const dragColRef = useRef<string | null>(null);
   const dragOverColRef = useRef<string | null>(null);
 
@@ -534,6 +546,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showColConfig]);
+
+  useEffect(() => {
+    if (!showMetaSearchMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (metaSearchMenuRef.current && !metaSearchMenuRef.current.contains(e.target as Node)) setShowMetaSearchMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMetaSearchMenu]);
 
   const hiddenCols = hiddenColsStand;
 
@@ -624,6 +645,16 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
   }), [nestandartiniaiData]);
 
+  const metadataSearchKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const row of nestandartiniaiData) {
+      const meta = parseMetadata(row.metadata);
+      if (!meta) continue;
+      for (const key of Object.keys(meta)) set.add(key);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'lt'));
+  }, [nestandartiniaiData]);
+
   const currentLoading = isTalpos ? loadingTalpos : isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
   const currentError = isTalpos ? errorTalpos : isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
   const currentReload = isTalpos ? loadTalpos : isNestandartiniai ? loadNestandartiniai : loadStandartiniai;
@@ -634,7 +665,20 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
     if (searchQuery.trim()) {
       // Split into keywords for AND logic — every keyword must match somewhere in the record
-      const keywords = searchQuery.toLowerCase().split(/\s+/).filter(Boolean);
+      const tokens = searchQuery.trim().split(/\s+/).filter(Boolean);
+      const keywords: string[] = [];
+      const metadataKeyFilters: Array<{ key: string; value: string }> = [];
+      for (const token of tokens) {
+        const eqIdx = token.indexOf('=');
+        if (eqIdx > 0 && eqIdx < token.length - 1) {
+          metadataKeyFilters.push({
+            key: token.slice(0, eqIdx),
+            value: token.slice(eqIdx + 1).toLowerCase(),
+          });
+        } else {
+          keywords.push(token.toLowerCase());
+        }
+      }
 
       if (isTalpos) {
         // Exact ID match: if the query matches a row id exactly, return only that row
@@ -667,6 +711,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
           // All metadata values (includes derva_musu)
           const meta = parseMetadata(row.metadata);
+          if (metadataKeyFilters.length > 0) {
+            if (!meta) return false;
+            for (const kv of metadataKeyFilters) {
+              const metaValue = getMetaValueByDynamicKey(meta, kv.key);
+              if (!metaValue || !metaValue.toLowerCase().includes(kv.value)) return false;
+            }
+          }
           if (meta) {
             for (const v of Object.values(meta)) {
               if (v) parts.push(String(v));
@@ -840,6 +891,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   };
 
   const totalCount = isTalpos ? talposData.length : isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
+  const addMetadataSearchToken = (key: string) => {
+    setSearchQuery(prev => {
+      const trimmed = prev.trim();
+      return trimmed.length === 0 ? `${key}=` : `${trimmed} ${key}=`;
+    });
+    setShowMetaSearchMenu(false);
+  };
 
   return (
     <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
@@ -909,11 +967,44 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               placeholder="Ieškoti..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full h-9 text-sm rounded-macos pl-9 pr-3 outline-none transition-all"
+              className={`w-full h-9 text-sm rounded-macos pl-9 outline-none transition-all ${isNestandartiniai ? 'pr-10' : 'pr-3'}`}
               style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
               onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
               onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
             />
+            {isNestandartiniai && (
+              <div className="absolute right-2 top-1/2 -translate-y-1/2" ref={metaSearchMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowMetaSearchMenu(v => !v)}
+                  className="inline-flex items-center justify-center w-6 h-6 rounded-md transition-all hover:bg-black/5"
+                  title="Pridėti metadata raktą (key=value)"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+                {showMetaSearchMenu && (
+                  <div className="absolute right-0 top-full mt-1 w-56 max-h-64 overflow-auto rounded-lg border border-base-content/10 bg-base-100 shadow-lg z-50">
+                    <div className="px-2.5 py-2 text-[11px] font-semibold text-base-content/50 border-b border-base-content/10">
+                      Metadata raktai
+                    </div>
+                    {metadataSearchKeys.length === 0 ? (
+                      <div className="px-2.5 py-2 text-xs text-base-content/50">Nėra raktų</div>
+                    ) : (
+                      metadataSearchKeys.map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => addMetadataSearchToken(key)}
+                          className="w-full text-left px-2.5 py-2 text-xs hover:bg-base-200/60"
+                        >
+                          {key}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Column config button — only for standartiniai */}
