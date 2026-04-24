@@ -649,16 +649,22 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           });
         }
       } else if (isNestandartiniai) {
+        const trimmedQuery = searchQuery.trim().toLowerCase();
+        const exactIdMatch = rows.find((row: NestandartiniaiRecord) => String(row.id).toLowerCase() === trimmedQuery);
+        if (exactIdMatch) return [exactIdMatch];
+
         rows = rows.filter((row: NestandartiniaiRecord) => {
-          // Build a searchable text blob from all record fields
+          // Build a searchable text blob from user-relevant fields only
+          // (exclude programmatic/system fields).
           const parts: string[] = [];
           // Direct fields
           if (row.id != null) parts.push(String(row.id));
           if (row.project_name) parts.push(row.project_name);
           if (row.klientas) parts.push(row.klientas);
           if (row.pateikimo_data) parts.push(row.pateikimo_data);
-          // description column removed from DB; santrauka is inside metadata
-          if (row.derva) parts.push(row.derva);
+          // Talpos stores product UUIDs (comma-separated); keep searchable.
+          if (row.talpos) parts.push(row.talpos);
+
           // All metadata values (includes derva_musu)
           const meta = parseMetadata(row.metadata);
           if (meta) {
@@ -666,11 +672,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
               if (v) parts.push(String(v));
             }
           }
-          // Formatted derva (org) with cheminis sluoksnis
-          const dervaOrgFormatted = formatDervaOrg(row.metadata);
-          if (dervaOrgFormatted !== '—') parts.push(dervaOrgFormatted);
-          const dervaMusuFormatted = formatDervaMusu(row.metadata);
-          if (dervaMusuFormatted !== '—') parts.push(dervaMusuFormatted);
 
           const blob = parts.join(' ').toLowerCase();
           return keywords.every(kw => blob.includes(kw));
