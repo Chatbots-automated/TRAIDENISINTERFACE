@@ -234,6 +234,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
   const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
   const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>([]);
+  const artifactUiSaveInFlightRef = useRef(false);
+  const pendingArtifactUiStateRef = useRef<ArtifactUIState | null>(null);
+  const lastSavedArtifactUiStateRef = useRef('');
 
   const buildArtifactUiStatePayload = (): ArtifactUIState => ({
     skipped_template_rows: Object.fromEntries(Object.entries(skippedTemplateRows).filter(([, v]) => !!v)),
@@ -243,13 +246,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     updated_at: new Date().toISOString(),
     updated_by: user.email
   });
-
-  const formatCompactNumber = (value?: number): string => {
-    const num = value || 0;
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
-    return String(num);
-  };
 
   const getFriendlyToolPhaseLabel = (toolName: string): string => {
     if (toolName === 'get_products') return 'Matching products';
@@ -336,6 +332,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setTemplateRowOverrides(uiState?.template_row_overrides || {});
     setTemplateRowDrafts({});
     setEditingTemplateRows({});
+    lastSavedArtifactUiStateRef.current = JSON.stringify({
+      skipped_template_rows: uiState?.skipped_template_rows || {},
+      template_row_overrides: uiState?.template_row_overrides || {}
+    });
+    pendingArtifactUiStateRef.current = null;
   }, [currentConversation?.id, currentConversation?.artifact_ui_state]);
 
   // Persist skip/fill UI state so reload/device switch keeps user decisions.
@@ -343,14 +344,44 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     if (!currentConversation?.id) return;
     const timeout = setTimeout(async () => {
       const payload = buildArtifactUiStatePayload();
-      const { data } = await updateConversationArtifactUIState(currentConversation.id, payload);
-      if (!data) return;
-      setCurrentConversation((prev) => prev && prev.id === currentConversation.id
-        ? { ...prev, artifact_ui_state: payload }
-        : prev);
-      setConversations((prev) => prev.map((conv) =>
-        conv.id === currentConversation.id ? { ...conv, artifact_ui_state: payload } : conv
-      ));
+      const comparablePayload = JSON.stringify({
+        skipped_template_rows: payload.skipped_template_rows || {},
+        template_row_overrides: payload.template_row_overrides || {}
+      });
+
+      if (comparablePayload === lastSavedArtifactUiStateRef.current) return;
+      pendingArtifactUiStateRef.current = payload;
+
+      const flushPendingState = async () => {
+        if (artifactUiSaveInFlightRef.current) return;
+        const nextPayload = pendingArtifactUiStateRef.current;
+        if (!nextPayload) return;
+
+        artifactUiSaveInFlightRef.current = true;
+        pendingArtifactUiStateRef.current = null;
+
+        const { data } = await updateConversationArtifactUIState(currentConversation.id, nextPayload);
+        artifactUiSaveInFlightRef.current = false;
+
+        if (data) {
+          lastSavedArtifactUiStateRef.current = JSON.stringify({
+            skipped_template_rows: nextPayload.skipped_template_rows || {},
+            template_row_overrides: nextPayload.template_row_overrides || {}
+          });
+          setCurrentConversation((prev) => prev && prev.id === currentConversation.id
+            ? { ...prev, artifact_ui_state: nextPayload }
+            : prev);
+          setConversations((prev) => prev.map((conv) =>
+            conv.id === currentConversation.id ? { ...conv, artifact_ui_state: nextPayload } : conv
+          ));
+        }
+
+        if (pendingArtifactUiStateRef.current) {
+          void flushPendingState();
+        }
+      };
+
+      void flushPendingState();
     }, 350);
 
     return () => clearTimeout(timeout);
@@ -3070,7 +3101,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (currentConversation) {
         updateOfferParameter(currentConversation.id, key, value);
       }
-    } else if (category === 'yaml') {
+    }
+
+    if (category === 'yaml' || category === 'tech_description') {
       // Surgical replacement: directly modify YAML without AI round-trip
       if (currentConversation?.artifact) {
         try {
@@ -3188,6 +3221,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         persistOfferParameters(conversationId, updated);
         setTemplateRowOverrides((prev) => ({ ...prev, technological_description: text }));
         setSkippedTemplateRows((prev) => ({ ...prev, technological_description: false }));
+        if (currentConversation?.id === conversationId) {
+          await handleVariableSave('technological_description', text);
+        }
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
         console.log('[AutoTechDesc] Generated and saved successfully.');
         return text;
@@ -3478,9 +3514,6 @@ Vartotojo instrukcija: ${instruction}`;
                         ) : (
                           <div className="flex-1 min-w-0">
                             <p className="text-sm truncate text-base-content">{conv.title}</p>
-                            <p className="text-[11px] text-base-content/45 truncate">
-                              {conv.message_count || 0} žin. • {formatCompactNumber((conv.total_input_tokens || 0) + (conv.total_output_tokens || 0))} tok.
-                            </p>
                           </div>
                         )}
                         {/* Date - hidden on hover/active, replaced by actions */}
