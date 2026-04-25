@@ -1,6 +1,7 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
 import { getWebhookUrl } from './webhooksService';
+import { buildDirectusAssetUrl, buildDirectusDownloadUrl } from './filePreviewUrls';
 
 // Directus instance credentials (same as ./directus.ts)
 const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
@@ -210,9 +211,9 @@ export const triggerVectorization = async (
 // ---------------------------------------------------------------------------
 
 export const getFileViewUrl = (directusFileId: string): string => {
-  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}`;
+  return buildDirectusAssetUrl(directusFileId);
 };
 
 export const getFileDownloadUrl = (directusFileId: string): string => {
-  return `${DIRECTUS_URL}/assets/${directusFileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}&download`;
+  return buildDirectusDownloadUrl(directusFileId);
 };

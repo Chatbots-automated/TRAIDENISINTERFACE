@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Calendar, User, Activity, AlertCircle } from 'lucide-react';
+import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Activity, AlertCircle } from 'lucide-react';
 import { dbAdmin } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
@@ -23,7 +23,7 @@ interface LogEntry {
   created_at: string;
 }
 
-export default function LogsViewer({ isOpen, onClose, user }: LogsViewerProps) {
+export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');

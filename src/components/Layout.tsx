@@ -51,7 +51,7 @@ export default function Layout({
   const setSidebarCollapsed = (val: boolean | ((prev: boolean) => boolean)) => {
     setSidebarCollapsedRaw(prev => {
       const next = typeof val === 'function' ? val(prev) : val;
-      try { localStorage.setItem('traidenis_sidebar_collapsed', String(next)); } catch {}
+      try { localStorage.setItem('traidenis_sidebar_collapsed', String(next)); } catch { /* ignore storage failures */ }
       return next;
     });
   };

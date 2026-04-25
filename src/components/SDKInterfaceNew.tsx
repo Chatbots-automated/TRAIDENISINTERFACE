@@ -22,8 +22,6 @@ import {
   Users,
   Download,
   Lock,
-  Unlock,
-  Sparkles,
   ImagePlus,
   Maximize2,
   RotateCcw,
@@ -36,8 +34,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
 import RoboticArmLoader from './RoboticArmLoader';
-import { colors } from '../lib/designSystem';
-import { getWebhookUrl } from '../lib/webhooksService';
 import {
   createSDKConversation,
   getSDKConversations,
@@ -68,15 +64,15 @@ import {
   getSharedConversations,
   getSharedConversationDetails,
   markSharedAsRead,
-  checkConversationAccess,
   getUnreadSharedCount,
   type SharedConversation,
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
 import NotificationContainer from './NotificationContainer';
-import DocumentPreview, { type DocumentPreviewHandle, type VariableClickInfo, type CitationClickInfo } from './DocumentPreview';
-import { getDefaultTemplate, renderTemplateForEditor, renderTemplate, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
+import type { CitationClickInfo } from './DocumentPreview';
+import { getDefaultTemplate, renderTemplateForEditor, sanitizeHtmlForIframe } from '../lib/documentTemplateService';
 import { uploadDocxTemplate, getDocxTemplateFileId, getDocxTemplateUrl, uploadDocxBlobToDirectus, getDirectusAssetUrl, getDirectusFileUrl, buildDocxBlob, extractDocxTemplateVariables } from '../lib/globalTemplateService';
+import { buildGoogleDocsViewerUrl } from '../lib/filePreviewUrls';
 import {
   formatLtDate,
   loadSession,
@@ -87,6 +83,7 @@ import { useNotifications } from './sdk/useNotifications';
 import { useConversationStreaming } from './sdk/useConversationStreaming';
 import { useTeamSelection } from './sdk/useTeamSelection';
 import { useOfferParameters } from './sdk/useOfferParameters';
+import { prepareAnthropicHistory } from './sdk/anthropicHistory';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -165,7 +162,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   } = useOfferParameters(currentConversation?.id);
   // Artifact panel tab: 'data' (variables) or 'preview' (document preview)
   const [artifactTab, setArtifactTab] = useState<'data' | 'preview'>(session.artifactTab ?? 'preview');
-  // Bump to force DocumentPreview to re-fetch the global template
+  // Bump to force regenerated document previews to re-fetch the global template
   const [templateVersion, setTemplateVersion] = useState(0);
   // Global template editor
   const [showTemplateEditor, setShowTemplateEditor] = useState(false);
@@ -207,17 +204,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [templateRowDrafts, setTemplateRowDrafts] = useState<Record<string, string>>({});
   const [templateRowOverrides, setTemplateRowOverrides] = useState<Record<string, string>>({});
 
-  // Floating variable editor state (interactive preview)
-  const [editingVariable, setEditingVariable] = useState<{
-    key: string;
-    filled: boolean;
-    x: number;
-    y: number;
-    editValue: string;
-  } | null>(null);
-  const popupRef = useRef<HTMLDivElement>(null);
-  const [popupPlacement, setPopupPlacement] = useState<'below' | 'above'>('below');
-
   // Citation popover state
   const [activeCitation, setActiveCitation] = useState<CitationClickInfo | null>(null);
   const citationPopupRef = useRef<HTMLDivElement>(null);
@@ -227,12 +213,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const [techDescLoading, setTechDescLoading] = useState(false);
   const techDescRequestInFlightRef = useRef(false);
 
-  // AI-assisted variable editing state
-  const [aiVarEditMode, setAiVarEditMode] = useState(false);
-  const [aiVarEditInstruction, setAiVarEditInstruction] = useState('');
-  const [aiVarEditLoading, setAiVarEditLoading] = useState(false);
-  const [aiVarEditResult, setAiVarEditResult] = useState<string | null>(null);
-  const [aiVarEditError, setAiVarEditError] = useState<string | null>(null);
   const [activeSdkTools, setActiveSdkTools] = useState<Anthropic.Tool[]>([]);
   const artifactUiSaveInFlightRef = useRef(false);
   const pendingArtifactUiStateRef = useRef<ArtifactUIState | null>(null);
@@ -258,7 +238,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const documentPreviewRef = useRef<DocumentPreviewHandle>(null);
   const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   useEffect(() => {
@@ -389,29 +368,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   // Auto-exit document edit mode when switching conversations or tabs
   useEffect(() => { setDocEditMode(false); }, [currentConversation?.id, artifactTab]);
-
-  // Smart popup positioning: measure after render, flip above if overflowing container
-  useLayoutEffect(() => {
-    if (!editingVariable) {
-      setPopupPlacement('below');
-      return;
-    }
-    const popup = popupRef.current;
-    if (!popup) { setPopupPlacement('below'); return; }
-    const container = popup.offsetParent as HTMLElement;
-    if (!container) { setPopupPlacement('below'); return; }
-
-    const containerHeight = container.clientHeight;
-    const popupHeight = popup.offsetHeight;
-    const belowBottom = editingVariable.y + 8 + popupHeight;
-    const aboveTop = editingVariable.y - 8 - popupHeight;
-
-    if (belowBottom > containerHeight && aboveTop > 0) {
-      setPopupPlacement('above');
-    } else {
-      setPopupPlacement('below');
-    }
-  }, [editingVariable]);
 
   // Smart citation popup positioning
   useLayoutEffect(() => {
@@ -1119,7 +1075,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       // CRITICAL: Validate tool_use/tool_result ADJACENCY (not just ID matching)
       // Anthropic API requires: if message N has tool_use, message N+1 MUST have tool_result
-      let validationErrors: string[] = [];
+      const validationErrors: string[] = [];
 
       for (let i = 0; i < messages.length; i++) {
         const msg = messages[i];
@@ -1732,182 +1688,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         dangerouslyAllowBrowser: true
       });
 
-      // ╔═══════════════════════════════════════════════════════════════╗
-      // ║  PHASE 1: ANALYZE RAW MESSAGES FROM DATABASE                  ║
-      // ╚═══════════════════════════════════════════════════════════════╝
-      console.log('╔═══════════════════════════════════════════════════════════════╗');
-      console.log('║  HANDLESEND: Analyzing messages BEFORE filtering             ║');
-      console.log('╚═══════════════════════════════════════════════════════════════╝');
-      console.log('[PHASE 1] Total messages from database:', updatedMessages.length);
-
-      updatedMessages.forEach((msg, idx) => {
-        const contentType = typeof msg.content;
-        const isArray = Array.isArray(msg.content);
-        let preview = '';
-
-        if (contentType === 'string') {
-          preview = msg.content.substring(0, 80);
-        } else if (isArray) {
-          preview = `ARRAY with ${msg.content.length} blocks: ${JSON.stringify(msg.content).substring(0, 80)}`;
-        } else {
-          preview = `OBJECT: ${JSON.stringify(msg.content).substring(0, 80)}`;
-        }
-
-        console.log(`[PHASE 1][${idx}] ${msg.role} | type: ${contentType} | isArray: ${isArray} | preview: "${preview}"`);
-
-        // If non-string content, log full structure
-        if (contentType !== 'string') {
-          console.warn(`[PHASE 1][${idx}] ⚠️  NON-STRING CONTENT DETECTED:`, JSON.stringify(msg.content, null, 2));
-        }
-      });
-      console.log('');
-
-      // Clean message history: remove tool artifacts and ensure alternating roles
-      console.log('╔═══════════════════════════════════════════════════════════════╗');
-      console.log('║  PHASE 2: FILTERING MESSAGES                                  ║');
-      console.log('╚═══════════════════════════════════════════════════════════════╝');
-
-      const anthropicMessages: Anthropic.MessageParam[] = [];
-      let lastRole: 'user' | 'assistant' | null = null;
-
-      let skippedCount = 0;
-      let malformedCount = 0;
-      let nonStringCount = 0;
-      let duplicateRoleCount = 0;
-
-      for (const msg of updatedMessages) {
-        const idx = updatedMessages.indexOf(msg);
-
-        // FIRST: Check content type (most important check)
-        const contentType = typeof msg.content;
-        const isArray = Array.isArray(msg.content);
-        const isString = contentType === 'string';
-
-        console.log(`[PHASE 2][${idx}] Checking message: role=${msg.role}, contentType=${contentType}, isArray=${isArray}`);
-
-        // Skip if content is not a string (tool_use blocks, malformed data)
-        if (!isString || isArray) {
-          console.log(`[PHASE 2][${idx}] ❌ SKIPPING: Content is not a string (type=${contentType}, isArray=${isArray})`);
-          const preview = isArray ? JSON.stringify(msg.content).substring(0, 150) : String(msg.content).substring(0, 150);
-          console.log(`[PHASE 2][${idx}]    Content preview:`, preview);
-          skippedCount++;
-          nonStringCount++;
-          continue;
-        }
-
-        // Now we know content is definitely a string, create safe string representation
-        const contentStr = msg.content as string;
-
-        // Skip synthetic tool messages and malformed messages
-        if (contentStr.startsWith('[Tool results:') ||
-            contentStr.includes('toolu_') ||
-            contentStr.trim().length === 0 ||
-            contentStr === '{}' ||
-            contentStr === '[]') {
-          console.log(`[PHASE 2][${idx}] ❌ SKIPPING: Malformed/synthetic message:`, contentStr.substring(0, 100));
-          skippedCount++;
-          malformedCount++;
-          continue;
-        }
-
-        // Skip if same role as previous (prevents consecutive assistant/user messages)
-        if (msg.role === lastRole) {
-          console.log(`[PHASE 2][${idx}] ❌ SKIPPING: Duplicate role (${msg.role} after ${lastRole})`);
-          skippedCount++;
-          duplicateRoleCount++;
-          continue;
-        }
-
-        // DOUBLE CHECK before adding (paranoid validation)
-        if (typeof msg.content !== 'string') {
-          console.error(`[PHASE 2][${idx}] ⚠️  CRITICAL: Message passed checks but content is not string! Type:`, typeof msg.content);
-          console.error(`[PHASE 2][${idx}]    This should NEVER happen. Skipping for safety.`);
-          skippedCount++;
-          nonStringCount++;
-          continue;
-        }
-
-        // Safe to add - strip display-only <function_calls> XML before sending to API
-        const cleanedContent = contentStr.replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '').trim();
-        console.log(`[PHASE 2][${idx}] ✅ KEEPING: Valid string message, length=${cleanedContent.length}`);
-        anthropicMessages.push({
-          role: msg.role,
-          content: cleanedContent || contentStr
-        });
-        lastRole = msg.role;
+      const { messages: anthropicMessages, stats } = prepareAnthropicHistory(updatedMessages);
+      const skippedTotal = stats.skippedNonString + stats.skippedMalformed + stats.skippedDuplicateRole;
+      if (skippedTotal > 0) {
+        console.warn('[SDK] Prepared Anthropic history with skipped display/malformed messages.', stats);
       }
-
-      console.log('');
-      console.log(`[PHASE 2] Filtering complete:`);
-      console.log(`[PHASE 2]   - Total processed: ${updatedMessages.length}`);
-      console.log(`[PHASE 2]   - Kept: ${anthropicMessages.length}`);
-      console.log(`[PHASE 2]   - Skipped: ${skippedCount} (non-string: ${nonStringCount}, malformed: ${malformedCount}, duplicate role: ${duplicateRoleCount})`);
-      console.log('');
-
-      console.log('');
-      console.log('╔═══════════════════════════════════════════════════════════════╗');
-      console.log('║  PHASE 3: FILTERED MESSAGES (GOING TO API)                   ║');
-      console.log('╚═══════════════════════════════════════════════════════════════╝');
-      console.log('[PHASE 3] Clean message count:', anthropicMessages.length);
-      console.log('[PHASE 3] Message roles:', anthropicMessages.map(m => m.role).join(' -> '));
-
-      anthropicMessages.forEach((msg, idx) => {
-        const contentType = typeof msg.content;
-        const isArray = Array.isArray(msg.content);
-        let preview = '';
-
-        if (contentType === 'string') {
-          preview = msg.content.substring(0, 80);
-        } else if (isArray) {
-          preview = `ARRAY[${msg.content.length}]: ${(msg.content as any[]).map((c: any) => c.type || 'unknown').join(', ')}`;
-        } else {
-          preview = JSON.stringify(msg.content).substring(0, 80);
-        }
-
-        console.log(`[PHASE 3][${idx}] ${msg.role} | type: ${contentType} | isArray: ${isArray} | preview: "${preview}"`);
-
-        // If array content, show details
-        if (isArray) {
-          console.warn(`[PHASE 3][${idx}] ⚠️  ARRAY CONTENT IN FILTERED MESSAGES:`, JSON.stringify(msg.content, null, 2));
-        }
-      });
-
-      // CRITICAL: Final validation before API call
-      console.log('');
-      console.log('╔═══════════════════════════════════════════════════════════════╗');
-      console.log('║  PHASE 4: FINAL VALIDATION BEFORE API CALL                   ║');
-      console.log('╚═══════════════════════════════════════════════════════════════╝');
-
-      // Check for tool_use blocks without corresponding tool_result blocks
-      for (let i = 0; i < anthropicMessages.length; i++) {
-        const msg = anthropicMessages[i];
-        if (Array.isArray(msg.content)) {
-          const hasToolUse = (msg.content as any[]).some((block: any) => block.type === 'tool_use');
-          if (hasToolUse) {
-            console.error(`[PHASE 4] ❌ ERROR: Message [${i}] has tool_use blocks but content is array!`);
-            console.error(`[PHASE 4] ❌ This message should have been filtered out!`);
-            console.error(`[PHASE 4] ❌ Message:`, JSON.stringify(msg, null, 2));
-
-            // Check if next message has tool_result
-            if (i + 1 < anthropicMessages.length) {
-              const nextMsg = anthropicMessages[i + 1];
-              const hasToolResult = Array.isArray(nextMsg.content) &&
-                (nextMsg.content as any[]).some((block: any) => block.type === 'tool_result');
-              if (!hasToolResult) {
-                console.error(`[PHASE 4] ❌ CRITICAL: Next message [${i + 1}] does NOT have tool_result!`);
-                console.error(`[PHASE 4] ❌ This WILL cause 400 error from Anthropic!`);
-              }
-            } else {
-              console.error(`[PHASE 4] ❌ CRITICAL: No next message after tool_use!`);
-              console.error(`[PHASE 4] ❌ This WILL cause 400 error from Anthropic!`);
-            }
-          }
-        }
-      }
-
-      console.log('[PHASE 4] ✅ Validation complete. Proceeding to API call...');
-      console.log('═══════════════════════════════════════════════════════════════');
-      console.log('');
 
       const { fullPrompt } = await fetchLatestPromptBundle();
 
@@ -2427,29 +2212,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     return 'yaml';
   };
 
-  /** Handle a variable click from the interactive preview (null = close). */
-  const handleVariableClick = (info: VariableClickInfo | null) => {
-    if (!info) {
-      setEditingVariable(null);
-      return;
-    }
-    // Reset AI edit state when switching variables
-    setAiVarEditMode(false);
-    setAiVarEditInstruction('');
-    setAiVarEditResult(null);
-    setAiVarEditError(null);
-    setAiVarEditLoading(false);
-
-    const merged = mergeAllVariables();
-    setEditingVariable({
-      key: info.key,
-      filled: info.filled,
-      x: info.x,
-      y: info.y,
-      editValue: merged[info.key] || '',
-    });
-  };
-
   /** Open the visual global template editor. */
   const handleOpenTemplateEditor = () => {
     setShowTemplateEditor(true);
@@ -2488,7 +2250,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     artifactPreviewAutoRetryCountRef.current = 0;
     setArtifactPreviewError(null);
     setArtifactPreviewLoading(true);
-    const assetUrl = `${getDirectusAssetUrl(fileId)}&_preview_probe=${Date.now()}`;
+    const assetUrl = getDirectusAssetUrl(fileId, `probe-${Date.now()}`);
 
     let ready = false;
     for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -3071,7 +2833,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           return;
         }
         const assetUrl = getDocxTemplateUrl(fileId);
-        setTemplatePreviewViewerUrl(`https://docs.google.com/gview?url=${encodeURIComponent(assetUrl)}&embedded=true`);
+        setTemplatePreviewViewerUrl(buildGoogleDocsViewerUrl(assetUrl));
       });
     } else if (!showTemplateEditor) {
       templatePreviewRequestIdRef.current += 1;
@@ -3079,7 +2841,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setTemplatePreviewError(null);
       setTemplatePreviewViewerUrl(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [tplEditorTab, showTemplateEditor, hasDocxTemplate]);
 
   /** Save the current editing variable value — surgical replacement for YAML keys. */
@@ -3167,8 +2929,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
     }
 
-    setEditingVariable(null);
-    documentPreviewRef.current?.clearActiveVariable();
   };
 
   const handleTemplateRowSave = async (key: string, fallbackValue: string) => {
@@ -3268,81 +3028,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setArtifactTab('preview');
     if (savedDocxFileId) {
       void refreshDocxPreview(savedDocxFileId);
-    }
-  };
-
-  /** AI-assisted edit for a single YAML variable — dedicated API call, no full regeneration. */
-  const handleAIVariableEdit = async () => {
-    if (!editingVariable || !currentConversation?.artifact) return;
-
-    setAiVarEditLoading(true);
-    setAiVarEditResult(null);
-    setAiVarEditError(null);
-
-    try {
-      if (!anthropicApiKey) throw new Error('API key not found');
-
-      const yamlContent = currentConversation.artifact.content;
-      const currentValue = editingVariable.editValue;
-      const variableKey = editingVariable.key;
-      const instruction = aiVarEditInstruction.trim();
-
-      if (!instruction) {
-        setAiVarEditError('Įveskite instrukciją AI.');
-        setAiVarEditLoading(false);
-        return;
-      }
-
-      // Fetch the variable edit prompt from instruction_variables table
-      const promptVar = await getInstructionVariable('variable_edit_prompt');
-
-      // Fallback system prompt if DB entry doesn't exist yet
-      const systemPromptText = promptVar?.content?.trim()
-        ? promptVar.content
-        : `Tu esi Traidenis komercinio pasiūlymo redaktorius. Tau bus pateiktas YAML turinys su visais kintamaisiais, konkretus kintamojo pavadinimas, jo dabartinė reikšmė, ir vartotojo instrukcija.
-
-Tavo užduotis: sugeneruoti NAUJĄ reikšmę TIK nurodytam kintamajam, atsižvelgiant į vartotojo instrukciją ir visą YAML kontekstą.
-
-SVARBU:
-- Grąžink TIK naują reikšmę, be jokių paaiškinimų, be YAML formatavimo, be kintamojo pavadinimo
-- Jei reikšmė turi būti kelių eilučių (pvz. sąrašas su • ženkleliais), naudok naujas eilutes
-- Nekeisk kitų kintamųjų - tik nurodytą
-- Atsakyk lietuvių kalba, nebent instrukcija nurodo kitaip`;
-
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
-
-      const userMessage = `YAML turinys:
-\`\`\`
-${yamlContent}
-\`\`\`
-
-Kintamasis: ${variableKey}
-Dabartinė reikšmė: ${currentValue || '(tuščia)'}
-
-Vartotojo instrukcija: ${instruction}`;
-
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        system: systemPromptText,
-        messages: [{ role: 'user', content: userMessage }],
-      });
-
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
-        .trim();
-
-      setAiVarEditResult(text);
-    } catch (err: any) {
-      console.error('[AI Variable Edit] Failed:', err);
-      setAiVarEditError(err.message || 'Nepavyko sugeneruoti');
-    } finally {
-      setAiVarEditLoading(false);
     }
   };
 
@@ -4016,7 +3701,7 @@ Vartotojo instrukcija: ${instruction}`;
                 <div className="relative flex-1">
                   <iframe
                     key={`${savedDocxFileId}-${artifactPreviewTick}`}
-                    src={`https://docs.google.com/gview?url=${encodeURIComponent(`${getDirectusAssetUrl(savedDocxFileId)}&_pv=${artifactPreviewTick}`)}&embedded=true`}
+                    src={buildGoogleDocsViewerUrl(getDirectusAssetUrl(savedDocxFileId, artifactPreviewTick))}
                     className="h-full w-full border-0"
                     title="DOCX peržiūra"
                     onLoad={() => {
@@ -4079,407 +3764,6 @@ Vartotojo instrukcija: ${instruction}`;
                   </div>
                 </div>
               )}
-
-                {false && editingVariable && (() => {
-                  const cat = categorizeVariable(editingVariable.key);
-                  const paramDef = OFFER_PARAMETER_DEFINITIONS.find((p) => p.key === editingVariable.key);
-                  const label = paramDef?.label || editingVariable.key;
-                  const categoryLabel = cat === 'offer' ? 'Parametras' : cat === 'economist' ? 'Ekonomistas' : cat === 'manager' ? 'Vadybininkas' : cat === 'team' ? 'Komanda' : cat === 'auto' ? 'Automatinis' : cat === 'tech_description' ? 'Technologija' : 'AI kintamasis';
-                  const categoryColor = cat === 'offer' ? '#8b5cf6' : cat === 'economist' ? '#2563eb' : cat === 'manager' ? '#2563eb' : cat === 'team' ? '#059669' : cat === 'auto' ? '#059669' : cat === 'tech_description' ? '#0891b2' : '#d97706';
-
-                  return (
-                    <>
-                      {/* Invisible overlay to catch clicks outside the popup */}
-                      <div
-                        style={{ position: 'absolute', inset: 0, zIndex: 49 }}
-                        onClick={() => {
-                          setEditingVariable(null);
-                          documentPreviewRef.current?.clearActiveVariable();
-                        }}
-                      />
-
-                      {/* Popup card — smart positioning: flips above when overflowing */}
-                      <div
-                        ref={popupRef}
-                        style={{
-                          position: 'absolute',
-                          left: Math.min(Math.max(editingVariable.x - 130, 8), 260),
-                          top: popupPlacement === 'below'
-                            ? editingVariable.y + 8
-                            : editingVariable.y - 8,
-                          transform: popupPlacement === 'above' ? 'translateY(-100%)' : undefined,
-                          zIndex: 50,
-                          width: '280px',
-                          filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.10)) drop-shadow(0 1px 3px rgba(0,0,0,0.06))',
-                          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-                        }}
-                      >
-                        {/* Pointer triangle — points toward the variable */}
-                        {popupPlacement === 'below' && (
-                          <div style={{
-                            width: 0, height: 0,
-                            borderLeft: '7px solid transparent',
-                            borderRight: '7px solid transparent',
-                            borderBottom: '7px solid #ffffff',
-                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 248) + 'px',
-                          }} />
-                        )}
-
-                        <div style={{
-                          background: '#ffffff',
-                          borderRadius: '10px',
-                          overflow: 'hidden',
-                          border: '1px solid rgba(0,0,0,0.06)',
-                        }}>
-                          {/* Header — label as title, category as subtle tag */}
-                          <div className="px-3.5 py-2.5" style={{ borderBottom: '1px solid #f0eeeb' }}>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="text-[14px] font-semibold truncate" style={{ color: '#1a1a1a', letterSpacing: '-0.01em' }}>{label}</div>
-                                <span className="inline-block mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: categoryColor + '12', color: categoryColor }}>
-                                  {categoryLabel}
-                                </span>
-                              </div>
-                              <button
-                                onClick={() => {
-                                  setEditingVariable(null);
-                                  documentPreviewRef.current?.clearActiveVariable();
-                                }}
-                                className="p-1 rounded-md flex-shrink-0 transition-colors mt-0.5"
-                                style={{ color: '#c0bbb5' }}
-                                onMouseEnter={(e) => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = '#f3f2f0'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.color = '#c0bbb5'; e.currentTarget.style.background = 'transparent'; }}
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Body */}
-                          <div className="px-3.5 py-3">
-                            {cat === 'team' && (
-                              <div>
-                                <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai užpildyta</span>
-                                <div className="mt-1 text-[13px] font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
-                              </div>
-                            )}
-
-                            {cat === 'auto' && (
-                              <div>
-                                <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
-                                <div className="mt-1 text-[13px] font-medium" style={{ color: 'var(--color-base-content)' }}>{editingVariable.editValue || '—'}</div>
-                              </div>
-                            )}
-
-                            {cat === 'tech_description' && (
-                              <div>
-                                {techDescLoading ? (
-                                  <div className="flex items-center justify-center gap-2 py-4">
-                                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0891b2' }} />
-                                    <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Generuojama automatiškai...</span>
-                                  </div>
-                                ) : editingVariable.editValue ? (
-                                  <div>
-                                    <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Automatiškai sugeneruota</span>
-                                    <div className="mt-1 text-[12px] max-h-48 overflow-y-auto" style={{ color: '#3d3935', lineHeight: '1.6' }}>
-                                      {editingVariable.editValue}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-[11px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>
-                                    Automatiškai sugeneruojama kai sukuriamas komercinis pasiūlymas
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {cat === 'economist' && (
-                              <div className="flex flex-col gap-0.5">
-                                {economists.length === 0 ? (
-                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra ekonomistų</span>
-                                ) : (
-                                  economists.map((econ) => {
-                                    const isSelected = selectedEconomist?.id === econ.id;
-                                    return (
-                                      <button
-                                        key={econ.id}
-                                        onClick={() => {
-                                          setSelectedEconomist(econ);
-                                          setEditingVariable(null);
-                                          documentPreviewRef.current?.clearActiveVariable();
-                                        }}
-                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
-                                        style={{
-                                          background: isSelected ? '#eff6ff' : 'transparent',
-                                          color: '#3d3935',
-                                        }}
-                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
-                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
-                                      >
-                                        <span className={isSelected ? 'font-medium' : ''}>{econ.full_name || econ.email}</span>
-                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
-                                      </button>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            )}
-
-                            {cat === 'manager' && (
-                              <div className="flex flex-col gap-0.5">
-                                {managers.length === 0 ? (
-                                  <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>Nėra vadybininkų</span>
-                                ) : (
-                                  managers.map((mgr) => {
-                                    const isSelected = selectedManager?.id === mgr.id;
-                                    return (
-                                      <button
-                                        key={mgr.id}
-                                        onClick={() => {
-                                          setSelectedManager(mgr);
-                                          setEditingVariable(null);
-                                          documentPreviewRef.current?.clearActiveVariable();
-                                        }}
-                                        className="text-left text-[13px] px-2.5 py-2 rounded-lg transition-all"
-                                        style={{
-                                          background: isSelected ? '#eff6ff' : 'transparent',
-                                          color: '#3d3935',
-                                        }}
-                                        onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8f7f6'; }}
-                                        onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
-                                      >
-                                        <span className={isSelected ? 'font-medium' : ''}>{mgr.full_name || mgr.email}</span>
-                                        {isSelected && <Check className="w-3.5 h-3.5 inline ml-1.5" style={{ color: '#3b82f6' }} />}
-                                      </button>
-                                    );
-                                  })
-                                )}
-                              </div>
-                            )}
-
-                            {cat === 'offer' && (
-                              <div>
-                                <input
-                                  type="text"
-                                  value={editingVariable.editValue}
-                                  onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleVariableSave(editingVariable.key, editingVariable.editValue);
-                                    if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
-                                  }}
-                                  autoFocus
-                                  className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none transition-all"
-                                  style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
-                                  onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
-                                  onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
-                                />
-                                <div className="flex justify-end mt-2.5 gap-2">
-                                  <button
-                                    onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                    className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                    style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                  >
-                                    Atšaukti
-                                  </button>
-                                  <button
-                                    onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                    className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
-                                    style={{ background: '#3d3935', color: 'white' }}
-                                    onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
-                                    onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
-                                  >
-                                    Išsaugoti
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-
-                            {cat === 'yaml' && (
-                              <div>
-                                {!aiVarEditMode ? (
-                                  <>
-                                    {/* Direct edit mode */}
-                                    <textarea
-                                      value={editingVariable.editValue}
-                                      onChange={(e) => setEditingVariable({ ...editingVariable, editValue: e.target.value })}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Escape') { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }
-                                      }}
-                                      autoFocus
-                                      rows={3}
-                                      className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
-                                      style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
-                                      onFocus={(e) => { e.currentTarget.style.borderColor = '#93c5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59,130,246,0.08)'; }}
-                                      onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
-                                    />
-                                    <div className="flex items-center justify-between mt-2.5">
-                                      <button
-                                        onClick={() => { setAiVarEditMode(true); setAiVarEditInstruction(''); setAiVarEditResult(null); setAiVarEditError(null); }}
-                                        className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
-                                        style={{ color: '#8b5cf6' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = '#f5f3ff'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                        title="AI redakcija"
-                                      >
-                                        <Sparkles className="w-3 h-3" />
-                                        AI
-                                      </button>
-                                      <div className="flex gap-2">
-                                        <button
-                                          onClick={() => { setEditingVariable(null); documentPreviewRef.current?.clearActiveVariable(); }}
-                                          className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                          style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
-                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                        >
-                                          Atšaukti
-                                        </button>
-                                        <button
-                                          onClick={() => handleVariableSave(editingVariable.key, editingVariable.editValue)}
-                                          className="text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
-                                          style={{ background: '#3d3935', color: 'white' }}
-                                          onMouseEnter={(e) => e.currentTarget.style.background = '#2d2925'}
-                                          onMouseLeave={(e) => e.currentTarget.style.background = '#3d3935'}
-                                        >
-                                          Išsaugoti
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </>
-                                ) : (
-                                  <>
-                                    {/* AI edit mode */}
-                                    {!aiVarEditResult && !aiVarEditLoading && !aiVarEditError && (
-                                      <div>
-                                        {editingVariable.editValue && (
-                                          <div className="text-[12px] max-h-20 overflow-y-auto mb-2 px-2.5 py-2 rounded-lg" style={{ color: '#6b7280', background: '#f8f7f6', border: '1px solid #e5e2dd', lineHeight: '1.5' }}>
-                                            {editingVariable.editValue.slice(0, 150)}{editingVariable.editValue.length > 150 ? '...' : ''}
-                                          </div>
-                                        )}
-                                        <textarea
-                                          value={aiVarEditInstruction}
-                                          onChange={(e) => setAiVarEditInstruction(e.target.value)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAIVariableEdit(); }
-                                            if (e.key === 'Escape') { setAiVarEditMode(false); }
-                                          }}
-                                          autoFocus
-                                          rows={2}
-                                          placeholder="Aprašykite, ką AI turėtų pakeisti..."
-                                          className="w-full text-[13px] px-2.5 py-2 rounded-lg outline-none resize-none transition-all"
-                                          style={{ border: '1px solid #e5e2dd', color: '#3d3935', background: '#fafaf8' }}
-                                          onFocus={(e) => { e.currentTarget.style.borderColor = '#c4b5fd'; e.currentTarget.style.background = '#fff'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(139,92,246,0.08)'; }}
-                                          onBlur={(e) => { e.currentTarget.style.borderColor = '#e5e2dd'; e.currentTarget.style.background = '#fafaf8'; e.currentTarget.style.boxShadow = 'none'; }}
-                                        />
-                                        <div className="flex items-center justify-between mt-2.5">
-                                          <button
-                                            onClick={() => setAiVarEditMode(false)}
-                                            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-md transition-colors"
-                                            style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                          >
-                                            Grįžti
-                                          </button>
-                                          <button
-                                            onClick={handleAIVariableEdit}
-                                            disabled={!aiVarEditInstruction.trim()}
-                                            className="flex items-center gap-1 text-[12px] px-3.5 py-1.5 rounded-md font-medium transition-colors"
-                                            style={{
-                                              background: aiVarEditInstruction.trim() ? '#8b5cf6' : '#e5e2dd',
-                                              color: aiVarEditInstruction.trim() ? 'white' : '#9ca3af',
-                                            }}
-                                            onMouseEnter={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#7c3aed'; }}
-                                            onMouseLeave={(e) => { if (aiVarEditInstruction.trim()) e.currentTarget.style.background = '#8b5cf6'; }}
-                                          >
-                                            <Sparkles className="w-3.5 h-3.5" />
-                                            Generuoti
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {aiVarEditLoading && (
-                                      <div className="flex items-center justify-center gap-2 py-4">
-                                        <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#8b5cf6' }} />
-                                        <span className="text-[12px]" style={{ color: 'var(--color-base-content)', opacity: 0.4 }}>AI generuoja...</span>
-                                      </div>
-                                    )}
-
-                                    {aiVarEditError && !aiVarEditLoading && (
-                                      <div>
-                                        <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{ color: '#991b1b', background: '#fef2f2', border: '1px solid #fecaca' }}>
-                                          {aiVarEditError}
-                                        </div>
-                                        <button
-                                          onClick={() => setAiVarEditError(null)}
-                                          className="w-full mt-2 text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                          style={{ color: 'var(--color-base-content)', opacity: 0.4 }}
-                                          onMouseEnter={(e) => e.currentTarget.style.background = '#f3f2f0'}
-                                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                        >
-                                          Grįžti
-                                        </button>
-                                      </div>
-                                    )}
-
-                                    {aiVarEditResult && !aiVarEditLoading && (
-                                      <div>
-                                        <div
-                                          className="text-[12px] max-h-48 overflow-y-auto rounded-lg p-2.5"
-                                          style={{ color: '#3d3935', lineHeight: '1.6', background: '#faf5ff', border: '1px solid #e9d5ff' }}
-                                        >
-                                          {aiVarEditResult}
-                                        </div>
-                                        <div className="flex justify-end mt-2.5 gap-2">
-                                          <button
-                                            onClick={() => { setAiVarEditResult(null); }}
-                                            className="text-[12px] px-3 py-1.5 rounded-md transition-colors"
-                                            style={{ color: '#ef4444' }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = '#fef2f2'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                          >
-                                            Atmesti
-                                          </button>
-                                          <button
-                                            onClick={async () => {
-                                              const key = editingVariable.key;
-                                              const value = aiVarEditResult!;
-                                              setAiVarEditResult(null);
-                                              setAiVarEditMode(false);
-                                              await handleVariableSave(key, value);
-                                            }}
-                                            className="text-[12px] px-3 py-1.5 rounded-md font-medium transition-colors"
-                                            style={{ background: '#8b5cf6', color: 'white' }}
-                                            onMouseEnter={(e) => e.currentTarget.style.background = '#7c3aed'}
-                                            onMouseLeave={(e) => e.currentTarget.style.background = '#8b5cf6'}
-                                          >
-                                            Priimti
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {popupPlacement === 'above' && (
-                          <div style={{
-                            width: 0, height: 0,
-                            borderLeft: '7px solid transparent',
-                            borderRight: '7px solid transparent',
-                            borderTop: '7px solid #ffffff',
-                            marginLeft: Math.min(Math.max(editingVariable.x - Math.min(Math.max(editingVariable.x - 130, 8), 260) - 7, 16), 232) + 'px',
-                          }} />
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
 
                 {/* Citation popover — shows AI reasoning for a variable */}
                 {activeCitation && (() => {

@@ -147,11 +147,43 @@ export function getUnfilledVariables(
  * inject executable content.
  */
 export function sanitizeHtmlForIframe(html: string): string {
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<meta[^>]+http-equiv[^>]*>/gi, '')
-    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
-    .replace(/javascript\s*:/gi, 'blocked:');
+  if (!html) return '';
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  doc.querySelectorAll('script, iframe, object, embed, link').forEach((node) => node.remove());
+  doc.querySelectorAll('meta[http-equiv]').forEach((node) => node.remove());
+
+  doc.querySelectorAll('*').forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim();
+
+      if (name.startsWith('on')) {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+
+      if ((name === 'href' || name === 'src') && !isSafeTemplateUrl(value)) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  });
+
+  return doc.documentElement.outerHTML;
+}
+
+function isSafeTemplateUrl(value: string): boolean {
+  if (!value) return false;
+
+  try {
+    const parsed = new URL(value, window.location.origin);
+    return ['http:', 'https:', 'mailto:', 'tel:'].includes(parsed.protocol) ||
+      (parsed.protocol === 'data:' && /^data:image\//i.test(value));
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(str: string): string {

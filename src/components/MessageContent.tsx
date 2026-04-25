@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Calculator, Copy } from 'lucide-react';
+import { ChevronDown, ChevronRight, Calculator } from 'lucide-react';
 
 interface MessageContentProps {
   content: string;

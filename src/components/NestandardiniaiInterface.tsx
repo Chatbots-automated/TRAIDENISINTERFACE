@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, X, AlertTriangle, Check, Paperclip } from 'lucide-react';
+import { Upload, X, AlertTriangle, Check, Paperclip } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
 import { getWebhookUrl } from '../lib/webhooksService';
 import type { AppUser } from '../types';

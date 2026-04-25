@@ -15,7 +15,6 @@ export function parseCommercialOfferYAML(yamlString: string): any {
   const lines = yamlString.split('\n');
   const result: any = {};
   let currentPath: string[] = [];
-  let currentObject: any = result;
   let isMultilineValue = false;
   let multilineKey = '';
   let multilineValue: string[] = [];
@@ -200,7 +199,6 @@ export function applyEditToArtifact(
     // Get old value and update field
     const pathParts = fieldPath.split('.');
     let target: any = data;
-    let oldValue: any;
 
     // Navigate to parent
     for (let i = 0; i < pathParts.length - 1; i++) {
@@ -216,7 +214,7 @@ export function applyEditToArtifact(
 
     // Update value
     const lastKey = pathParts[pathParts.length - 1];
-    oldValue = target[lastKey];
+    const oldValue = target[lastKey];
 
     if (oldValue === undefined) {
       return {

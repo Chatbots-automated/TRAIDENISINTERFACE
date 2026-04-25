@@ -248,7 +248,7 @@ class DirectusQueryBuilder<T = any> {
       const queryString = params.length > 0 ? `?${params.join('&')}` : '';
       const url = `${this.baseUrl}/items/${this.collection}${queryString}`;
 
-      console.log('[Directus] GET', url);
+      logDirectusRequest('GET', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -337,8 +337,7 @@ class DirectusInsertBuilder<T = any> {
       const queryString = params.length > 0 ? `?${params.join('&')}` : '';
       const url = `${this.baseUrl}/items/${this.collection}${queryString}`;
 
-      console.log('[Directus] POST', url);
-      console.log('[Directus] Body:', this.payload);
+      logDirectusRequest('POST', url);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -440,7 +439,7 @@ class DirectusUpdateBuilder<T = any> {
         : null;
 
       let url: string;
-      let method = 'PATCH';
+      const method = 'PATCH';
 
       if (singlePkFilter) {
         // Direct item update by primary key
@@ -457,8 +456,7 @@ class DirectusUpdateBuilder<T = any> {
         return await this.executeFilteredUpdate();
       }
 
-      console.log('[Directus] PATCH', url);
-      console.log('[Directus] Body:', this.payload);
+      logDirectusRequest('PATCH', url);
 
       const response = await fetch(url, {
         method,
@@ -502,7 +500,7 @@ class DirectusUpdateBuilder<T = any> {
       }
       const findUrl = `${this.baseUrl}/items/${this.collection}?fields=*&${filterParts.join('&')}`;
 
-      console.log('[Directus] Finding items for filtered update:', findUrl);
+      logDirectusRequest('GET', findUrl);
 
       const findResponse = await fetch(findUrl, {
         method: 'GET',
@@ -536,7 +534,7 @@ class DirectusUpdateBuilder<T = any> {
       const queryString = params.length > 0 ? `?${params.join('&')}` : '';
       const updateUrl = `${this.baseUrl}/items/${this.collection}${queryString}`;
 
-      console.log('[Directus] Bulk PATCH', updateUrl, 'IDs:', ids);
+      logDirectusRequest('PATCH', updateUrl, { ids: ids.length });
 
       const response = await fetch(updateUrl, {
         method: 'PATCH',
@@ -612,7 +610,7 @@ class DirectusDeleteBuilder<T = any> {
       if (singlePkFilter) {
         // Direct delete by primary key value
         const url = `${this.baseUrl}/items/${this.collection}/${encodeURIComponent(singlePkFilter.value)}`;
-        console.log('[Directus] DELETE', url);
+        logDirectusRequest('DELETE', url);
 
         const response = await fetch(url, {
           method: 'DELETE',
@@ -673,7 +671,7 @@ class DirectusDeleteBuilder<T = any> {
 
       // Directus bulk delete: DELETE /items/collection with array of IDs in body
       const url = `${this.baseUrl}/items/${this.collection}`;
-      console.log('[Directus] Bulk DELETE', url, 'IDs:', ids);
+      logDirectusRequest('DELETE', url, { ids: ids.length });
 
       const response = await fetch(url, {
         method: 'DELETE',
@@ -736,6 +734,24 @@ class DirectusClient {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+function logDirectusRequest(method: string, url: string, meta?: Record<string, unknown>): void {
+  try {
+    const parsed = new URL(url);
+    const collection = parsed.pathname.split('/items/')[1]?.split('/')[0] || parsed.pathname;
+    const filterFields = Array.from(parsed.searchParams.keys())
+      .map((key) => key.match(/^filter\[([^\]]+)\]/)?.[1])
+      .filter((field): field is string => Boolean(field));
+    console.log('[Directus]', method, collection, {
+      fields: parsed.searchParams.get('fields') || undefined,
+      filters: filterFields.length ? Array.from(new Set(filterFields)) : undefined,
+      limit: parsed.searchParams.get('limit') || undefined,
+      ...meta,
+    });
+  } catch {
+    console.log('[Directus]', method);
+  }
+}
 
 function buildHeaders(token: string): Record<string, string> {
   const headers: Record<string, string> = {

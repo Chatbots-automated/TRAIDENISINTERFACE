@@ -6,6 +6,14 @@ const ALLOWED_TAGS = new Set([
 ]);
 
 const SAFE_URL_PROTOCOLS = ['http:', 'https:', 'mailto:', 'tel:'];
+const GLOBAL_ALLOWED_ATTRIBUTES = new Set(['class', 'id', 'title', 'aria-label']);
+const TAG_ALLOWED_ATTRIBUTES: Record<string, Set<string>> = {
+  a: new Set(['href', 'target', 'rel']),
+  img: new Set(['src', 'alt', 'width', 'height']),
+  table: new Set(['role']),
+  td: new Set(['colspan', 'rowspan']),
+  th: new Set(['colspan', 'rowspan', 'scope']),
+};
 const ALLOWED_STYLE_PROPERTIES = new Set([
   'background',
   'background-color',
@@ -56,10 +64,17 @@ function isSafeUrl(url: string): boolean {
 
 function sanitizeElementAttributes(element: Element): void {
   const attributes = Array.from(element.attributes);
+  const tagName = element.tagName.toLowerCase();
+  const tagAttributes = TAG_ALLOWED_ATTRIBUTES[tagName];
 
   for (const attribute of attributes) {
     const name = attribute.name.toLowerCase();
     const value = attribute.value.trim();
+
+    if (name !== 'style' && !GLOBAL_ALLOWED_ATTRIBUTES.has(name) && !tagAttributes?.has(name)) {
+      element.removeAttribute(attribute.name);
+      continue;
+    }
 
     if (name.startsWith('on')) {
       element.removeAttribute(attribute.name);

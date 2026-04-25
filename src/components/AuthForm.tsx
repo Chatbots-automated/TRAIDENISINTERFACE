@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { signIn, signUp } from '../lib/database';
-import { Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react';
+import { signIn } from '../lib/database';
+import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { colors } from '../lib/designSystem';
 
 interface AuthFormProps {

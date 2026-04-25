@@ -30,8 +30,6 @@ if (!directusUrl) {
 
 if (!directusToken) {
   console.warn('[Directus] No VITE_DIRECTUS_TOKEN found - API requests may fail. Set it in Netlify environment variables.');
-} else {
-  console.log('[Directus] Token loaded (trimmed), length:', directusToken.length);
 }
 
 // Main client
@@ -42,8 +40,6 @@ if (!directusAdminToken) {
   console.warn('[Directus] No VITE_DIRECTUS_ADMIN_TOKEN found - dbAdmin will use the default token.');
 }
 export const dbAdmin = createClient(directusUrl, directusAdminToken || directusToken);
-
-console.log('[Directus] Client configured at:', directusUrl);
 
 const CURRENT_USER_STORAGE_KEY = 'currentUser';
 
@@ -217,7 +213,6 @@ export const signOut = async () => {
 
 export const getCurrentUser = async () => {
   try {
-    // Check localStorage for current user
     const storedUser = localStorage.getItem(CURRENT_USER_STORAGE_KEY);
     if (storedUser) {
       const userData = normalizeAppUser(JSON.parse(storedUser));
@@ -225,11 +220,26 @@ export const getCurrentUser = async () => {
         localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
         return { user: null, error: null };
       }
-      return { user: userData, error: null };
+
+      const { data: freshUser, error } = await db
+        .from('app_users')
+        .select('id, email, display_name, is_admin, created_at, full_name, phone, kodas, role')
+        .eq('id', userData.id)
+        .single();
+
+      const verifiedUser = normalizeAppUser(freshUser);
+      if (error || !verifiedUser || verifiedUser.email !== userData.email) {
+        localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+        return { user: null, error: null };
+      }
+
+      localStorage.setItem(CURRENT_USER_STORAGE_KEY, JSON.stringify(verifiedUser));
+      return { user: verifiedUser, error: null };
     }
     return { user: null, error: null };
   } catch (error) {
     console.error('Error getting current user:', error);
+    localStorage.removeItem(CURRENT_USER_STORAGE_KEY);
     return { user: null, error: null };
   }
 };

@@ -26,6 +26,7 @@ import {
   getFileDownloadUrl,
   DervaFile,
 } from '../lib/dervaService';
+import { buildGoogleDocsViewerUrl } from '../lib/filePreviewUrls';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -103,7 +104,7 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
       case 'office':
         return (
           <iframe
-            src={`https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`}
+            src={buildGoogleDocsViewerUrl(url)}
             className="w-full h-full border-0"
             title={file.file_name}
           />

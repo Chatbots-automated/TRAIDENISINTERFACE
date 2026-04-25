@@ -8,6 +8,7 @@
 
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
+import { buildDirectusAssetUrl, buildDirectusDownloadUrl } from './filePreviewUrls';
 
 // Directus instance credentials
 const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
@@ -226,14 +227,14 @@ export async function getDocxTemplateFileId(): Promise<string | null> {
  * Build the Directus asset URL for the .docx template file.
  */
 export function getDocxTemplateUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}`;
+  return buildDirectusAssetUrl(fileId);
 }
 
 /**
  * Build a Directus asset URL for preview/opening.
  */
-export function getDirectusAssetUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}`;
+export function getDirectusAssetUrl(fileId: string, cacheKey?: string | number): string {
+  return buildDirectusAssetUrl(fileId, { cacheKey });
 }
 
 /**
@@ -288,7 +289,7 @@ export async function uploadDocxBlobToDirectus(
  * Build a Directus asset download URL for any file ID.
  */
 export function getDirectusFileUrl(fileId: string): string {
-  return `${DIRECTUS_URL}/assets/${fileId}?access_token=${encodeURIComponent(DIRECTUS_EFFECTIVE_TOKEN)}&download`;
+  return buildDirectusDownloadUrl(fileId);
 }
 
 /**
