@@ -10,6 +10,22 @@
 
 /* macOS-inspired Premium CSS Styling */
 @layer base {
+  :root {
+    --app-bg: #f7f7f5;
+    --app-surface: #ffffff;
+    --app-surface-soft: #f3f3f1;
+    --app-border: rgba(28, 28, 30, 0.08);
+    --app-border-strong: rgba(28, 28, 30, 0.13);
+    --app-text: #242322;
+    --app-muted: rgba(36, 35, 34, 0.52);
+    --app-faint: rgba(36, 35, 34, 0.32);
+    --app-accent: #007aff;
+    --app-radius-sm: 8px;
+    --app-radius-md: 12px;
+    --app-radius-lg: 16px;
+    --app-shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
   * {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', 'Urbanist', sans-serif;
     -webkit-font-smoothing: antialiased;
@@ -17,11 +33,11 @@
   }
 
   body {
-    background: #F5F5F7;
-    color: #1D1D1F;
-    font-size: 14px;
-    line-height: 1.5;
-    letter-spacing: -0.01em;
+    background: var(--app-bg);
+    color: var(--app-text);
+    font-size: 13px;
+    line-height: 1.45;
+    letter-spacing: 0;
   }
 
   /* macOS-style thin scrollbars globally */
@@ -49,6 +65,301 @@
 }
 
 @layer components {
+  .app-page {
+    background: var(--app-bg);
+    color: var(--app-text);
+    font-size: 13px;
+  }
+
+  .app-workspace {
+    background: var(--app-bg);
+    color: var(--app-text);
+    font-size: 13px;
+  }
+
+  .app-workspace-header {
+    padding: 1.1rem 1.4rem 0.85rem;
+    border-bottom: 1px solid var(--app-border);
+    background: rgba(255, 255, 255, 0.38);
+  }
+
+  .app-workspace-title {
+    color: var(--app-text);
+    font-size: 1.05rem;
+    font-weight: 650;
+    letter-spacing: 0;
+  }
+
+  .app-workspace-content {
+    padding: 1rem 1.4rem;
+  }
+
+  .app-icon-btn {
+    @apply inline-flex items-center justify-center rounded-lg;
+    width: 2rem;
+    height: 2rem;
+    color: var(--app-muted);
+    border: 1px solid transparent;
+  }
+
+  .app-icon-btn:hover {
+    background: rgba(0, 0, 0, 0.045);
+    color: var(--app-text);
+    border-color: var(--app-border);
+  }
+
+  .app-text-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg font-medium;
+    min-height: 2rem;
+    padding: 0 0.75rem;
+    font-size: 12px;
+    color: var(--app-text);
+    background: rgba(255, 255, 255, 0.68);
+    border: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
+  .app-text-btn:hover {
+    background: #fff;
+    border-color: var(--app-border-strong);
+  }
+
+  .app-text-btn-primary {
+    color: #fff;
+    background: var(--app-text);
+    border-color: var(--app-text);
+  }
+
+  .app-text-btn-primary:hover {
+    background: #000;
+  }
+
+  .app-tab-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.045);
+    border: 1px solid var(--app-border);
+  }
+
+  .app-tab-switch button {
+    min-height: 1.75rem;
+    padding: 0 0.7rem;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--app-muted);
+  }
+
+  .app-tab-switch button[data-active="true"] {
+    background: #fff;
+    color: var(--app-text);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
+  .app-filter-field {
+    min-height: 2.25rem;
+    border-radius: var(--app-radius-md);
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--app-border);
+  }
+
+  .app-table-shell {
+    width: 100%;
+    overflow: auto;
+    border-radius: var(--app-radius-md);
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
+  .app-data-table {
+    width: 100%;
+    font-size: 12px;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .app-data-table thead {
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .app-data-table th {
+    padding: 0.65rem 0.75rem;
+    color: var(--app-muted);
+    font-size: 11px;
+    font-weight: 650;
+    text-align: left;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  .app-data-table td {
+    padding: 0.56rem 0.75rem;
+    color: var(--app-text);
+    border-bottom: 1px solid rgba(28, 28, 30, 0.055);
+    vertical-align: middle;
+  }
+
+  .app-data-table tbody tr:hover td {
+    background: rgba(0, 122, 255, 0.025);
+  }
+
+  .app-table-footer {
+    padding: 0.55rem 0.85rem;
+    color: var(--app-muted);
+    font-size: 11px;
+    border-top: 1px solid var(--app-border);
+    background: rgba(255, 255, 255, 0.62);
+  }
+
+  .sdk-secondary-sidebar {
+    background: rgba(244, 244, 242, 0.72);
+    border-right: 1px solid var(--app-border);
+  }
+
+  .sdk-sidebar-header {
+    min-height: 3rem;
+    padding: 0.65rem 0.8rem;
+  }
+
+  .sdk-sidebar-card {
+    margin: 0 0.65rem 0.45rem;
+    padding: 0.65rem 0.7rem;
+    border-radius: var(--app-radius-md);
+    background: rgba(255, 255, 255, 0.62);
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+
+  .sdk-sidebar-card:hover {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: var(--app-border);
+  }
+
+  .sdk-conversation-item {
+    @apply flex items-center gap-2 cursor-pointer;
+    min-height: 2.25rem;
+    padding: 0.45rem 0.6rem;
+    border-radius: var(--app-radius-sm);
+    color: var(--app-text);
+  }
+
+  .sdk-conversation-item:hover {
+    background: rgba(0, 0, 0, 0.045);
+  }
+
+  .sdk-conversation-item.active {
+    background: #fff;
+    border: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
+  .sdk-chat-scroll {
+    background: var(--app-bg);
+    padding: 3.25rem 1.5rem 1.5rem;
+  }
+
+  .sdk-chat-width {
+    max-width: 48rem;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .sdk-user-bubble {
+    max-width: min(78%, 42rem);
+    padding: 0.6rem 0.85rem;
+    border-radius: 18px;
+    color: var(--app-text);
+    background: rgba(255, 255, 255, 0.86);
+    border: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
+  .sdk-assistant-message {
+    max-width: 46rem;
+    color: var(--app-text);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .sdk-input-wrap {
+    background: var(--app-bg);
+    padding: 0.75rem 1.5rem 1.25rem;
+  }
+
+  .sdk-input-box {
+    @apply flex items-end gap-2;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--app-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.055);
+    padding: 0.5rem 0.55rem 0.5rem 0.7rem;
+  }
+
+  .sdk-input-box:focus-within {
+    border-color: rgba(0, 122, 255, 0.32);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.07), 0 0 0 3px rgba(0, 122, 255, 0.08);
+  }
+
+  .sdk-artifact-panel {
+    background: var(--app-surface);
+    border-left: 1px solid var(--app-border);
+  }
+
+  .sdk-artifact-header {
+    min-height: 3rem;
+    padding: 0.45rem 0.65rem 0.45rem 0.8rem;
+    border-bottom: 1px solid var(--app-border);
+    background: rgba(255, 255, 255, 0.86);
+  }
+
+  .sdk-data-panel {
+    background: var(--app-bg);
+  }
+
+  .sdk-data-card {
+    border-radius: var(--app-radius-lg);
+    border: 1px solid var(--app-border);
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
+  .message-content {
+    color: var(--app-text);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .message-content p {
+    margin: 0.35rem 0;
+  }
+
+  .message-content h1,
+  .message-content h2,
+  .message-content h3 {
+    color: var(--app-text);
+    font-weight: 650;
+    letter-spacing: 0;
+    margin: 0.9rem 0 0.35rem;
+  }
+
+  .message-content h1 { font-size: 1.25rem; }
+  .message-content h2 { font-size: 1.08rem; }
+  .message-content h3 { font-size: 0.98rem; }
+
+  .message-content li {
+    margin-left: 1rem;
+    padding-left: 0.1rem;
+  }
+
+  .message-content code {
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.055);
+    color: var(--app-text);
+  }
+
   /* ===== macOS Button Styles ===== */
   .macos-btn {
     @apply rounded-lg font-medium transition-all duration-150;
@@ -173,6 +484,24 @@
     border-right: 0.5px solid rgba(0, 0, 0, 0.1);
   }
 
+  .macos-sidebar .menu {
+    font-size: 13px;
+  }
+
+  .macos-sidebar .menu li > a,
+  .macos-sidebar .menu li > button {
+    min-height: 2rem;
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    border-radius: 8px;
+  }
+
+  .macos-sidebar .menu li > button.active {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid var(--app-border);
+    box-shadow: var(--app-shadow-subtle);
+  }
+
   /* Sidebar collapsed: center menu items (override FlyonUI defaults) */
   .sidebar-collapsed .menu li > a,
   .sidebar-collapsed .menu li > button {
@@ -182,7 +511,8 @@
 
   /* Footer buttons - matches FlyonUI .menu li > button appearance without using .menu */
   .sidebar-footer-btn {
-    @apply flex items-center py-1.5 rounded-lg text-sm cursor-pointer w-full text-left overflow-hidden;
+    @apply flex items-center py-1.5 rounded-lg cursor-pointer w-full text-left overflow-hidden;
+    font-size: 13px;
     padding-left: 0.75rem;
     padding-right: 0.75rem;
     gap: 0.5rem;
@@ -197,6 +527,19 @@
     padding-left: 1rem;
     padding-right: 1rem;
     gap: 0;
+  }
+
+  .sidebar-collapse-icon-btn {
+    @apply inline-flex items-center justify-center rounded-lg;
+    width: 2rem;
+    height: 2rem;
+    color: rgb(var(--color-base-content) / 0.55);
+    transition: background-color 150ms, color 150ms;
+  }
+
+  .sidebar-collapse-icon-btn:hover {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: rgb(var(--color-base-content) / 0.8);
   }
 
   /* Legacy vf sidebar (mapped to macOS glassmorphism) */

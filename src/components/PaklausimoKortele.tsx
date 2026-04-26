@@ -33,7 +33,6 @@ import {
   buildGoogleDocsViewerUrl,
 } from '../lib/filePreviewUrls';
 import {
-  getSantraukaFromMetadata,
   parseAtsakymas,
   parseJSON,
   parseKainaMapStatic,
@@ -117,7 +116,7 @@ type ModalTab = 'talpos' | 'susirasinejimas' | 'uzduotys' | 'failai';
 
 const TABS: { id: ModalTab; label: string; icon: React.ElementType }[] = [
   { id: 'talpos', label: 'Talpos', icon: LayoutList },
-  { id: 'susirasinejimas', label: 'Susirašinėjimas', icon: MessageSquare },
+  { id: 'susirasinejimas', label: 'Pokalbis', icon: MessageSquare },
   { id: 'uzduotys', label: 'Užduotys', icon: CheckSquare },
   { id: 'failai', label: 'Failai', icon: Paperclip },
 ];
@@ -1142,9 +1141,9 @@ function TabTalpos({
           {!loadingTalpos && currentTalposRow && (
             <div className="flex-1 flex flex-col min-h-0">
               {/* Two-column: left = KV fields, right = description */}
-              <div className="flex gap-4 flex-1 min-h-0">
+              <div className="flex flex-col xl:flex-row gap-4 flex-1 min-h-0 overflow-y-auto xl:overflow-hidden">
                 {/* Left column: fixed width, editable key-value list */}
-                <div className="w-[260px] shrink-0 flex flex-col min-h-0">
+                <div className="w-full xl:w-[260px] xl:shrink-0 flex flex-col min-h-[220px] xl:min-h-0">
                   {/* Parametrai label + quantity badge + kaina on the same row */}
                   <div className="flex items-center justify-between mb-1.5 shrink-0">
                     <div className="flex items-center gap-1.5">
@@ -4260,33 +4259,37 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-6"
-      style={{ background: 'rgba(17,24,39,0.28)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+      style={{ background: 'rgba(36,35,34,0.18)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={handleClose}
     >
       <div
-        className="w-full flex flex-col bg-base-100 rounded-2xl overflow-hidden border border-base-content/10 shadow-xl"
-        style={{ maxWidth: '960px', height: 'min(90vh, 860px)', boxShadow: '0 18px 48px rgba(17,24,39,0.16)' }}
+        className="w-full flex flex-col overflow-hidden border"
+        style={{
+          maxWidth: '1040px',
+          height: 'min(90vh, 860px)',
+          background: 'rgba(255,255,255,0.94)',
+          borderColor: 'var(--app-border)',
+          borderRadius: '18px',
+          boxShadow: '0 18px 54px rgba(36,35,34,0.14)'
+        }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Accent strip */}
-        <div className="h-[2px] shrink-0" style={{ background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 50%, #AF52DE 100%)' }} />
-
         {/* Header */}
-        <div className="px-5 pt-3 pb-2.5 shrink-0 border-b border-base-content/6">
+        <div className="px-5 py-3 shrink-0" style={{ borderBottom: '1px solid var(--app-border)' }}>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               {/* Project-level title row */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h2 className="text-[15px] font-semibold truncate text-base-content" style={{ letterSpacing: '-0.01em' }}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-[15px] font-semibold truncate text-base-content max-w-[560px]">
                   {record.project_name || (meta as any)?.projektas || products[0]?.projekto_kontekstas_Projekto_pavadinimas || 'Paklausimas'}
                 </h2>
                 {record.klientas && (
-                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+                  <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-primary/8 text-primary shrink-0">
                     {record.klientas}
                   </span>
                 )}
                 <span
-                  className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
+                  className="text-[11px] font-medium px-2 py-0.5 rounded-md shrink-0"
                   style={record.status
                     ? { background: 'rgba(52,199,89,0.12)', color: '#34C759' }
                     : { background: 'rgba(0,0,0,0.05)', color: '#8a857f' }}
@@ -4294,29 +4297,18 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                   {record.status ? 'Aktyvus' : 'Neaktyvus'}
                 </span>
               </div>
-              {/* Project-level meta row */}
-              <p className="text-xs mt-0.5 text-base-content/45">
-                Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
-                {products.length > 1 && ` · ${products.length} talpos`}
-              </p>
-              {/* Pastabos (project-level notes) */}
-              {getSantraukaFromMetadata(record.metadata) && (
-                <p className="text-xs mt-1 text-base-content/60 leading-snug" style={{ maxWidth: '620px' }}>
-                  {getSantraukaFromMetadata(record.metadata)}
-                </p>
-              )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
-              <button onClick={refreshRecord} disabled={refreshing} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Atnaujinti duomenis">
+              <button onClick={refreshRecord} disabled={refreshing} className="app-icon-btn" title="Atnaujinti duomenis">
                 <RefreshCw className={`w-4 h-4 text-base-content/40 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
-              <button onClick={copy} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Kopijuoti nuorodą">
+              <button onClick={copy} className="app-icon-btn" title="Kopijuoti nuorodą">
                 <Link2 className={`w-4 h-4 ${copied ? '' : 'text-base-content/40'}`} style={copied ? { color: '#34C759' } : undefined} />
               </button>
-              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20" title="Atidaryti naujame lange">
+              <a href={cardUrl} target="_blank" rel="noopener noreferrer" className="app-icon-btn" title="Atidaryti naujame lange">
                 <ExternalLink className="w-4 h-4 text-base-content/40" />
               </a>
-              <button onClick={handleClose} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-base-100/80 transition-all duration-200 hover:bg-base-100 hover:border-base-content/20">
+              <button onClick={handleClose} className="app-icon-btn">
                 <X className="w-4 h-4 text-base-content/40" />
               </button>
             </div>
@@ -4326,7 +4318,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
         {/* Body: sidebar tabs + content */}
         <div className="flex flex-1 min-h-0">
           {/* Side tabs */}
-          <div className="w-[168px] shrink-0 py-3 px-2.5 border-r border-base-content/6 bg-base-200/20 flex flex-col">
+          <div className="w-[162px] shrink-0 py-3 px-2.5 flex flex-col" style={{ borderRight: '1px solid var(--app-border)', background: 'rgba(247,247,245,0.72)' }}>
             {TABS.map(tab => {
               const Icon = tab.icon;
               const active = activeTab === tab.id;
@@ -4334,7 +4326,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-sm transition-all duration-200 mb-1 ${active ? 'font-medium bg-base-100 border border-base-content/15 shadow-sm text-primary' : 'text-base-content/65 border border-transparent hover:bg-base-content/[0.03] hover:border-base-content/10'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-[13px] transition-all duration-150 mb-0.5 ${active ? 'font-medium bg-white border border-base-content/10 shadow-sm text-primary' : 'text-base-content/60 border border-transparent hover:bg-white/70 hover:text-base-content/85'}`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
@@ -4347,7 +4339,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               <button
                 onClick={handleSaveOnly}
                 disabled={updating || !hasContextChanges}
-                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 mt-3 border ${
+                className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 mt-3 border ${
                   updateStatus === 'saved'
                     ? 'text-success bg-success/10 border-success/20'
                     : hasContextChanges
@@ -4368,7 +4360,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
               {!isLocked && (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs text-base-content/35 border border-transparent transition-all duration-200 hover:text-error hover:bg-error/5 hover:border-error/10"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/35 border border-transparent transition-all duration-150 hover:text-error hover:bg-error/5 hover:border-error/10"
                 >
                   <Trash2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Ištrinti</span>
@@ -4378,7 +4370,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 overflow-hidden p-6 min-h-0 bg-base-100 flex flex-col">
+          <div className="flex-1 overflow-hidden p-5 min-h-0 flex flex-col" style={{ background: 'rgba(255,255,255,0.82)' }}>
             {activeTab === 'talpos' && (
               <TabTalpos
                 record={record}
@@ -4558,15 +4550,6 @@ export default function PaklausimoKortelePage() {
                   {record.status ? 'Aktyvus' : 'Neaktyvus'}
                 </span>
               </div>
-              <p className="text-xs mt-0.5 text-base-content/45">
-                Nr. {record.id}{record.pateikimo_data && ` · ${record.pateikimo_data}`}
-                {products.length > 1 && ` · ${products.length} talpos`}
-              </p>
-              {getSantraukaFromMetadata(record.metadata) && (
-                <p className="text-xs mt-1 text-base-content/60 leading-snug" style={{ maxWidth: '620px' }}>
-                  {getSantraukaFromMetadata(record.metadata)}
-                </p>
-              )}
             </div>
           </div>
         </div>

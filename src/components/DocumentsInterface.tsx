@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, GripVertical, Columns3, Check, Download, Plus } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, Plus } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, updateNestandartiniaiField, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos, TALPOS_TABLE_FIELDS } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
-import { getDirectusAssetUrl, getDirectusFileUrl } from '../lib/globalTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 
@@ -66,24 +65,72 @@ function extractDirectusFileId(value: unknown): string | null {
   return null;
 }
 
-function getOrderedCols(allCols: ColumnDef[], savedOrder: string[] | null): ColumnDef[] {
-  if (!savedOrder) return allCols;
-  const byKey = new Map(allCols.map(c => [c.key, c]));
-  const ordered: ColumnDef[] = [];
-  for (const key of savedOrder) {
-    const col = byKey.get(key);
-    if (col) { ordered.push(col); byKey.delete(key); }
-  }
-  for (const col of byKey.values()) ordered.push(col);
-  return ordered;
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /** Wrapper keys that may contain the actual products array */
 const PRODUCT_WRAPPER_KEYS = ['products', 'talpos', 'gaminiai', 'items'];
+const DIRECTUS_USER_NAMES_KEY = '__directus_user_names';
+const DIRECTUS_USER_COLUMNS = new Set(['user_created', 'user_updated']);
+const STANDARTINIAI_COLUMN_LABELS: Record<string, string> = {
+  user_created: 'Sukūrė',
+  user_updated: 'Atnaujino',
+};
+const TALPOS_COLUMN_LABELS: Record<string, string> = {
+  id: 'ID',
+  pavadinimas: 'Pavadinimas',
+  project: 'Projektas',
+  description: 'Aprašymas',
+  kaina: 'Kaina',
+  derva_ai: 'Derva AI',
+  derva_musu: 'Mūsų derva',
+  quantity: 'Kiekis',
+  created_at: 'Sukurta',
+  json: 'JSON',
+  kaina_ai: 'Kaina AI',
+  similar_talpos: 'Panašios talpos',
+  material_slate: 'Medžiagų šablonas',
+  embedding: 'Embedding',
+  user_created: 'Sukūrė',
+  user_updated: 'Atnaujino',
+  date_created: 'Sukūrimo data',
+  date_updated: 'Atnaujinimo data',
+  status: 'Būsena',
+  dokumentai: 'Dokumentai',
+  files: 'Failai',
+  metadata: 'Metaduomenys',
+};
+
+function isInternalTableField(key: string): boolean {
+  return key.startsWith('__');
+}
+
+function getDirectusUserDisplay(row: any, key: string): string | null {
+  const mapped = row?.[DIRECTUS_USER_NAMES_KEY]?.[key];
+  if (typeof mapped === 'string' && mapped.trim()) return mapped.trim();
+
+  const value = row?.[key];
+  if (value && typeof value === 'object') {
+    const firstName = typeof value.first_name === 'string' ? value.first_name.trim() : '';
+    if (firstName) return firstName;
+    const fullName = [value.first_name, value.last_name].filter(Boolean).join(' ').trim();
+    if (fullName) return fullName;
+    if (typeof value.email === 'string' && value.email.trim()) return value.email.trim();
+  }
+
+  return null;
+}
+
+function getCellDisplayValue(row: any, key: string, value: unknown): unknown {
+  if (DIRECTUS_USER_COLUMNS.has(key)) {
+    return getDirectusUserDisplay(row, key) ?? value;
+  }
+  if (key === 'hnv') {
+    return getStandartiniaiHnv(row) ?? value;
+  }
+  return value;
+}
 
 function unwrapFirstProduct(obj: Record<string, any>): Record<string, string> {
   // Check if the object is a wrapper like { products: [{...}] }
@@ -211,28 +258,6 @@ function formatDervaOrg(raw: any, maxLen = 30): string {
   return truncateList(values, maxLen);
 }
 
-/** Format derva (mūsų) across all tanks — unique values, truncated */
-function formatDervaMusu(raw: any, maxLen = 30): string {
-  const products = parseAllProducts(raw);
-  if (products.length === 0) return '—';
-  // Check _derva_musu_per_tank at the root level
-  let obj = raw;
-  if (typeof raw === 'string') { try { obj = JSON.parse(raw); } catch { obj = null; } }
-  const root = Array.isArray(obj) ? obj[0] : obj;
-  const perTank = root?._derva_musu_per_tank;
-  if (perTank && typeof perTank === 'object') {
-    const unique = [...new Set(Object.values(perTank).filter(Boolean).map(String))];
-    if (unique.length > 0) return truncateList(unique, maxLen);
-  }
-  // Fallback: check each product's derva_musu
-  const values: string[] = [];
-  for (const p of products) {
-    const d = getMetaValue(p, 'derva_musu');
-    if (d && !values.includes(d)) values.push(d);
-  }
-  return truncateList(values, maxLen);
-}
-
 function getProjectNameFromMetadata(row: any): string | undefined {
   const meta = parseMetadata(row.metadata);
   if (!meta) return undefined;
@@ -243,59 +268,84 @@ function getProjectNameFromMetadata(row: any): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Column config for standartiniai – same ColumnDef pattern as nestandartiniai
+// Fixed table columns
 // ---------------------------------------------------------------------------
 
-/** Default columns shown in the standartiniai table. */
-const DEFAULT_STANDARTINIAI_COLS: ColumnDef[] = [
-  { key: 'id', label: 'ID', width: 'w-16' },
+const STANDARTINIAI_COLS: ColumnDef[] = [
   { key: 'projekto_kodas', label: 'Projekto kodas' },
   { key: 'hnv', label: 'HNV' },
-  { key: 'document', label: 'DOCX' },
-  { key: 'date_created', label: 'Sukūrimo data', width: 'w-36' },
-  { key: 'date_updated', label: 'Atnaujinimo data', width: 'w-36' },
-  { key: 'status', label: 'Būsena', width: 'w-24' },
+  { key: 'date_created', label: 'Data', width: 'w-36' },
+  { key: 'user_created', label: 'Sukūrė', width: 'w-32' },
 ];
 
-const DEFAULT_STANDARTINIAI_VISIBLE_KEYS = new Set(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
+const TALPOS_PRIMARY_COLS = ['pavadinimas', 'project', 'description', 'kaina', 'derva_ai', 'derva_musu', 'quantity', 'created_at'];
+const TALPOS_HIDDEN_COLS = new Set(['id']);
 
-/** DB fields not useful as columns in standartiniai */
-const HIDDEN_STANDARTINIAI_DB_FIELDS = new Set(['conversation_id', 'yaml_content', 'html_content']);
+function getStandartiniaiHnv(row: any): string | null {
+  const direct = row?.requested_hnv ?? row?.requested_inputs?.requested_hnv ?? row?.hnv;
+  if (direct !== null && direct !== undefined && String(direct).trim()) return String(direct).trim();
 
-const STANDARTINIAI_COL_ORDER_KEY = 'traidenis_col_order_standartiniai';
-const STANDARTINIAI_COL_HIDDEN_KEY = 'traidenis_col_hidden_standartiniai';
+  const yaml = row?.yaml_content;
+  if (typeof yaml !== 'string') return null;
 
-function loadStandartiniaiColOrder(): string[] | null {
-  try { const raw = localStorage.getItem(STANDARTINIAI_COL_ORDER_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
-}
-function saveStandartiniaiColOrder(keys: string[]) {
-  try { localStorage.setItem(STANDARTINIAI_COL_ORDER_KEY, JSON.stringify(keys)); } catch { /* ignore */ }
-}
-function loadStandartiniaiHiddenCols(): Set<string> {
-  try { const raw = localStorage.getItem(STANDARTINIAI_COL_HIDDEN_KEY); return raw ? new Set(JSON.parse(raw)) : new Set(); } catch { return new Set(); }
-}
-function saveStandartiniaiHiddenCols(hidden: Set<string>) {
-  try { localStorage.setItem(STANDARTINIAI_COL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* ignore */ }
+  const match = yaml.match(/(?:^|\n)\s*requested_hnv\s*:\s*['"]?([^'"\n\r#]+)['"]?/i);
+  if (match?.[1]?.trim()) return match[1].trim();
+
+  try {
+    const parsed = JSON.parse(yaml);
+    const value = parsed?.requested_hnv ?? parsed?.requested_inputs?.requested_hnv;
+    return value !== null && value !== undefined && String(value).trim() ? String(value).trim() : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Build all available standartiniai columns from data + defaults */
-function buildAllStandartiniaiColumns(rows: any[]): ColumnDef[] {
-  const byKey = new Map(DEFAULT_STANDARTINIAI_COLS.map(c => [c.key, c]));
-  const result = [...DEFAULT_STANDARTINIAI_COLS];
-  if (rows.length > 0) {
-    for (const key of Object.keys(rows[0])) {
-      if (byKey.has(key) || HIDDEN_STANDARTINIAI_DB_FIELDS.has(key)) continue;
-      const label = key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
-      result.push({ key, label });
-      byKey.set(key, { key, label });
+function buildTalposColumns(rows: any[]): string[] {
+  const ordered = [...TALPOS_PRIMARY_COLS];
+  const seen = new Set<string>(ordered);
+
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (seen.has(key) || TALPOS_HIDDEN_COLS.has(key) || isInternalTableField(key)) continue;
+      ordered.push(key);
+      seen.add(key);
     }
   }
-  return result;
+
+  return ordered;
 }
 
-/** Lithuanian label fallback for any column */
-function formatColumnName(col: string): string {
-  return col.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+function formatColumnLabel(key: string): string {
+  if (TALPOS_COLUMN_LABELS[key] || STANDARTINIAI_COLUMN_LABELS[key]) {
+    return TALPOS_COLUMN_LABELS[key] ?? STANDARTINIAI_COLUMN_LABELS[key];
+  }
+
+  const wordLabels: Record<string, string> = {
+    app: 'Programos',
+    ai: 'AI',
+    user: 'naudotojas',
+    created: 'sukurta',
+    updated: 'atnaujinta',
+    date: 'data',
+    file: 'failas',
+    template: 'šablonas',
+    content: 'turinys',
+    conversation: 'pokalbis',
+    requested: 'prašomas',
+    inputs: 'įvestys',
+    code: 'kodas',
+    name: 'pavadinimas',
+    type: 'tipas',
+    total: 'suma',
+    price: 'kaina',
+  };
+
+  const label = key
+    .split('_')
+    .map(part => wordLabels[part.toLowerCase()] ?? part)
+    .join(' ');
+
+  return label.replace(/^./, c => c.toUpperCase());
 }
 
 function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string): string[] {
@@ -493,7 +543,7 @@ function FilterBar({ filters, onChange, options }: {
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function DocumentsInterface({ user, projectId }: DocumentsInterfaceProps) {
+export default function DocumentsInterface({ user, projectId: _projectId }: DocumentsInterfaceProps) {
   const [selectedTable, setSelectedTable] = useState<TableName>('n8n_vector_store');
   const [standartiniaiData, setStandartiniaiData] = useState<any[]>([]);
   const [nestandartiniaiData, setNestandartiniaiData] = useState<NestandartiniaiRecord[]>([]);
@@ -521,37 +571,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const isTalpos = selectedTable === 'talpos';
 
-  // ── Standartiniai column config ──
-  const allColsStand = useMemo(() => buildAllStandartiniaiColumns(standartiniaiData), [standartiniaiData]);
-  const [hiddenColsStand, setHiddenColsStand] = useState<Set<string>>(() => {
-    const saved = loadStandartiniaiHiddenCols();
-    if (saved.size === 0 && localStorage.getItem(STANDARTINIAI_COL_HIDDEN_KEY) === null) return new Set();
-    return saved;
-  });
-  const [colOrderStand, setColOrderStand] = useState<string[]>(() => loadStandartiniaiColOrder() || DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
-  const visibleColsStand = useMemo(() => allColsStand.filter(c => !hiddenColsStand.has(c.key)), [allColsStand, hiddenColsStand]);
-  const orderedColsStand = useMemo(() => getOrderedCols(visibleColsStand, colOrderStand), [visibleColsStand, colOrderStand]);
-
-  // ── Unified column config (standartiniai only — nestandartiniai uses fixed columns) ──
-  const allCols = allColsStand;
-  const orderedCols = orderedColsStand;
-
-  const [showColConfig, setShowColConfig] = useState(false);
   const [showMetaSearchMenu, setShowMetaSearchMenu] = useState(false);
   const [metadataSearchPills, setMetadataSearchPills] = useState<MetadataSearchPill[]>([]);
-  const colConfigRef = useRef<HTMLDivElement>(null);
   const metaSearchMenuRef = useRef<HTMLDivElement>(null);
-  const dragColRef = useRef<string | null>(null);
-  const dragOverColRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!showColConfig) return;
-    const handler = (e: MouseEvent) => {
-      if (colConfigRef.current && !colConfigRef.current.contains(e.target as Node)) setShowColConfig(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showColConfig]);
 
   useEffect(() => {
     if (!showMetaSearchMenu) return;
@@ -561,46 +583,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showMetaSearchMenu]);
-
-  const hiddenCols = hiddenColsStand;
-
-  const handleColDragStart = useCallback((key: string) => { dragColRef.current = key; }, []);
-  const handleColDragOver = useCallback((e: React.DragEvent, key: string) => { e.preventDefault(); dragOverColRef.current = key; }, []);
-  const handleColDrop = useCallback(() => {
-    const from = dragColRef.current;
-    const to = dragOverColRef.current;
-    if (!from || !to || from === to) return;
-    setColOrderStand(prev => {
-      const next = [...prev];
-      const fromIdx = next.indexOf(from);
-      const toIdx = next.indexOf(to);
-      if (fromIdx === -1 || toIdx === -1) return prev;
-      next.splice(fromIdx, 1);
-      next.splice(toIdx, 0, from);
-      saveStandartiniaiColOrder(next);
-      return next;
-    });
-    dragColRef.current = null;
-    dragOverColRef.current = null;
-  }, []);
-
-  const toggleColumnVisibility = useCallback((key: string) => {
-    setHiddenColsStand(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      saveStandartiniaiHiddenCols(next);
-      return next;
-    });
-  }, []);
-
-  const resetColumnsToDefault = useCallback(() => {
-    const allKeys = allColsStand.map(c => c.key);
-    const hidden = new Set(allKeys.filter(k => !DEFAULT_STANDARTINIAI_VISIBLE_KEYS.has(k)));
-    setHiddenColsStand(hidden);
-    saveStandartiniaiHiddenCols(hidden);
-    setColOrderStand(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
-    saveStandartiniaiColOrder(DEFAULT_STANDARTINIAI_COLS.map(c => c.key));
-  }, [allColsStand]);
 
   // Load only the active table on mount and on every tab switch (lazy — avoids
   // pre-fetching tables the user may never visit and eliminates the double-fetch
@@ -612,7 +594,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       loadNestandartiniai();
       if (talposData.length === 0) loadTalpos();
     } else if (selectedTable === 'standartiniai_projektai') loadStandartiniai();
-  }, [selectedTable]);
+  }, [selectedTable, talposData.length]);
 
   const loadStandartiniai = async () => {
     try { setLoadingStandartiniai(true); setErrorStandartiniai(null); setStandartiniaiData(await fetchStandartiniaiProjektai()); }
@@ -630,18 +612,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     finally { setLoadingTalpos(false); }
   };
 
-  // Fixed talpos schema columns from Directus table definition
+  // Talpos columns: default important fields first, then any Directus fields present in data.
   const talposCols = useMemo(() => {
-    return [...TALPOS_TABLE_FIELDS] as string[];
-  }, []);
-
-  // Lookup map: talpos id (string) → row — used by nestandartiniai table to show Talpa m3
-  const talposById = useMemo(() => {
-    const map = new Map<string, any>();
-    for (const row of talposData) {
-      if (row.id != null) map.set(String(row.id), row);
-    }
-    return map;
+    return buildTalposColumns(talposData);
   }, [talposData]);
 
   const filterOptions = useMemo(() => ({
@@ -747,9 +720,10 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           if (row.hnv) parts.push(row.hnv);
           if (row.yaml_content) parts.push(String(row.yaml_content));
           // Also search all visible column fields for completeness
-          for (const col of allColsStand) {
+          for (const col of STANDARTINIAI_COLS) {
             const val = row[col.key];
-            if (val !== null && val !== undefined) parts.push(String(val));
+            const displayVal = getCellDisplayValue(row, col.key, val);
+            if (displayVal !== null && displayVal !== undefined) parts.push(String(displayVal));
           }
           const blob = parts.join(' ').toLowerCase();
           return keywords.every(kw => blob.includes(kw));
@@ -777,13 +751,12 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     }
 
     return rows;
-  }, [isTalpos, isNestandartiniai, talposData, nestandartiniaiData, standartiniaiData, searchQuery, allColsStand, metadataFilters, metadataSearchPills]);
+  }, [isTalpos, isNestandartiniai, talposData, nestandartiniaiData, standartiniaiData, searchQuery, metadataFilters, metadataSearchPills]);
 
   // Sorting
   const sortedData = useMemo(() => {
     if (!sortConfig.column) return filteredData;
     return [...filteredData].sort((a, b) => {
-      const colDef = isNestandartiniai ? allCols.find(c => c.key === sortConfig.column) : null;
       let aVal: any;
       let bVal: any;
       if (sortConfig.column === 'meta_derva_org') {
@@ -791,12 +764,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         bVal = formatDervaOrg(b.metadata);
         if (aVal === '—') aVal = null;
         if (bVal === '—') bVal = null;
-      } else if (colDef?.metaKey) {
-        aVal = getMetaValue(parseMetadata(a.metadata), colDef.metaKey) ?? null;
-        bVal = getMetaValue(parseMetadata(b.metadata), colDef.metaKey) ?? null;
       } else {
-        aVal = a[sortConfig.column];
-        bVal = b[sortConfig.column];
+        aVal = getCellDisplayValue(a, sortConfig.column, a[sortConfig.column]);
+        bVal = getCellDisplayValue(b, sortConfig.column, b[sortConfig.column]);
       }
       if (aVal === null || aVal === undefined) return 1;
       if (bVal === null || bVal === undefined) return -1;
@@ -807,7 +777,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       if (aStr > bStr) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredData, sortConfig, isNestandartiniai]);
+  }, [filteredData, sortConfig]);
 
   // Reset to page 1 when filters, search, sort, or table change
   useEffect(() => { setCurrentPage(1); }, [searchQuery, metadataFilters, sortConfig, selectedTable]);
@@ -830,18 +800,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
     setSortConfig({ column: '', direction: 'asc' });
     setMetadataFilters({ ...EMPTY_FILTERS });
     setSelectedIds(new Set());
-  };
-
-  const handleToggleStatus = async (id: number, currentStatus: boolean) => {
-    const newStatus = !currentStatus;
-    // Optimistic update
-    setNestandartiniaiData(prev => prev.map(r => r.id === id ? { ...r, status: newStatus } : r));
-    try {
-      await updateNestandartiniaiField(id, 'status', newStatus);
-    } catch {
-      // Revert on error
-      setNestandartiniaiData(prev => prev.map(r => r.id === id ? { ...r, status: currentStatus } : r));
-    }
   };
 
   const toggleSelectId = (id: number) => {
@@ -916,17 +874,16 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
+    <div className="h-full flex flex-col app-workspace">
       {/* Header */}
-      <div className="px-6 pt-6 pb-4 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+      <div className="app-workspace-header shrink-0">
         {/* Top row: title + actions */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Dokumentai</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="app-workspace-title">Dokumentai</h2>
           <button
             onClick={currentReload}
             disabled={currentLoading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95"
-            style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}
+            className="app-text-btn"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${currentLoading ? 'animate-spin' : ''}`} />
             Atnaujinti
@@ -934,42 +891,24 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
         </div>
 
         {/* Segmented control + search */}
-        <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-3 mb-3">
           {/* macOS segmented control */}
-          <div className="inline-flex rounded-macos p-0.5 shrink-0" style={{ background: 'rgba(0,0,0,0.06)' }}>
+          <div className="app-tab-switch shrink-0">
             <button
               onClick={() => handleTableChange('standartiniai_projektai')}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
-                selectedTable === 'standartiniai_projektai' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
-              }`}
-              style={selectedTable === 'standartiniai_projektai' ? {
-                background: '#fff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-              } : undefined}
+              data-active={selectedTable === 'standartiniai_projektai'}
             >
               Standartiniai
             </button>
             <button
               onClick={() => handleTableChange('n8n_vector_store')}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
-                selectedTable === 'n8n_vector_store' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
-              }`}
-              style={selectedTable === 'n8n_vector_store' ? {
-                background: '#fff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-              } : undefined}
+              data-active={selectedTable === 'n8n_vector_store'}
             >
               Nestandartiniai
             </button>
             <button
               onClick={() => handleTableChange('talpos')}
-              className={`px-4 py-1.5 rounded-[8px] text-sm font-medium transition-all ${
-                selectedTable === 'talpos' ? 'text-macos-gray-900' : 'text-macos-gray-400 hover:text-macos-gray-600'
-              }`}
-              style={selectedTable === 'talpos' ? {
-                background: '#fff',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-              } : undefined}
+              data-active={selectedTable === 'talpos'}
             >
               Talpos
             </button>
@@ -977,7 +916,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
 
           {/* Search */}
           <div className="relative flex-1">
-            <div className="w-full min-h-9 rounded-macos px-2 flex items-center gap-1.5 flex-wrap" style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)' }}>
+            <div className="app-filter-field w-full px-2 flex items-center gap-1.5 flex-wrap">
               {isNestandartiniai && (
                 <div className="relative" ref={metaSearchMenuRef}>
                   <button
@@ -1043,60 +982,11 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     removeMetadataPill(metadataSearchPills.length - 1);
                   }
                 }}
-                className="flex-1 min-w-[160px] h-8 text-sm bg-transparent outline-none"
-                style={{ color: '#3d3935' }}
+                className="flex-1 min-w-[160px] h-8 text-sm bg-transparent outline-none text-base-content"
               />
             </div>
           </div>
 
-          {/* Column config button — only for standartiniai */}
-          {!isTalpos && !isNestandartiniai && (
-            <div className="relative" ref={colConfigRef}>
-              <button
-                onClick={() => setShowColConfig(v => !v)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95 shrink-0"
-                style={{ background: showColConfig ? 'rgba(0,122,255,0.08)' : 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: showColConfig ? '#007AFF' : '#5a5550' }}
-              >
-                <Columns3 className="w-3.5 h-3.5" />
-                Stulpeliai
-              </button>
-              {showColConfig && (
-                <div
-                  className="absolute right-0 top-full mt-1 z-50 w-72 max-h-[420px] overflow-auto rounded-xl shadow-lg border border-base-content/10 bg-base-100"
-                  style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)' }}
-                >
-                  <div className="px-3 py-2.5 border-b border-base-content/10 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-base-content/70">Rodyti stulpelius</span>
-                    <button
-                      onClick={resetColumnsToDefault}
-                      className="text-[11px] text-blue-500 hover:text-blue-600 font-medium"
-                    >
-                      Atkurti numatytuosius
-                    </button>
-                  </div>
-                  {allCols.map(col => (
-                    <button
-                      key={col.key}
-                      onClick={() => toggleColumnVisibility(col.key)}
-                      className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-base-200/60 transition-colors text-sm"
-                    >
-                      <span
-                        className="w-4 h-4 rounded border flex items-center justify-center shrink-0"
-                        style={{
-                          borderColor: hiddenCols.has(col.key) ? 'rgba(0,0,0,0.15)' : '#007AFF',
-                          background: hiddenCols.has(col.key) ? 'transparent' : '#007AFF',
-                        }}
-                      >
-                        {!hiddenCols.has(col.key) && <Check className="w-3 h-3 text-white" />}
-                      </span>
-                      <span className="text-base-content/80 truncate">{col.label}</span>
-                      {col.metaKey && <span className="text-[10px] text-base-content/30 ml-auto shrink-0">meta</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         {/* Filters – only for nestandartiniai */}
@@ -1114,7 +1004,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
       )}
 
       {/* Table */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="app-workspace-content flex-1 overflow-auto">
         {currentLoading ? (
           <div className="flex items-center justify-center h-64">
             <span className="loading loading-spinner loading-md text-macos-blue"></span>
@@ -1132,11 +1022,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
         ) : isTalpos ? (
           /* ---- Talpos table (all fields) ---- */
-          <div
-            className="w-full overflow-x-auto rounded-macos-lg bg-white"
-            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-          >
-            <table className="w-full text-sm">
+          <div className="app-table-shell">
+            <table className="app-data-table">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
                   {talposCols.map(col => (
@@ -1146,7 +1033,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap"
                     >
                       <div className="flex items-center gap-1">
-                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col}</span>
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{formatColumnLabel(col)}</span>
                         <span className="inline-flex flex-col leading-none">
                           <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
                           <ChevronDown className={`w-2.5 h-2.5 -mt-0.5 ${sortConfig.column === col && sortConfig.direction === 'desc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
@@ -1166,7 +1053,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     onMouseLeave={e => (e.currentTarget.style.background = '')}
                   >
                     {talposCols.map(col => {
-                      const val = row[col];
+                      const rawVal = row[col];
+                      const val = getCellDisplayValue(row, col, rawVal);
                       // Detect JSON: already an object/array, or a string that parses as one
                       let isJson = false;
                       let jsonValue: any = null;
@@ -1177,6 +1065,15 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         } else if (typeof val === 'string' && (val.trimStart().startsWith('{') || val.trimStart().startsWith('['))) {
                           try { jsonValue = JSON.parse(val); isJson = true; } catch { /* not json */ }
                         }
+                      }
+                      if (col === 'created_at' && rawVal) {
+                        const d = new Date(rawVal);
+                        const formatted = isNaN(d.getTime()) ? String(rawVal) : d.toLocaleDateString('lt-LT') + ' ' + d.toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' });
+                        return (
+                          <td key={col} className="px-3 py-2.5 whitespace-nowrap" style={{ color: '#3d3935', fontSize: '13px' }} title={String(rawVal ?? '')}>
+                            {formatted}
+                          </td>
+                        );
                       }
                       if (isJson) {
                         return (
@@ -1195,7 +1092,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       const maxLen = 120;
                       const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
                       return (
-                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: col === 'id' ? '#8a857f' : '#3d3935', fontSize: col === 'id' ? '12px' : '13px' }} title={String(val ?? '')}>
+                        <td key={col} className="px-3 py-2.5 max-w-xs truncate" style={{ color: col === 'id' ? '#8a857f' : '#3d3935', fontSize: col === 'id' ? '12px' : '13px' }} title={String(rawVal ?? '')}>
                           {display}
                         </td>
                       );
@@ -1233,10 +1130,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
         ) : isNestandartiniai ? (
           /* ---- Nestandartiniai table (fixed columns) ---- */
-          <div
-            className="w-full overflow-x-auto rounded-macos-lg bg-white"
-            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-          >
+          <div className="app-table-shell">
             {/* Bulk actions bar */}
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
@@ -1264,7 +1158,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </button>
               </div>
             )}
-            <table className="w-full text-sm">
+            <table className="app-data-table">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
                   <th className="w-10 px-2 py-3">
@@ -1277,8 +1171,8 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                     />
                   </th>
                   <th className="w-10 px-2 py-3"></th>
-                  {(['id', 'status', 'project_name', 'talpu_kiekis', 'klientas', 'pateikimo_data', 'description', 'talpa_m3'] as const).map(key => {
-                    const label = key === 'id' ? 'ID' : key === 'status' ? 'Statusas' : key === 'project_name' ? 'Projektas' : key === 'talpu_kiekis' ? 'Talpų Kiekis' : key === 'klientas' ? 'Klientas' : key === 'pateikimo_data' ? 'Data' : key === 'description' ? 'Santrauka' : 'Talpa m3';
+                  {(['project_name', 'talpu_kiekis', 'klientas', 'pateikimo_data', 'description', 'talpa_m3'] as const).map(key => {
+                    const label = key === 'project_name' ? 'Projektas' : key === 'talpu_kiekis' ? 'Talpų Kiekis' : key === 'klientas' ? 'Klientas' : key === 'pateikimo_data' ? 'Data' : key === 'description' ? 'Santrauka' : 'Talpa m3';
                     return (
                       <th
                         key={key}
@@ -1339,20 +1233,6 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                           title="Atidaryti kortelę"
                         >
                           <FileText className="w-4 h-4" />
-                        </button>
-                      </td>
-                      {/* ID */}
-                      <td className="px-3 py-2.5 w-16">
-                        <span style={{ color: '#8a857f', fontSize: '12px' }}>{row.id ?? '—'}</span>
-                      </td>
-                      {/* Statusas */}
-                      <td className="px-3 py-2.5 w-20">
-                        <button
-                          onClick={e => { e.stopPropagation(); handleToggleStatus(row.id, !!row.status); }}
-                          className={`macos-toggle ${row.status ? 'active' : ''}`}
-                          style={{ width: 36, height: 20, borderRadius: 10 }}
-                        >
-                          <span className="macos-toggle-thumb" style={{ width: 16, height: 16, top: 2, left: 2, borderRadius: 8 }} />
                         </button>
                       </td>
                       {/* Projektas */}
@@ -1463,10 +1343,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
           </div>
         ) : (
           /* ---- Standartiniai table (configurable columns) ---- */
-          <div
-            className="w-full overflow-x-auto rounded-macos-lg bg-white"
-            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-          >
+          <div className="app-table-shell">
             {/* Bulk actions bar */}
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
@@ -1494,7 +1371,7 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                 </button>
               </div>
             )}
-            <table className="w-full text-sm">
+            <table className="app-data-table">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
                   <th className="w-10 px-2 py-3">
@@ -1506,18 +1383,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       title="Pasirinkti visus"
                     />
                   </th>
-                  {orderedColsStand.map(col => (
+                  {STANDARTINIAI_COLS.map(col => (
                     <th
                       key={col.key}
-                      draggable
-                      onDragStart={() => handleColDragStart(col.key)}
-                      onDragOver={e => handleColDragOver(e, col.key)}
-                      onDrop={handleColDrop}
                       onClick={() => handleSort(col.key)}
                       className={`px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap ${col.width || ''}`}
                     >
                       <div className="flex items-center gap-1">
-                        <GripVertical className="w-3 h-3 text-base-content/20 shrink-0 cursor-grab" />
                         <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{col.label}</span>
                         <span className="inline-flex flex-col leading-none">
                           <ChevronUp className={`w-2.5 h-2.5 ${sortConfig.column === col.key && sortConfig.direction === 'asc' ? 'text-macos-blue' : 'text-macos-gray-200'}`} />
@@ -1546,46 +1418,13 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                         className="w-4 h-4 rounded cursor-pointer accent-blue-500"
                       />
                     </td>
-                    {orderedColsStand.map(col => {
-                      const val = row[col.key];
-                      // document (Directus file relation) — show preview + download buttons
-                      if (col.key === 'document' || col.key === 'docx_file_id') {
-                        const fileId = extractDirectusFileId(row.document ?? row.docx_file_id ?? val);
-                        return (
-                          <td key={col.key} className="px-3 py-2.5">
-                            {fileId ? (
-                              <div className="flex items-center gap-1.5">
-                                <a
-                                  href={getDirectusAssetUrl(fileId)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
-                                  style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
-                                  title="Peržiūrėti"
-                                >
-                                  <Eye className="w-3 h-3" />
-                                  Peržiūra
-                                </a>
-                                <a
-                                  href={getDirectusFileUrl(fileId)}
-                                  download
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium transition-all hover:brightness-95"
-                                  style={{ background: 'rgba(0,0,0,0.04)', color: '#8a857f' }}
-                                  title="Atsisiųsti"
-                                >
-                                  <Download className="w-3 h-3" />
-                                </a>
-                              </div>
-                            ) : (
-                              <span style={{ color: '#8a857f', fontSize: '13px' }}>—</span>
-                            )}
-                          </td>
-                        );
-                      }
+                    {STANDARTINIAI_COLS.map(col => {
+                      const rawVal = row[col.key];
+                      const val = getCellDisplayValue(row, col.key, rawVal);
                       // Date columns — format nicely
-                      if ((col.key === 'date_created' || col.key === 'date_updated') && val) {
-                        const d = new Date(val);
-                        const formatted = isNaN(d.getTime()) ? String(val) : d.toLocaleDateString('lt-LT') + ' ' + d.toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' });
+                      if ((col.key === 'date_created' || col.key === 'date_updated' || col.key === 'created_at') && rawVal) {
+                        const d = new Date(rawVal);
+                        const formatted = isNaN(d.getTime()) ? String(rawVal) : d.toLocaleDateString('lt-LT') + ' ' + d.toLocaleTimeString('lt-LT', { hour: '2-digit', minute: '2-digit' });
                         return (
                           <td key={col.key} className="px-3 py-2.5 whitespace-nowrap" style={{ color: '#3d3935', fontSize: '13px' }}>
                             {formatted}
@@ -1594,8 +1433,9 @@ export default function DocumentsInterface({ user, projectId }: DocumentsInterfa
                       }
                       const maxLen = 120;
                       const display = val === null || val === undefined ? '—' : String(val).length > maxLen ? String(val).slice(0, maxLen) + '…' : String(val);
+                      const title = rawVal && typeof rawVal === 'object' ? JSON.stringify(rawVal) : String(rawVal ?? '');
                       return (
-                        <td key={col.key} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={String(val ?? '')}>
+                        <td key={col.key} className="px-3 py-2.5 max-w-xs truncate" style={{ color: '#3d3935', fontSize: '13px' }} title={title}>
                           {display}
                         </td>
                       );

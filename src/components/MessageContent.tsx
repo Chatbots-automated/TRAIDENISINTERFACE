@@ -166,25 +166,25 @@ export default function MessageContent({ content }: MessageContentProps) {
     return lines.map((line, idx) => {
       // Headers
       if (line.startsWith('### ')) {
-        return <h3 key={idx} className="text-lg font-semibold mt-4 mb-2" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>{line.substring(4)}</h3>;
+        return <h3 key={idx}>{line.substring(4)}</h3>;
       }
       if (line.startsWith('## ')) {
-        return <h2 key={idx} className="text-xl font-bold mt-4 mb-2" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>{line.substring(3)}</h2>;
+        return <h2 key={idx}>{line.substring(3)}</h2>;
       }
       if (line.startsWith('# ')) {
-        return <h1 key={idx} className="text-2xl font-bold mt-4 mb-2" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>{line.substring(2)}</h1>;
+        return <h1 key={idx}>{line.substring(2)}</h1>;
       }
 
       // Lists
       if (line.match(/^[-*]\s/)) {
-        return <li key={idx} className="ml-4" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>{formatInline(line.substring(2))}</li>;
+        return <li key={idx}>{formatInline(line.substring(2))}</li>;
       }
       if (line.match(/^\d+\.\s/)) {
-        return <li key={idx} className="ml-4" style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>{formatInline(line.substring(line.indexOf('.') + 2))}</li>;
+        return <li key={idx}>{formatInline(line.substring(line.indexOf('.') + 2))}</li>;
       }
 
       // Regular paragraph
-      return <p key={idx} style={{ color: '#3d3935', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>{formatInline(line)}</p>;
+      return <p key={idx}>{formatInline(line)}</p>;
     });
   };
 
@@ -206,7 +206,7 @@ export default function MessageContent({ content }: MessageContentProps) {
       // Add formatted match
       if (match[1]) {
         // Inline code
-        parts.push(<code key={match.index} className="px-1.5 py-0.5 rounded text-xs font-mono" style={{ background: '#f0ede8', color: '#5a5550' }}>{match[1].slice(1, -1)}</code>);
+        parts.push(<code key={match.index} className="px-1.5 py-0.5 text-xs font-mono">{match[1].slice(1, -1)}</code>);
       } else if (match[2]) {
         // Bold
         parts.push(<strong key={match.index} className="font-semibold">{match[2].slice(2, -2)}</strong>);
@@ -227,11 +227,11 @@ export default function MessageContent({ content }: MessageContentProps) {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="message-content space-y-2.5">
       {parts.map((part, index) => {
         if (part.type === 'text') {
           return (
-            <div key={index} className="text-[15px] leading-relaxed" style={{ fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif' }}>
+            <div key={index}>
               {formatMarkdown(part.content)}
             </div>
           );

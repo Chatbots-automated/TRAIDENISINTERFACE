@@ -3039,12 +3039,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   };
 
   return (
-    <div className="h-full flex bg-base-100">
+    <div className="h-full flex app-page">
       {/* Reopen Button (when sidebar collapsed) - positioned next to main sidebar */}
       {sidebarCollapsed && (
         <button
           onClick={() => setSidebarCollapsed(false)}
-          className="fixed top-4 z-50 p-2 rounded-r-lg transition-all duration-300 bg-base-100 border border-base-content/10 text-base-content/60 shadow-sm hover:bg-base-200"
+          className="fixed top-4 z-50 app-icon-btn rounded-r-lg transition-all duration-300 bg-white shadow-sm"
           style={{
             left: mainSidebarCollapsed ? '64px' : '208px',
           }}
@@ -3055,24 +3055,24 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       {/* Secondary Sidebar - slides from main sidebar edge */}
       <div
-        className="flex-shrink-0 border-r border-base-content/10 transition-all duration-300 flex flex-col bg-base-200/40"
+        className="sdk-secondary-sidebar flex-shrink-0 transition-all duration-300 flex flex-col"
         style={{
-          width: sidebarCollapsed ? '0px' : '320px',
+          width: sidebarCollapsed ? '0px' : '292px',
           overflow: sidebarCollapsed ? 'hidden' : 'visible',
           opacity: sidebarCollapsed ? 0 : 1
         }}
       >
         {/* Project Header */}
-        <div className="px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center space-x-3 flex-1 min-w-0">
-            <FileText className="w-5 h-5 flex-shrink-0 text-base-content/50" />
-            <span className="font-semibold truncate text-base-content">
+        <div className="sdk-sidebar-header flex items-center justify-between">
+          <div className="flex items-center space-x-2.5 flex-1 min-w-0">
+            <FileText className="w-4 h-4 flex-shrink-0 text-base-content/45" />
+            <span className="text-sm font-semibold truncate text-base-content">
               Standartinis
             </span>
           </div>
           <button
             onClick={() => setSidebarCollapsed(true)}
-            className="btn btn-circle btn-text btn-xs text-base-content/40"
+            className="app-icon-btn"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
@@ -3081,15 +3081,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         {/* Instructions Section */}
         <div
           onClick={handleOpenPromptModal}
-          className="mx-3 mb-2 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
+          className="sdk-sidebar-card"
         >
           <div className="flex items-center gap-2">
-            <Eye className="w-4 h-4 text-base-content/40" />
-            <span className="text-sm font-medium text-base-content">
+            <Eye className="w-3.5 h-3.5 text-base-content/40" />
+            <span className="text-xs font-medium text-base-content">
               Instrukcijos
             </span>
           </div>
-          <p className="text-xs text-base-content/40 mt-1 ml-6">
+          <p className="text-[11px] text-base-content/40 mt-1 ml-5">
             Sistemos instrukcijos komerciniam pasiūlymui
           </p>
         </div>
@@ -3097,15 +3097,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         {/* Document Template Section */}
         <div
           onClick={handleOpenTemplateEditor}
-          className="mx-3 mb-3 p-3 rounded-xl bg-base-100 border border-base-content/5 cursor-pointer hover:bg-base-content/[0.03] transition-colors"
+          className="sdk-sidebar-card"
         >
           <div className="flex items-center gap-2">
-            <Pencil className="w-4 h-4 text-base-content/40" />
-            <span className="text-sm font-medium text-base-content">
+            <Pencil className="w-3.5 h-3.5 text-base-content/40" />
+            <span className="text-xs font-medium text-base-content">
               Komercinis
             </span>
           </div>
-          <p className="text-xs text-base-content/40 mt-1 ml-6">
+          <p className="text-[11px] text-base-content/40 mt-1 ml-5">
             Redaguokite komercinio dokumento šabloną
           </p>
         </div>
@@ -3113,17 +3113,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         {/* Conversations Section with Tabs */}
         <div className="flex-1 flex flex-col min-h-0">
           {/* Tabs */}
-          <div className="px-4 border-b border-base-content/10 relative">
+          <div className="px-3 border-b border-base-content/8 relative">
             <div className="flex items-center">
               <button
                 onClick={() => setSidebarView('conversations')}
-                className={`flex-1 px-3 py-3 text-sm font-medium transition-colors relative ${sidebarView === 'conversations' ? 'text-base-content' : 'text-base-content/40'}`}
+                className={`flex-1 px-3 py-2.5 text-xs font-medium transition-colors relative ${sidebarView === 'conversations' ? 'text-base-content' : 'text-base-content/40'}`}
               >
                 Pokalbiai
               </button>
               <button
                 onClick={() => setSidebarView('shared')}
-                className={`flex-1 px-3 py-3 text-sm font-medium transition-colors relative ${sidebarView === 'shared' ? 'text-base-content' : 'text-base-content/40'}`}
+                className={`flex-1 px-3 py-2.5 text-xs font-medium transition-colors relative ${sidebarView === 'shared' ? 'text-base-content' : 'text-base-content/40'}`}
               >
                 Bendri
                 {unreadSharedCount > 0 && (
@@ -3145,11 +3145,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
           {/* New Conversation Button - Only show in conversations view */}
           {sidebarView === 'conversations' && (
-            <div className="p-3">
+            <div className="px-3 py-2.5">
               <button
                 onClick={handleCreateConversation}
                 disabled={creatingConversation}
-                className="btn btn-soft btn-sm w-full"
+                className="app-text-btn w-full"
               >
                 <Plus className="w-4 h-4" />
                 <span>Naujas pokalbis</span>
@@ -3159,7 +3159,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
           {/* Conversations List */}
           {sidebarView === 'conversations' && (
-            <div className="flex-1 overflow-y-auto px-2 py-1">
+            <div className="flex-1 overflow-y-auto px-2 py-1.5">
               {loadingConversations ? (
                 <div className="p-4 text-center">
                   <span className="loading loading-spinner loading-sm text-primary"></span>
@@ -3177,11 +3177,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                       <div
                         key={conv.id}
                         onClick={() => !isRenaming && handleSelectOwnedConversation(conv.id)}
-                        className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
-                          isActive
-                            ? 'bg-base-100 border border-base-content/15 shadow-sm'
-                            : 'hover:bg-base-content/5'
-                        }`}
+                        className={`sdk-conversation-item group ${isActive ? 'active' : ''}`}
                       >
                         {isRenaming ? (
                           <input
@@ -3194,16 +3190,16 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                             }}
                             onBlur={() => handleConfirmRename(conv.id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="flex-1 min-w-0 text-sm bg-transparent border-b border-base-content/20 outline-none text-base-content py-0"
+                            className="flex-1 min-w-0 text-xs bg-transparent border-b border-base-content/20 outline-none text-base-content py-0"
                           />
                         ) : (
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate text-base-content">{conv.title}</p>
+                            <p className="text-xs truncate text-base-content">{conv.title}</p>
                           </div>
                         )}
                         {/* Date - hidden on hover/active, replaced by actions */}
                         {!isActive && !isRenaming && (
-                          <span className="text-[13px] font-normal whitespace-nowrap flex-shrink-0 group-hover:hidden" style={{ color: '#b0b0b0' }}>
+                          <span className="text-[11px] font-normal whitespace-nowrap flex-shrink-0 group-hover:hidden" style={{ color: '#a9a9a7' }}>
                             {formatLtDate(conv.last_message_at)}
                           </span>
                         )}
@@ -3234,7 +3230,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
           {/* Shared Conversations List */}
           {sidebarView === 'shared' && (
-            <div className="flex-1 overflow-y-auto px-2 py-2">
+            <div className="flex-1 overflow-y-auto px-2 py-1.5">
               {sharedConversations.length === 0 ? (
                 <div className="p-4 text-center">
                   <Users className="w-8 h-8 mx-auto mb-2 text-base-content/20" />
@@ -3248,22 +3244,18 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                       <div
                         key={sharedConv.id}
                         onClick={() => handleSelectSharedConversation(sharedConv)}
-                        className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
-                          isActive
-                            ? 'bg-base-100 border border-base-content/15 shadow-sm'
-                            : 'hover:bg-base-content/5'
-                        }`}
+                        className={`sdk-conversation-item group ${isActive ? 'active' : ''}`}
                       >
                         {!sharedConv.is_read && (
                           <div className="w-2 h-2 rounded-full flex-shrink-0 bg-primary" />
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate text-base-content">
+                          <p className="text-xs truncate text-base-content">
                             {sharedConv.conversation?.title}: {sharedConv.shared_by_name || sharedConv.shared_by_email}
                           </p>
                         </div>
                         {!isActive && (
-                          <span className="text-[13px] font-normal whitespace-nowrap flex-shrink-0 group-hover:hidden" style={{ color: '#b0b0b0' }}>
+                          <span className="text-[11px] font-normal whitespace-nowrap flex-shrink-0 group-hover:hidden" style={{ color: '#a9a9a7' }}>
                             {formatLtDate(sharedConv.shared_at)}
                           </span>
                         )}
@@ -3281,14 +3273,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Floating Action Buttons - Hidden when artifact panel is open to avoid overlap */}
         {!showArtifact && (
-          <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
+          <div className="fixed top-5 right-5 z-50 flex items-center gap-2">
             {/* Artifact Toggle Button - Left of Share when both visible */}
             {(currentConversation?.artifact || isStreamingArtifact) && (
               <button
                 onClick={() => setShowArtifact(true)}
-                className={`px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl border border-base-content/10 ${
-                  isStreamingArtifact ? 'bg-primary text-primary-content' : 'bg-base-100 text-base-content'
-                }`}
+                className={`app-text-btn ${isStreamingArtifact ? 'app-text-btn-primary' : ''}`}
               >
                 <div className="flex items-center gap-2">
                   <FileText className="w-4 h-4" />
@@ -3305,7 +3295,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               <div className="relative">
                 <button
                   onClick={handleToggleShareDropdown}
-                  className="px-4 py-2 rounded-lg shadow-lg transition-all hover:shadow-xl bg-base-100 text-base-content border border-base-content/10"
+                  className="app-text-btn"
                 >
                   <div className="flex items-center gap-2">
                     <Share2 className="w-4 h-4" />
@@ -3402,11 +3392,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-4 py-6 bg-base-100"
+          className="sdk-chat-scroll flex-1 overflow-y-auto"
         >
           {!currentConversation || currentConversation.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center">
-              <h1 className="text-xl font-medium text-base-content/70 mb-1">
+              <h1 className="text-xl font-semibold text-base-content/70 mb-1">
                 Pradėkite projektą
               </h1>
               <p className="text-sm text-base-content/30 mb-6">
@@ -3417,7 +3407,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   <button
                     key={system}
                     onClick={() => handleSend(`Sukomplektuokime naują pasiūlymą, bus reikalinga ${system} sistema`)}
-                    className="px-4 py-2.5 rounded-2xl border border-base-content/10 bg-base-content/[0.06] text-sm text-base-content hover:bg-base-content/[0.1] transition-colors cursor-pointer"
+                    className="app-text-btn"
                   >
                     {system}
                   </button>
@@ -3425,7 +3415,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
               </div>
             </div>
           ) : (
-            <div className="max-w-3xl mx-auto space-y-4">
+            <div className="sdk-chat-width space-y-4">
               {currentConversation.messages.map((message, index) => {
                 // Skip silent messages (button clicks)
                 if (message.isSilent) {
@@ -3446,15 +3436,15 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     {message.role === 'user' ? (
                       // User message - outlined capsule on right
                       <div className="flex justify-end mb-4">
-                        <div className="max-w-[80%] px-4 py-2.5 rounded-3xl text-base-content" style={{ background: '#f8f8f9', border: '1px solid #e5e5e6' }}>
-                          <div className="text-[15px] leading-relaxed whitespace-pre-wrap">
+                        <div className="sdk-user-bubble">
+                          <div className="text-sm leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
                         </div>
                       </div>
                     ) : (
                       // Assistant message - plain text with reaction buttons
-                      <div className="mb-6 group">
+                      <div className="sdk-assistant-message mb-6 group">
                         <MessageContent content={
                           contentString.replace(/<commercial_offer(?:\s+artifact_id="[^"]*")?\s*>[\s\S]*?<\/commercial_offer>/g, '')
                         } />
@@ -3472,11 +3462,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                               <button
                                 key={button.id}
                                 onClick={() => handleButtonClick(button.id, button.value, index)}
-                                className="px-4 py-2.5 rounded-3xl text-[15px] leading-relaxed transition-all text-base-content hover:bg-base-content/[0.1] cursor-pointer"
-                                style={{
-                                  background: '#f8f8f9',
-                                  border: '1px solid #e5e5e6',
-                                }}
+                                className="app-text-btn cursor-pointer"
                               >
                                 {button.label}
                               </button>
@@ -3488,7 +3474,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                       {/* Reaction buttons */}
                       <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
+                          className="app-icon-btn"
                           title="Kopijuoti"
                           onClick={() => { navigator.clipboard.writeText(contentString); addNotification('info', 'Nukopijuota', 'Žinutės tekstas nukopijuotas.'); }}
                         >
@@ -3554,8 +3540,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         {/* Input Box or Read-Only info */}
         {isReadOnly && conversationDetails ? (
           /* Read-Only - no input, just subtle info */
-          <div className="px-4 py-3 border-t border-base-content/5 bg-base-100">
-            <div className="max-w-3xl mx-auto flex items-center justify-center gap-2 text-base-content/30 text-sm">
+          <div className="sdk-input-wrap border-t border-base-content/5">
+            <div className="sdk-chat-width flex items-center justify-center gap-2 text-base-content/30 text-sm">
               <Lock className="w-3.5 h-3.5" />
               <span>Tik skaitymo režimas</span>
               <span className="text-base-content/15">·</span>
@@ -3564,11 +3550,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           </div>
         ) : (
           /* Regular Input Box */
-          <div className="px-4 py-4 pb-6 bg-base-100">
-            <div className="max-w-3xl mx-auto">
-              <div className="relative flex items-end gap-2 rounded-3xl border border-base-content/8 px-4 py-2 transition-all focus-within:border-base-content/15 focus-within:shadow-sm" style={{ background: '#f8f8f9' }}>
+          <div className="sdk-input-wrap">
+            <div className="sdk-chat-width">
+              <div className="sdk-input-box">
                 <button
-                  className="flex-shrink-0 p-1.5 mb-0.5 rounded-lg text-base-content/30 hover:text-base-content/60 transition-colors"
+                  className="app-icon-btn flex-shrink-0 mb-0.5"
                   disabled={loading}
                 >
                   <Paperclip className="w-5 h-5" />
@@ -3580,7 +3566,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                   onKeyDown={handleKeyDown}
                   placeholder="Klauskite bet ko..."
                   rows={1}
-                  className="flex-1 bg-transparent text-[15px] text-base-content placeholder:text-base-content/30 resize-none py-1.5 outline-none focus:outline-none focus:ring-0 focus:shadow-none border-none leading-relaxed"
+                  className="flex-1 bg-transparent text-sm text-base-content placeholder:text-base-content/30 resize-none py-1.5 outline-none focus:outline-none focus:ring-0 focus:shadow-none border-none leading-relaxed"
                   disabled={loading || !systemPrompt}
                 />
                 <button
@@ -3603,26 +3589,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       {/* Artifact Panel - Floating Design */}
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
         <div className="flex-1 min-w-0" style={{ width: 'clamp(320px, 44vw, 760px)', maxWidth: '100%' }}>
-          <div className="w-full flex flex-col h-screen bg-base-100">
+          <div className="sdk-artifact-panel w-full flex flex-col h-screen">
             {/* Header — compact single row */}
-            <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0">
+            <div className="sdk-artifact-header flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 {/* Tab switcher (Peržiūra first) */}
                 {currentConversation?.artifact && !isStreamingArtifact ? (
-                  <div className="flex rounded-lg overflow-hidden border border-base-content/10">
+                  <div className="app-tab-switch">
                     <button
                       onClick={handlePreviewTabRequest}
-                      className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                        artifactTab === 'preview' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
-                      }`}
+                      data-active={artifactTab === 'preview'}
                     >
                       Peržiūra
                     </button>
                     <button
                       onClick={() => setArtifactTab('data')}
-                      className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                        artifactTab === 'data' ? 'bg-base-content text-base-100' : 'text-base-content/40 hover:text-base-content/60'
-                      }`}
+                      data-active={artifactTab === 'data'}
                     >
                       Duomenys
                     </button>
@@ -3642,7 +3624,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
                     <button
                       onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
-                      className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
+                      className="app-icon-btn"
                       title="Kopijuoti YAML"
                     >
                       <Copy className="w-3.5 h-3.5" />
@@ -3650,7 +3632,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     <button
                       onClick={handleSaveToStandartiniai}
                       disabled={isSavingToStandartiniai || isRefreshingTemplate}
-                      className="btn btn-sm btn-primary gap-1.5 ml-1"
+                      className="app-text-btn app-text-btn-primary ml-1"
                       title="Išsaugoti DOCX į Directus šiam komerciniam projektui"
                     >
                       {isSavingToStandartiniai
@@ -3661,7 +3643,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                     <button
                       onClick={handleRefreshTemplateFromCurrentYaml}
                       disabled={!savedDocxFileId || isSavingToStandartiniai || isRefreshingTemplate}
-                      className="btn btn-sm btn-outline gap-1.5 ml-1"
+                      className="app-text-btn ml-1"
                       title={!savedDocxFileId
                         ? 'Pirmiausia išsaugokite failą'
                         : 'Pergeneruoti esamą YAML su naujausiu Word šablonu'}
@@ -3675,7 +3657,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                       <a
                         href={getDirectusFileUrl(savedDocxFileId)}
                         download
-                        className="btn btn-sm btn-outline gap-1.5 ml-1"
+                        className="app-text-btn ml-1"
                         title="Atsisiųsti DOCX iš Directus"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -3686,14 +3668,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 )}
                 <button
                   onClick={() => setShowArtifact(false)}
-                  className="btn btn-circle btn-text btn-xs text-base-content/40 hover:text-base-content/70"
+                  className="app-icon-btn"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
-            {/* Separator */}
-            <div className="h-px bg-base-content/8" />
 
             {/* Content area — Preview (always mounted for iframe persistence) + Data */}
             <div className="flex-1 overflow-hidden min-h-0 relative flex flex-col" style={{ display: artifactTab === 'preview' && !isStreamingArtifact ? 'flex' : 'none' }}>
@@ -3931,7 +3911,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
               </div>
             <div
-              className="flex-1 overflow-y-auto px-6 py-4 relative"
+              className="sdk-data-panel flex-1 overflow-y-auto px-5 py-4 relative"
               style={{
                 display: artifactTab === 'data' || isStreamingArtifact ? 'block' : 'none',
                 maskImage: 'linear-gradient(to bottom, transparent 0%, black 16px, black calc(100% - 16px), transparent 100%)',
@@ -3977,12 +3957,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                         </div>
                       </div>
                     ) : currentConversation?.artifact ? (
-                      <div
-                        className="rounded-[26px] border border-base-content/10 shadow-xl p-4 max-w-5xl mx-auto"
-                        style={{
-                          background: 'radial-gradient(120% 140% at 0% 0%, rgba(255,255,255,0.96) 0%, rgba(251,249,246,0.98) 45%, rgba(245,242,238,0.96) 100%)'
-                        }}
-                      >
+                      <div className="sdk-data-card p-4 max-w-5xl mx-auto">
                         <div className="grid grid-cols-1 xl:grid-cols-[minmax(220px,245px)_1fr] 2xl:grid-cols-[270px_1fr] gap-4">
                           <div className="relative overflow-hidden rounded-2xl border border-slate-300/70 bg-[linear-gradient(165deg,#ffffff_0%,#f7fafc_58%,#eef6ff_100%)] p-3.5 xl:p-4 shadow-[0_16px_30px_rgba(25,40,65,0.12)]">
                             <div className="pointer-events-none absolute inset-0 opacity-[0.14]" style={{

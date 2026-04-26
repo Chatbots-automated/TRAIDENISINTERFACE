@@ -445,28 +445,25 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // ---- render ----
   return (
-    <div className="h-full flex flex-col" style={{ background: '#fdfcfb' }}>
+    <div className="h-full flex flex-col app-workspace">
 
       {/* Header */}
-      <div className="px-6 pt-6 pb-0 shrink-0">
+      <div className="app-workspace-header shrink-0 pb-0">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Žaliavos</h2>
+          <h2 className="app-workspace-title">Žaliavos</h2>
           {activeTab === 'lentele' && (
             <div className="flex items-center gap-2">
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelFile} />
               <button onClick={() => fileInputRef.current?.click()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
-                style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
+                className="app-text-btn">
                 <Upload className="w-3.5 h-3.5" />Importuoti Excel
               </button>
               <button onClick={() => setShowPriceMod({})}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:brightness-95"
-                style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}>
+                className="app-text-btn">
                 <Plus className="w-3.5 h-3.5" />Nauja kaina
               </button>
               <button onClick={() => setShowAddMat(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-95"
-                style={{ background: '#007AFF' }}>
+                className="app-text-btn app-text-btn-primary">
                 <Plus className="w-3.5 h-3.5" />Nauja medžiaga
               </button>
             </div>
@@ -493,7 +490,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="app-workspace-content flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <span className="loading loading-spinner loading-md" style={{ color: '#007AFF' }} />
@@ -511,9 +508,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               </button>
             </div>
           ) : (
-            <div className="w-full overflow-auto rounded-xl bg-white"
-              style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', maxHeight: 'calc(100vh - 220px)' }}>
-              <table className="text-sm border-collapse" style={{ minWidth: '100%' }}>
+            <div className="app-table-shell" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+              <table className="app-data-table" style={{ minWidth: '100%' }}>
                 <thead className="sticky top-0 z-20 bg-white">
                   <tr style={{ borderBottom: '1px solid #f0ede8' }}>
                     <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-30 bg-white" style={{ minWidth: 220 }}>
@@ -589,8 +585,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   ))}
                 </tbody>
               </table>
-              <div className="px-4 py-2 text-xs flex items-center justify-between"
-                style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}>
+              <div className="app-table-footer flex items-center justify-between">
                 <span>{medziagas.length} medžiagos · {istorija.length} įrašai · {dates.length} datos</span>
                 <button onClick={() => loadData()} className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-black/5">
                   <RefreshCw className="w-3 h-3" />Atnaujinti

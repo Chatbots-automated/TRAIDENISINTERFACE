@@ -8,7 +8,6 @@ import {
   LogOut,
   Users,
   MessageSquare,
-  Zap,
   BookOpen,
   ChevronsLeft,
   ChevronsRight,
@@ -19,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import SettingsModal from './SettingsModal';
-import WebhooksModal from './WebhooksModal';
+import { APP_VERSION } from '../version';
 
 interface LayoutProps {
   user: AppUser;
@@ -63,7 +62,6 @@ export default function Layout({
     }
   }, [forceCollapsed]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [webhooksOpen, setWebhooksOpen] = useState(false);
   const [settingsDropdownOpen, setSettingsDropdownOpen] = useState(false);
   const settingsDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -236,14 +234,6 @@ export default function Layout({
                 {user.is_admin && (
                   <>
                     <button
-                      onClick={() => setWebhooksOpen(true)}
-                      title={sidebarCollapsed ? 'Webhooks' : undefined}
-                      className="sidebar-footer-btn"
-                    >
-                      <Zap className="w-4 h-4 flex-shrink-0" />
-                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Webhooks</span>
-                    </button>
-                    <button
                       onClick={() => onViewModeChange?.('instrukcijos')}
                       className={`sidebar-footer-btn ${viewMode === 'instrukcijos' ? 'bg-primary/10 text-primary' : ''}`}
                       title={sidebarCollapsed ? 'Instrukcijos' : undefined}
@@ -317,14 +307,22 @@ export default function Layout({
                     <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Nustatymai</span>
                   </button>
                 </div>
-                {/* Collapse/Expand */}
-                <button
-                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
-                  className="sidebar-footer-btn hidden lg:flex"
-                >
-                  {sidebarCollapsed ? <ChevronsRight className="w-4 h-4 flex-shrink-0" /> : <ChevronsLeft className="w-4 h-4 flex-shrink-0" />}
-                </button>
+                {/* Version + Collapse/Expand */}
+                <div className={`hidden lg:grid items-center h-8 transition-all duration-300 ${sidebarCollapsed ? 'grid-cols-1 justify-items-center px-0' : 'grid-cols-[2rem_1fr] px-3'}`}>
+                  <button
+                    onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                    title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
+                    className="sidebar-collapse-icon-btn"
+                    aria-label={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
+                  >
+                    {sidebarCollapsed ? <ChevronsRight className="w-4 h-4 flex-shrink-0" /> : <ChevronsLeft className="w-4 h-4 flex-shrink-0" />}
+                  </button>
+                  {!sidebarCollapsed && (
+                    <span className="justify-self-center translate-x-2 text-[11px] font-medium text-base-content/35 tabular-nums select-none">
+                      v{APP_VERSION}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -352,13 +350,6 @@ export default function Layout({
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        user={user}
-      />
-
-      {/* Webhooks Modal - Admin Only */}
-      <WebhooksModal
-        isOpen={webhooksOpen}
-        onClose={() => setWebhooksOpen(false)}
         user={user}
       />
 

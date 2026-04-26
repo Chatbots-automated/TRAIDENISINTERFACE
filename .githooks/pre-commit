@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+
+npm run version:patch --silent
+git add package.json package-lock.json

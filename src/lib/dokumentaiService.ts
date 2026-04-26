@@ -4,6 +4,7 @@ import { appLogger } from './appLogger';
 
 const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
 const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_USER_FIELDS = 'id,first_name,last_name,email';
 export const TALPOS_TABLE_FIELDS = [
   'id',
   'pavadinimas',
@@ -22,6 +23,97 @@ export const TALPOS_TABLE_FIELDS = [
 ] as const;
 const TALPOS_SELECT = TALPOS_TABLE_FIELDS.join(',');
 
+export interface DirectusUserSummary {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+}
+
+export type DirectusUserNameMap = Record<string, DirectusUserSummary>;
+
+const DIRECTUS_USER_NAME_FIELD = '__directus_user_names';
+
+function collectDirectusUserIds(rows: any[], fields: string[]): string[] {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    for (const field of fields) {
+      const value = row?.[field];
+      if (typeof value === 'string' && value.trim()) {
+        ids.add(value.trim());
+      } else if (value && typeof value === 'object' && typeof value.id === 'string') {
+        ids.add(value.id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+function getDirectusUserId(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object' && typeof (value as any).id === 'string') return (value as any).id;
+  return null;
+}
+
+function getDirectusUserLabel(user: DirectusUserSummary | null | undefined): string | null {
+  if (!user) return null;
+  const firstName = user.first_name?.trim();
+  if (firstName) return firstName;
+
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(' ').trim();
+  if (fullName) return fullName;
+
+  return user.email || null;
+}
+
+async function fetchDirectusUsersByIds(ids: string[]): Promise<DirectusUserNameMap> {
+  if (ids.length === 0) return {};
+
+  const params = new URLSearchParams({
+    fields: DIRECTUS_USER_FIELDS,
+    limit: '-1',
+  });
+  params.set('filter[id][_in]', ids.join(','));
+
+  try {
+    const response = await fetch(`${DIRECTUS_URL}/users?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    });
+
+    if (!response.ok) {
+      console.warn('Could not fetch Directus user names:', await response.text());
+      return {};
+    }
+
+    const json = await response.json();
+    const users = Array.isArray(json?.data) ? json.data : [];
+    return users.reduce((acc: DirectusUserNameMap, user: DirectusUserSummary) => {
+      if (user?.id) acc[user.id] = user;
+      return acc;
+    }, {});
+  } catch (error) {
+    console.warn('Could not fetch Directus user names:', error);
+    return {};
+  }
+}
+
+async function attachDirectusUserNames(rows: any[], fields: string[]): Promise<any[]> {
+  const usersById = await fetchDirectusUsersByIds(collectDirectusUserIds(rows, fields));
+
+  return rows.map(row => {
+    const names: Record<string, string> = {};
+    for (const field of fields) {
+      const id = getDirectusUserId(row?.[field]);
+      const label = id ? getDirectusUserLabel(usersById[id]) : null;
+      if (label) names[field] = label;
+    }
+
+    return Object.keys(names).length > 0
+      ? { ...row, [DIRECTUS_USER_NAME_FIELD]: names }
+      : row;
+  });
+}
+
 /**
  * Fetch all records from standartiniai_projektai table
  */
@@ -38,7 +130,7 @@ export const fetchStandartiniaiProjektai = async (): Promise<any[]> => {
       throw error;
     }
 
-    return data || [];
+    return await attachDirectusUserNames(data || [], ['user_created', 'user_updated']);
   } catch (error: any) {
     console.error('Error in fetchStandartiniaiProjektai:', error);
     await appLogger.logError({
@@ -495,7 +587,7 @@ export const fetchTalpos = async (): Promise<any[]> => {
   try {
     const { data, error } = await db
       .from('talpos')
-      .select(TALPOS_SELECT)
+      .select('*')
       .order('id', { ascending: false })
       .limit(-1);
 
