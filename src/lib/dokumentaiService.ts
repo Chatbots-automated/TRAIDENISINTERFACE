@@ -367,6 +367,8 @@ export interface AtsakymasMessage {
   date?: string;
   text: string;
   role?: 'recipient' | 'team';
+  talpos_id?: string | null;
+  tank_index?: number | null;
 }
 
 export interface TaskItem {

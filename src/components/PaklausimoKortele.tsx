@@ -542,7 +542,7 @@ function isOldFormat(meta: Record<string, any>): boolean {
 type TalposSubTab = 'parametrai' | 'derva' | 'medziagos';
 
 function TabTalpos({
-  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange,
+  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange, pendingMessages,
 }: {
   record: NestandartiniaiRecord;
   products: Record<string, any>[];
@@ -553,6 +553,7 @@ function TabTalpos({
   onSubTabChange?: (tab: TalposSubTab) => void;
   initialTankIdx?: number;
   onTankIdxChange?: (idx: number) => void;
+  pendingMessages?: AtsakymasMessage[] | null;
 }) {
   const [currentIdx, setCurrentIdx] = useState(initialTankIdx ?? 0);
   const [subTab, setSubTab] = useState<TalposSubTab>(initialSubTab ?? 'parametrai');
@@ -648,6 +649,8 @@ function TabTalpos({
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
   const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number } | null>>({});
+  const [descriptionRefreshing, setDescriptionRefreshing] = useState<Record<number, boolean>>({});
+  const [descriptionRefreshError, setDescriptionRefreshError] = useState<Record<number, string | null>>({});
 
   // Add / delete tank state
   const [addingTank, setAddingTank] = useState(false);
@@ -762,16 +765,6 @@ function TabTalpos({
   const kvEntries = useMemo((): KvEntry[] => {
     if (!currentTalposRow) return [];
     const result: KvEntry[] = [];
-
-    // Keep description above JSON-derived values; this is the main human
-    // summary users scan before diving into structured parameters.
-    if ('description' in currentTalposRow) {
-      result.push({
-        type: 'scalar',
-        key: 'description',
-        value: currentTalposRow.description === null || currentTalposRow.description === undefined ? '' : String(currentTalposRow.description),
-      });
-    }
 
     // First: flatten the contents of the `json` column directly into the list
     const jsonColObj = tryParseJsonObject(currentTalposRow.json);
@@ -914,6 +907,104 @@ function TabTalpos({
       setSimilarError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
     } finally {
       setSimilarSearching(prev => ({ ...prev, [idx]: false }));
+    }
+  };
+
+  const refreshTalposDescription = async () => {
+    if (!currentTalposId || !currentTalposRow) return;
+
+    const extractDescription = (value: any): string | null => {
+      if (!value) return null;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        try {
+          const parsed = JSON.parse(trimmed);
+          return extractDescription(parsed) || trimmed;
+        } catch {
+          return trimmed;
+        }
+      }
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const description = extractDescription(item);
+          if (description) return description;
+        }
+        return null;
+      }
+      if (typeof value === 'object') {
+        for (const key of ['description', 'aprasymas', 'text', 'output', 'result', 'message']) {
+          const description = extractDescription(value[key]);
+          if (description) return description;
+        }
+      }
+      return null;
+    };
+
+    setDescriptionRefreshing(prev => ({ ...prev, [idx]: true }));
+    setDescriptionRefreshError(prev => ({ ...prev, [idx]: null }));
+    try {
+      const webhookUrl = await getWebhookUrl('n8n_update_talpos_description');
+      if (!webhookUrl) throw new Error('Webhook "n8n_update_talpos_description" nesukonfigūruotas');
+
+      const talposJson = tryParseJsonObject(currentTalposRow.json) ?? currentTalposRow.json ?? null;
+      const metadata = parseMetadata(record.metadata);
+      const payload = {
+        action: 'update_talpos_description',
+        project: {
+          id: record.id,
+          project_name: record.project_name,
+          klientas: record.klientas,
+          pateikimo_data: record.pateikimo_data,
+        },
+        talpa: {
+          id: currentTalposId,
+          index: idx,
+          pavadinimas: currentTalposRow.pavadinimas ?? null,
+          current_description: currentTalposRow.description ?? null,
+          json: talposJson,
+          metadata: currentTalposRow.json ?? null,
+          selected_resin: currentTalposRow.derva_musu ?? talposJson?.derva_musu ?? null,
+          ai_resin_recommendation: currentTalposRow.derva_ai ?? talposJson?.derva_ai ?? record.derva ?? null,
+          material_slate: currentTalposRow.material_slate ?? null,
+          material_slate_template_id: currentTalposRow.material_slate?._template_id ?? null,
+          material_slate_template_name: currentTalposRow.material_slate?._template_name ?? null,
+        },
+        context: {
+          pokalbiai: getMessagesForTalpa(pendingMessages ?? parseAtsakymas(record.atsakymas), currentTalposId, talposIds.length),
+          ai_conversation: typeof record.ai_conversation === 'string'
+            ? (() => { try { return JSON.parse(record.ai_conversation); } catch { return record.ai_conversation; } })()
+            : record.ai_conversation,
+          file_ids: getFileIds(record),
+          project_metadata: metadata,
+          raw_metadata: record.metadata,
+        },
+      };
+
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const responseText = await response.text().catch(() => '');
+      if (!response.ok) throw new Error(`HTTP ${response.status}${responseText ? `: ${responseText.slice(0, 160)}` : ''}`);
+
+      let parsed: any = responseText;
+      try { parsed = JSON.parse(responseText); } catch { /* plain text is fine */ }
+      const nextDescription = extractDescription(parsed);
+      if (!nextDescription) throw new Error('Webhook negrąžino aprašymo');
+
+      await updateTalposField(currentTalposId, 'description', nextDescription);
+      setTalposRows(prev => prev.map(row =>
+        String(row.id) === String(currentTalposId)
+          ? { ...row, description: nextDescription }
+          : row
+      ));
+    } catch (e: any) {
+      setDescriptionRefreshError(prev => ({ ...prev, [idx]: e?.message || 'Nepavyko atnaujinti aprašymo' }));
+    } finally {
+      setDescriptionRefreshing(prev => ({ ...prev, [idx]: false }));
     }
   };
 
@@ -1154,9 +1245,9 @@ function TabTalpos({
               {/* Two-column: left = KV fields, right = similar tanks */}
               <div className="flex flex-col xl:flex-row gap-4 flex-1 min-h-0 overflow-y-auto xl:overflow-hidden">
                 {/* Left column: fixed width, editable key-value list */}
-                <div className="w-full xl:w-[260px] xl:shrink-0 flex flex-col min-h-[220px] xl:min-h-0">
+                <div className="w-full xl:w-[320px] xl:shrink-0 flex flex-col min-h-[220px] xl:min-h-0 rounded-2xl border border-base-content/8 bg-white/65 p-3 shadow-[0_10px_28px_-26px_rgba(15,23,42,0.35)]">
                   {/* Parametrai label + quantity badge + kaina on the same row */}
-                  <div className="flex items-center justify-between mb-1.5 shrink-0">
+                  <div className="flex items-center justify-between gap-2 mb-2.5 shrink-0">
                     <div className="flex items-center gap-1.5">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Parametrai</p>
                       {currentTalposRow?.quantity != null && Number(currentTalposRow.quantity) >= 1 && (
@@ -1208,8 +1299,8 @@ function TabTalpos({
                     )}
                   </div>
                   {/* Scrollable KV list */}
-                  <div className="flex-1 overflow-y-auto rounded-xl min-h-0">
-                    <div className="py-0.5 flex flex-col gap-0.5">
+                  <div className="flex-1 overflow-y-auto min-h-0 pr-0.5">
+                    <div className="flex flex-col gap-1">
                       {kvEntries.map(entry => {
                         if (entry.type === 'nested') {
                           return (
@@ -1230,8 +1321,8 @@ function TabTalpos({
                                     ? normalizedCv.text
                                     : '';
                                 return (
-                                  <div key={editKey} className="group flex items-start gap-2 px-2.5 py-1.5 hover:bg-black/[0.03] transition-colors">
-                                    <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '72px', maxWidth: '100px' }} title={formatMetaLabel(ck)}>
+                                  <div key={editKey} className="group grid grid-cols-[92px_minmax(0,1fr)] gap-2 rounded-lg px-2.5 py-2 hover:bg-black/[0.025] transition-colors">
+                                    <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" title={formatMetaLabel(ck)}>
                                       {formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
@@ -1278,8 +1369,8 @@ function TabTalpos({
                         // scalar entry
                         const { key: k, value: v } = entry;
                         return (
-                          <div key={k} className="group flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-black/[0.04] transition-colors">
-                            <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" style={{ minWidth: '76px', maxWidth: '110px' }} title={formatMetaLabel(k)}>
+                          <div key={k} className="group grid grid-cols-[92px_minmax(0,1fr)] gap-2 px-2.5 py-2 rounded-lg hover:bg-black/[0.025] transition-colors">
+                            <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" title={formatMetaLabel(k)}>
                               {formatMetaLabel(k)}
                             </span>
                             {editingKvKey === k ? (
@@ -1370,6 +1461,44 @@ function TabTalpos({
 
                 {/* Right column: similar tanks */}
                 <div className="flex-1 min-w-0 min-h-0 flex flex-col gap-3">
+                  <div className="shrink-0">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Aprašymas</p>
+                      {!readOnly && currentTalposId && (
+                        <button
+                          onClick={refreshTalposDescription}
+                          disabled={!!descriptionRefreshing[idx]}
+                          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-base-content/10 bg-white text-base-content/60 hover:text-primary hover:border-primary/20 hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {descriptionRefreshing[idx] ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3" />
+                          )}
+                          Atnaujinti
+                        </button>
+                      )}
+                    </div>
+                    {currentTalposRow?.description ? (
+                      <div
+                        className="overflow-auto rounded-xl p-3 border border-base-content/8 bg-base-content/[0.02]"
+                        style={{ maxHeight: '180px' }}
+                      >
+                        <NormalizedDisplayRenderer value={currentTalposRow.description} />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl p-3 border border-dashed border-base-content/10 bg-base-content/[0.02]">
+                        <p className="text-xs text-base-content/30 text-center">Nėra aprašymo</p>
+                      </div>
+                    )}
+                    {descriptionRefreshError[idx] && (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-error">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{descriptionRefreshError[idx]}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {/* Similar tanks */}
                   <div className="flex-1 min-h-0 flex flex-col">
                     <div className="flex items-center justify-between mb-2 shrink-0">
@@ -1380,12 +1509,12 @@ function TabTalpos({
                         <button
                           onClick={findSimilar}
                           disabled={!!similarSearching[idx]}
-                          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-base-content/10 bg-white text-base-content/60 hover:text-primary hover:border-primary/20 hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {similarSearching[idx] ? (
                             <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Ieškoma...</>
                           ) : (
-                            <><RefreshCw className="w-3.5 h-3.5" /> Rasti Panašias</>
+                            <><RefreshCw className="w-3.5 h-3.5" /> Rasti panašias</>
                           )}
                         </button>
                       </div>
@@ -2063,14 +2192,29 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange }: {
+function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel }: {
   record: NestandartiniaiRecord;
   readOnly?: boolean;
   pendingMessages?: AtsakymasMessage[];
   onMessagesChange?: (messages: AtsakymasMessage[]) => void;
+  currentTalposId?: string | null;
+  currentTankIndex?: number;
+  talposCount?: number;
+  tankLabel?: string;
 }) {
   const originalMessages = parseAtsakymas(record.atsakymas);
-  const messages = pendingMessages ?? originalMessages;
+  const allMessages = pendingMessages ?? originalMessages;
+  const messagesWithIndex = allMessages
+    .map((message, originalIndex) => ({ message, originalIndex }))
+    .filter(({ message }) => {
+      const messageTalposId = (message as any).talpos_id;
+      if (currentTalposId && typeof messageTalposId === 'string' && messageTalposId.trim()) {
+        return messageTalposId.trim() === currentTalposId;
+      }
+      if (currentTalposId) return (talposCount ?? 0) <= 1;
+      return true;
+    });
+  const messages = messagesWithIndex.map(item => item.message);
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
@@ -2080,18 +2224,28 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
   };
 
   const handleAdd = (text: string, side: 'left' | 'right') => {
-    const msg: AtsakymasMessage = { text, role: side === 'left' ? 'recipient' : 'team', date: new Date().toISOString().slice(0, 10) };
-    update([...messages, msg]);
+    const msg: AtsakymasMessage = {
+      text,
+      role: side === 'left' ? 'recipient' : 'team',
+      date: new Date().toISOString().slice(0, 10),
+      talpos_id: currentTalposId ?? null,
+      tank_index: currentTankIndex ?? null,
+    };
+    update([...allMessages, msg]);
     setAddingSide(null);
   };
 
   const handleEdit = (idx: number, newText: string) => {
-    update(messages.map((m, i) => i === idx ? { ...m, text: newText } : m));
+    const originalIndex = messagesWithIndex[idx]?.originalIndex;
+    if (originalIndex === undefined) return;
+    update(allMessages.map((m, i) => i === originalIndex ? { ...m, text: newText } : m));
     setEditingIdx(null);
   };
 
   const handleDelete = (idx: number) => {
-    update(messages.filter((_, i) => i !== idx));
+    const originalIndex = messagesWithIndex[idx]?.originalIndex;
+    if (originalIndex === undefined) return;
+    update(allMessages.filter((_, i) => i !== originalIndex));
     setConfirmDeleteIdx(null);
   };
 
@@ -2100,6 +2254,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-base-content/40">
           {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
+          {tankLabel ? <span className="ml-2 text-base-content/30">· {tankLabel}</span> : null}
         </p>
       </div>
 
@@ -2324,6 +2479,17 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function getMessagesForTalpa(messages: AtsakymasMessage[], talposId: string | null, talposCount = 0): AtsakymasMessage[] {
+  if (!talposId) return messages;
+  return messages.filter((message) => {
+    const messageTalposId = (message as any).talpos_id;
+    if (typeof messageTalposId === 'string' && messageTalposId.trim()) {
+      return messageTalposId.trim() === talposId;
+    }
+    return talposCount <= 1;
+  });
 }
 
 function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePendingFile, onDeleteFile }: {
@@ -2944,6 +3110,8 @@ function TabMedziagos({
   const [newSlateKey, setNewSlateKey] = useState('');
   const [newSlateValue, setNewSlateValue] = useState('');
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
+  const slateDraftOriginalPathsRef = useRef<string[]>([]);
+  const internalSlateKeys = useMemo(() => new Set(['_template_id', '_template_name', '_manual']), []);
 
   // Manual entry rows
   const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
@@ -2954,13 +3122,15 @@ function TabMedziagos({
   useEffect(() => {
     const slate = currentTalposRow?.material_slate;
     if (slate) {
-      setLocalSlate(normalizeStructuredSlate(slate) || slate);
+      const normalized = normalizeStructuredSlate(slate) || slate;
+      setLocalSlate(normalized);
+      setSelectedTemplateId(normalized?._template_id ?? null);
       setMode('template');
     } else {
       setLocalSlate(null);
-      if (mode !== 'manual') setMode('prompt');
+      setSelectedTemplateId(null);
+      setMode(prev => prev === 'manual' ? prev : 'prompt');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTalposRow?.material_slate, idx]);
 
   const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
@@ -3000,7 +3170,9 @@ function TabMedziagos({
       const slate = { items, _manual: true };
       await updateTalposField(currentTalposId, 'material_slate', slate);
       setLocalSlate(slate);
+      setSelectedTemplateId(null);
       onTalposRowUpdated?.(currentTalposId, 'material_slate', slate);
+      setMode('template');
     } catch (err) {
       console.error('Error saving manual slate:', err);
     } finally {
@@ -3017,6 +3189,8 @@ function TabMedziagos({
       onTalposRowUpdated?.(currentTalposId, 'material_slate', null);
       setMode('prompt');
       setSelectedTemplateId(null);
+      setIsSlateEditing(false);
+      slateDraftOriginalPathsRef.current = [];
     } catch (err) {
       console.error('Error clearing slate:', err);
     } finally {
@@ -3035,6 +3209,7 @@ function TabMedziagos({
     const entries: Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }> = [];
     const flatten = (obj: Record<string, any>, prefix = '') => {
       for (const [k, v] of Object.entries(obj)) {
+        if (!prefix && internalSlateKeys.has(k)) continue;
         const p = prefix ? `${prefix}.${k}` : k;
         if (v === null) {
           entries.push({ path: p, label: formatLabel(p), value: '', kind: 'null' });
@@ -3055,6 +3230,7 @@ function TabMedziagos({
     };
     flatten(localSlate);
     setSlateDraftEntries(entries);
+    slateDraftOriginalPathsRef.current = entries.map(entry => entry.path);
     setNewSlateKey('');
     setNewSlateValue('');
     setIsSlateEditing(true);
@@ -3065,7 +3241,12 @@ function TabMedziagos({
     try {
       const toTypedValue = (raw: string, kind: 'string' | 'number' | 'boolean' | 'null' | 'array'): any => {
         const t = raw.trim();
-        if (kind === 'number') return t === '' ? null : Number(t.replace(',', '.'));
+        if (kind === 'number') {
+          if (t === '') return null;
+          const parsed = Number(t.replace(',', '.'));
+          if (Number.isNaN(parsed)) throw new Error(`Neteisingas skaičius: ${raw}`);
+          return parsed;
+        }
         if (kind === 'boolean') return ['taip', 'true', '1'].includes(t.toLowerCase());
         if (kind === 'null') return t === '' ? null : t;
         if (kind === 'array') return t.split(',').map(s => s.trim()).filter(Boolean);
@@ -3080,14 +3261,30 @@ function TabMedziagos({
         }
         obj[parts[parts.length - 1]] = value;
       };
+      const deleteByPath = (target: Record<string, any>, path: string) => {
+        const parts = path.split('.');
+        let obj: any = target;
+        for (let i = 0; i < parts.length - 1; i++) {
+          obj = obj?.[parts[i]];
+          if (!obj || typeof obj !== 'object') return;
+        }
+        delete obj[parts[parts.length - 1]];
+      };
 
       const parsed: Record<string, any> = JSON.parse(JSON.stringify(localSlate || {}));
+      for (const path of slateDraftOriginalPathsRef.current) {
+        deleteByPath(parsed, path);
+      }
       for (const row of slateDraftEntries) {
         if (!row.path.trim()) continue;
+        if (internalSlateKeys.has(row.path.trim())) continue;
         setByPath(parsed, row.path, toTypedValue(row.value, row.kind));
       }
       if (newSlateKey.trim()) {
-        parsed[newSlateKey.trim()] = newSlateValue;
+        if (internalSlateKeys.has(newSlateKey.trim())) {
+          throw new Error('Vidiniai šablono laukai negali būti redaguojami');
+        }
+        setByPath(parsed, newSlateKey.trim(), newSlateValue);
       }
       setSavingSlate(true);
       await updateTalposField(currentTalposId, 'material_slate', parsed);
@@ -3095,9 +3292,10 @@ function TabMedziagos({
       onTalposRowUpdated?.(currentTalposId, 'material_slate', parsed);
       setMode('template');
       setIsSlateEditing(false);
+      slateDraftOriginalPathsRef.current = [];
     } catch (err) {
       console.error('Error saving slate edits:', err);
-      setSlateEditError('Nepavyko išsaugoti pakeitimų.');
+      setSlateEditError(err instanceof Error ? err.message : 'Nepavyko išsaugoti pakeitimų.');
     } finally {
       setSavingSlate(false);
     }
@@ -3232,24 +3430,6 @@ function TabMedziagos({
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Warning if tank may not be appropriate for templates */}
-      {currentTalposRow && (() => {
-        const json = tryParseJsonObject(currentTalposRow.json);
-        const chemija = currentTalposRow.chemija || json?.chemija || '';
-        const derva = currentTalposRow.derva_musu || currentTalposRow.derva_ai || json?.derva || '';
-        const hasChemicals = chemija && typeof chemija === 'string' && !['vanduo', 'water', 'techninis vanduo', '-', 'nenurodyta', ''].includes(chemija.toLowerCase().trim());
-        const isNonPolyester = derva && typeof derva === 'string' && !derva.toLowerCase().includes('poliester');
-        if (hasChemicals || isNonPolyester) {
-          return (
-            <div className="mb-3 px-3 py-2 rounded-xl text-xs flex items-center gap-2 shrink-0" style={{ background: 'rgba(255,159,10,0.08)', color: '#FF9F0A', border: '0.5px solid rgba(255,159,10,0.2)' }}>
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>Šis šablonas gali netikti {hasChemicals ? 'cheminių medžiagų' : 'ne poliesterinės dervos'} talpai</span>
-            </div>
-          );
-        }
-        return null;
-      })()}
-
       {/* Two-column layout */}
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Left column: materials slate */}
@@ -4019,6 +4199,15 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   // Pending data: stored locally until Atnaujinti is pressed
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
+  const modalTalposValue = (effectiveRecord as any).talpos;
+  const modalTalposIds = useMemo(() => {
+    const raw = modalTalposValue;
+    return typeof raw === 'string' ? raw.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+  }, [modalTalposValue]);
+  const currentModalTalposId = modalTalposIds[talposIdx] ?? null;
+  const currentModalTankLabel = products[talposIdx]
+    ? getProductTitle(products[talposIdx]) || `Talpa ${talposIdx + 1}`
+    : `Talpa ${talposIdx + 1}`;
 
 
   // Price (kaina) state — per-tank pricing stored in metadata._kaina_per_tank
@@ -4376,9 +4565,21 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
                 onSubTabChange={setTalposSubTab}
                 initialTankIdx={talposIdx}
                 onTankIdxChange={setTalposIdx}
+                pendingMessages={pendingMessages}
               />
             )}
-            {activeTab === 'susirasinejimas' && <TabSusirasinejimas record={effectiveRecord} readOnly={isLocked} pendingMessages={pendingMessages ?? undefined} onMessagesChange={handleMessagesChange} />}
+            {activeTab === 'susirasinejimas' && (
+              <TabSusirasinejimas
+                record={effectiveRecord}
+                readOnly={isLocked}
+                pendingMessages={pendingMessages ?? undefined}
+                onMessagesChange={handleMessagesChange}
+                currentTalposId={currentModalTalposId}
+                currentTankIndex={talposIdx}
+                talposCount={modalTalposIds.length}
+                tankLabel={currentModalTankLabel}
+              />
+            )}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
             {activeTab === 'failai' && (
               <>

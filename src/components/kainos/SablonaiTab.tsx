@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, FileText, Loader2, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, FileText, Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import MaterialSlateView from '../MaterialSlateView';
 import { createSablonas, deleteSablonas, fetchSablonai, generateStructuredJson, updateSablonas } from '../../lib/sablonaiService';
 import type { MedziaguSablonas } from '../../lib/sablonaiService';
@@ -273,6 +273,22 @@ export function SablonaiTab() {
     }
   };
 
+  const cancelDraft = async () => {
+    if (!draftCard) return;
+    const targetId = draftCard.id;
+    setDraftCard(prev => prev ? { ...prev, isSaving: true, saveError: null } : prev);
+    try {
+      if (targetId) {
+        await deleteSablonas(targetId);
+        setSablonai(prev => prev.filter(s => s.id !== targetId));
+      }
+      setDraftCard(null);
+      setShowSavedHint(false);
+    } catch (err: any) {
+      setDraftCard(prev => prev ? { ...prev, isSaving: false, saveError: err?.message || 'Nepavyko atšaukti naujo šablono' } : prev);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -330,13 +346,12 @@ export function SablonaiTab() {
         <div className="space-y-4">
             {draftCard && (
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-5 items-start">
-                <div className="relative h-full min-h-[160px] pl-4 pt-3 before:absolute before:left-1 before:top-0 before:bottom-0 before:w-px before:bg-base-content/10 after:absolute after:left-1 after:top-5 after:h-px after:w-2 after:bg-primary">
+                <div className="relative h-full min-h-[120px] pl-4 pt-3 before:absolute before:left-1 before:top-0 before:bottom-0 before:w-px before:bg-primary/20 after:absolute after:left-1 after:top-5 after:h-px after:w-2 after:bg-primary">
                   <span className="text-xs font-semibold text-primary">Naujas</span>
                 </div>
                 <div
                   key={draftCard.localId}
-                  className="sdk-data-card p-3.5 transition-all min-h-[160px] flex flex-col"
-                  style={{ borderColor: 'rgba(0,122,255,0.24)', background: 'rgba(0,122,255,0.035)' }}
+                  className="rounded-2xl border border-dashed border-primary/25 bg-white/90 p-4 transition-all shadow-[0_14px_34px_-30px_rgba(15,23,42,0.35)]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -349,6 +364,14 @@ export function SablonaiTab() {
                       />
                     </div>
                     <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={cancelDraft}
+                        disabled={draftCard.isSaving}
+                        className="app-text-btn h-7 min-h-0 text-[11px] disabled:opacity-50"
+                      >
+                        <X className="w-3 h-3" />
+                        Atšaukti
+                      </button>
                       {draftCard.id && (
                         <button
                           onClick={handleFinishDraft}
@@ -370,7 +393,7 @@ export function SablonaiTab() {
                   </div>
 
                   {expandedCards[draftCard.localId] && (
-                    <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
+                    <div className="mt-3 rounded-xl p-2.5 border border-base-content/8 bg-base-content/[0.015] overflow-hidden">
                       <textarea
                         ref={draftTextareaRef}
                         value={draftCard.rawText}
@@ -378,7 +401,7 @@ export function SablonaiTab() {
                         placeholder="Įveskite medžiagų aprašymą..."
                         rows={8}
                         className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
-                        style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
+                        style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff', minHeight: 150 }}
                       />
                       <div className="mt-2 min-h-[16px]">
                         {draftCard.isSaving ? (
@@ -418,9 +441,6 @@ export function SablonaiTab() {
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0 flex-1 text-left">
                             <div className="flex items-center gap-2 min-w-0">
-                              <span className="rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                                {capacity === null ? 'V - ?' : `V - ${formatCapacity(capacity)}`}
-                              </span>
                               <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
                             </div>
                             {!isExpanded && (

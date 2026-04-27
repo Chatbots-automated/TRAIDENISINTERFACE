@@ -455,7 +455,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const naftaDisplay = streamNafta || internetAnalyses.nafta?.content || '';
   const geoDisplay = streamGeo || internetAnalyses.politika?.content || '';
   const analysisDisplay = streamAnalysis || internetAnalyses.kainos?.content || '';
-  const lastUpdated = internetAnalyses.kainos?.date_updated || internetAnalyses.politika?.date_updated || internetAnalyses.nafta?.date_updated || null;
+  const activeAnalysisUpdated =
+    analysisFocus === 'nafta'
+      ? internetAnalyses.nafta?.date_updated
+      : analysisFocus === 'geo'
+        ? internetAnalyses.politika?.date_updated
+        : internetAnalyses.kainos?.date_updated;
   const isGenerationBlocked = genLoading;
   const renderCitations = (meta: AnalysisSectionMeta, displayText: string) => {
     const fallbackCitations = extractUrlCitationsFromText(displayText || '');
@@ -677,8 +682,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
               </div>
             </div>
 
-              <div className="mt-4 border-t border-base-content/10 bg-white">
-                <div className="px-5 py-4 flex flex-col gap-3 border-b border-base-content/10 bg-base-content/[0.015] sm:flex-row sm:items-center sm:justify-between">
+              <div className="mt-4 bg-white shadow-[inset_0_20px_24px_-30px_rgba(15,23,42,0.28)]">
+                <div className="px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-gradient-to-b from-base-content/[0.018] to-transparent">
                   <div className="flex items-center gap-2">
                     {analysisFocus === 'nafta' ? <BarChart2 className="w-4 h-4 text-base-content/45" /> : analysisFocus === 'geo' ? <Globe className="w-4 h-4 text-base-content/45" /> : <TrendingUp className="w-4 h-4 text-base-content/45" />}
                     <div>
@@ -686,7 +691,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                         {analysisFocus === 'nafta' ? 'Naftos kainos ir dervų ryšys' : analysisFocus === 'geo' ? 'Geopolitiniai įvykiai ir rinkos sąlygos' : 'Kainų analizė ir prognozė'}
                       </span>
                       <p className="mt-0.5 text-[11px] text-base-content/45">
-                        {lastUpdated ? `Paskutinį kartą atnaujinta ${relativeTime(lastUpdated)}.` : 'Dar nėra sugeneruotos analizės.'}
+                        {activeAnalysisUpdated ? `Paskutinį kartą atnaujinta ${relativeTime(activeAnalysisUpdated)}.` : 'Dar nėra sugeneruotos analizės.'}
                       </p>
                     </div>
                   </div>

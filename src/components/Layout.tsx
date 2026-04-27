@@ -297,17 +297,17 @@ export default function Layout({
                   </button>
                 </div>
                 {/* Version + Collapse/Expand */}
-                <div className={`hidden lg:grid items-center h-8 transition-all duration-300 ${sidebarCollapsed ? 'grid-cols-1 justify-items-center px-0' : 'grid-cols-[2rem_1fr] px-3'}`}>
+                <div className={`hidden lg:flex items-center h-8 transition-all duration-300 ${sidebarCollapsed ? 'justify-center px-0' : 'gap-2 px-3'}`}>
                   <button
                     onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                     title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
-                    className={`sidebar-collapse-icon-btn ${sidebarCollapsed ? '' : '-ml-1'}`}
+                    className="sidebar-collapse-icon-btn"
                     aria-label={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
                   >
                     {sidebarCollapsed ? <ChevronsRight className="w-4 h-4 flex-shrink-0" /> : <ChevronsLeft className="w-4 h-4 flex-shrink-0" />}
                   </button>
                   {!sidebarCollapsed && (
-                    <span className="justify-self-center text-[11px] font-medium text-macos-gray-400 tabular-nums select-none">
+                    <span className="text-sm text-base-content/45 select-none">
                       v{APP_VERSION}
                     </span>
                   )}

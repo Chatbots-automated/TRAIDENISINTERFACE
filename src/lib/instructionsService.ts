@@ -6,6 +6,7 @@ export interface InstructionVariable {
   id: string;
   variable_key: string;
   variable_name: string;
+  description?: string | null;
   content: string;
   display_order: number;
   updated_at: string;
@@ -15,12 +16,19 @@ export interface InstructionVariable {
 export interface InstructionVersion {
   id: string;
   version_number: number;
-  snapshot: Record<string, string>;
+  snapshot: Record<string, string | InstructionSnapshotVariable>;
   change_description: string | null;
   created_at: string;
   created_by: string | null;
   is_revert: boolean;
   reverted_from_version: number | null;
+}
+
+export interface InstructionSnapshotVariable {
+  content: string;
+  variable_name?: string | null;
+  description?: string | null;
+  display_order?: number | null;
 }
 
 const isForbiddenError = (error: any): boolean => {
@@ -121,6 +129,144 @@ export async function updateInstructionVariable(
   return data;
 }
 
+async function deleteInstructionVariable(variableKey: string): Promise<void> {
+  let { error } = await db
+    .from('instruction_variables')
+    .delete()
+    .eq('variable_key', variableKey);
+
+  if (error && isForbiddenError(error)) {
+    ({ error } = await dbAdmin
+      .from('instruction_variables')
+      .delete()
+      .eq('variable_key', variableKey));
+  }
+
+  if (error) throw error;
+}
+
+async function upsertInstructionVariableFromSnapshot(
+  variableKey: string,
+  snapshotValue: string | InstructionSnapshotVariable,
+  userId: string
+): Promise<void> {
+  const value = typeof snapshotValue === 'string'
+    ? { content: snapshotValue }
+    : snapshotValue;
+  const existing = await getInstructionVariable(variableKey);
+
+  const fields = {
+    variable_key: variableKey,
+    variable_name: value.variable_name || existing?.variable_name || variableKey,
+    description: value.description ?? existing?.description ?? null,
+    content: value.content ?? '',
+    display_order: value.display_order ?? existing?.display_order ?? 500,
+    updated_at: new Date().toISOString(),
+    updated_by: userId,
+  };
+
+  if (existing) {
+    let { error } = await db
+      .from('instruction_variables')
+      .update(fields)
+      .eq('variable_key', variableKey);
+
+    if (error && isForbiddenError(error)) {
+      ({ error } = await dbAdmin
+        .from('instruction_variables')
+        .update(fields)
+        .eq('variable_key', variableKey));
+    }
+
+    if (error) throw error;
+    return;
+  }
+
+  let { error } = await db
+    .from('instruction_variables')
+    .insert([fields]);
+
+  if (error && isForbiddenError(error)) {
+    ({ error } = await dbAdmin
+      .from('instruction_variables')
+      .insert([fields]));
+  }
+
+  if (error) throw error;
+}
+
+export async function createInstructionVariable(
+  input: {
+    variable_key: string;
+    variable_name: string;
+    description?: string | null;
+    content?: string;
+    display_order?: number;
+  },
+  userId: string,
+  userEmail: string,
+  createVersion: boolean = true
+): Promise<{ success: boolean; variable?: InstructionVariable; error?: string }> {
+  try {
+    const variableKey = input.variable_key.trim();
+    const variableName = input.variable_name.trim();
+
+    if (!variableKey || !variableName) {
+      return { success: false, error: 'Kodas ir pavadinimas yra privalomi' };
+    }
+
+    const existing = await getInstructionVariable(variableKey);
+    if (existing) {
+      return { success: false, error: 'Toks kintamasis jau egzistuoja' };
+    }
+
+    const record = {
+      variable_key: variableKey,
+      variable_name: variableName,
+      description: input.description?.trim() || null,
+      content: input.content || '',
+      display_order: input.display_order ?? 500,
+      updated_at: new Date().toISOString(),
+      updated_by: userId,
+    };
+
+    let { data, error } = await db
+      .from('instruction_variables')
+      .insert([record])
+      .select()
+      .single();
+
+    if (error && isForbiddenError(error)) {
+      ({ data, error } = await dbAdmin
+        .from('instruction_variables')
+        .insert([record])
+        .select()
+        .single());
+    }
+
+    if (error) throw error;
+
+    if (createVersion) {
+      await createVersionSnapshot(userId, `Sukurta: ${variableName}`);
+    }
+
+    await appLogger.logSystem({
+      action: 'instruction_created',
+      userId,
+      userEmail,
+      metadata: {
+        variable_key: variableKey,
+        content_length: record.content.length
+      }
+    });
+
+    return { success: true, variable: data as InstructionVariable };
+  } catch (error: any) {
+    console.error('Error creating instruction variable:', error);
+    return { success: false, error: error.message || 'Nepavyko sukurti kintamojo' };
+  }
+}
+
 /**
  * Create a version snapshot of all current variables
  */
@@ -134,9 +280,14 @@ export async function createVersionSnapshot(
   const variables = await getInstructionVariables();
 
   // Create snapshot object
-  const snapshot: Record<string, string> = {};
+  const snapshot: Record<string, InstructionSnapshotVariable> = {};
   variables.forEach(v => {
-    snapshot[v.variable_key] = v.content;
+    snapshot[v.variable_key] = {
+      content: v.content,
+      variable_name: v.variable_name,
+      description: v.description ?? null,
+      display_order: v.display_order,
+    };
   });
 
   let { data, error } = await db
@@ -232,12 +383,12 @@ export async function revertToVersion(
   versionNumber: number,
   userId: string,
   userEmail: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; backupVersion?: number; restoredVersion?: number; error?: string }> {
   try {
     // 1. Create a backup of current state before reverting
-    await createVersionSnapshot(
+    const backup = await createVersionSnapshot(
       userId,
-      `Auto-backup before reverting to version ${versionNumber}`,
+      `Atsarginė kopija prieš atkuriant v${versionNumber}`,
       false
     );
 
@@ -248,15 +399,24 @@ export async function revertToVersion(
     }
 
     // 3. Update all variables with the snapshot values
-    const snapshot = versionToRevert.snapshot;
+    const snapshot = versionToRevert.snapshot || {};
+    const snapshotKeys = new Set(Object.keys(snapshot));
+    const currentVariables = await getInstructionVariables();
+
+    for (const variable of currentVariables) {
+      if (!snapshotKeys.has(variable.variable_key)) {
+        await deleteInstructionVariable(variable.variable_key);
+      }
+    }
+
     for (const [key, value] of Object.entries(snapshot)) {
-      await updateInstructionVariable(key, value, userId);
+      await upsertInstructionVariableFromSnapshot(key, value, userId);
     }
 
     // 4. Create a new version marking this as a revert
-    await createVersionSnapshot(
+    const restored = await createVersionSnapshot(
       userId,
-      `Reverted to version ${versionNumber}`,
+      `Atkurta iš v${versionNumber}`,
       true,
       versionNumber
     );
@@ -271,7 +431,11 @@ export async function revertToVersion(
       }
     });
 
-    return { success: true };
+    return {
+      success: true,
+      backupVersion: backup?.version_number,
+      restoredVersion: restored?.version_number,
+    };
   } catch (error: any) {
     console.error('Error reverting to version:', error);
     return { success: false, error: error.message };
@@ -295,7 +459,7 @@ export async function saveInstructionVariable(
       const variable = await getInstructionVariable(variableKey);
       await createVersionSnapshot(
         userId,
-        `Updated: ${variable?.variable_name || variableKey}`
+        `Atnaujinta: ${variable?.variable_name || variableKey}`
       );
     }
 

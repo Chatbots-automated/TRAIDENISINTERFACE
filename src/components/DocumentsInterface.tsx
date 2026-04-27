@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, Plus } from 'lucide-react';
+import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, Plus, Download } from 'lucide-react';
 import type { AppUser } from '../types';
 import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
 import NestandardiniaiInterface from './NestandardiniaiInterface';
+import { buildDirectusAssetUrl, buildDirectusDownloadUrl, buildGoogleDocsViewerUrl } from '../lib/filePreviewUrls';
 
 interface DocumentsInterfaceProps {
   user: AppUser;
@@ -26,11 +27,6 @@ interface MetadataFilters {
   talpa_tipas: string;
   DN: string;
   metadataSearch: string;
-}
-
-interface MetadataSearchPill {
-  key: string;
-  value: string;
 }
 
 const EMPTY_FILTERS: MetadataFilters = {
@@ -105,6 +101,55 @@ const TALPOS_COLUMN_LABELS: Record<string, string> = {
 
 function isInternalTableField(key: string): boolean {
   return key.startsWith('__');
+}
+
+function tryParseObject(value: unknown): Record<string, any> | null {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeParamValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value).trim();
+}
+
+function collectJsonParamEntries(value: unknown, prefix = ''): Array<{ key: string; value: string }> {
+  const obj = tryParseObject(value);
+  if (!obj) return [];
+  const entries: Array<{ key: string; value: string }> = [];
+  for (const [key, raw] of Object.entries(obj)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const nested = tryParseObject(raw);
+    if (nested) {
+      entries.push(...collectJsonParamEntries(nested, path));
+      continue;
+    }
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        const itemValue = normalizeParamValue(item);
+        if (itemValue) entries.push({ key: path, value: itemValue });
+      }
+      continue;
+    }
+    const itemValue = normalizeParamValue(raw);
+    if (itemValue) entries.push({ key: path, value: itemValue });
+  }
+  return entries;
+}
+
+function getTalposIdsFromRecord(row: NestandartiniaiRecord): string[] {
+  return String(row.talpos || '')
+    .split(',')
+    .map(id => id.trim())
+    .filter(Boolean);
 }
 
 function getDirectusUserDisplay(row: any, key: string): string | null {
@@ -561,6 +606,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
   const [showManualProjectModal, setShowManualProjectModal] = useState(false);
   const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
+  const [filePreview, setFilePreview] = useState<{ title: string; url: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
@@ -573,18 +619,8 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const isTalpos = selectedTable === 'talpos';
 
-  const [showMetaSearchMenu, setShowMetaSearchMenu] = useState(false);
-  const [metadataSearchPills, setMetadataSearchPills] = useState<MetadataSearchPill[]>([]);
-  const metaSearchMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showMetaSearchMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (metaSearchMenuRef.current && !metaSearchMenuRef.current.contains(e.target as Node)) setShowMetaSearchMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showMetaSearchMenu]);
+  const [paramSearchKey, setParamSearchKey] = useState('');
+  const [paramSearchValue, setParamSearchValue] = useState('');
 
   // Load only the active table on mount and on every tab switch (lazy — avoids
   // pre-fetching tables the user may never visit and eliminates the double-fetch
@@ -626,15 +662,39 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
   }), [nestandartiniaiData]);
 
-  const metadataSearchKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const row of nestandartiniaiData) {
-      const meta = parseMetadata(row.metadata);
-      if (!meta) continue;
-      for (const key of Object.keys(meta)) set.add(key);
+  const talposById = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const row of talposData) {
+      if (row?.id != null) map.set(String(row.id), row);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'lt'));
-  }, [nestandartiniaiData]);
+    return map;
+  }, [talposData]);
+
+  const paramSearchOptions = useMemo(() => {
+    const valuesByKey = new Map<string, Set<string>>();
+    for (const row of talposData) {
+      for (const entry of collectJsonParamEntries(row?.json)) {
+        if (!valuesByKey.has(entry.key)) valuesByKey.set(entry.key, new Set());
+        valuesByKey.get(entry.key)!.add(entry.value);
+      }
+    }
+    return Array.from(valuesByKey.entries())
+      .map(([key, values]) => ({
+        key,
+        values: Array.from(values).sort((a, b) => a.localeCompare(b, 'lt', { numeric: true })),
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key, 'lt', { numeric: true }));
+  }, [talposData]);
+
+  const paramSearchValues = useMemo(() => {
+    return paramSearchOptions.find(option => option.key === paramSearchKey)?.values || [];
+  }, [paramSearchOptions, paramSearchKey]);
+
+  useEffect(() => {
+    if (paramSearchValue && !paramSearchValues.includes(paramSearchValue)) {
+      setParamSearchValue('');
+    }
+  }, [paramSearchValue, paramSearchValues]);
 
   const currentLoading = isTalpos ? loadingTalpos : isNestandartiniai ? loadingNestandartiniai : loadingStandartiniai;
   const currentError = isTalpos ? errorTalpos : isNestandartiniai ? errorNestandartiniai : errorStandartiniai;
@@ -644,8 +704,20 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const filteredData = useMemo(() => {
     let rows: any[] = isTalpos ? talposData : isNestandartiniai ? nestandartiniaiData : standartiniaiData;
 
-    const hasPillFilters = metadataSearchPills.some((pill) => pill.value.trim().length > 0);
-    if (searchQuery.trim() || hasPillFilters) {
+    if (isNestandartiniai && paramSearchKey && paramSearchValue) {
+      rows = rows.filter((row: NestandartiniaiRecord) => {
+        const talposIds = getTalposIdsFromRecord(row);
+        return talposIds.some((id) => {
+          const talpa = talposById.get(id);
+          if (!talpa) return false;
+          return collectJsonParamEntries(talpa.json).some(entry => (
+            entry.key === paramSearchKey && entry.value === paramSearchValue
+          ));
+        });
+      });
+    }
+
+    if (searchQuery.trim()) {
       // Split into keywords for AND logic — every keyword must match somewhere in the record
       const tokens = searchQuery.trim().split(/\s+/).filter(Boolean);
       const keywords: string[] = [];
@@ -660,10 +732,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
         } else {
           keywords.push(token.toLowerCase());
         }
-      }
-      for (const pill of metadataSearchPills) {
-        const value = pill.value.trim().toLowerCase();
-        if (value) metadataKeyFilters.push({ key: pill.key, value });
       }
 
       if (isTalpos) {
@@ -753,7 +821,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     }
 
     return rows;
-  }, [isTalpos, isNestandartiniai, talposData, nestandartiniaiData, standartiniaiData, searchQuery, metadataFilters, metadataSearchPills]);
+  }, [isTalpos, isNestandartiniai, talposData, talposById, nestandartiniaiData, standartiniaiData, searchQuery, metadataFilters, paramSearchKey, paramSearchValue]);
 
   // Sorting
   const sortedData = useMemo(() => {
@@ -801,6 +869,8 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
     setMetadataFilters({ ...EMPTY_FILTERS });
+    setParamSearchKey('');
+    setParamSearchValue('');
     setSelectedIds(new Set());
   };
 
@@ -862,18 +932,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   };
 
   const totalCount = isTalpos ? talposData.length : isNestandartiniai ? nestandartiniaiData.length : standartiniaiData.length;
-  const addMetadataSearchToken = (key: string) => {
-    setMetadataSearchPills(prev => [...prev, { key, value: '' }]);
-    setShowMetaSearchMenu(false);
-  };
-
-  const updateMetadataPillValue = (index: number, value: string) => {
-    setMetadataSearchPills(prev => prev.map((pill, i) => (i === index ? { ...pill, value } : pill)));
-  };
-
-  const removeMetadataPill = (index: number) => {
-    setMetadataSearchPills(prev => prev.filter((_, i) => i !== index));
-  };
 
   return (
     <div className="h-full flex flex-col app-workspace">
@@ -927,77 +985,61 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
             </button>
           </div>
 
-          {/* Search */}
           <div className="relative flex-1">
-            <div className="app-filter-field w-full px-2 flex items-center gap-1.5 flex-wrap">
-              {isNestandartiniai && (
-                <div className="relative" ref={metaSearchMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowMetaSearchMenu(v => !v)}
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-md transition-all hover:bg-black/5"
-                    title="Pridėti metadata raktą (key=value)"
+            {isNestandartiniai ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="app-filter-field min-w-[220px] flex-1 px-2 flex items-center gap-1.5">
+                  <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
+                  <select
+                    value={paramSearchKey}
+                    onChange={(e) => {
+                      setParamSearchKey(e.target.value);
+                      setParamSearchValue('');
+                    }}
+                    className="h-8 flex-1 min-w-0 bg-transparent text-sm outline-none text-base-content"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                  {showMetaSearchMenu && (
-                    <div className="absolute left-0 top-full mt-1 w-56 max-h-64 overflow-auto rounded-lg border border-base-content/10 bg-base-100 shadow-lg z-50">
-                      <div className="px-2.5 py-2 text-[11px] font-semibold text-base-content/50 border-b border-base-content/10">
-                        Metadata raktai
-                      </div>
-                      {metadataSearchKeys.length === 0 ? (
-                        <div className="px-2.5 py-2 text-xs text-base-content/50">Nėra raktų</div>
-                      ) : (
-                        metadataSearchKeys.map((key) => (
-                          <button
-                            key={key}
-                            type="button"
-                            onClick={() => addMetadataSearchToken(key)}
-                            className="w-full text-left px-2.5 py-2 text-xs hover:bg-base-200/60"
-                          >
-                            {key}
-                          </button>
-                        ))
-                      )}
-                    </div>
+                    <option value="">Parametras</option>
+                    {paramSearchOptions.map(option => (
+                      <option key={option.key} value={option.key}>{option.key}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="app-filter-field min-w-[220px] flex-1 px-2 flex items-center gap-1.5">
+                  <select
+                    value={paramSearchValue}
+                    onChange={(e) => setParamSearchValue(e.target.value)}
+                    disabled={!paramSearchKey}
+                    className="h-8 flex-1 min-w-0 bg-transparent text-sm outline-none text-base-content disabled:text-base-content/35"
+                  >
+                    <option value="">{paramSearchKey ? 'Reikšmė' : 'Pasirinkite parametrą'}</option>
+                    {paramSearchValues.map(value => (
+                      <option key={value} value={value}>{value}</option>
+                    ))}
+                  </select>
+                  {(paramSearchKey || paramSearchValue) && (
+                    <button
+                      type="button"
+                      onClick={() => { setParamSearchKey(''); setParamSearchValue(''); }}
+                      className="inline-flex items-center justify-center w-6 h-6 rounded-md text-base-content/45 transition-all hover:bg-black/5 hover:text-base-content"
+                      title="Išvalyti parametrų filtrą"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   )}
                 </div>
-              )}
+              </div>
+            ) : (
+              <div className="app-filter-field w-full px-2 flex items-center gap-1.5">
               <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
-              {isNestandartiniai && metadataSearchPills.map((pill, idx) => (
-                <div key={`${pill.key}-${idx}`} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-base-content/20 bg-white text-xs">
-                  <span className="font-medium">{pill.key}=</span>
-                  <input
-                    value={pill.value}
-                    onChange={(e) => updateMetadataPillValue(idx, e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.key === 'Backspace' || e.key === 'Delete') && !pill.value) {
-                        e.preventDefault();
-                        removeMetadataPill(idx);
-                      }
-                    }}
-                    placeholder="reikšmė"
-                    className="w-24 bg-transparent outline-none"
-                  />
-                  <button type="button" onClick={() => removeMetadataPill(idx)} className="text-base-content/50 hover:text-base-content">
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
               <input
                 type="text"
                 placeholder="Ieškoti..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (isNestandartiniai && e.key === 'Backspace' && !searchQuery && metadataSearchPills.length > 0) {
-                    e.preventDefault();
-                    removeMetadataPill(metadataSearchPills.length - 1);
-                  }
-                }}
                 className="flex-1 min-w-[160px] h-8 text-sm bg-transparent outline-none text-base-content"
               />
             </div>
+            )}
           </div>
 
         </div>
@@ -1026,10 +1068,10 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
           <div className="flex items-center justify-center h-64 text-center">
             <div>
               <p className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>
-                {searchQuery || Object.values(metadataFilters).some(v => v) ? 'Nieko nerasta' : 'Nėra duomenų'}
+                {searchQuery || paramSearchKey || paramSearchValue || Object.values(metadataFilters).some(v => v) ? 'Nieko nerasta' : 'Nėra duomenų'}
               </p>
               <p className="text-sm" style={{ color: '#8a857f' }}>
-                {searchQuery || Object.values(metadataFilters).some(v => v) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
+                {searchQuery || paramSearchKey || paramSearchValue || Object.values(metadataFilters).some(v => v) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
               </p>
             </div>
           </div>
@@ -1396,6 +1438,9 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                       title="Pasirinkti visus"
                     />
                   </th>
+                  <th className="w-20 px-2 py-3">
+                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Failas</span>
+                  </th>
                   {STANDARTINIAI_COLS.map(col => (
                     <th
                       key={col.key}
@@ -1430,6 +1475,41 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                         onClick={e => e.stopPropagation()}
                         className="w-4 h-4 rounded cursor-pointer accent-blue-500"
                       />
+                    </td>
+                    <td className="w-20 px-2 py-2.5">
+                      {(() => {
+                        const fileId = extractDirectusFileId(row.document ?? row.docx_file_id);
+                        if (!fileId) return <span className="text-xs" style={{ color: '#c2beb8' }}>—</span>;
+                        const title = row.projekto_kodas ? `${row.projekto_kodas} dokumentas` : 'Standartinis dokumentas';
+                        return (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setFilePreview({
+                                title,
+                                url: buildGoogleDocsViewerUrl(buildDirectusAssetUrl(fileId)),
+                              })}
+                              className="p-1.5 rounded-md transition-colors"
+                              style={{ color: '#8a857f' }}
+                              onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
+                              title="Peržiūrėti dokumentą"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <a
+                              href={buildDirectusDownloadUrl(fileId)}
+                              className="p-1.5 rounded-md transition-colors"
+                              style={{ color: '#8a857f' }}
+                              onMouseEnter={e => { e.currentTarget.style.color = '#007AFF'; e.currentTarget.style.background = 'rgba(0,122,255,0.08)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.color = '#8a857f'; e.currentTarget.style.background = ''; }}
+                              title="Atsisiųsti dokumentą"
+                            >
+                              <Download className="w-4 h-4" />
+                            </a>
+                          </div>
+                        );
+                      })()}
                     </td>
                     {STANDARTINIAI_COLS.map(col => {
                       const rawVal = row[col.key];
@@ -1568,6 +1648,33 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                 {JSON.stringify(talposJsonPreview.value, null, 2)}
               </pre>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Directus file preview modal */}
+      {filePreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setFilePreview(null)}>
+          <div
+            className="w-full max-w-5xl flex flex-col rounded-xl overflow-hidden bg-white shadow-xl"
+            style={{ height: '86vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+              <span className="text-sm font-semibold" style={{ color: '#3d3935' }}>{filePreview.title}</span>
+              <button
+                onClick={() => setFilePreview(null)}
+                className="p-1.5 rounded-md transition-colors hover:bg-gray-100"
+                style={{ color: '#8a857f' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <iframe
+              src={filePreview.url}
+              className="flex-1 w-full border-0"
+              title={filePreview.title}
+            />
           </div>
         </div>
       )}

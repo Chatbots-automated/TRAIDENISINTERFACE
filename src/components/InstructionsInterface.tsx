@@ -14,12 +14,14 @@ import {
   Lock,
   Eye,
   Pencil,
-  Loader2
+  Loader2,
+  Plus
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import {
   getInstructionVariables,
   getInstructionVariable,
+  createInstructionVariable,
   saveInstructionVariable,
   verifyUserPassword,
   getVersionHistory,
@@ -123,6 +125,8 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [versions, setVersions] = useState<InstructionVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [revertingVersion, setRevertingVersion] = useState<number | null>(null);
+  const [restorePreviewVersion, setRestorePreviewVersion] = useState<InstructionVersion | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [showSchemaEditor, setShowSchemaEditor] = useState(false);
   const [schemaKey, setSchemaKey] = useState<'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas'>('sdk_chat_tool_schemas');
   const [editorTab, setEditorTab] = useState<'schema' | 'kainos_prompt'>('schema');
@@ -142,6 +146,15 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [promptPreviewText, setPromptPreviewText] = useState('');
   const [promptPreviewMissing, setPromptPreviewMissing] = useState<string[]>([]);
   const [promptPreviewMode, setPromptPreviewMode] = useState(false);
+  const [showCreateVariable, setShowCreateVariable] = useState(false);
+  const [creatingVariable, setCreatingVariable] = useState(false);
+  const [createVariableError, setCreateVariableError] = useState<string | null>(null);
+  const [newVariableForm, setNewVariableForm] = useState({
+    variable_key: '',
+    variable_name: '',
+    description: '',
+    content: '',
+  });
   const [editorUnlocked, setEditorUnlocked] = useState(false);
   const [editorPassword, setEditorPassword] = useState('');
   const [editorPasswordError, setEditorPasswordError] = useState('');
@@ -191,13 +204,12 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     try {
       setLoading(true);
       const data = await getInstructionVariables();
-      const chatOnly = data.filter((variable) => variable.variable_key.startsWith('chat'));
-      setVariables(chatOnly);
+      setVariables(data);
       setSelectedIndex((currentIndex) => {
         const currentKey = variables[currentIndex]?.variable_key ?? null;
         const targetKey = preferredVariableKey ?? currentKey;
         if (!targetKey) return 0;
-        const targetIndex = chatOnly.findIndex((variable) => variable.variable_key === targetKey);
+        const targetIndex = data.findIndex((variable) => variable.variable_key === targetKey);
         return targetIndex >= 0 ? targetIndex : 0;
       });
     } catch (err: any) {
@@ -266,17 +278,60 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     }
   };
 
-  const handleRevert = async (versionNumber: number) => {
-    if (!confirm(`Grąžinti versiją #${versionNumber}?`)) {
+  const handleCreateVariable = async () => {
+    const variableKey = newVariableForm.variable_key.trim();
+    const variableName = newVariableForm.variable_name.trim();
+
+    setCreateVariableError(null);
+    if (!variableKey || !variableName) {
+      setCreateVariableError('Kodas ir pavadinimas yra privalomi');
+      return;
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(variableKey)) {
+      setCreateVariableError('Kodas gali turėti tik raides, skaičius ir pabraukimus');
       return;
     }
 
+    setCreatingVariable(true);
+    try {
+      const result = await createInstructionVariable({
+        variable_key: variableKey,
+        variable_name: variableName,
+        description: newVariableForm.description,
+        content: newVariableForm.content,
+        display_order: variables.length > 0
+          ? Math.max(...variables.map(variable => Number(variable.display_order) || 0)) + 1
+          : 1,
+      }, user.id, user.email, true);
+
+      if (!result.success) {
+        setCreateVariableError(result.error || 'Nepavyko sukurti kintamojo');
+        return;
+      }
+
+      addNotification('success', 'Kintamasis sukurtas', variableName);
+      setShowCreateVariable(false);
+      setNewVariableForm({ variable_key: '', variable_name: '', description: '', content: '' });
+      await loadVariables(variableKey);
+    } catch (err: any) {
+      setCreateVariableError(err?.message || 'Nepavyko sukurti kintamojo');
+    } finally {
+      setCreatingVariable(false);
+    }
+  };
+
+  const handleRevert = async (versionNumber: number) => {
     try {
       setRevertingVersion(versionNumber);
       const result = await revertToVersion(versionNumber, user.id, user.email);
 
       if (result.success) {
-        addNotification('success', 'Versija grąžinta', `Atstatyta versija #${versionNumber}.`);
+        const message = result.backupVersion
+          ? `Atkurta v${versionNumber}. Ankstesnė būsena išsaugota kaip v${result.backupVersion}.`
+          : `Atkurta v${versionNumber}.`;
+        setSuccess(message);
+        setRestorePreviewVersion(null);
+        addNotification('success', 'Versija atkurta', message);
         await loadVariables();
         await loadVersions();
       } else {
@@ -290,6 +345,55 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     } finally {
       setRevertingVersion(null);
     }
+  };
+
+  const normalizeSnapshot = (snapshot: InstructionVersion['snapshot']) => {
+    const result: Record<string, { content: string; variable_name?: string | null; description?: string | null; display_order?: number | null }> = {};
+    for (const [key, raw] of Object.entries(snapshot || {})) {
+      if (typeof raw === 'string') {
+        result[key] = { content: raw };
+      } else {
+        result[key] = {
+          content: raw?.content ?? '',
+          variable_name: raw?.variable_name ?? null,
+          description: raw?.description ?? null,
+          display_order: raw?.display_order ?? null,
+        };
+      }
+    }
+    return result;
+  };
+
+  const getRestoreDiff = (version: InstructionVersion | null) => {
+    if (!version) return { changed: [], added: [], removed: [], same: [] };
+
+    const target = normalizeSnapshot(version.snapshot);
+    const current = variables.reduce((acc, variable) => {
+      acc[variable.variable_key] = {
+        content: variable.content,
+        variable_name: variable.variable_name,
+        description: variable.description ?? null,
+        display_order: variable.display_order,
+      };
+      return acc;
+    }, {} as Record<string, { content: string; variable_name?: string | null; description?: string | null; display_order?: number | null }>);
+
+    const keys = Array.from(new Set([...Object.keys(current), ...Object.keys(target)])).sort();
+    const diff = { changed: [] as string[], added: [] as string[], removed: [] as string[], same: [] as string[] };
+
+    for (const key of keys) {
+      if (!(key in current)) {
+        diff.added.push(key);
+      } else if (!(key in target)) {
+        diff.removed.push(key);
+      } else if ((current[key].content ?? '') !== (target[key].content ?? '')) {
+        diff.changed.push(key);
+      } else {
+        diff.same.push(key);
+      }
+    }
+
+    return diff;
   };
 
   const handleCancelEdit = () => {
@@ -622,13 +726,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               <p>Versijų dar nėra</p>
             </div>
           ) : (
-            <div className="space-y-2 max-w-2xl">
+            <div className="space-y-2 max-w-3xl">
               {versions.map((version, index) => (
                 <VersionCard
                   key={version.id}
                   version={version}
                   index={index}
-                  onRevert={handleRevert}
+                  onPreview={setRestorePreviewVersion}
                   revertingVersion={revertingVersion}
                   getRelativeTime={getRelativeTime}
                 />
@@ -636,6 +740,105 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             </div>
           )}
         </div>
+        {restorePreviewVersion && (() => {
+          const diff = getRestoreDiff(restorePreviewVersion);
+          const totalChanges = diff.changed.length + diff.added.length + diff.removed.length;
+          const sample = (items: string[]) => items.slice(0, 8).join(', ');
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center p-4"
+              style={{ background: 'rgba(15,23,42,0.22)', backdropFilter: 'blur(6px)' }}
+              onClick={() => setRestorePreviewVersion(null)}
+            >
+              <div
+                className="w-full max-w-2xl rounded-2xl bg-white border shadow-2xl overflow-hidden"
+                style={{ borderColor: 'var(--app-border)' }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="px-5 py-4 border-b border-base-300/70">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-mono text-base-content/45">v{restorePreviewVersion.version_number}</p>
+                      <h3 className="text-base font-semibold text-base-content">Peržiūrėti atkūrimą</h3>
+                      <p className="text-xs text-base-content/50 mt-1">
+                        Dabartinė būsena bus pirma išsaugota kaip nauja atsarginė versija. Tada instrukcijos bus atkurtos pagal pasirinktą versiją.
+                      </p>
+                    </div>
+                    <button className="app-icon-btn" onClick={() => setRestorePreviewVersion(null)}>
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 space-y-4">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-xl border border-base-300/70 bg-base-100 p-3">
+                      <p className="text-xl font-semibold text-base-content">{diff.changed.length}</p>
+                      <p className="text-xs text-base-content/45">Bus pakeista</p>
+                    </div>
+                    <div className="rounded-xl border border-base-300/70 bg-base-100 p-3">
+                      <p className="text-xl font-semibold text-base-content">{diff.added.length}</p>
+                      <p className="text-xs text-base-content/45">Bus atkurta / sukurta</p>
+                    </div>
+                    <div className="rounded-xl border border-base-300/70 bg-base-100 p-3">
+                      <p className="text-xl font-semibold text-base-content">{diff.removed.length}</p>
+                      <p className="text-xs text-base-content/45">Bus pašalinta iš dabartinės būsenos</p>
+                    </div>
+                  </div>
+
+                  {totalChanges === 0 ? (
+                    <div className="rounded-xl border border-base-300/70 bg-base-100 p-4 text-sm text-base-content/55">
+                      Pasirinkta versija sutampa su dabartine būsena.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 text-sm">
+                      {diff.changed.length > 0 && (
+                        <div className="rounded-xl border border-base-300/70 p-3">
+                          <p className="font-medium text-base-content">Pakeisti kintamieji</p>
+                          <p className="text-xs text-base-content/50 mt-1">{sample(diff.changed)}{diff.changed.length > 8 ? '...' : ''}</p>
+                        </div>
+                      )}
+                      {diff.added.length > 0 && (
+                        <div className="rounded-xl border border-base-300/70 p-3">
+                          <p className="font-medium text-base-content">Atkurti arba sukurti kintamieji</p>
+                          <p className="text-xs text-base-content/50 mt-1">{sample(diff.added)}{diff.added.length > 8 ? '...' : ''}</p>
+                        </div>
+                      )}
+                      {diff.removed.length > 0 && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                          <p className="font-medium text-amber-900">Nebuvo šioje versijoje</p>
+                          <p className="text-xs text-amber-800/75 mt-1">{sample(diff.removed)}{diff.removed.length > 8 ? '...' : ''}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs text-base-content/60">
+                    Atkūrimas nepakeis istorijos. Bus sukurta atsarginė dabartinės būsenos versija, todėl galėsite grįžti atgal.
+                  </div>
+                </div>
+
+                <div className="px-5 py-4 border-t border-base-300/70 bg-base-100/70 flex items-center justify-end gap-2">
+                  <button
+                    className="app-text-btn min-h-9 text-xs"
+                    onClick={() => setRestorePreviewVersion(null)}
+                    disabled={revertingVersion === restorePreviewVersion.version_number}
+                  >
+                    Atšaukti
+                  </button>
+                  <button
+                    className="app-text-btn app-text-btn-primary min-h-9 text-xs"
+                    onClick={() => handleRevert(restorePreviewVersion.version_number)}
+                    disabled={revertingVersion === restorePreviewVersion.version_number || totalChanges === 0}
+                  >
+                    {revertingVersion === restorePreviewVersion.version_number ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                    Atkurti šią versiją
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -684,6 +887,16 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-base-300/70">
           <div className="mb-2 space-y-2">
+            <button
+              onClick={() => {
+                setCreateVariableError(null);
+                setShowCreateVariable(true);
+              }}
+              className="app-text-btn app-text-btn-primary w-full justify-start min-h-8 text-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Naujas kintamasis
+            </button>
             <button
               onClick={() => openCombinedEditor('schema', 'sdk_chat_tool_schemas')}
               className="app-text-btn w-full justify-start min-h-8 text-xs"
@@ -1044,6 +1257,94 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         </div>
       )}
+      {showCreateVariable && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(15,23,42,0.20)', backdropFilter: 'blur(6px)' }}
+          onClick={() => setShowCreateVariable(false)}
+        >
+          <div
+            className="w-full max-w-2xl rounded-2xl border bg-white shadow-2xl overflow-hidden"
+            style={{ borderColor: 'var(--app-border)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-base-300/70 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-base-content">Naujas instrukcijos kintamasis</h3>
+                <p className="text-xs text-base-content/45 mt-0.5">Sukurkite naują reikšmę, kurią galės naudoti promptai arba agento instrukcijos.</p>
+              </div>
+              <button className="app-icon-btn" onClick={() => setShowCreateVariable(false)}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[11px] font-medium text-base-content/50">Kodas</span>
+                  <input
+                    value={newVariableForm.variable_key}
+                    onChange={(e) => setNewVariableForm(prev => ({ ...prev, variable_key: e.target.value }))}
+                    className="app-form-field mt-1 w-full text-sm"
+                    placeholder="pvz. chat_quality_rules"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-medium text-base-content/50">Pavadinimas</span>
+                  <input
+                    value={newVariableForm.variable_name}
+                    onChange={(e) => setNewVariableForm(prev => ({ ...prev, variable_name: e.target.value }))}
+                    className="app-form-field mt-1 w-full text-sm"
+                    placeholder="Rodomas pavadinimas"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-[11px] font-medium text-base-content/50">Trumpas aprašymas</span>
+                <input
+                  value={newVariableForm.description}
+                  onChange={(e) => setNewVariableForm(prev => ({ ...prev, description: e.target.value }))}
+                  className="app-form-field mt-1 w-full text-sm"
+                  placeholder="Kam šis kintamasis naudojamas"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-medium text-base-content/50">Turinys</span>
+                <textarea
+                  value={newVariableForm.content}
+                  onChange={(e) => setNewVariableForm(prev => ({ ...prev, content: e.target.value }))}
+                  className="app-form-field mt-1 w-full h-48 text-sm resize-none"
+                  placeholder="Įveskite instrukciją arba palikite tuščią"
+                />
+              </label>
+              {createVariableError && (
+                <div className="alert alert-soft alert-error text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{createVariableError}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-base-300/70 flex items-center justify-end gap-2 bg-base-100/70">
+              <button
+                className="app-text-btn min-h-9 text-xs"
+                onClick={() => setShowCreateVariable(false)}
+                disabled={creatingVariable}
+              >
+                Atšaukti
+              </button>
+              <button
+                className="app-text-btn app-text-btn-primary min-h-9 text-xs"
+                onClick={handleCreateVariable}
+                disabled={creatingVariable}
+              >
+                {creatingVariable ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                Sukurti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <NotificationContainer notifications={notifications} onRemove={removeNotification} />
     </div>
   );
@@ -1070,18 +1371,20 @@ function BackButton({ onClick }: { onClick: () => void }) {
 function VersionCard({
   version,
   index,
-  onRevert,
+  onPreview,
   revertingVersion,
   getRelativeTime
 }: {
   version: InstructionVersion;
   index: number;
-  onRevert: (versionNumber: number) => void;
+  onPreview: (version: InstructionVersion) => void;
   revertingVersion: number | null;
   getRelativeTime: (date: string) => string;
 }) {
   const [isHovered, setIsHovered] = React.useState(false);
   const isCurrent = index === 0;
+  const variableCount = Object.keys(version.snapshot || {}).length;
+  const label = version.change_description || `Versija v${version.version_number}`;
 
   return (
     <div
@@ -1101,18 +1404,18 @@ function VersionCard({
           </span>
           <div>
             <p className="text-sm font-medium" style={{ color: colors.text.primary }}>
-              {version.variable_key}
+              {label}
             </p>
             <p className="text-xs" style={{ color: colors.text.tertiary }}>
-              {version.changed_by_email || 'Sistema'} • {getRelativeTime(version.created_at)}
+              {variableCount} kint. • {getRelativeTime(version.created_at)}
             </p>
           </div>
         </div>
         {isCurrent ? (
-          <span className="text-xs font-medium" style={{ color: colors.interactive.accent }}>Dabartinė</span>
+          <span className="text-xs font-medium" style={{ color: colors.interactive.accent }}>Naujausia</span>
         ) : (
           <button
-            onClick={() => onRevert(version.version_number)}
+            onClick={() => onPreview(version)}
             disabled={revertingVersion === version.version_number}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
@@ -1126,8 +1429,8 @@ function VersionCard({
               }} />
             ) : (
               <>
-                <RotateCcw className="w-3 h-3" />
-                <span>Grąžinti</span>
+                <Eye className="w-3 h-3" />
+                <span>Peržiūrėti</span>
               </>
             )}
           </button>
