@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X, Shield, Database } from 'lucide-react';
 import type { AppUser } from '../types';
 import LogsViewer from './LogsViewer';
-import { colors } from '../lib/designSystem';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -28,24 +27,24 @@ export default function SettingsModal({ isOpen, onClose, user }: SettingsModalPr
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-[9999] p-4"
-      style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+      style={{ background: 'rgba(36,35,34,0.18)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-lg max-w-2xl w-full max-h-[90vh] overflow-hidden"
-        style={{ border: `1px solid ${colors.border.light}` }}
+        className="bg-white max-w-2xl w-full max-h-[90vh] overflow-hidden border"
+        style={{ borderColor: 'var(--app-border)', borderRadius: '18px', boxShadow: '0 18px 54px rgba(36,35,34,0.14)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: colors.border.light }}>
-          <h2 className="text-xl font-semibold" style={{ color: colors.text.primary }}>
+        <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--app-border)' }}>
+          <h2 className="text-sm font-semibold text-base-content">
             Nustatymai
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            className="app-icon-btn"
           >
-            <X className="w-5 h-5" style={{ color: colors.text.tertiary }} />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -53,23 +52,23 @@ export default function SettingsModal({ isOpen, onClose, user }: SettingsModalPr
         <div className="px-6 py-6 overflow-y-auto max-h-[calc(90vh-100px)]">
           {/* User Info */}
           <div className="mb-8">
-            <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text.secondary }}>
+            <h3 className="text-xs font-semibold uppercase tracking-wider mb-3 text-base-content/45">
               Paskyra
             </h3>
-            <div className="rounded-lg p-5 space-y-4" style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }}>
+            <div className="sdk-data-card p-4 space-y-3">
               <div className="flex justify-between items-center">
-                <span className="text-sm" style={{ color: colors.text.secondary }}>El. paštas</span>
-                <span className="text-sm font-medium" style={{ color: colors.text.primary }}>{user.email}</span>
+                <span className="text-sm text-base-content/55">El. paštas</span>
+                <span className="text-sm font-medium text-base-content">{user.email}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm" style={{ color: colors.text.secondary }}>Rodomas vardas</span>
-                <span className="text-sm font-medium" style={{ color: colors.text.primary }}>
+                <span className="text-sm text-base-content/55">Rodomas vardas</span>
+                <span className="text-sm font-medium text-base-content">
                   {user.display_name || 'Nenustatytas'}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-sm" style={{ color: colors.text.secondary }}>Rolė</span>
-                <span className="text-sm font-semibold" style={{ color: user.is_admin ? colors.interactive.accent : colors.text.primary }}>
+                <span className="text-sm text-base-content/55">Rolė</span>
+                <span className={`text-sm font-semibold ${user.is_admin ? 'text-primary' : 'text-base-content'}`}>
                   {user.is_admin ? 'Administratorius' : 'Naudotojas'}
                 </span>
               </div>
@@ -79,28 +78,25 @@ export default function SettingsModal({ isOpen, onClose, user }: SettingsModalPr
           {/* Admin Section - Only show for admins */}
           {user.is_admin && (
             <div>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text.secondary }}>
+              <h3 className="text-xs font-semibold uppercase tracking-wider mb-3 text-base-content/45">
                 Administravimas
               </h3>
               <div className="space-y-3">
                 {/* Logs Option */}
                 <button
                   onClick={() => setShowLogsViewer(true)}
-                  className="w-full flex items-center justify-between p-5 rounded-lg transition-all group"
-                  style={{ background: colors.bg.secondary, border: `1px solid ${colors.border.default}` }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.primary}
-                  onMouseLeave={(e) => e.currentTarget.style.background = colors.bg.secondary}
+                  className="w-full flex items-center justify-between p-4 rounded-lg transition-all group border border-base-content/10 bg-base-content/[0.025] hover:bg-base-content/[0.04]"
                 >
                   <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: colors.icon.default }}>
-                      <Database className="w-5 h-5" style={{ color: colors.interactive.accent }} />
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-primary/10">
+                      <Database className="w-4 h-4 text-primary" />
                     </div>
                     <div className="text-left">
-                      <p className="font-semibold text-sm" style={{ color: colors.text.primary }}>Žurnalai</p>
-                      <p className="text-sm" style={{ color: colors.text.secondary }}>Peržiūrėti programos žurnalus ir veiklą</p>
+                      <p className="font-semibold text-sm text-base-content">Žurnalai</p>
+                      <p className="text-sm text-base-content/50">Peržiūrėti programos žurnalus ir veiklą</p>
                     </div>
                   </div>
-                  <Shield className="w-5 h-5" style={{ color: colors.text.tertiary }} />
+                  <Shield className="w-5 h-5 text-base-content/25" />
                 </button>
               </div>
             </div>

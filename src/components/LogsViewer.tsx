@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Activity, AlertCircle } from 'lucide-react';
 import { dbAdmin } from '../lib/database';
 import type { AppUser } from '../types';
-import { colors } from '../lib/designSystem';
 
 interface LogsViewerProps {
   isOpen: boolean;
@@ -92,62 +91,45 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
   return (
     <div
       className="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+      style={{ background: 'rgba(36,35,34,0.18)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col rounded-xl shadow-xl"
-        style={{ background: colors.bg.white, border: `1px solid ${colors.border.light}` }}
+        className="w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col bg-white border"
+        style={{ borderColor: 'var(--app-border)', borderRadius: '18px', boxShadow: '0 18px 54px rgba(36,35,34,0.14)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b rounded-t-xl" style={{
-          borderColor: colors.border.light,
-          background: colors.bg.secondary
-        }}>
+        <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--app-border)' }}>
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg border" style={{
-              background: colors.icon.default,
-              borderColor: colors.border.light
-            }}>
-              <Activity className="w-5 h-5" style={{ color: colors.interactive.accent }} />
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Activity className="w-4 h-4 text-primary" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Programos žurnalai</h2>
-              <p className="text-xs" style={{ color: colors.text.secondary }}>Sistemos veikla ir įvykiai</p>
+              <h2 className="text-sm font-semibold text-base-content">Programos žurnalai</h2>
+              <p className="text-xs text-base-content/50">Sistemos veikla ir įvykiai</p>
             </div>
           </div>
           <button
             onClick={(e) => { e.stopPropagation(); onClose(); }}
-            className="p-2 rounded-lg transition-colors"
-            style={{ color: colors.text.tertiary }}
-            onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.primary}
-            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+            className="app-icon-btn"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center space-x-3 px-5 py-3 border-b" style={{
-          borderColor: colors.border.default,
-          background: colors.bg.secondary
-        }}>
+        <div className="flex items-center space-x-3 px-5 py-3" style={{ borderBottom: '1px solid var(--app-border)', background: 'rgba(247,247,245,0.68)' }}>
           <div className="flex items-center space-x-2">
-            <Filter className="w-4 h-4" style={{ color: colors.text.secondary }} />
-            <span className="text-sm font-medium" style={{ color: colors.text.primary }}>Filtrai:</span>
+            <Filter className="w-4 h-4 text-base-content/45" />
+            <span className="text-sm font-medium text-base-content">Filtrai:</span>
           </div>
 
           {/* Category Filter */}
           <select
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
-            className="py-2 px-3 text-xs rounded-lg border"
-            style={{
-              borderColor: colors.border.default,
-              background: colors.bg.white,
-              color: colors.text.primary
-            }}
+            className="app-form-field py-2 px-3 text-xs"
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>
@@ -160,12 +142,7 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
           <select
             value={selectedLevel}
             onChange={(e) => setSelectedLevel(e.target.value)}
-            className="py-2 px-3 text-xs rounded-lg border"
-            style={{
-              borderColor: colors.border.default,
-              background: colors.bg.white,
-              color: colors.text.primary
-            }}
+            className="app-form-field py-2 px-3 text-xs"
           >
             {levels.map((level) => (
               <option key={level} value={level}>
@@ -177,14 +154,7 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
           <button
             onClick={loadLogs}
             disabled={loading}
-            className="ml-auto px-4 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center space-x-2 border"
-            style={{
-              background: colors.bg.white,
-              borderColor: colors.border.default,
-              color: colors.text.secondary
-            }}
-            onMouseEnter={(e) => !loading && (e.currentTarget.style.background = colors.bg.secondary)}
-            onMouseLeave={(e) => !loading && (e.currentTarget.style.background = colors.bg.white)}
+            className="ml-auto app-text-btn disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             <span>Atnaujinti</span>
@@ -192,23 +162,23 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
         </div>
 
         {/* Logs List */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2" style={{ background: colors.bg.primary }}>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-2" style={{ background: 'var(--app-bg)' }}>
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="flex flex-col items-center space-y-3">
-                <RefreshCw className="w-6 h-6 animate-spin" style={{ color: colors.interactive.accent }} />
-                <p className="text-sm" style={{ color: colors.text.secondary }}>Kraunami žurnalai...</p>
+                <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+                <p className="text-sm text-base-content/55">Kraunami žurnalai...</p>
               </div>
             </div>
           ) : logs.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64">
-              <AlertCircle className="w-10 h-10 mb-3" style={{ color: colors.text.tertiary }} />
-              <p className="text-base font-medium" style={{ color: colors.text.primary }}>Žurnalų nerasta</p>
-              <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>Pabandykite pakeisti filtrus</p>
+              <AlertCircle className="w-10 h-10 mb-3 text-base-content/25" />
+              <p className="text-base font-medium text-base-content">Žurnalų nerasta</p>
+              <p className="text-sm mt-1 text-base-content/50">Pabandykite pakeisti filtrus</p>
             </div>
           ) : (
-            <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
-              <table className="table-striped table">
+            <div className="app-table-shell">
+              <table className="app-data-table">
                 <thead>
                   <tr>
                     <th></th>
@@ -229,9 +199,9 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
                       >
                         <td className="w-6">
                           {expandedLog === log.id ? (
-                            <ChevronDown className="w-3.5 h-3.5" style={{ color: colors.text.tertiary }} />
+                            <ChevronDown className="w-3.5 h-3.5 text-base-content/35" />
                           ) : (
-                            <ChevronRight className="w-3.5 h-3.5" style={{ color: colors.text.tertiary }} />
+                            <ChevronRight className="w-3.5 h-3.5 text-base-content/35" />
                           )}
                         </td>
                         <td>
@@ -250,23 +220,19 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
                           <td colSpan={7} className="bg-base-200/50">
                             <div className="space-y-1.5 text-[11px] py-1">
                               <div>
-                                <span className="font-medium" style={{ color: colors.text.primary }}>ID:</span>
-                                <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.id}</span>
+                                <span className="font-medium text-base-content">ID:</span>
+                                <span className="ml-2 font-mono text-base-content/60">{log.id}</span>
                               </div>
                               {log.user_id && (
                                 <div>
-                                  <span className="font-medium" style={{ color: colors.text.primary }}>Naudotojo ID:</span>
-                                  <span className="ml-2 font-mono" style={{ color: colors.text.secondary }}>{log.user_id}</span>
+                                  <span className="font-medium text-base-content">Naudotojo ID:</span>
+                                  <span className="ml-2 font-mono text-base-content/60">{log.user_id}</span>
                                 </div>
                               )}
                               {log.metadata && Object.keys(log.metadata).length > 0 && (
                                 <div>
-                                  <span className="font-medium" style={{ color: colors.text.primary }}>Metaduomenys:</span>
-                                  <pre className="mt-1 p-2 rounded-lg overflow-x-auto border text-[10px]" style={{
-                                    background: colors.bg.white,
-                                    color: colors.text.secondary,
-                                    borderColor: colors.border.default
-                                  }}>
+                                  <span className="font-medium text-base-content">Metaduomenys:</span>
+                                  <pre className="mt-1 p-2 rounded-lg overflow-x-auto border text-[10px] bg-white text-base-content/65 border-base-content/10">
                                     {JSON.stringify(log.metadata, null, 2)}
                                   </pre>
                                 </div>
@@ -284,11 +250,8 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t rounded-b-xl" style={{
-          borderColor: colors.border.light,
-          background: colors.bg.secondary
-        }}>
-          <p className="text-[11px] text-center" style={{ color: colors.text.secondary }}>
+        <div className="app-table-footer">
+          <p className="text-[11px] text-center">
             {logs.length === 1 ? 'Rodomas 1 įrašas' : `Rodoma ${logs.length} įrašų`}
           </p>
         </div>

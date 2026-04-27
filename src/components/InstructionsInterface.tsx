@@ -3,7 +3,6 @@ import { useLocation } from 'react-router-dom';
 import {
   FileText,
   Save,
-  Edit3,
   Clock,
   ChevronRight,
   RotateCcw,
@@ -13,7 +12,6 @@ import {
   Shield,
   BookOpen,
   Lock,
-  ChevronDown,
   Eye,
   Pencil,
   Loader2
@@ -576,20 +574,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   // Versions View
   if (view === 'versions') {
     return (
-      <div className="h-full flex flex-col" style={{ background: colors.bg.secondary }}>
+      <div className="h-full flex flex-col app-workspace">
         {/* Simple Header */}
-        <div className="px-6 py-4" style={{
-          background: colors.bg.white,
-          borderBottom: `1px solid ${colors.border.default}`
-        }}>
+        <div className="app-workspace-header">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <BackButton onClick={() => setView('editor')} />
-              <div className="w-px h-5" style={{ background: colors.border.default }} />
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: colors.interactive.accent }}>
-                <Clock className="w-4 h-4" style={{ color: colors.bg.white }} />
+              <div className="w-px h-5 bg-base-300" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-primary/10">
+                <Clock className="w-4 h-4 text-primary" />
               </div>
-              <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>Versijų istorija</h2>
+              <h2 className="app-workspace-title">Versijų istorija</h2>
             </div>
           </div>
         </div>
@@ -614,11 +609,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         )}
 
         {/* Versions List */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="app-workspace-content flex-1 overflow-y-auto">
           {loadingVersions ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => (
-                <div key={i} className="h-16 rounded-lg animate-pulse" style={{ background: colors.bg.white }} />
+                <div key={i} className="h-16 rounded-lg animate-pulse bg-base-200" />
               ))}
             </div>
           ) : versions.length === 0 ? (
@@ -647,24 +642,18 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
   // Main Editor View - Document Style
   return (
-    <div className="h-full flex" style={{ background: colors.bg.white }}>
+    <div className="h-full flex app-workspace">
       {/* Left Sidebar - Table of Contents */}
-      <div className="w-72 flex flex-col" style={{
-        borderRight: `1px solid ${colors.border.default}`,
-        background: colors.bg.secondary
-      }}>
+      <div className="w-[268px] flex flex-col border-r border-base-300/70 bg-white/70">
         {/* Sidebar Header */}
-        <div className="p-4" style={{
-          borderBottom: `1px solid ${colors.border.default}`,
-          background: colors.interactive.accentLight
-        }}>
+        <div className="px-4 py-3 border-b border-base-300/70 bg-white/75">
           <div className="flex items-center space-x-2 mb-1">
-            <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: colors.interactive.accent }}>
-              <BookOpen className="w-3.5 h-3.5" style={{ color: colors.bg.white }} />
+            <div className="w-6 h-6 rounded-md flex items-center justify-center bg-primary/10">
+              <BookOpen className="w-3.5 h-3.5 text-primary" />
             </div>
-            <h2 className="text-sm font-semibold" style={{ color: colors.text.primary }}>AI Agento Instrukcijos</h2>
+            <h2 className="text-sm font-semibold text-base-content">AI Agento Instrukcijos</h2>
           </div>
-          <p className="text-xs ml-8" style={{ color: colors.text.secondary }}>
+          <p className="text-xs ml-8 text-base-content/50">
             {variables.filter(v => v.content).length} iš {variables.length} užpildyta
           </p>
         </div>
@@ -674,7 +663,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           {loading ? (
             <div className="px-4 space-y-2">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="h-10 rounded animate-pulse" style={{ background: colors.border.default }} />
+                <div key={i} className="h-10 rounded animate-pulse bg-base-200" />
               ))}
             </div>
           ) : (
@@ -693,19 +682,17 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3" style={{ borderTop: `1px solid ${colors.border.default}` }}>
+        <div className="p-3 border-t border-base-300/70">
           <div className="mb-2 space-y-2">
             <button
               onClick={() => openCombinedEditor('schema', 'sdk_chat_tool_schemas')}
-              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+              className="app-text-btn w-full justify-start min-h-8 text-xs"
             >
               Schemos
             </button>
             <button
               onClick={() => openCombinedEditor('kainos_prompt')}
-              className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors"
-              style={{ background: colors.bg.white, color: colors.text.primary, border: `1px solid ${colors.border.default}` }}
+              className="app-text-btn w-full justify-start min-h-8 text-xs"
             >
               Promptai
             </button>
@@ -719,7 +706,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         {selectedVariable ? (
           <>
             {/* Content Header */}
-            <div className="px-8 py-5" style={{ borderBottom: `1px solid ${colors.border.default}` }}>
+            <div className="px-7 py-4 border-b border-base-300/70 bg-white/80">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center space-x-2 mb-2">
@@ -735,11 +722,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       Sekcija {selectedIndex + 1} iš {variables.length}
                     </span>
                   </div>
-                  <h1 className="text-xl font-semibold" style={{ color: colors.text.primary }}>
+                  <h1 className="text-[19px] font-semibold text-base-content">
                     {selectedVariable.variable_name}
                   </h1>
                   {selectedVariable.description && (
-                    <p className="text-sm mt-1" style={{ color: colors.text.secondary }}>{selectedVariable.description}</p>
+                    <p className="text-sm mt-1 text-base-content/55">{selectedVariable.description}</p>
                   )}
                 </div>
 
@@ -782,29 +769,24 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto" ref={contentRef}>
-              <div className="px-8 py-6">
+              <div className="px-7 py-5">
                 <div className="w-full min-h-[500px] h-[65vh] max-h-[700px]">
                   {isEditing ? (
                     <textarea
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
-                      className="w-full h-full p-4 text-sm resize-none focus:outline-none transition-colors"
+                      className="app-form-field w-full h-full p-4 text-[13px] resize-none focus:outline-none transition-colors"
                       style={{
                         color: colors.text.primary,
-                        background: colors.bg.secondary,
-                        border: `1px solid ${colors.border.default}`,
-                        borderRadius: '8px',
                         lineHeight: '1.75',
                         boxSizing: 'border-box',
                         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
                       }}
                       onFocus={(e) => {
-                        e.target.style.background = colors.bg.white;
-                        e.target.style.boxShadow = `0 0 0 2px ${colors.interactive.accent}33`;
+                        e.target.style.background = '#fff';
                       }}
                       onBlur={(e) => {
-                        e.target.style.background = colors.bg.secondary;
-                        e.target.style.boxShadow = 'none';
+                        e.target.style.background = '#fff';
                       }}
                       placeholder="Įveskite instrukcijos turinį..."
                       autoFocus
@@ -813,11 +795,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     <div className="max-w-none h-full">
                       {selectedVariable.content ? (
                         <pre
-                          className="whitespace-pre-wrap text-sm p-4 rounded-lg h-full m-0 overflow-y-auto"
+                          className="whitespace-pre-wrap text-[13px] p-4 rounded-lg h-full m-0 overflow-y-auto bg-white border border-base-300/70"
                           style={{
                             color: colors.text.secondary,
-                            background: colors.bg.secondary,
-                            border: `1px solid ${colors.border.default}`,
                             lineHeight: '1.75',
                             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif'
                           }}
@@ -834,10 +814,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             </div>
 
             {/* Navigation Footer - Fixed at bottom */}
-            <div className="px-8 py-4 flex-shrink-0" style={{
-              borderTop: `1px solid ${colors.border.default}`,
-              background: colors.bg.white
-            }}>
+            <div className="px-7 py-3 flex-shrink-0 border-t border-base-300/70 bg-white/80">
               <div className="flex items-center justify-between">
                 <PrevButton
                   onClick={() => setSelectedIndex(Math.max(0, selectedIndex - 1))}
@@ -866,34 +843,18 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       {showSchemaEditor && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8"
-          style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(10px)' }}
+          style={{ background: 'rgba(15,23,42,0.22)', backdropFilter: 'blur(6px)' }}
           onClick={() => setShowSchemaEditor(false)}
         >
           <div
-            className="w-full max-w-6xl h-[88vh] rounded-3xl overflow-hidden border shadow-2xl flex flex-col"
-            style={{ background: '#f8fafc', borderColor: '#dbe2ea' }}
+            className="w-full max-w-6xl h-[90vh] rounded-[18px] overflow-hidden border flex flex-col"
+            style={{ background: 'var(--app-bg)', borderColor: 'var(--app-border)', boxShadow: '0 24px 70px rgba(15,23,42,0.18)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-5 py-2.5 border-b space-y-2" style={{ borderColor: '#e5e7eb', background: '#ffffff' }}>
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold" style={{ color: '#0f172a' }}>AI redaktorius</h3>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md"
-                    style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0' }}>
-                    {editorTab === 'schema' ? schemaKey : kainosPromptKey}
-                  </span>
-                  <button
-                    onClick={() => setShowSchemaEditor(false)}
-                    className="w-7 h-7 inline-flex items-center justify-center rounded-md transition-colors"
-                    style={{ color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0' }}
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-2">
+            <div className="px-4 py-3 border-b bg-white" style={{ borderColor: 'var(--app-border)' }}>
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1.5 min-w-0">
+                  <h3 className="text-sm font-semibold mr-2 shrink-0" style={{ color: '#0f172a' }}>AI redaktorius</h3>
                   <div className="flex items-center gap-1 p-0.5 rounded-lg border" style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}>
                     <button
                       onClick={() => openCombinedEditor('schema')}
@@ -921,7 +882,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     <select
                       value={schemaKey}
                       onChange={(e) => openSchemaEditor(e.target.value as 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas')}
-                      className="select select-xs rounded-md"
+                      className="app-form-field h-8 text-xs py-1"
                       style={{ minWidth: 170 }}
                     >
                       <option value="sdk_chat_tool_schemas">SDK schema</option>
@@ -931,7 +892,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     <select
                       value={kainosPromptKey}
                       onChange={(e) => openPromptEditor(e.target.value as KainosPromptKey)}
-                      className="select select-xs rounded-md"
+                      className="app-form-field h-8 text-xs py-1"
                       style={{ minWidth: 170 }}
                     >
                       {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
@@ -949,11 +910,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         value={editorPassword}
                         onChange={(e) => setEditorPassword(e.target.value)}
                         placeholder="Slaptažodis"
-                        className="input input-xs w-36"
+                        className="app-form-field h-8 w-36 text-xs py-1"
                         onKeyDown={(e) => { if (e.key === 'Enter') handleUnlockEditor(); }}
                       />
                       <button
-                        className="btn btn-primary btn-xs"
+                        className="app-text-btn app-text-btn-primary min-h-8 text-xs"
                         onClick={handleUnlockEditor}
                         disabled={unlockingEditor || !editorPassword.trim()}
                       >
@@ -965,14 +926,14 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   {editorTab === 'schema' ? (
                     <>
                       <button
-                        className="btn btn-soft btn-xs"
+                        className="app-text-btn min-h-8 text-xs"
                         onClick={() => loadSchemaContent(schemaKey)}
                         disabled={schemaLoading || schemaSaving || !editorUnlocked}
                       >
                         Perkrauti
                       </button>
                       <button
-                        className="btn btn-primary btn-xs gap-1"
+                        className="app-text-btn app-text-btn-primary min-h-8 text-xs"
                         disabled={schemaSaving || schemaLoading || !editorUnlocked}
                         onClick={saveSchema}
                       >
@@ -983,7 +944,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   ) : (
                     <>
                       <button
-                        className="btn btn-soft btn-xs gap-1"
+                        className="app-text-btn min-h-8 text-xs"
                         onClick={() => {
                           if (promptPreviewMode) {
                             setPromptPreviewMode(false);
@@ -997,18 +958,24 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                         {promptPreviewMode ? 'Redaguoti' : 'Preview'}
                       </button>
                       <button
-                        className="btn btn-soft btn-xs"
+                        className="app-text-btn min-h-8 text-xs"
                         onClick={() => openPromptEditor(kainosPromptKey)}
                         disabled={promptLoading || promptSaving || !editorUnlocked}
                       >
                         Perkrauti
                       </button>
-                      <button className="btn btn-primary btn-xs gap-1" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
+                      <button className="app-text-btn app-text-btn-primary min-h-8 text-xs" disabled={promptLoading || promptSaving || !editorUnlocked} onClick={saveKainosPrompt}>
                         {promptSaving ? <Save className="w-3.5 h-3.5 animate-pulse" /> : <Save className="w-3.5 h-3.5" />}
                         Išsaugoti
                       </button>
                     </>
                   )}
+                  <button
+                    onClick={() => setShowSchemaEditor(false)}
+                    className="app-icon-btn ml-1"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
               {!editorUnlocked && editorPasswordError && <p className="text-[10px]" style={{ color: colors.status.errorText }}>{editorPasswordError}</p>}
@@ -1018,29 +985,30 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
               {editorTab === 'kainos_prompt' && promptSuccess && <p className="text-[10px]" style={{ color: '#16a34a' }}>{promptSuccess}</p>}
             </div>
 
-            <div className="px-6 py-5 flex-1 min-h-0 overflow-y-auto">
+            <div className="p-4 flex-1 min-h-0 overflow-y-auto">
               {editorTab === 'schema' ? (
                 schemaLoading ? (
-                  <div className="h-[560px] rounded-2xl animate-pulse" style={{ background: '#e2e8f0', border: '1px solid #cbd5e1' }} />
+                  <div className="h-full min-h-[620px] rounded-2xl animate-pulse" style={{ background: '#e2e8f0', border: '1px solid #cbd5e1' }} />
                 ) : (
-                  <div className="rounded-2xl overflow-hidden border" style={{ borderColor: '#cbd5e1' }}>
-                    <div className="px-4 py-2.5 text-[11px] font-medium flex items-center justify-between" style={{ background: '#0f172a', color: '#cbd5e1' }}>
-                      JSON • UTF-8
+                  <div className="h-full min-h-[620px] rounded-2xl overflow-hidden border flex flex-col" style={{ borderColor: '#cbd5e1' }}>
+                    <div className="px-4 py-2 text-[11px] font-medium flex items-center justify-between" style={{ background: '#0f172a', color: '#cbd5e1' }}>
+                      <span>JSON • UTF-8</span>
+                      <span className="font-mono text-[10px] text-slate-400">{schemaKey}</span>
                     </div>
                     <textarea
                       value={schemaContent}
                       onChange={(e) => setSchemaContent(e.target.value)}
                       spellCheck={false}
-                      className="w-full min-h-[560px] font-mono text-xs p-5 focus:outline-none"
+                      className="w-full flex-1 min-h-0 font-mono text-xs p-5 focus:outline-none"
                       style={{ background: '#020617', color: '#e2e8f0', lineHeight: '1.6' }}
                       readOnly={!editorUnlocked}
                     />
                   </div>
                 )
               ) : promptLoading ? (
-                <div className="h-[560px] rounded-2xl animate-pulse" style={{ background: '#e2e8f0', border: '1px solid #cbd5e1' }} />
+                <div className="h-full min-h-[620px] rounded-2xl animate-pulse" style={{ background: '#e2e8f0', border: '1px solid #cbd5e1' }} />
 		              ) : (
-		                <div className="rounded-2xl overflow-hidden border" style={{ borderColor: '#cbd5e1' }}>
+		                <div className="h-full min-h-[620px] rounded-2xl overflow-hidden border flex flex-col" style={{ borderColor: '#cbd5e1' }}>
 		                  <div className="px-4 py-2.5 text-[11px] font-medium flex items-center justify-between" style={{ background: '#0f172a', color: '#cbd5e1' }}>
 		                    <span>{promptPreviewMode ? 'Prompt preview (su reikšmėmis)' : 'Prompt tekstas'}</span>
 		                    <span className="text-[10px]" style={{ color: promptPreviewMode && promptPreviewMissing.length > 0 ? '#fca5a5' : '#9ca3af' }}>
@@ -1051,7 +1019,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 		                  </div>
 		                  {promptPreviewMode ? (
 		                    <>
-		                      <pre className="w-full min-h-[560px] max-h-[560px] overflow-auto font-mono text-xs p-5"
+		                      <pre className="w-full flex-1 min-h-0 overflow-auto font-mono text-xs p-5"
 		                        style={{ background: '#020617', color: '#dbeafe', lineHeight: '1.6' }}>
 		                        {promptPreviewLoading
 		                          ? 'Generuojamas preview...'
@@ -1064,7 +1032,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 		                    <textarea
 		                      value={kainosPromptContent}
 		                      onChange={(e) => { setKainosPromptContent(e.target.value); if (promptPreviewMode) setPromptPreviewMode(false); }}
-		                      className="w-full min-h-[560px] font-mono text-xs p-5 focus:outline-none"
+		                      className="w-full flex-1 min-h-0 font-mono text-xs p-5 focus:outline-none"
 		                      style={{ background: '#020617', color: '#e2e8f0', lineHeight: '1.6' }}
 		                      readOnly={!editorUnlocked}
 		                    />

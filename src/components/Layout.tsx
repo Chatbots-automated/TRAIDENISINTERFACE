@@ -11,7 +11,6 @@ import {
   BookOpen,
   ChevronsLeft,
   ChevronsRight,
-  FlaskConical,
   Beaker,
   FileSearch,
   TrendingUp
@@ -25,8 +24,8 @@ interface LayoutProps {
   children: React.ReactNode;
   naujokasMode?: boolean;
   onToggleNaujokas?: () => void;
-  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos';
-  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos') => void;
+  viewMode?: 'documents' | 'users' | 'instrukcijos' | 'derva' | 'sdk' | 'analize' | 'kainos';
+  onViewModeChange?: (mode: 'documents' | 'users' | 'instrukcijos' | 'derva' | 'sdk' | 'analize' | 'kainos') => void;
   onSidebarCollapseChange?: (collapsed: boolean) => void;
   forceCollapsed?: boolean;
   sdkUnreadCount?: number;
@@ -185,16 +184,6 @@ export default function Layout({
               </li>
               <li>
                 <button
-                  onClick={() => onViewModeChange?.('nestandartiniai')}
-                  className={viewMode === 'nestandartiniai' ? 'active' : ''}
-                  title={sidebarCollapsed ? 'Nestandartiniai Projektai' : undefined}
-                >
-                  <FlaskConical className="w-4 h-4" />
-                  {!sidebarCollapsed && <span className="truncate">Nestandartiniai Projektai</span>}
-                </button>
-              </li>
-              <li>
-                <button
                   onClick={() => onViewModeChange?.('kainos')}
                   className={viewMode === 'kainos' ? 'active' : ''}
                   title={sidebarCollapsed ? 'Žaliavos' : undefined}
@@ -312,13 +301,13 @@ export default function Layout({
                   <button
                     onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                     title={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
-                    className="sidebar-collapse-icon-btn"
+                    className={`sidebar-collapse-icon-btn ${sidebarCollapsed ? '' : '-ml-1'}`}
                     aria-label={sidebarCollapsed ? 'Išskleisti šoninę juostą' : 'Sutraukti šoninę juostą'}
                   >
                     {sidebarCollapsed ? <ChevronsRight className="w-4 h-4 flex-shrink-0" /> : <ChevronsLeft className="w-4 h-4 flex-shrink-0" />}
                   </button>
                   {!sidebarCollapsed && (
-                    <span className="justify-self-center translate-x-2 text-[11px] font-medium text-base-content/35 tabular-nums select-none">
+                    <span className="justify-self-center text-[11px] font-medium text-macos-gray-400 tabular-nums select-none">
                       v{APP_VERSION}
                     </span>
                   )}

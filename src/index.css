@@ -166,6 +166,27 @@
     border: 1px solid var(--app-border);
   }
 
+  .app-form-field {
+    border-radius: var(--app-radius-md);
+    border: 1px solid var(--app-border);
+    background: rgba(255, 255, 255, 0.86);
+    color: var(--app-text);
+    font-size: 13px;
+    outline: none;
+    padding: 0.65rem 0.8rem;
+    transition: border-color 150ms, box-shadow 150ms, background-color 150ms;
+  }
+
+  .app-form-field:focus {
+    background: #fff;
+    border-color: rgba(0, 122, 255, 0.32);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.08);
+  }
+
+  .app-form-field::placeholder {
+    color: var(--app-faint);
+  }
+
   .app-table-shell {
     width: 100%;
     overflow: auto;

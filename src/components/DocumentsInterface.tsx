@@ -5,6 +5,7 @@ import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, deleteNest
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
+import NestandardiniaiInterface from './NestandardiniaiInterface';
 
 interface DocumentsInterfaceProps {
   user: AppUser;
@@ -558,6 +559,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
   const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
+  const [showManualProjectModal, setShowManualProjectModal] = useState(false);
   const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -880,14 +882,25 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
         {/* Top row: title + actions */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="app-workspace-title">Dokumentai</h2>
-          <button
-            onClick={currentReload}
-            disabled={currentLoading}
-            className="app-text-btn"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${currentLoading ? 'animate-spin' : ''}`} />
-            Atnaujinti
-          </button>
+          <div className="flex items-center gap-2">
+            {isNestandartiniai && (
+              <button
+                onClick={() => setShowManualProjectModal(true)}
+                className="app-text-btn app-text-btn-primary"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Naujas projektas
+              </button>
+            )}
+            <button
+              onClick={currentReload}
+              disabled={currentLoading}
+              className="app-text-btn"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${currentLoading ? 'animate-spin' : ''}`} />
+              Atnaujinti
+            </button>
+          </div>
         </div>
 
         {/* Segmented control + search */}
@@ -1494,6 +1507,39 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
 
       {selectedCard && (
         <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
+      )}
+
+      {showManualProjectModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(36,35,34,0.18)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          onClick={() => setShowManualProjectModal(false)}
+        >
+          <div
+            className="w-full max-w-3xl overflow-hidden border bg-white"
+            style={{ maxHeight: '88vh', borderColor: 'var(--app-border)', borderRadius: '18px', boxShadow: '0 18px 54px rgba(36,35,34,0.14)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: '1px solid var(--app-border)' }}>
+              <div>
+                <h3 className="text-sm font-semibold text-base-content">Naujas nestandartinis projektas</h3>
+                <p className="text-xs text-base-content/45 mt-0.5">Rankiniu būdu įkelkite projekto tekstą ir priedus.</p>
+              </div>
+              <button onClick={() => setShowManualProjectModal(false)} className="app-icon-btn">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          <NestandardiniaiInterface
+            user={user}
+            projectId={_projectId}
+            embedded
+            onUploaded={() => {
+              loadNestandartiniai();
+                setShowManualProjectModal(false);
+              }}
+            />
+          </div>
+        </div>
       )}
 
       {/* Talpos JSON viewer modal */}

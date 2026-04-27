@@ -130,13 +130,13 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      style={{ background: 'rgba(36,35,34,0.18)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-4xl mx-4 bg-white rounded-2xl overflow-hidden"
-        style={{ height: '85vh', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}
+        className="relative w-full max-w-5xl bg-white overflow-hidden border"
+        style={{ height: '85vh', borderColor: 'var(--app-border)', borderRadius: '18px', boxShadow: '0 18px 54px rgba(36,35,34,0.14)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -153,14 +153,14 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
           <div className="flex items-center gap-1.5 shrink-0">
             <a
               href={getFileDownloadUrl(file.directus_file_id!)}
-              className="p-1.5 rounded-md transition-colors hover:bg-black/5"
+              className="app-icon-btn"
               title="Atsisiųsti"
             >
               <Download className="w-4 h-4" style={{ color: '#8a857f' }} />
             </a>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-md transition-colors hover:bg-black/5"
+              className="app-icon-btn"
             >
               <X className="w-4 h-4" style={{ color: '#8a857f' }} />
             </button>
@@ -429,21 +429,19 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
 
   return (
     <div
-      className="h-full flex flex-col"
-      style={{ background: '#fdfcfb' }}
+      className="h-full flex flex-col app-workspace"
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
       onDrop={handleDrop}
     >
       {/* Header */}
-      <div className="px-6 pt-6 pb-4 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+      <div className="app-workspace-header shrink-0">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold" style={{ color: '#3d3935' }}>Dervų Failų Valdymas</h2>
+          <h2 className="app-workspace-title">Dervų failai</h2>
           <div className="flex items-center gap-2">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-macos text-xs font-medium text-white transition-all hover:brightness-95"
-              style={{ background: '#007AFF' }}
+              className="app-text-btn app-text-btn-primary"
             >
               <Upload className="w-3.5 h-3.5" />
               Įkelti failus
@@ -451,8 +449,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
             <button
               onClick={loadFiles}
               disabled={loadingFiles}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-macos text-xs font-medium transition-all hover:brightness-95"
-              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#5a5550' }}
+              className="app-text-btn"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingFiles ? 'animate-spin' : ''}`} />
               Atnaujinti
@@ -474,10 +471,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
             </div>
           )}
           {selectedFiles.length > 0 && (
-            <div
-              className="rounded-macos-lg overflow-hidden"
-              style={{ background: '#fff', border: '1px solid rgba(0,122,255,0.2)' }}
-            >
+            <div className="app-table-shell">
               {/* File list */}
               <div className="max-h-[180px] overflow-y-auto divide-y" style={{ borderColor: '#f0ede8' }}>
                 {selectedFiles.map((file, idx) => (
@@ -495,7 +489,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </div>
 
               {/* Actions bar */}
-              <div className="flex items-center justify-between px-4 py-2.5" style={{ borderTop: '1px solid #f0ede8', background: '#faf9f7' }}>
+              <div className="app-table-footer flex items-center justify-between">
                 <span className="text-xs" style={{ color: '#8a857f' }}>
                   {uploading && uploadProgress
                     ? `Įkeliama ${uploadProgress.current} / ${uploadProgress.total}...`
@@ -504,15 +498,14 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                 </span>
                 <div className="flex items-center gap-2">
                   {!uploading && (
-                    <button onClick={clearSelectedFiles} className="text-xs px-3 py-1.5 rounded-macos transition-colors hover:bg-black/5" style={{ color: '#5a5550' }}>
+                    <button onClick={clearSelectedFiles} className="app-text-btn">
                       Atšaukti
                     </button>
                   )}
                   <button
                     onClick={handleUpload}
                     disabled={uploading}
-                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-macos text-xs font-medium text-white transition-all hover:brightness-95 disabled:opacity-60"
-                    style={{ background: '#007AFF' }}
+                    className="app-text-btn app-text-btn-primary disabled:opacity-60"
                   >
                     {uploading ? (
                       <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Įkeliama...</>
@@ -537,17 +530,14 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       />
 
       {/* Table area */}
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="app-workspace-content flex-1 overflow-auto">
         {loadingFiles ? (
           <div className="flex items-center justify-center h-64">
             <span className="loading loading-spinner loading-md text-macos-blue"></span>
           </div>
         ) : (
-          <div
-            className="w-full overflow-x-auto rounded-macos-lg bg-white"
-            style={{ border: '0.5px solid rgba(0,0,0,0.08)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-          >
-            <table className="w-full text-sm">
+          <div className="app-table-shell">
+            <table className="app-data-table">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
                   {FILES_COLUMNS.slice(0, 2).map(col => (
@@ -725,10 +715,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </tbody>
             </table>
 
-            <div
-              className="px-4 py-2 text-xs flex items-center justify-between"
-              style={{ borderTop: '1px solid #f0ede8', color: '#8a857f' }}
-            >
+            <div className="app-table-footer flex items-center justify-between">
               <span>{files.length} {files.length === 1 ? 'failas' : 'failų'}</span>
             </div>
           </div>

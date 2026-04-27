@@ -45,6 +45,19 @@ export function SablonaiTab() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const getCapacity = useCallback((name: string) => {
+    const normalized = name.normalize('NFKC').replace(/[–—]/g, '-');
+    const match = normalized.match(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/i);
+    if (!match) return null;
+    const value = Number(match[1].replace(',', '.'));
+    return Number.isFinite(value) ? value : null;
+  }, []);
+
+  const formatCapacity = useCallback((capacity: number | null) => {
+    if (capacity === null) return 'Kiti';
+    return `${Number.isInteger(capacity) ? capacity : String(capacity).replace('.', ',')} m3`;
+  }, []);
+
   useEffect(() => {
     setExpandedCards(prev => {
       const next = { ...prev };
@@ -110,21 +123,47 @@ export function SablonaiTab() {
   };
 
   const filteredSablonai = useMemo(() => {
-    const normalized = capacityFilter.trim();
+    const normalized = capacityFilter.trim().replace(',', '.');
     if (!normalized) return sablonai;
+    const wantedCapacity = Number(normalized);
     return sablonai.filter(s => {
+      const parsedCapacity = getCapacity(s.name);
+      if (Number.isFinite(wantedCapacity) && parsedCapacity === wantedCapacity) return true;
+
       const title = s.name
         .normalize('NFKC')
         .replace(/[–—]/g, '-');
 
-      // Primary: V + capacity in any spacing/hyphen format (e.g. V-230, V - 230, V- 230, V230)
-      const vMatches = Array.from(title.matchAll(/v\s*[-]?\s*(\d+)/gi)).map(m => m[1]);
+      // Fallback: V + capacity in any spacing/hyphen format (e.g. V-230, V - 230, V- 230, V230)
+      const vMatches = Array.from(title.matchAll(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/gi)).map(m => m[1].replace(',', '.'));
       if (vMatches.includes(normalized)) return true;
 
       // Fallback: plain numeric token match, if title was entered without V prefix
       return new RegExp(`\\b${normalized}\\b`).test(title);
     });
-  }, [sablonai, capacityFilter]);
+  }, [sablonai, capacityFilter, getCapacity]);
+
+  const capacityGroups = useMemo(() => {
+    const groups = new Map<string, { capacity: number | null; label: string; items: MedziaguSablonas[] }>();
+    for (const sablonas of filteredSablonai) {
+      const capacity = getCapacity(sablonas.name);
+      const key = capacity === null ? 'other' : String(capacity);
+      const label = formatCapacity(capacity);
+      const existing = groups.get(key) || { capacity, label, items: [] };
+      existing.items.push(sablonas);
+      groups.set(key, existing);
+    }
+    return Array.from(groups.values())
+      .map(group => ({
+        ...group,
+        items: [...group.items].sort((a, b) => a.name.localeCompare(b.name, 'lt')),
+      }))
+      .sort((a, b) => {
+        if (a.capacity === null) return 1;
+        if (b.capacity === null) return -1;
+        return a.capacity - b.capacity;
+      });
+  }, [filteredSablonai, formatCapacity, getCapacity]);
 
   const upsertLocalTemplate = useCallback((next: Partial<MedziaguSablonas> & { id: number }) => {
     setSablonai(prev => {
@@ -257,7 +296,7 @@ export function SablonaiTab() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-base-100 px-3 py-2 shadow-sm">
+      <div className="flex items-center justify-between rounded-xl border border-base-content/10 bg-white/80 px-3 py-2 shadow-sm">
         <div className="flex items-center gap-3">
           <p className="text-sm text-base-content/60">{filteredSablonai.length} / {sablonai.length} šablonai</p>
           <label className="inline-flex items-center gap-1.5 text-xs text-base-content/55 rounded-lg border border-base-content/10 px-2 py-1 bg-white/70">
@@ -274,7 +313,7 @@ export function SablonaiTab() {
         </div>
         <button
           onClick={startNew}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80"
+          className="app-text-btn"
         >
           <Plus className="w-3.5 h-3.5" />Naujas šablonas
         </button>
@@ -288,151 +327,163 @@ export function SablonaiTab() {
           <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>{capacityFilter ? 'Pakeiskite V- filtro reikšmę' : 'Sukurkite pirmą šabloną paspaudę „Naujas šablonas"'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,360px))] justify-center items-start gap-3">
-          {draftCard && (
-            <div
-              key={draftCard.localId}
-              className="rounded-xl border p-3.5 transition-all min-h-[160px] flex flex-col"
-              style={{
-                borderColor: '#007AFF',
-                background: 'rgba(0,122,255,0.04)',
-                boxShadow: '0 0 0 1px rgba(0,122,255,0.12) inset',
-              }}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <input
-                    value={draftCard.name}
-                    onChange={e => setDraftCard(prev => prev ? { ...prev, name: e.target.value } : prev)}
-                    placeholder="Šablono pavadinimas..."
-                    className="text-sm font-semibold bg-transparent border-b outline-none w-full py-0.5 transition-colors focus:border-blue-400"
-                    style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
-                  />
+        <div className="space-y-4">
+            {draftCard && (
+              <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-5 items-start">
+                <div className="relative h-full min-h-[160px] pl-4 pt-3 before:absolute before:left-1 before:top-0 before:bottom-0 before:w-px before:bg-base-content/10 after:absolute after:left-1 after:top-5 after:h-px after:w-2 after:bg-primary">
+                  <span className="text-xs font-semibold text-primary">Naujas</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  {draftCard.id && (
-                    <button
-                      onClick={handleFinishDraft}
-                      disabled={draftCard.isSaving}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-base-content/15 bg-white/70 hover:bg-white disabled:opacity-50"
-                    >
-                      <Check className="w-3 h-3" />
-                      Baigti
-                    </button>
-                  )}
-                  <button
-                    onClick={() => toggleCard(draftCard.localId)}
-                    className="p-1 text-base-content/60 hover:text-base-content"
-                    title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
-                  >
-                    <ChevronDown className={`w-4 h-4 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
-              </div>
-
-              {expandedCards[draftCard.localId] && (
-                <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
-                  <textarea
-                    ref={draftTextareaRef}
-                    value={draftCard.rawText}
-                    onChange={e => setDraftCard(prev => prev ? { ...prev, rawText: e.target.value } : prev)}
-                    placeholder="Įveskite medžiagų aprašymą..."
-                    rows={8}
-                    className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
-                    style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
-                  />
-                  <div className="mt-2 min-h-[16px]">
-                    {draftCard.isSaving ? (
-                      <p className="text-[11px] text-base-content/55">Išsaugoma...</p>
-                    ) : showSavedHint ? (
-                      <p className="text-[11px]" style={{ color: '#34C759' }}>Išsaugota</p>
-                    ) : null}
-                    {draftCard.saveError && (
-                      <p className="text-xs mt-1" style={{ color: '#FF3B30' }}>{draftCard.saveError}</p>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {filteredSablonai.map((s, idx) => {
-            // Use a unique UI key per rendered card instance. This prevents
-            // accidental state sharing if backend data ever contains repeated ids.
-            const cardKey = `${s.id}-${idx}`;
-            const isExpanded = !!expandedCards[cardKey];
-
-            return (
-              <div
-                key={cardKey}
-                className={`group rounded-xl border p-3.5 transition-all flex flex-col ${isExpanded ? 'min-h-[180px]' : 'min-h-[60px]'}`}
-                style={{
-                  borderColor: 'rgba(0,0,0,0.06)',
-                  background: '#fff',
-                }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1 text-left">
-                    <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {!s.structured_json && isExpanded && (
+                <div
+                  key={draftCard.localId}
+                  className="sdk-data-card p-3.5 transition-all min-h-[160px] flex flex-col"
+                  style={{ borderColor: 'rgba(0,122,255,0.24)', background: 'rgba(0,122,255,0.035)' }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <input
+                        value={draftCard.name}
+                        onChange={e => setDraftCard(prev => prev ? { ...prev, name: e.target.value } : prev)}
+                        placeholder="Šablono pavadinimas..."
+                        className="text-sm font-semibold bg-transparent border-b outline-none w-full py-0.5 transition-colors focus:border-blue-400"
+                        style={{ color: '#3d3935', borderColor: '#e5e2dd' }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {draftCard.id && (
+                        <button
+                          onClick={handleFinishDraft}
+                          disabled={draftCard.isSaving}
+                          className="app-text-btn h-7 min-h-0 text-[11px] disabled:opacity-50"
+                        >
+                          <Check className="w-3 h-3" />
+                          Baigti
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleViewGenerate(s)}
-                        disabled={generating}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-medium text-base-content/75 border border-base-content/15 bg-white/65 backdrop-blur-sm transition-all duration-200 hover:bg-white/80 disabled:opacity-60"
+                        onClick={() => toggleCard(draftCard.localId)}
+                        className="p-1 text-base-content/60 hover:text-base-content"
+                        title={expandedCards[draftCard.localId] ? 'Sutraukti' : 'Išskleisti'}
                       >
-                        {generating && generatingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        Strūkturizuoti
+                        <ChevronDown className={`w-4 h-4 transition-transform ${expandedCards[draftCard.localId] ? 'rotate-180' : ''}`} />
                       </button>
-                    )}
-                    <button onClick={() => setConfirmDeleteId(s.id)} className="w-8 h-8 inline-flex items-center justify-center rounded-xl border border-base-content/10 bg-white/65 backdrop-blur-sm hover:bg-white/80" title="Ištrinti">
-                      <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
-                    </button>
-                    <button
-                      onClick={() => toggleCard(cardKey)}
-                      className="p-1 text-base-content/60 hover:text-base-content"
-                      title={isExpanded ? 'Sutraukti' : 'Išskleisti'}
-                    >
-                      <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                    </button>
+                    </div>
                   </div>
-                </div>
 
-                {isExpanded && (
-                  <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
-                    {s.structured_json ? (
-                      <div>
-                        <MaterialSlateView data={s.structured_json} variant="panel" />
+                  {expandedCards[draftCard.localId] && (
+                    <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
+                      <textarea
+                        ref={draftTextareaRef}
+                        value={draftCard.rawText}
+                        onChange={e => setDraftCard(prev => prev ? { ...prev, rawText: e.target.value } : prev)}
+                        placeholder="Įveskite medžiagų aprašymą..."
+                        rows={8}
+                        className="w-full px-3 py-2 rounded-xl text-xs border outline-none font-mono transition-colors focus:border-blue-400 resize-y"
+                        style={{ borderColor: '#e5e2dd', color: '#3d3935', lineHeight: '1.6', background: '#fff' }}
+                      />
+                      <div className="mt-2 min-h-[16px]">
+                        {draftCard.isSaving ? (
+                          <p className="text-[11px] text-base-content/55">Išsaugoma...</p>
+                        ) : showSavedHint ? (
+                          <p className="text-[11px]" style={{ color: '#34C759' }}>Išsaugota</p>
+                        ) : null}
+                        {draftCard.saveError && (
+                          <p className="text-xs mt-1" style={{ color: '#FF3B30' }}>{draftCard.saveError}</p>
+                        )}
                       </div>
-                    ) : (
-                      <p
-                        className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-                        style={{
-                          color: '#5a5550',
-                        }}
-                      >
-                        {s.raw_text || 'Nėra teksto'}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Delete confirmation */}
-                {confirmDeleteId === s.id && (
-                  <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
-                    <span className="text-xs" style={{ color: '#FF3B30' }}>Ištrinti šį šabloną?</span>
-                    <button onClick={() => handleDelete(s.id)} disabled={deleting}
-                      className="text-xs px-3 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: '#FF3B30' }}>
-                      {deleting ? 'Trinama...' : 'Taip'}
-                    </button>
-                    <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-3 py-1 rounded-lg" style={{ color: '#8a857f' }}>Ne</button>
-                  </div>
-                )}
+                    </div>
+                  )}
+                </div>
               </div>
-            );
-          })}
+            )}
 
+            {capacityGroups.map(group => (
+              <section key={group.label} className="grid grid-cols-[72px_minmax(0,1fr)] gap-5 items-start">
+                <div className="relative h-full min-h-[64px] pl-4 pt-3 before:absolute before:left-1 before:top-0 before:bottom-0 before:w-px before:bg-base-content/10 after:absolute after:left-1 after:top-5 after:h-px after:w-2 after:bg-primary/70">
+                  <span className="block text-xs font-semibold leading-tight text-primary/85">
+                    {group.capacity === null ? 'Kiti' : `V - ${group.label}`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] items-start gap-3">
+                  {group.items.map((s) => {
+                    const cardKey = String(s.id);
+                    const isExpanded = !!expandedCards[cardKey];
+                    const capacity = getCapacity(s.name);
+
+                    return (
+                      <div
+                        key={cardKey}
+                        className={`group sdk-data-card p-3.5 transition-all flex flex-col border-l-4 ${isExpanded ? 'min-h-[180px]' : 'min-h-[64px]'}`}
+                        style={{ borderLeftColor: capacity === null ? 'rgba(107,114,128,0.35)' : 'rgba(0,122,255,0.45)' }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0 flex-1 text-left">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="rounded-full bg-primary/8 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                {capacity === null ? 'V - ?' : `V - ${formatCapacity(capacity)}`}
+                              </span>
+                              <h4 className="text-sm font-semibold truncate" style={{ color: '#3d3935' }}>{s.name}</h4>
+                            </div>
+                            {!isExpanded && (
+                              <p className="mt-1 truncate text-[11px] text-base-content/45">{s.raw_text || 'Nėra teksto'}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {!s.structured_json && isExpanded && (
+                              <button
+                                onClick={() => handleViewGenerate(s)}
+                                disabled={generating}
+                                className="app-text-btn disabled:opacity-60"
+                              >
+                                {generating && generatingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                Struktūrizuoti
+                              </button>
+                            )}
+                            <button onClick={() => setConfirmDeleteId(s.id)} className="app-icon-btn" title="Ištrinti">
+                              <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
+                            </button>
+                            <button
+                              onClick={() => toggleCard(cardKey)}
+                              className="p-1 text-base-content/60 hover:text-base-content"
+                              title={isExpanded ? 'Sutraukti' : 'Išskleisti'}
+                            >
+                              <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {isExpanded && (
+                          <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
+                            {s.structured_json ? (
+                              <div>
+                                <MaterialSlateView data={s.structured_json} variant="panel" />
+                              </div>
+                            ) : (
+                              <p
+                                className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+                                style={{ color: '#5a5550' }}
+                              >
+                                {s.raw_text || 'Nėra teksto'}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {confirmDeleteId === s.id && (
+                          <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
+                            <span className="text-xs" style={{ color: '#FF3B30' }}>Ištrinti šį šabloną?</span>
+                            <button onClick={() => handleDelete(s.id)} disabled={deleting}
+                              className="text-xs px-3 py-1 rounded-lg text-white disabled:opacity-50" style={{ background: '#FF3B30' }}>
+                              {deleting ? 'Trinama...' : 'Taip'}
+                            </button>
+                            <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-3 py-1 rounded-lg" style={{ color: '#8a857f' }}>Ne</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
         </div>
       )}
     </div>

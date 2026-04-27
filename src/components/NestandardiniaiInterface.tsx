@@ -12,9 +12,11 @@ const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
 interface NestandardiniaiInterfaceProps {
   user: AppUser;
   projectId: string;
+  embedded?: boolean;
+  onUploaded?: () => void;
 }
 
-export default function NestandardiniaiInterface({ user, projectId }: NestandardiniaiInterfaceProps) {
+export default function NestandardiniaiInterface({ user, projectId, embedded = false, onUploaded }: NestandardiniaiInterfaceProps) {
   // Form state
   const [name, setName] = useState('');
   const [text, setText] = useState('');
@@ -185,6 +187,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
         setName('');
         setText('');
         setAttachments([]);
+        onUploaded?.();
       }, 1500);
     } catch (error: any) {
       console.error('Upload error:', error);
@@ -195,46 +198,27 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
   };
 
   return (
-    <div className="h-full flex flex-col" style={{ background: 'linear-gradient(135deg, #f8f7f5 0%, #f0eee9 50%, #eae7e2 100%)' }}>
+    <div className={embedded ? "h-full flex flex-col bg-transparent" : "h-full flex flex-col app-workspace"}>
       {/* Notifications */}
       <NotificationContainer notifications={notifications} onRemove={removeNotification} />
 
       {/* Header — frosted glass */}
-      <div
-        className="px-6 py-5 border-b"
-        style={{
-          background: 'rgba(255, 255, 255, 0.55)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          borderColor: 'rgba(255, 255, 255, 0.5)',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
-        }}
-      >
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-2xl font-semibold text-base-content">
-            Nestandartiniai Projektai
-          </h1>
-          <p className="text-sm mt-1 text-base-content/60">
-            Sukurkite naują paklausimą pateikdami pavadinimą, tekstą ir priedus
-          </p>
+      {!embedded && (
+        <div className="app-workspace-header shrink-0">
+          <div className="max-w-6xl mx-auto">
+            <h1 className="app-workspace-title">Nestandartiniai projektai</h1>
+            <p className="text-sm mt-1 text-base-content/50">
+              Sukurkite naują paklausimą pateikdami pavadinimą, tekstą ir priedus
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-8">
-        <div className="max-w-3xl mx-auto space-y-5">
+      <div className={embedded ? "flex-1 overflow-y-auto px-5 py-4" : "app-workspace-content flex-1 overflow-y-auto"}>
+        <div className={embedded ? "mx-auto max-w-2xl space-y-4" : "max-w-3xl mx-auto space-y-5"}>
 
-          {/* Glass card wrapper */}
-          <div
-            className="rounded-2xl p-6 space-y-5"
-            style={{
-              background: 'rgba(255, 255, 255, 0.45)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: '1px solid rgba(255, 255, 255, 0.6)',
-              boxShadow: '0 4px 24px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03)',
-            }}
-          >
+          <div className={embedded ? "space-y-4" : "sdk-data-card p-5 space-y-5"}>
             {/* Name field */}
             <div>
               <label className="text-xs font-semibold block mb-1.5 text-base-content/70">
@@ -245,21 +229,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Įveskite paklausimo pavadinimą..."
-                className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-all duration-200"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.6)',
-                  border: '1px solid rgba(0, 0, 0, 0.06)',
-                  backdropFilter: 'blur(8px)',
-                  WebkitBackdropFilter: 'blur(8px)',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(59, 130, 246, 0.4)';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.08)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0.06)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
+                className="app-form-field w-full"
               />
             </div>
 
@@ -273,21 +243,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Įveskite paklausimo tekstą..."
                 rows={8}
-                className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-y leading-relaxed transition-all duration-200"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.6)',
-                  border: '1px solid rgba(0, 0, 0, 0.06)',
-                  backdropFilter: 'blur(8px)',
-                  WebkitBackdropFilter: 'blur(8px)',
-                }}
-                onFocus={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(59, 130, 246, 0.4)';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.08)';
-                }}
-                onBlur={(e) => {
-                  e.currentTarget.style.border = '1px solid rgba(0, 0, 0, 0.06)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
+                className="app-form-field w-full resize-y leading-relaxed"
               />
             </div>
 
@@ -302,21 +258,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
                 onDrop={handleFileDrop}
                 onDragOver={handleDragOver}
                 onClick={() => fileInputRef.current?.click()}
-                className="rounded-xl px-3 py-5 text-center cursor-pointer transition-all duration-200"
-                style={{
-                  background: 'rgba(255, 255, 255, 0.35)',
-                  border: '2px dashed rgba(0, 0, 0, 0.1)',
-                  backdropFilter: 'blur(8px)',
-                  WebkitBackdropFilter: 'blur(8px)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.04)';
-                  e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.35)';
-                  e.currentTarget.style.borderColor = 'rgba(0, 0, 0, 0.1)';
-                }}
+                className="rounded-xl px-3 py-5 text-center cursor-pointer transition-all duration-150 border border-dashed border-base-content/15 bg-base-content/[0.025] hover:bg-primary/5 hover:border-primary/25"
               >
                 <Upload className="w-5 h-5 mx-auto mb-1.5 text-base-content/30" />
                 <p className="text-xs font-medium text-base-content/60 mb-0.5">
@@ -381,29 +323,7 @@ export default function NestandardiniaiInterface({ user, projectId }: Nestandard
             <button
               onClick={handleCreateClick}
               disabled={uploading || uploadSuccess}
-              className="w-full py-2.5 rounded-xl text-sm font-medium relative overflow-hidden transition-all duration-300 disabled:opacity-60"
-              style={{
-                background: uploadSuccess
-                  ? 'rgba(16, 185, 129, 0.85)'
-                  : 'rgba(59, 130, 246, 0.85)',
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                color: '#ffffff',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                boxShadow: '0 2px 8px rgba(59, 130, 246, 0.15)',
-              }}
-              onMouseEnter={(e) => {
-                if (!uploading && !uploadSuccess) {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.95)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.25)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!uploading && !uploadSuccess) {
-                  e.currentTarget.style.background = 'rgba(59, 130, 246, 0.85)';
-                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.15)';
-                }
-              }}
+              className={`w-full app-text-btn app-text-btn-primary relative overflow-hidden disabled:opacity-60 ${uploadSuccess ? 'bg-success border-success' : ''}`}
             >
               <span
                 className={`flex items-center justify-center gap-2 transition-opacity duration-300 ${

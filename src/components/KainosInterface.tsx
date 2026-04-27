@@ -102,11 +102,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     missingForecastCodes: [],
     error: null,
   });
-  const [collapsedSections, setCollapsedSections] = useState<Record<AnalysisSectionKey, boolean>>({
-    nafta: false,
-    geo: false,
-    analysis: false,
-  });
   const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
   const analysisFetchVersionRef = useRef(0);
   const [configWarning, setConfigWarning] = useState<{
@@ -410,6 +405,53 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     />
   );
 
+  const replaceForecastJsonBlock = (text: string) => {
+    const note = '> Peržiūrėkite kainų pokytį Grafa puslapyje paspaudę „Su DI“.';
+    const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?"forecasts"[\s\S]*?)```/);
+    if (fenced?.index !== undefined) {
+      const before = text.slice(0, fenced.index).trimEnd();
+      const after = text.slice(fenced.index + fenced[0].length).trimStart();
+      return [before, note, after].filter(Boolean).join('\n\n');
+    }
+
+    const marker = '"forecasts"';
+    const markerIndex = text.indexOf(marker);
+    if (markerIndex === -1) return text;
+
+    const start = text.lastIndexOf('{', markerIndex);
+    if (start === -1) return text;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = start; i < text.length; i += 1) {
+      const char = text[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (char === '{') depth += 1;
+      if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const before = text.slice(0, start).trimEnd();
+          const after = text.slice(i + 1).trimStart();
+          return [before, note, after].filter(Boolean).join('\n\n');
+        }
+      }
+    }
+    return text;
+  };
+
   const naftaDisplay = streamNafta || internetAnalyses.nafta?.content || '';
   const geoDisplay = streamGeo || internetAnalyses.politika?.content || '';
   const analysisDisplay = streamAnalysis || internetAnalyses.kainos?.content || '';
@@ -601,54 +643,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
-          <div className="space-y-5">
-            <div className="rounded-3xl overflow-hidden"
-              style={{ border: '1px solid #e5e7eb', boxShadow: '0 14px 34px rgba(15,23,42,0.08)', background: 'linear-gradient(135deg,#ffffff 0%,#f8fafc 100%)' }}>
-              <div className="px-6 py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#64748b' }}>Web analizė</p>
-                  <h3 className="text-lg font-semibold mt-1" style={{ color: '#1f2937' }}>AI analizės valdymas</h3>
-                  <p className="text-xs mt-1.5" style={{ color: '#6b7280' }}>
-                    {lastUpdated ? `Paskutinį kartą atnaujinta ${relativeTime(lastUpdated)}.` : 'Dar nėra sugeneruotos analizės.'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button onClick={() => generateSingleAnalysis('nafta')} disabled={isGenerationBlocked}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 100%)' }}>
-                    {isGenerationBlocked && genStep === 'nafta' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Oil Analysis
-                  </button>
-                  <button onClick={() => generateSingleAnalysis('geo')} disabled={isGenerationBlocked}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg,#0ea5e9 0%,#0369a1 100%)' }}>
-                    {isGenerationBlocked && genStep === 'geo' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Geopolitical Analysis
-                  </button>
-                  <button onClick={() => generateSingleAnalysis('analysis')} disabled={isGenerationBlocked}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:brightness-95 disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg,#16a34a 0%,#15803d 100%)' }}>
-                    {isGenerationBlocked && genStep === 'analysis' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    Price Prediction
-                  </button>
-                </div>
-              </div>
-              {genLoading && (
-                <div className="px-6 py-3" style={{ borderTop: '1px solid #dbeafe', background: '#eff6ff' }}>
-                  <p className="text-xs font-medium" style={{ color: '#1e40af' }}>
-                    {genStep === 'nafta' ? 'Vykdoma naftos analizė…' : genStep === 'geo' ? 'Vykdoma geopolitinė analizė…' : 'Vykdoma kainų prognozė…'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
-              <aside className="rounded-2xl bg-white p-3"
-                style={{ border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
+          <div className="sdk-data-card overflow-hidden">
+            <div className="px-5 pt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {([
-                  { key: 'nafta', label: 'Oil Analysis', sub: 'nafta', icon: BarChart2, bg: '#fff7ed', color: '#9a3412', confBg: '#ffedd5', confidence: 100 },
-                  { key: 'geo', label: 'Geopolitical Analysis', sub: 'politika', icon: Globe, bg: '#eff6ff', color: '#1e40af', confBg: '#dbeafe', confidence: 100 },
-                  { key: 'analysis', label: 'Price Prediction', sub: 'kainos', icon: TrendingUp, bg: '#ecfdf5', color: '#065f46', confBg: '#d1fae5', confidence: 100 },
+                  { key: 'nafta', label: 'Naftos analizė', sub: 'Žaliavos ir dervos ryšys', icon: BarChart2, confidence: 100 },
+                  { key: 'geo', label: 'Geopolitika', sub: 'Rinkos ir tiekimo sąlygos', icon: Globe, confidence: 100 },
+                  { key: 'analysis', label: 'Kainų prognozė', sub: 'Apibendrinta prognozė', icon: TrendingUp, confidence: 100 },
                 ] as const).map((item) => {
                   const active = analysisFocus === item.key;
                   const Icon = item.icon;
@@ -656,65 +657,47 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     <button
                       key={item.key}
                       onClick={() => setAnalysisFocus(item.key)}
-                      className="w-full text-left rounded-xl px-3 py-3 mb-2 last:mb-0 transition-all"
-                      style={{
-                        background: active ? item.bg : '#fff',
-                        border: `1px solid ${active ? item.confBg : '#eef2f7'}`,
-                        boxShadow: active ? '0 4px 12px rgba(15,23,42,0.07)' : 'none',
-                      }}
+                      className={`w-full text-left rounded-xl px-3 py-3 transition-all border ${active ? 'bg-primary/5 border-primary/25 shadow-sm' : 'bg-white border-base-content/10 hover:bg-base-content/[0.025]'}`}
                     >
                       <div className="flex items-center gap-2">
-                        <div className="p-1.5 rounded-lg" style={{ background: item.bg }}>
-                          <Icon className="w-4 h-4" style={{ color: item.color }} />
+                        <div className={`p-1.5 rounded-lg ${active ? 'bg-primary/10 text-primary' : 'bg-base-content/[0.04] text-base-content/45'}`}>
+                          <Icon className="w-4 h-4" />
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold truncate" style={{ color: '#1f2937' }}>{item.label}</p>
-                          <p className="text-[10px]" style={{ color: '#94a3b8' }}>{item.sub}</p>
+                          <p className="text-xs font-semibold truncate text-base-content">{item.label}</p>
+                          <p className="text-[10px] text-base-content/45">{item.sub}</p>
                         </div>
-                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full" style={{ background: item.confBg, color: item.color }}>
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-base-content/[0.04] text-base-content/55">
                           ~{Math.round(item.confidence)}%
                         </span>
                       </div>
                     </button>
                   );
                 })}
-              </aside>
+              </div>
+            </div>
 
-              <div className="rounded-2xl overflow-hidden bg-white"
-                style={{
-                  border: genLoading && genStep === analysisFocus ? '1px solid #bfdbfe' : '1px solid #e5e7eb',
-                  boxShadow: genLoading && genStep === analysisFocus
-                    ? '0 10px 25px rgba(59,130,246,0.10)'
-                    : '0 10px 25px rgba(15,23,42,0.06)',
-                }}>
-                <div className="px-5 py-3 flex items-center justify-between"
-                  style={{
-                    background: analysisFocus === 'nafta' ? '#fff7ed' : analysisFocus === 'geo' ? '#eff6ff' : '#ecfdf5',
-                    borderBottom: analysisFocus === 'nafta' ? '1px solid #ffedd5' : analysisFocus === 'geo' ? '1px solid #dbeafe' : '1px solid #d1fae5',
-                  }}>
+              <div className="mt-4 border-t border-base-content/10 bg-white">
+                <div className="px-5 py-4 flex flex-col gap-3 border-b border-base-content/10 bg-base-content/[0.015] sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">
-                    {analysisFocus === 'nafta' ? <BarChart2 className="w-4 h-4" style={{ color: '#9a3412' }} /> : analysisFocus === 'geo' ? <Globe className="w-4 h-4" style={{ color: '#1e40af' }} /> : <TrendingUp className="w-4 h-4" style={{ color: '#065f46' }} />}
-                    <span className="text-xs font-semibold" style={{ color: analysisFocus === 'nafta' ? '#9a3412' : analysisFocus === 'geo' ? '#1e40af' : '#065f46' }}>
-                      {analysisFocus === 'nafta' ? 'Naftos kainos ir dervų ryšys' : analysisFocus === 'geo' ? 'Geopolitiniai įvykiai ir rinkos sąlygos' : 'Kainų analizė ir prognozė'}
-                    </span>
+                    {analysisFocus === 'nafta' ? <BarChart2 className="w-4 h-4 text-base-content/45" /> : analysisFocus === 'geo' ? <Globe className="w-4 h-4 text-base-content/45" /> : <TrendingUp className="w-4 h-4 text-base-content/45" />}
+                    <div>
+                      <span className="text-sm font-semibold text-base-content">
+                        {analysisFocus === 'nafta' ? 'Naftos kainos ir dervų ryšys' : analysisFocus === 'geo' ? 'Geopolitiniai įvykiai ir rinkos sąlygos' : 'Kainų analizė ir prognozė'}
+                      </span>
+                      <p className="mt-0.5 text-[11px] text-base-content/45">
+                        {lastUpdated ? `Paskutinį kartą atnaujinta ${relativeTime(lastUpdated)}.` : 'Dar nėra sugeneruotos analizės.'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => generateSingleAnalysis(analysisFocus)}
-                      disabled={isGenerationBlocked}
-                      className="text-[10px] px-2.5 py-1 rounded-lg disabled:opacity-50"
-                      style={{ color: '#334155', background: '#fff' }}
-                    >
-                      Generuoti
-                    </button>
-                    <button
-                      onClick={() => setCollapsedSections(prev => ({ ...prev, [analysisFocus]: !prev[analysisFocus] }))}
-                      className="text-[10px] px-2.5 py-1 rounded-lg"
-                      style={{ color: '#334155', background: '#fff' }}
-                    >
-                      {collapsedSections[analysisFocus] ? 'Atverti tekstą' : 'Sutraukti tekstą'}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => generateSingleAnalysis(analysisFocus)}
+                    disabled={isGenerationBlocked}
+                    className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs disabled:opacity-50"
+                  >
+                    {isGenerationBlocked && genStep === analysisFocus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    Generuoti
+                  </button>
                 </div>
                 <div className="px-5 py-4 h-[520px] overflow-y-auto">
                   {genLoading && genStep === analysisFocus ? (
@@ -730,14 +713,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           return (
                             <div className="flex items-center gap-2 py-1">
                               <AlertTriangle className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                              <span className="text-xs" style={{ color: '#8a857f' }}>No analysis generated yet.</span>
+                              <span className="text-xs" style={{ color: '#8a857f' }}>Analizė dar nesugeneruota.</span>
                             </div>
                           );
                         }
-                        if (collapsedSections[analysisFocus]) {
-                          return <p className="text-xs italic" style={{ color: '#8a857f' }}>Turinys suskleistas. Paspauskite „Atverti tekstą“.</p>;
-                        }
-                        return <div className="max-w-4xl">{renderMd(currentText)}</div>;
+                        const displayText = analysisFocus === 'analysis' ? replaceForecastJsonBlock(currentText) : currentText;
+                        return <div className="max-w-4xl">{renderMd(displayText)}</div>;
                       })()}
                     </>
                   )}
@@ -756,7 +737,6 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                   })()}
                 </div>
               </div>
-            </div>
           </div>
         )}
       </div>

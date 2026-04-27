@@ -220,30 +220,20 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ background: colors.bg.primary }}>
+    <div className="h-full flex flex-col app-workspace">
       {/* Header */}
-      <div className="p-6 border-b" style={{
-        borderColor: colors.border.light,
-        background: colors.bg.white + 'CC' // 80% opacity
-      }}>
+      <div className="app-workspace-header shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-xl font-bold" style={{ color: colors.text.primary }}>Naudotojų valdymas</h2>
-            <p className="text-sm" style={{ color: colors.text.secondary }}>Kurkite ir valdykite naudotojų paskyras</p>
+            <h2 className="app-workspace-title">Naudotojų valdymas</h2>
+            <p className="text-sm text-base-content/50">Kurkite ir valdykite naudotojų paskyras</p>
           </div>
           <div className="flex items-center gap-3">
             {/* Role Filter */}
             <div className="relative">
               <button
                 onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 border"
-                style={{
-                  background: colors.bg.white,
-                  color: colors.text.primary,
-                  borderColor: colors.border.default
-                }}
-                onMouseEnter={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                onMouseLeave={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                className="app-text-btn"
               >
                 <Filter className="w-4 h-4" />
                 <span className="text-sm">
@@ -302,13 +292,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 rounded-lg transition-colors flex items-center space-x-2"
-              style={{
-                background: colors.interactive.accent,
-                color: '#ffffff'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = colors.interactive.accentHover}
-              onMouseLeave={(e) => e.currentTarget.style.background = colors.interactive.accent}
+              className="app-text-btn app-text-btn-primary"
             >
               <Plus className="w-4 h-4" />
               <span>Pridėti naudotoją</span>
@@ -321,43 +305,43 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       {showCreateModal && (
         <div
           className="fixed inset-0 z-[9999] flex items-start justify-center p-4 pt-[10vh] overflow-y-auto"
-          style={{ background: 'rgba(0, 0, 0, 0.3)' }}
+          style={{ background: 'rgba(15,23,42,0.22)', backdropFilter: 'blur(6px)' }}
           onClick={resetCreateModal}
         >
           <div
-            className="bg-white rounded-xl shadow-lg w-full max-w-md"
-            style={{ border: `1px solid ${colors.border.light}` }}
+            className="bg-white rounded-[18px] w-full max-w-md overflow-hidden"
+            style={{ border: '1px solid var(--app-border)', boxShadow: '0 24px 70px rgba(15,23,42,0.18)' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="px-6 py-5 border-b" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
+            <div className="px-5 py-4 border-b bg-white" style={{ borderColor: 'var(--app-border)' }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
                   {createMode !== 'select' && (
                     <button
                       onClick={() => { setCreateMode('select'); setError(null); }}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors -ml-1"
+                      className="app-icon-btn -ml-1"
                     >
-                      <ArrowLeft className="w-4 h-4" style={{ color: colors.text.tertiary }} />
+                      <ArrowLeft className="w-4 h-4" />
                     </button>
                   )}
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: colors.icon.default }}>
-                    <UserPlus className="w-5 h-5" style={{ color: colors.interactive.accent }} />
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-primary/10">
+                    <UserPlus className="w-4 h-4 text-primary" />
                   </div>
                   <div>
-                    <h2 className="text-lg font-semibold" style={{ color: colors.text.primary }}>
+                    <h2 className="text-sm font-semibold text-base-content">
                       {createMode === 'select' ? 'Pridėti naudotoją' : createMode === 'komanda' ? 'Pridėti komandos narį' : 'Pridėti vadybininką'}
                     </h2>
-                    <p className="text-sm mt-0.5" style={{ color: colors.text.tertiary }}>
+                    <p className="text-xs mt-0.5 text-base-content/50">
                       {createMode === 'select' ? 'Pasirinkite naudotojo tipą' : createMode === 'komanda' ? 'Nustatykite paskyros duomenis' : 'Kodas generuojamas automatiškai'}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={resetCreateModal}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="app-icon-btn"
                 >
-                  <X className="w-5 h-5" style={{ color: colors.text.tertiary }} />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -367,8 +351,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               <div className="px-6 py-5 space-y-3">
                 <button
                   onClick={() => setCreateMode('komanda')}
-                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group"
-                  style={{ borderColor: colors.border.default, background: colors.bg.white }}
+                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group hover:bg-primary/5 hover:border-primary/30"
+                  style={{ borderColor: 'var(--app-border)', background: colors.bg.white }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.interactive.accent; e.currentTarget.style.background = colors.interactive.accentLight; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; e.currentTarget.style.background = colors.bg.white; }}
                 >
@@ -382,8 +366,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                 </button>
                 <button
                   onClick={() => setCreateMode('vadybininkas')}
-                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group"
-                  style={{ borderColor: colors.border.default, background: colors.bg.white }}
+                  className="w-full p-4 rounded-lg border text-left transition-all flex items-center space-x-4 group hover:bg-primary/5 hover:border-primary/30"
+                  style={{ borderColor: 'var(--app-border)', background: colors.bg.white }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = colors.interactive.accent; e.currentTarget.style.background = colors.interactive.accentLight; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = colors.border.default; e.currentTarget.style.background = colors.bg.white; }}
                 >
@@ -422,10 +406,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         value={newUserData.email}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
                         placeholder="user@example.com"
-                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
-                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        className="app-form-field w-full pl-10 pr-3"
                         autoFocus
                       />
                     </div>
@@ -440,10 +421,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         value={newUserData.password}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
                         placeholder="Įveskite slaptažodį"
-                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
-                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        className="app-form-field w-full pl-10 pr-3"
                       />
                     </div>
                   </div>
@@ -457,10 +435,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         value={newUserData.displayName}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, displayName: e.target.value }))}
                         placeholder="Vardas Pavardė (neprivaloma)"
-                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
-                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        className="app-form-field w-full pl-10 pr-3"
                       />
                     </div>
                   </div>
@@ -472,10 +447,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       <select
                         value={newUserData.role}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, role: e.target.value }))}
-                        className="w-full pl-10 pr-8 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm appearance-none"
-                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: newUserData.role ? colors.text.primary : colors.text.tertiary }}
-                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        className="app-form-field w-full pl-10 pr-8 appearance-none"
+                        style={{ color: newUserData.role ? colors.text.primary : colors.text.tertiary }}
                       >
                         <option value="">Be rolės (neprivaloma)</option>
                         {availableRoles.map((role) => (
@@ -505,18 +478,12 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
                 </div>
 
-                <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
-                  <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >Atšaukti</button>
+                <div className="px-5 py-4 border-t flex items-center justify-end space-x-3 bg-white/80" style={{ borderColor: 'var(--app-border)' }}>
+                  <button onClick={resetCreateModal} className="app-text-btn">Atšaukti</button>
                   <button
                     onClick={handleCreateKomanda}
                     disabled={saving || !newUserData.email.trim() || !newUserData.password.trim()}
-                    className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
-                    style={{ background: colors.interactive.accent, color: '#ffffff' }}
-                    onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
-                    onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
+                    className="app-text-btn app-text-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {saving ? (
                       <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Kuriama...</span></>
@@ -555,10 +522,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                           setNewVadybininkas(prev => ({ ...prev, fullName: name, kodas: generateKodas(name) }));
                         }}
                         placeholder="Vardas Pavarde"
-                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
-                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        className="app-form-field w-full pl-10 pr-3"
                         autoFocus
                       />
                     </div>
@@ -573,10 +537,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                         value={newVadybininkas.kodas}
                         onChange={(e) => setNewVadybininkas(prev => ({ ...prev, kodas: e.target.value.toUpperCase() }))}
                         placeholder="e.g. TN"
-                        className="w-full pl-10 pr-3 py-2.5 border rounded-lg focus:outline-none transition-colors text-sm"
-                        style={{ borderColor: colors.border.default, background: colors.bg.white, color: colors.text.primary }}
-                        onFocus={(e) => e.currentTarget.style.borderColor = colors.interactive.accent}
-                        onBlur={(e) => e.currentTarget.style.borderColor = colors.border.default}
+                        className="app-form-field w-full pl-10 pr-3"
                       />
                     </div>
                     <p className="text-xs mt-1" style={{ color: colors.text.tertiary }}>
@@ -585,18 +546,12 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   </div>
                 </div>
 
-                <div className="px-6 py-4 border-t rounded-b-xl flex items-center justify-end space-x-3" style={{ borderColor: colors.border.light, background: colors.bg.secondary }}>
-                  <button onClick={resetCreateModal} className="px-4 py-2 rounded-lg text-sm font-medium transition-colors" style={{ color: colors.text.secondary }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = colors.bg.tertiary}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                  >Atšaukti</button>
+                <div className="px-5 py-4 border-t flex items-center justify-end space-x-3 bg-white/80" style={{ borderColor: 'var(--app-border)' }}>
+                  <button onClick={resetCreateModal} className="app-text-btn">Atšaukti</button>
                   <button
                     onClick={handleCreateVadybininkas}
                     disabled={saving || !newVadybininkas.fullName.trim() || !newVadybininkas.kodas.trim()}
-                    className="px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 text-sm font-medium"
-                    style={{ background: colors.interactive.accent, color: '#ffffff' }}
-                    onMouseEnter={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accentHover)}
-                    onMouseLeave={(e) => !saving && (e.currentTarget.style.background = colors.interactive.accent)}
+                    className="app-text-btn app-text-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {saving ? (
                       <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /><span>Kuriama...</span></>
@@ -630,7 +585,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       )}
 
       {/* Users List */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="app-workspace-content flex-1 overflow-y-auto">
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4].map(i => (
@@ -662,8 +617,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             )}
           </div>
         ) : (
-          <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
-            <table className="table-striped table">
+          <div className="app-table-shell">
+            <table className="app-data-table">
               <thead>
                 <tr>
                   <th>Vardas</th>
@@ -802,8 +757,8 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         {vadybininkai.length > 0 && (
           <div className="mt-6">
             <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text.secondary }}>Vadybininkai</h3>
-            <div className="w-full overflow-x-auto rounded-lg border border-base-content/10 bg-base-100">
-              <table className="table-striped table">
+            <div className="app-table-shell">
+              <table className="app-data-table">
                 <thead>
                   <tr>
                     <th>Vardas</th>

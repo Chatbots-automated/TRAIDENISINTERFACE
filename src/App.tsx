@@ -8,7 +8,6 @@ import type { AppUser } from './types';
 const DocumentsInterface = lazy(() => import('./components/DocumentsInterface'));
 const AdminUsersInterface = lazy(() => import('./components/AdminUsersInterface'));
 const InstructionsInterface = lazy(() => import('./components/InstructionsInterface'));
-const NestandardiniaiInterface = lazy(() => import('./components/NestandardiniaiInterface'));
 const DervaInterface = lazy(() => import('./components/DervaInterface'));
 const KainosInterface = lazy(() => import('./components/KainosInterface'));
 const AnalizeInterface = lazy(() => import('./components/AnalizeInterface'));
@@ -24,7 +23,7 @@ const routeFallback = (
   </div>
 );
 
-type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'nestandartiniai' | 'derva' | 'sdk' | 'analize' | 'kainos';
+type ViewMode = 'documents' | 'users' | 'instrukcijos' | 'derva' | 'sdk' | 'analize' | 'kainos';
 
 // localStorage keys for persistence
 const STORAGE_KEYS = {
@@ -37,7 +36,6 @@ const routeToViewMode: Record<string, ViewMode> = {
   '/documents': 'documents',
   '/users': 'users',
   '/instrukcijos': 'instrukcijos',
-  '/nestandartiniai': 'nestandartiniai',
   '/analize': 'analize',
   '/derva': 'derva',
   '/kainos': 'kainos',
@@ -209,10 +207,6 @@ function AppContent() {
           <Route
             path="/instrukcijos"
             element={<InstructionsInterface user={user} />}
-          />
-          <Route
-            path="/nestandartiniai"
-            element={<NestandardiniaiInterface user={user} projectId={projectId} />}
           />
           <Route
             path="/analize"
