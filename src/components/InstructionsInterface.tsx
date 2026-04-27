@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   FileText,
@@ -41,6 +41,15 @@ interface InstructionsInterfaceProps {
 }
 
 type View = 'editor' | 'versions';
+
+const CHAT_VARIABLE_PREFIX = 'chat_';
+const isChatInstructionVariable = (variable: InstructionVariable) => (
+  variable.variable_key.startsWith(CHAT_VARIABLE_PREFIX)
+);
+const normalizeChatVariableKey = (value: string) => {
+  const normalized = value.trim().replace(/^chat_+/i, '').replace(/[^a-zA-Z0-9_]/g, '');
+  return normalized ? `${CHAT_VARIABLE_PREFIX}${normalized}` : CHAT_VARIABLE_PREFIX;
+};
 const DEFAULT_KAINOS_TOOLS = [
   { type: 'web_search_20260209', name: 'web_search' }
 ];
@@ -162,11 +171,21 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const contentRef = useRef<HTMLDivElement>(null);
   const { notifications, addNotification, addErrorNotification, removeNotification } = useNotifications();
 
-  const selectedVariable = variables[selectedIndex] || null;
+  const instructionVariables = useMemo(
+    () => variables.filter(isChatInstructionVariable),
+    [variables]
+  );
+  const selectedVariable = instructionVariables[selectedIndex] || null;
 
   useEffect(() => {
     loadVariables();
   }, []);
+
+  useEffect(() => {
+    if (instructionVariables.length > 0 && selectedIndex > instructionVariables.length - 1) {
+      setSelectedIndex(instructionVariables.length - 1);
+    }
+  }, [instructionVariables.length, selectedIndex]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -206,10 +225,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       const data = await getInstructionVariables();
       setVariables(data);
       setSelectedIndex((currentIndex) => {
-        const currentKey = variables[currentIndex]?.variable_key ?? null;
+        const filteredData = data.filter(isChatInstructionVariable);
+        const currentKey = instructionVariables[currentIndex]?.variable_key ?? null;
         const targetKey = preferredVariableKey ?? currentKey;
         if (!targetKey) return 0;
-        const targetIndex = data.findIndex((variable) => variable.variable_key === targetKey);
+        const targetIndex = filteredData.findIndex((variable) => variable.variable_key === targetKey);
         return targetIndex >= 0 ? targetIndex : 0;
       });
     } catch (err: any) {
@@ -279,15 +299,15 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const handleCreateVariable = async () => {
-    const variableKey = newVariableForm.variable_key.trim();
+    const variableKey = normalizeChatVariableKey(newVariableForm.variable_key);
     const variableName = newVariableForm.variable_name.trim();
 
     setCreateVariableError(null);
-    if (!variableKey || !variableName) {
+    if (variableKey === CHAT_VARIABLE_PREFIX || !variableName) {
       setCreateVariableError('Kodas ir pavadinimas yra privalomi');
       return;
     }
-    if (!/^[a-zA-Z0-9_]+$/.test(variableKey)) {
+    if (!/^chat_[a-zA-Z0-9_]+$/.test(variableKey)) {
       setCreateVariableError('Kodas gali turėti tik raides, skaičius ir pabraukimus');
       return;
     }
@@ -350,6 +370,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const normalizeSnapshot = (snapshot: InstructionVersion['snapshot']) => {
     const result: Record<string, { content: string; variable_name?: string | null; description?: string | null; display_order?: number | null }> = {};
     for (const [key, raw] of Object.entries(snapshot || {})) {
+      if (!key.startsWith(CHAT_VARIABLE_PREFIX)) continue;
       if (typeof raw === 'string') {
         result[key] = { content: raw };
       } else {
@@ -368,7 +389,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     if (!version) return { changed: [], added: [], removed: [], same: [] };
 
     const target = normalizeSnapshot(version.snapshot);
-    const current = variables.reduce((acc, variable) => {
+    const current = instructionVariables.reduce((acc, variable) => {
       acc[variable.variable_key] = {
         content: variable.content,
         variable_name: variable.variable_name,
@@ -849,16 +870,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       {/* Left Sidebar - Table of Contents */}
       <div className="w-[268px] flex flex-col border-r border-base-300/70 bg-white/70">
         {/* Sidebar Header */}
-        <div className="px-4 py-3 border-b border-base-300/70 bg-white/75">
-          <div className="flex items-center space-x-2 mb-1">
-            <div className="w-6 h-6 rounded-md flex items-center justify-center bg-primary/10">
-              <BookOpen className="w-3.5 h-3.5 text-primary" />
-            </div>
-            <h2 className="text-sm font-semibold text-base-content">AI Agento Instrukcijos</h2>
+        <div className="px-4 py-2.5 border-b border-base-300/70 bg-white/75">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold text-base-content truncate">AI Agento Instrukcijos</h2>
           </div>
-          <p className="text-xs ml-8 text-base-content/50">
-            {variables.filter(v => v.content).length} iš {variables.length} užpildyta
-          </p>
         </div>
 
         {/* Navigation Items */}
@@ -871,7 +887,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
             </div>
           ) : (
             <nav className="space-y-0.5 px-2">
-              {variables.map((variable, index) => (
+              {instructionVariables.map((variable, index) => (
                 <NavButton
                   key={variable.id}
                   variable={variable}
@@ -919,10 +935,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         {selectedVariable ? (
           <>
             {/* Content Header */}
-            <div className="px-7 py-4 border-b border-base-300/70 bg-white/80">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-2">
+            <div className="px-6 py-3 border-b border-base-300/70 bg-white/80">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-mono px-2 py-0.5 rounded" style={{
                       color: colors.interactive.accent,
                       background: colors.interactive.accentLight,
@@ -930,17 +946,13 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     }}>
                       {selectedVariable.variable_key}
                     </span>
-                    <span className="text-xs" style={{ color: colors.border.default }}>•</span>
                     <span className="text-xs" style={{ color: colors.text.tertiary }}>
-                      Sekcija {selectedIndex + 1} iš {variables.length}
+                      {selectedIndex + 1} iš {instructionVariables.length}
                     </span>
                   </div>
-                  <h1 className="text-[19px] font-semibold text-base-content">
+                  <h1 className="text-[18px] font-semibold text-base-content truncate">
                     {selectedVariable.variable_name}
                   </h1>
-                  {selectedVariable.description && (
-                    <p className="text-sm mt-1 text-base-content/55">{selectedVariable.description}</p>
-                  )}
                 </div>
 
                 <div className="flex items-center space-x-2 ml-4">
@@ -1034,11 +1046,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   disabled={selectedIndex === 0}
                 />
                 <span className="text-sm font-medium" style={{ color: colors.text.tertiary }}>
-                  {selectedIndex + 1} / {variables.length}
+                  {selectedIndex + 1} / {instructionVariables.length}
                 </span>
                 <NextButton
-                  onClick={() => setSelectedIndex(Math.min(variables.length - 1, selectedIndex + 1))}
-                  disabled={selectedIndex === variables.length - 1}
+                  onClick={() => setSelectedIndex(Math.min(instructionVariables.length - 1, selectedIndex + 1))}
+                  disabled={selectedIndex === instructionVariables.length - 1}
                 />
               </div>
             </div>
@@ -1286,8 +1298,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     value={newVariableForm.variable_key}
                     onChange={(e) => setNewVariableForm(prev => ({ ...prev, variable_key: e.target.value }))}
                     className="app-form-field mt-1 w-full text-sm"
-                    placeholder="pvz. chat_quality_rules"
+                    placeholder="pvz. quality_rules"
                   />
+                  <span className="mt-1 block text-[10px] text-base-content/35">Išsaugoma su chat_ prefiksu.</span>
                 </label>
                 <label className="block">
                   <span className="text-[11px] font-medium text-base-content/50">Pavadinimas</span>
@@ -1383,7 +1396,7 @@ function VersionCard({
 }) {
   const [isHovered, setIsHovered] = React.useState(false);
   const isCurrent = index === 0;
-  const variableCount = Object.keys(version.snapshot || {}).length;
+  const variableCount = Object.keys(version.snapshot || {}).filter(key => key.startsWith(CHAT_VARIABLE_PREFIX)).length;
   const label = version.change_description || `Versija v${version.version_number}`;
 
   return (

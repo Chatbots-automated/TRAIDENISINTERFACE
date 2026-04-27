@@ -56,7 +56,7 @@ export async function saveParsedDocument(input: CreateParsedDocumentInput): Prom
 
 export async function updateParsedDocument(
   id: string,
-  updates: Partial<Pick<ParsedDocument, 'status' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
+  updates: Partial<Pick<ParsedDocument, 'status' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
 ): Promise<void> {
   const { error } = await db
     .from('parsed_documents')

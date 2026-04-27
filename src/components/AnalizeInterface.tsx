@@ -3,11 +3,19 @@ import {
   Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
   Send, MessageSquare, AlertCircle, CheckCircle, Loader2, Image,
   Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
-  PanelRightClose, PanelRightOpen, Download, FlaskConical
+  PanelRightClose, PanelRightOpen, Download, FlaskConical, ClipboardCopy,
+  Braces, SlidersHorizontal
 } from 'lucide-react';
 import Anthropic from '@anthropic-ai/sdk';
 import type { AppUser, ParsedDocument, DocumentChatMessage, ParseTier } from '../types';
 import { parseDocument as llamaParse } from '../lib/llamaParseService';
+import {
+  runExtract,
+  type ExtractConfiguration,
+  type ExtractJob,
+  type ExtractTarget,
+  type ExtractTier,
+} from '../lib/llamaExtractService';
 import {
   saveParsedDocument,
   updateParsedDocument,
@@ -32,6 +40,44 @@ const TIERS: { value: ParseTier; label: string; desc: string }[] = [
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.pptx,.xlsx,.html,.htm,.jpg,.jpeg,.png,.xml,.epub,.rtf,.csv,.txt';
+
+const TANK_SCHEMA = {
+  type: 'object',
+  properties: {
+    talpos: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          pavadinimas: { type: 'string' },
+          pozicija: { type: 'string' },
+          talpa_m3: { type: 'number' },
+          skersmuo_mm: { type: 'number' },
+          aukstis_mm: { type: 'number' },
+          medziaga: { type: 'string' },
+          vieta: { type: 'string' },
+          terpe: { type: 'string' },
+          temperatura_c: { type: 'number' },
+          slegis_bar_g: { type: 'number' },
+          jungtys: { type: 'string' },
+          pastabos: { type: 'string' },
+        },
+      },
+    },
+  },
+  required: ['talpos'],
+};
+
+const EXTRACT_TARGETS: { value: ExtractTarget; label: string }[] = [
+  { value: 'per_doc', label: 'Visas dokumentas' },
+  { value: 'per_page', label: 'Kiekvienas puslapis' },
+  { value: 'per_table_row', label: 'Lentelės eilutės' },
+];
+
+const EXTRACT_TIERS: { value: ExtractTier; label: string }[] = [
+  { value: 'agentic', label: 'Tikslus' },
+  { value: 'cost_effective', label: 'Ekonomiškas' },
+];
 
 // ============================================================================
 // Tank Extraction Prompt (for quick-action button)
@@ -103,12 +149,30 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
 
   // --- Chat ---
   const [chatOpen, setChatOpen] = useState(true);
+  const [rightPanelTab, setRightPanelTab] = useState<'extract' | 'chat'>('extract');
   const [chatMessages, setChatMessages] = useState<DocumentChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [chatStreaming, setChatStreaming] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // --- LlamaCloud Extract ---
+  const [extractTier, setExtractTier] = useState<ExtractTier>('agentic');
+  const [extractTarget, setExtractTarget] = useState<ExtractTarget>('per_doc');
+  const [extractCitations, setExtractCitations] = useState(true);
+  const [extractConfidence, setExtractConfidence] = useState(true);
+  const [extractMaxPages, setExtractMaxPages] = useState('');
+  const [extractTargetPages, setExtractTargetPages] = useState('');
+  const [extractParseConfigId, setExtractParseConfigId] = useState('');
+  const [extractVersion, setExtractVersion] = useState('latest');
+  const [extractSystemPrompt, setExtractSystemPrompt] = useState('Ištrauk struktūruotus techninius duomenis lietuviškai. Jei informacija nerasta, lauką praleisk.');
+  const [extractSchemaText, setExtractSchemaText] = useState(JSON.stringify(TANK_SCHEMA, null, 2));
+  const [showExtractAdvanced, setShowExtractAdvanced] = useState(false);
+  const [extractLoading, setExtractLoading] = useState(false);
+  const [extractStatus, setExtractStatus] = useState('');
+  const [extractError, setExtractError] = useState('');
+  const [extractResult, setExtractResult] = useState<ExtractJob | null>(null);
 
   // --- Image lightbox ---
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -272,6 +336,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       // Update Directus with results
       await updateParsedDocument(doc.id, {
         status: 'SUCCESS',
+        job_id: result.id,
         parsed_markdown: result.result_content_markdown || '',
         parsed_text: result.result_content_text || '',
         parsed_json: result.result_content_json || null,
@@ -415,6 +480,55 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
       handleSendChat();
     }
   };
+
+  const handleRunExtract = async () => {
+    if (!selectedDocFull || extractLoading) return;
+
+    setExtractLoading(true);
+    setExtractError('');
+    setExtractStatus('Ruošiamas ištraukimas...');
+    setExtractResult(null);
+
+    try {
+      const parsedSchema = JSON.parse(extractSchemaText);
+      const configuration: ExtractConfiguration = {
+        data_schema: parsedSchema,
+        tier: extractTier,
+        extraction_target: extractTarget,
+        parse_tier: selectedDocFull.tier,
+        parse_config_id: extractParseConfigId.trim() || null,
+        extract_version: extractVersion.trim() || 'latest',
+        cite_sources: extractCitations,
+        confidence_scores: extractConfidence,
+        target_pages: extractTargetPages.trim() || null,
+        max_pages: extractMaxPages.trim() ? Number(extractMaxPages) : null,
+        system_prompt: extractSystemPrompt.trim() || null,
+      };
+
+      const fallbackText = selectedDocFull.parsed_markdown || selectedDocFull.parsed_text || '';
+      const job = await runExtract({
+        fileInput: selectedDocFull.job_id || undefined,
+        fallbackText,
+        fallbackFileName: selectedDocFull.file_name.replace(/\.[^.]+$/, '') || 'document',
+        configuration,
+        onStatus: setExtractStatus,
+      });
+
+      setExtractResult(job);
+      setExtractStatus('Ištraukimas baigtas');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ištraukimas nepavyko';
+      setExtractError(message);
+      setExtractStatus('');
+    } finally {
+      setExtractLoading(false);
+    }
+  };
+
+  const extractResultJson = useMemo(() => {
+    if (!extractResult) return '';
+    return JSON.stringify(extractResult.extract_result ?? extractResult, null, 2);
+  }, [extractResult]);
 
   // ===========================================================================
   // RENDER
@@ -880,18 +994,225 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
               </div>
 
               {/* ============================================================ */}
-              {/* RIGHT PANEL — Chat                                           */}
+              {/* RIGHT PANEL — Extract + Chat                                 */}
               {/* ============================================================ */}
               {chatOpen && (
                 <div
-                  className="w-80 flex-shrink-0 flex flex-col h-full"
+                  className="w-[420px] flex-shrink-0 flex flex-col h-full"
                   style={{ borderLeft: '1px solid #f0ede8' }}
                 >
-                  {/* Chat Header */}
-                  <div className="px-4 py-3 shrink-0 flex items-center gap-2" style={{ borderBottom: '1px solid #f0ede8' }}>
-                    <MessageSquare className="w-4 h-4" style={{ color: '#007AFF' }} />
-                    <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>Pokalbis apie dokumentą</span>
+                  <div className="px-4 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold" style={{ color: '#3d3935' }}>LlamaCloud Extract</p>
+                        <p className="text-[10px] truncate" style={{ color: '#8a857f' }}>
+                          Struktūruotas ištraukimas iš įkelto dokumento
+                        </p>
+                      </div>
+                      <Braces className="w-4 h-4 shrink-0" style={{ color: '#007AFF' }} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: 'rgba(0,0,0,0.04)' }}>
+                      {([
+                        { key: 'extract' as const, label: 'Ištraukimas' },
+                        { key: 'chat' as const, label: 'Pokalbis' },
+                      ]).map(tab => (
+                        <button
+                          key={tab.key}
+                          onClick={() => setRightPanelTab(tab.key)}
+                          className="h-8 rounded-lg text-xs font-medium transition-all"
+                          style={{
+                            background: rightPanelTab === tab.key ? '#fff' : 'transparent',
+                            color: rightPanelTab === tab.key ? '#3d3935' : '#8a857f',
+                            boxShadow: rightPanelTab === tab.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                          }}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {rightPanelTab === 'extract' ? (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      <div className="rounded-xl bg-white p-3 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Schema</span>
+                          <button
+                            onClick={() => setExtractSchemaText(JSON.stringify(TANK_SCHEMA, null, 2))}
+                            className="text-[10px] font-medium"
+                            style={{ color: '#007AFF' }}
+                          >
+                            Talpų šablonas
+                          </button>
+                        </div>
+                        <textarea
+                          value={extractSchemaText}
+                          onChange={e => setExtractSchemaText(e.target.value)}
+                          spellCheck={false}
+                          className="w-full h-44 resize-none rounded-lg p-3 text-[11px] outline-none"
+                          style={{
+                            background: '#faf9f7',
+                            border: '0.5px solid rgba(0,0,0,0.08)',
+                            color: '#3d3935',
+                            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                          }}
+                        />
+                      </div>
+
+                      <div className="rounded-xl bg-white p-3 shadow-sm space-y-3" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+                        <div className="flex items-center gap-2">
+                          <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
+                          <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Parametrai</span>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-medium block mb-1" style={{ color: '#8a857f' }}>Tikslumas</label>
+                          <div className="grid grid-cols-2 gap-1">
+                            {EXTRACT_TIERS.map(tier => (
+                              <button
+                                key={tier.value}
+                                onClick={() => setExtractTier(tier.value)}
+                                className="h-8 rounded-lg text-xs font-medium transition-all"
+                                style={{
+                                  background: extractTier === tier.value ? 'rgba(0,122,255,0.1)' : 'rgba(0,0,0,0.03)',
+                                  color: extractTier === tier.value ? '#007AFF' : '#5a5550',
+                                  border: extractTier === tier.value ? '0.5px solid rgba(0,122,255,0.25)' : '0.5px solid rgba(0,0,0,0.06)',
+                                }}
+                              >
+                                {tier.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-medium block mb-1" style={{ color: '#8a857f' }}>Ištraukimo apimtis</label>
+                          <select
+                            value={extractTarget}
+                            onChange={e => setExtractTarget(e.target.value as ExtractTarget)}
+                            className="w-full h-9 rounded-lg px-3 text-xs outline-none"
+                            style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                          >
+                            {EXTRACT_TARGETS.map(target => (
+                              <option key={target.value} value={target.value}>{target.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <button
+                          onClick={() => setShowExtractAdvanced(!showExtractAdvanced)}
+                          className="flex items-center gap-1 text-[10px] font-medium"
+                          style={{ color: '#8a857f' }}
+                        >
+                          <Settings2 className="w-3 h-3" />
+                          Papildomi nustatymai
+                          <ChevronDown className={`w-3 h-3 transition-transform ${showExtractAdvanced ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {showExtractAdvanced && (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-2">
+                              <label className="flex items-center gap-2 text-[11px]" style={{ color: '#5a5550' }}>
+                                <input type="checkbox" checked={extractCitations} onChange={e => setExtractCitations(e.target.checked)} />
+                                Citatos
+                              </label>
+                              <label className="flex items-center gap-2 text-[11px]" style={{ color: '#5a5550' }}>
+                                <input type="checkbox" checked={extractConfidence} onChange={e => setExtractConfidence(e.target.checked)} />
+                                Patikimumas
+                              </label>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                value={extractTargetPages}
+                                onChange={e => setExtractTargetPages(e.target.value)}
+                                placeholder="Puslapiai: 1,3-5"
+                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                              />
+                              <input
+                                value={extractMaxPages}
+                                onChange={e => setExtractMaxPages(e.target.value.replace(/[^\d]/g, ''))}
+                                placeholder="Maks. puslapių"
+                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                value={extractVersion}
+                                onChange={e => setExtractVersion(e.target.value)}
+                                placeholder="Versija: latest"
+                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                              />
+                              <input
+                                value={extractParseConfigId}
+                                onChange={e => setExtractParseConfigId(e.target.value)}
+                                placeholder="Parse config ID"
+                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                              />
+                            </div>
+                            <textarea
+                              value={extractSystemPrompt}
+                              onChange={e => setExtractSystemPrompt(e.target.value)}
+                              placeholder="Papildomos ištraukimo instrukcijos..."
+                              className="w-full h-20 rounded-lg p-2 text-xs resize-none outline-none"
+                              style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                            />
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleRunExtract}
+                          disabled={!selectedDocFull || extractLoading}
+                          className="w-full h-10 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                          style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
+                        >
+                          {extractLoading ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              {extractStatus || 'Ištraukiama...'}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-2">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              Ištraukti
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {extractError && (
+                        <div className="rounded-xl p-3 text-xs flex gap-2" style={{ background: 'rgba(239,68,68,0.07)', color: '#ef4444', border: '0.5px solid rgba(239,68,68,0.18)' }}>
+                          <AlertCircle className="w-4 h-4 shrink-0" />
+                          <span>{extractError}</span>
+                        </div>
+                      )}
+
+                      {extractResult && (
+                        <div className="rounded-xl bg-white shadow-sm overflow-hidden" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+                          <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid #f0ede8', background: '#faf9f7' }}>
+                            <div>
+                              <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Rezultatas</span>
+                              <p className="text-[10px]" style={{ color: '#8a857f' }}>{extractResult.id}</p>
+                            </div>
+                            <button
+                              onClick={() => navigator.clipboard.writeText(extractResultJson)}
+                              className="p-1.5 rounded-lg transition-colors hover:bg-black/5"
+                              title="Kopijuoti"
+                            >
+                              <ClipboardCopy className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                            </button>
+                          </div>
+                          <pre className="max-h-80 overflow-auto p-3 text-[11px] whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                            {extractResultJson}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
 
                   {/* Chat Messages */}
                   <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
@@ -1009,6 +1330,8 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                       </button>
                     </div>
                   </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

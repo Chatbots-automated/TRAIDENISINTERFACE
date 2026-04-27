@@ -2281,10 +2281,10 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
 
       {!readOnly && !addingSide && (
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-base-content/10">
-          <button onClick={() => setAddingSide('left')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl transition-all duration-200 text-base-content/70 border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">
+          <button onClick={() => setAddingSide('left')} className="app-text-btn">
             <Plus className="w-3.5 h-3.5" /> Gavėjas
           </button>
-          <button onClick={() => setAddingSide('right')} className="flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl text-white transition-all duration-200 hover:brightness-95" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}>
+          <button onClick={() => setAddingSide('right')} className="app-text-btn">
             <Plus className="w-3.5 h-3.5" /> Komanda
           </button>
         </div>
@@ -2599,8 +2599,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
         {!readOnly && (
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-xl text-white transition-all duration-200 hover:brightness-95"
-            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+            className="app-text-btn"
           >
             <Upload className="w-3.5 h-3.5" /> Įkelti
           </button>
@@ -2846,8 +2845,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                     <p className="text-sm text-base-content/50">Peržiūra negalima šiam failų tipui</p>
                     <a
                       href={getDownloadUrl(previewFile.directus_file_id)}
-                      className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-3xl text-white transition-all hover:opacity-80"
-                      style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+                      className="app-text-btn app-text-btn-primary h-9 min-h-0"
                     >
                       <Download className="w-4 h-4" /> Atsisiųsti
                     </a>
@@ -3443,15 +3441,14 @@ function TabMedziagos({
                 <button
                   onClick={() => setShowTemplatePicker(true)}
                   disabled={sablonaiLoading || savingSlate}
-                  className="text-xs px-4 py-1.5 rounded-xl font-medium text-white transition-all duration-200 hover:brightness-95 disabled:opacity-50"
-                  style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}
+                  className="app-text-btn app-text-btn-primary h-8 min-h-0 disabled:opacity-50"
                 >
                   Pasirinkti šabloną
                 </button>
                 <span className="text-xs text-base-content/30">arba</span>
                 <button
                   onClick={() => setMode('manual')}
-                  className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 text-base-content/65 bg-base-100 hover:bg-base-content/[0.03] transition-colors duration-200"
+                  className="app-text-btn h-8 min-h-0"
                 >
                   Įvesti rankiniu būdu
                 </button>
@@ -3530,7 +3527,7 @@ function TabMedziagos({
                     {slateEditError && <p className="text-xs text-error">{slateEditError}</p>}
                     <div className="flex items-center justify-end gap-2 pt-1">
                       <button onClick={() => setIsSlateEditing(false)} className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">Atšaukti</button>
-                      <button onClick={saveSlateEdits} disabled={savingSlate} className="text-xs px-3 py-1.5 rounded-xl text-white disabled:opacity-60" style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}>
+                      <button onClick={saveSlateEdits} disabled={savingSlate} className="app-text-btn app-text-btn-primary h-8 min-h-0 disabled:opacity-60">
                         {savingSlate ? 'Saugoma...' : 'Išsaugoti'}
                       </button>
                     </div>
@@ -3597,8 +3594,7 @@ function TabMedziagos({
                 <button
                   onClick={handleSaveManual}
                   disabled={savingSlate || manualRows.every(r => !r.name.trim())}
-                  className="text-xs px-3 py-1 rounded-xl text-white font-medium disabled:opacity-50 transition-colors duration-200"
-                  style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.08)' }}
+                  className="app-text-btn app-text-btn-primary h-8 min-h-0 disabled:opacity-50"
                 >
                   {savingSlate ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : <Save className="w-3 h-3 inline mr-1" />}
                   Išsaugoti
@@ -3641,8 +3637,7 @@ function TabMedziagos({
           <button
             onClick={() => estimatePrice(predictionMode)}
             disabled={priceEstimating}
-            className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium text-white transition-all duration-200 disabled:opacity-50 mb-2 shrink-0 hover:brightness-95"
-            style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+            className="app-text-btn app-text-btn-primary w-full h-9 min-h-0 text-sm disabled:opacity-50 mb-2 shrink-0"
           >
             {priceEstimating ? (
               <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Skaičiuojama...</>
@@ -3958,8 +3953,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             <button
               onClick={() => saveDervaMusu()}
               disabled={dervaMusuSaving}
-              className="text-xs px-3 py-1.5 rounded-full text-white transition-all hover:opacity-80 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)' }}
+              className="app-text-btn app-text-btn-primary h-8 min-h-0 disabled:opacity-60"
             >
               {dervaMusuSaving ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Saugoma...</> : 'Išsaugoti'}
             </button>
@@ -3984,12 +3978,12 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
   );
 
   const aiSection = (
-    <div className="mb-6">
+    <div className="mb-4 rounded-2xl border border-base-content/10 bg-white shadow-[0_12px_32px_-30px_rgba(15,23,42,0.45)] overflow-hidden">
       {/* ── AI Derva selection section (per tank) ── */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-base-content/8 bg-base-content/[0.012]">
         <div className="flex items-center gap-1.5">
-          <Beaker className="w-3.5 h-3.5 text-primary" />
-          <p className="text-xs font-medium text-primary">AI rekomendacija</p>
+          <Beaker className="w-3.5 h-3.5 text-base-content/45" />
+          <p className="text-xs font-semibold text-base-content/65">AI rekomendacija</p>
           {dervaResult && dervaMusu.trim() === dervaResult.trim() && (
             <div className="flex items-center gap-1 ml-1.5 text-[11px] text-success/70" title="Rekomendacija naudojama aukščiau">
               <ArrowUp className="w-3 h-3" />
@@ -4013,14 +4007,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
               <button
                 onClick={() => dervaResult && saveDervaMusu(dervaResult)}
                 disabled={!dervaResult || selecting || dervaMusuSaving}
-                className="flex items-center gap-1.5 text-xs font-medium px-4 py-2.5 rounded-xl transition-all duration-200"
-                style={{
-                  background: dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.1)' : 'rgba(0,0,0,0.03)',
-                  color: dervaResult && !selecting && !dervaMusuSaving ? '#34C759' : '#8a857f',
-                  border: `0.5px solid ${dervaResult && !selecting && !dervaMusuSaving ? 'rgba(52, 199, 89, 0.3)' : 'rgba(0,0,0,0.08)'}`,
-                  cursor: !dervaResult || selecting || dervaMusuSaving ? 'not-allowed' : 'pointer',
-                  opacity: !dervaResult || selecting ? 0.5 : 1,
-                }}
+                className="app-text-btn h-9 min-h-0 text-emerald-600 disabled:opacity-50"
               >
                 {dervaMusuSaving
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Išsaugoma...</>
@@ -4031,8 +4018,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
             <button
               onClick={triggerDervaSelect}
               disabled={selecting}
-              className="flex items-center gap-2 text-xs font-medium px-4 py-2.5 rounded-xl text-white transition-all duration-200 hover:brightness-95 disabled:opacity-60"
-              style={{ background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' }}
+              className="app-text-btn app-text-btn-primary h-9 min-h-0 disabled:opacity-60"
             >
               {isCurrentTankSelecting
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Analizuojama...</>
@@ -4050,7 +4036,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
       {/* Loading state */}
       {isCurrentTankSelecting && (
-        <div className="rounded-xl p-6 mb-4 text-center border border-primary/15 bg-primary/[0.03]">
+        <div className="rounded-xl p-6 m-4 text-center border border-primary/15 bg-primary/[0.03]">
           <div className="w-11 h-11 rounded-full mx-auto mb-3 flex items-center justify-center bg-primary/10">
             <Loader2 className="w-5 h-5 animate-spin text-primary" />
           </div>
@@ -4061,7 +4047,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
       {/* Success toast */}
       {success && !selecting && (
-        <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-success/10 text-success border border-success/15">
+        <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg m-4 bg-success/10 text-success border border-success/15">
           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
           Dervos rekomendacija sėkmingai atnaujinta
         </div>
@@ -4069,7 +4055,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
       {/* Error */}
       {dervaError && (
-        <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-error/5 text-error border border-error/10">
+        <div className="flex items-start gap-2 text-xs px-3 py-2 rounded-lg m-4 bg-error/5 text-error border border-error/10">
           <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>{dervaError}</span>
         </div>
@@ -4077,11 +4063,11 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
       {/* Recommendation display — hide content when already applied to derva_musu */}
       {dervaResult && !isCurrentTankSelecting && dervaMusu.trim() !== dervaResult.trim() ? (
-        <div className="rounded-xl p-4 border border-blue-200/60" style={{ background: 'rgba(219, 234, 254, 0.25)' }}>
+        <div className="rounded-xl p-4 m-4 border border-base-content/10 bg-base-content/[0.015]">
           <NormalizedDisplayRenderer value={dervaResult} />
         </div>
       ) : !isCurrentTankSelecting && !dervaResult && (
-        <div className="flex flex-col items-center justify-center py-10 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
+        <div className="flex flex-col items-center justify-center py-10 m-4 text-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">
           <div className="w-11 h-11 rounded-full mb-3 flex items-center justify-center bg-primary/10">
             <Beaker className="w-5 h-5 text-primary" />
           </div>

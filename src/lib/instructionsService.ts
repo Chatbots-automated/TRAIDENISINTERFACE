@@ -2,6 +2,9 @@
 import { db, dbAdmin } from './database';
 import { appLogger } from './appLogger';
 
+const CHAT_VARIABLE_PREFIX = 'chat_';
+const isChatVariableKey = (key: string) => key.startsWith(CHAT_VARIABLE_PREFIX);
+
 export interface InstructionVariable {
   id: string;
   variable_key: string;
@@ -268,7 +271,7 @@ export async function createInstructionVariable(
 }
 
 /**
- * Create a version snapshot of all current variables
+ * Create a version snapshot of current chat_* variables only.
  */
 export async function createVersionSnapshot(
   userId: string,
@@ -276,8 +279,8 @@ export async function createVersionSnapshot(
   isRevert: boolean = false,
   revertedFromVersion?: number
 ): Promise<InstructionVersion | null> {
-  // Get all current variables
-  const variables = await getInstructionVariables();
+  // Versioning is intentionally scoped to user-facing chat prompts.
+  const variables = (await getInstructionVariables()).filter(v => isChatVariableKey(v.variable_key));
 
   // Create snapshot object
   const snapshot: Record<string, InstructionSnapshotVariable> = {};
@@ -399,9 +402,11 @@ export async function revertToVersion(
     }
 
     // 3. Update all variables with the snapshot values
-    const snapshot = versionToRevert.snapshot || {};
+    const snapshot = Object.fromEntries(
+      Object.entries(versionToRevert.snapshot || {}).filter(([key]) => isChatVariableKey(key))
+    );
     const snapshotKeys = new Set(Object.keys(snapshot));
-    const currentVariables = await getInstructionVariables();
+    const currentVariables = (await getInstructionVariables()).filter(v => isChatVariableKey(v.variable_key));
 
     for (const variable of currentVariables) {
       if (!snapshotKeys.has(variable.variable_key)) {
