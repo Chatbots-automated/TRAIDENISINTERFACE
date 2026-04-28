@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
-  Send, MessageSquare, AlertCircle, CheckCircle, Loader2, Image,
+  AlertCircle, CheckCircle, Loader2, Image,
   Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
-  PanelRightClose, PanelRightOpen, Download, FlaskConical, ClipboardCopy,
-  Braces, SlidersHorizontal
+  Download, ClipboardCopy, Braces, SlidersHorizontal
 } from 'lucide-react';
-import Anthropic from '@anthropic-ai/sdk';
-import type { AppUser, ParsedDocument, DocumentChatMessage, ParseTier } from '../types';
+import type { AppUser, ParsedDocument, ParseTier } from '../types';
 import { parseDocument as llamaParse } from '../lib/llamaParseService';
 import {
   runExtract,
@@ -22,11 +20,11 @@ import {
   fetchParsedDocuments,
   getParsedDocument,
   deleteParsedDocument,
-  fetchDocumentChats,
-  saveDocumentChat,
+  uploadOriginalDocument,
+  saveExtractionRun,
 } from '../lib/analizeService';
 import SafeHtml from './SafeHtml';
-import { renderMarkdown, renderChatContent } from './analize/markdownRenderer';
+import { renderMarkdown } from './analize/markdownRenderer';
 
 // ============================================================================
 // Constants
@@ -79,39 +77,6 @@ const EXTRACT_TIERS: { value: ExtractTier; label: string }[] = [
   { value: 'cost_effective', label: 'Ekonomiškas' },
 ];
 
-// ============================================================================
-// Tank Extraction Prompt (for quick-action button)
-// ============================================================================
-
-const TANK_EXTRACTION_PROMPT = `Išanalizuok VISĄ pateiktą dokumento turinį — el. laišką, priedus, lenteles, PDF turinį. Kiekvienai talpai/reaktoriui, kuris randamas dokumentuose, sukurk atskirą techninį aprašymą. PRIVALOMA ištraukti VISAS talpas — nepraleisti nė vienos.
-
-Grąžink VISADA validų JSON masyvą. Jokio teksto prieš ar po JSON.
-Jei tik 1 talpa — grąžink masyvą su vienu objektu.
-
-Kiekvienos talpos objekto struktūra (pildyk TIK tuos laukus, kuriems randi informaciją — jei parametras nerastas, PRALEISK lauką):
-
-Galimi laukai:
-- pavadinimas, eilės_nr, pozicija
-- projekto_kontekstas_Klientas, projekto_kontekstas_Užsakovas, projekto_kontekstas_Kontaktinis_asmuo, projekto_kontekstas_Užklausos_data, projekto_kontekstas_Projekto_pavadinimas
-- Talpa_m3, Skersmuo_mm, Aukštis_mm, Orientacija, Dugno_tipas
-- Medžiaga (FRP / PP / PE / HDPE / kita)
-- Vieta (INDOOR / OUTDOOR)
-- Cheminė_aplinka_Terpė, Cheminė_aplinka_Koncentracija, Cheminė_aplinka_Tankis_kg_m3, Cheminė_aplinka_Temperatūra_°C, Cheminė_aplinka_Slėgis_bar_g
-- Apšiltinimas, Elektrinis_šildymas
-- Maišyklė (Taip/Ne), Maišyklė_aprašymas
-- Jungtys, Pastabos
-
-Taisyklės:
-- Peržiūrėk VISĄ dokumento turinį — nesustok ties pirmu rastu šaltiniu
-- KIEKVIENA rasta talpa PRIVALO būti ištraukta atskirai
-- Jei ta pati talpa minima keliose vietose — sujunk informaciją į vieną bloką
-- Jei informacija dviprasmiška arba prieštaringa — pažymėk pastabose
-- Cheminės formulės tikslios: H₂SO₄, CuSO₄, NiSO₄, CoSO₄, LiOH, Li₂SO₄, HF, NH₃, NaOH, HCl
-- Matavimo vienetai: m³, mm, °C, bar(g), kg/m³, wt.%, g/L
-- Nesutrumpinti ir neapibendinti kelių talpų į vieną
-- Laukai turi būti FLAT — jokių nested objektų
-- Grąžink tik validų JSON masyvą. Jokio teksto prieš ar po JSON.`;
-
 type ViewTab = 'markdown' | 'text' | 'json' | 'images';
 
 interface AnalizeInterfaceProps {
@@ -147,16 +112,6 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [activeTab, setActiveTab] = useState<ViewTab>('markdown');
   const [currentPage, setCurrentPage] = useState(0);
 
-  // --- Chat ---
-  const [chatOpen, setChatOpen] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<'extract' | 'chat'>('extract');
-  const [chatMessages, setChatMessages] = useState<DocumentChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatStreaming, setChatStreaming] = useState('');
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const chatInputRef = useRef<HTMLTextAreaElement>(null);
-
   // --- LlamaCloud Extract ---
   const [extractTier, setExtractTier] = useState<ExtractTier>('agentic');
   const [extractTarget, setExtractTarget] = useState<ExtractTarget>('per_doc');
@@ -187,12 +142,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     } catch (err: unknown) {
       console.error('Failed to load documents:', err);
       const msg = err instanceof Error ? err.message : '';
-      const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code) : '';
-      setDocsError(
-        msg.toLowerCase().includes('permission') || code === '403'
-          ? 'Prieigos klaida (403) – patikrinkite VITE_DIRECTUS_TOKEN konfigūraciją Netlify aplinkoje.'
-          : msg || 'Nepavyko įkelti dokumentų.'
-      );
+      setDocsError(msg || 'Nepavyko įkelti dokumentų.');
     } finally {
       setDocsLoading(false);
     }
@@ -208,11 +158,9 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   useEffect(() => {
     if (!selectedDocId) {
       setSelectedDocFull(null);
-      setChatMessages([]);
       return;
     }
     loadFullDocument(selectedDocId);
-    loadChats(selectedDocId);
   }, [selectedDocId]);
 
   const loadFullDocument = async (id: string) => {
@@ -227,20 +175,6 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       setDocLoading(false);
     }
   };
-
-  const loadChats = async (docId: string) => {
-    try {
-      const msgs = await fetchDocumentChats(docId);
-      setChatMessages(msgs);
-    } catch {
-      setChatMessages([]);
-    }
-  };
-
-  // ---- Scroll chat to bottom ----
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages, chatStreaming]);
 
   // ---- Filtered documents ----
   const filteredDocs = useMemo(() => {
@@ -312,9 +246,13 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     setParseError('');
 
     try {
+      setParseStatusText('Įkeliamas originalus failas...');
+      const originalFile = await uploadOriginalDocument(selectedFile);
+
       // Save placeholder to Directus first
       const doc = await saveParsedDocument({
         user_id: user.id,
+        original_file: originalFile.id,
         file_name: selectedFile.name,
         file_type: selectedFile.type || selectedFile.name.split('.').pop() || 'unknown',
         file_size: selectedFile.size,
@@ -375,112 +313,6 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     }
   };
 
-  // ===========================================================================
-  // CHAT WITH DOCUMENT
-  // ===========================================================================
-
-  const handleSendChat = useCallback(async (overrideMessage?: string) => {
-    const msg = (overrideMessage || chatInput).trim();
-    if (!msg || !selectedDocFull || chatLoading) return;
-
-    setChatInput('');
-    setChatLoading(true);
-    setChatStreaming('');
-
-    // Save user message
-    try {
-      const userMsg = await saveDocumentChat(selectedDocFull.id, 'user', msg);
-      setChatMessages(prev => [...prev, userMsg]);
-    } catch {
-      // Still try to chat even if save fails
-      setChatMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        document_id: selectedDocFull.id,
-        role: 'user' as const,
-        content: msg,
-        created_at: new Date().toISOString(),
-      }]);
-    }
-
-    try {
-      const client = new Anthropic({
-        apiKey: import.meta.env.VITE_ANTHROPIC_API_KEY,
-        dangerouslyAllowBrowser: true,
-      });
-
-      // Build conversation history
-      const history = chatMessages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
-      history.push({ role: 'user', content: msg });
-
-      // Truncate document content if too long (keep first 80k chars)
-      const docContent = (selectedDocFull.parsed_markdown || selectedDocFull.parsed_text || '').slice(0, 80000);
-
-      const systemPrompt = `Tu esi pagalbinis asistentas, kuris analizuoja dokumentus. Atsakyk į klausimus apie šį dokumentą lietuviškai arba ta kalba, kuria kreipiasi vartotojas.
-
-DOKUMENTO PAVADINIMAS: ${selectedDocFull.file_name}
-
-DOKUMENTO TURINYS:
-${docContent}
-
-Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nėra, pasakyk apie tai.`;
-
-      let fullResponse = '';
-
-      const stream = client.messages.stream({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: history,
-      });
-
-      stream.on('text', (text) => {
-        fullResponse += text;
-        setChatStreaming(fullResponse);
-      });
-
-      await stream.finalMessage();
-
-      setChatStreaming('');
-
-      // Save assistant message
-      try {
-        const assistantMsg = await saveDocumentChat(selectedDocFull.id, 'assistant', fullResponse);
-        setChatMessages(prev => [...prev, assistantMsg]);
-      } catch {
-        setChatMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          document_id: selectedDocFull.id,
-          role: 'assistant' as const,
-          content: fullResponse,
-          created_at: new Date().toISOString(),
-        }]);
-      }
-    } catch (err: unknown) {
-      console.error('Chat error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Nepavyko gauti atsakymo';
-      setChatMessages(prev => [...prev, {
-        id: 'error-' + Date.now(),
-        document_id: selectedDocFull.id,
-        role: 'assistant' as const,
-        content: `Klaida: ${errorMessage}`,
-        created_at: new Date().toISOString(),
-      }]);
-      setChatStreaming('');
-    } finally {
-      setChatLoading(false);
-    }
-  }, [chatInput, selectedDocFull, chatLoading, chatMessages]);
-
-  const handleChatKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendChat();
-    }
-  };
-
   const handleRunExtract = async () => {
     if (!selectedDocFull || extractLoading) return;
 
@@ -512,6 +344,16 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
         fallbackFileName: selectedDocFull.file_name.replace(/\.[^.]+$/, '') || 'document',
         configuration,
         onStatus: setExtractStatus,
+      });
+
+      await saveExtractionRun({
+        file_id: selectedDocFull.id,
+        extract_job_id: job.id,
+        extract_status: job.status,
+        extract_config: configuration,
+        extract_result: job.extract_result ?? null,
+        extract_metadata: job.extract_metadata ?? job.metadata ?? null,
+        error_message: job.error_message || null,
       });
 
       setExtractResult(job);
@@ -822,21 +664,6 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                   {tierLabel(selectedDoc.tier)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                {/* Chat toggle */}
-                <button
-                  onClick={() => setChatOpen(!chatOpen)}
-                  className="p-1.5 rounded-lg transition-all"
-                  style={{
-                    background: chatOpen ? 'rgba(0,122,255,0.1)' : 'rgba(0,0,0,0.04)',
-                    color: chatOpen ? '#007AFF' : '#8a857f',
-                    border: '0.5px solid rgba(0,0,0,0.08)',
-                  }}
-                  title={chatOpen ? 'Uždaryti pokalbį' : 'Atidaryti pokalbį'}
-                >
-                  {chatOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-                </button>
-              </div>
             </div>
 
             {/* Tabs */}
@@ -868,7 +695,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
               ))}
             </div>
 
-            {/* Content Area + Chat */}
+            {/* Content Area + Extract */}
             <div className="flex-1 flex min-h-0">
               {/* Viewer Content */}
               <div className="flex-1 flex flex-col min-w-0">
@@ -994,15 +821,14 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
               </div>
 
               {/* ============================================================ */}
-              {/* RIGHT PANEL — Extract + Chat                                 */}
+              {/* RIGHT PANEL — Extract                                        */}
               {/* ============================================================ */}
-              {chatOpen && (
-                <div
-                  className="w-[420px] flex-shrink-0 flex flex-col h-full"
-                  style={{ borderLeft: '1px solid #f0ede8' }}
-                >
+              <div
+                className="w-[420px] flex-shrink-0 flex flex-col h-full"
+                style={{ borderLeft: '1px solid #f0ede8' }}
+              >
                   <div className="px-4 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
-                    <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-xs font-semibold" style={{ color: '#3d3935' }}>LlamaCloud Extract</p>
                         <p className="text-[10px] truncate" style={{ color: '#8a857f' }}>
@@ -1011,29 +837,9 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                       </div>
                       <Braces className="w-4 h-4 shrink-0" style={{ color: '#007AFF' }} />
                     </div>
-                    <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: 'rgba(0,0,0,0.04)' }}>
-                      {([
-                        { key: 'extract' as const, label: 'Ištraukimas' },
-                        { key: 'chat' as const, label: 'Pokalbis' },
-                      ]).map(tab => (
-                        <button
-                          key={tab.key}
-                          onClick={() => setRightPanelTab(tab.key)}
-                          className="h-8 rounded-lg text-xs font-medium transition-all"
-                          style={{
-                            background: rightPanelTab === tab.key ? '#fff' : 'transparent',
-                            color: rightPanelTab === tab.key ? '#3d3935' : '#8a857f',
-                            boxShadow: rightPanelTab === tab.key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                          }}
-                        >
-                          {tab.label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
 
-                  {rightPanelTab === 'extract' ? (
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
                       <div className="rounded-xl bg-white p-3 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Schema</span>
@@ -1211,129 +1017,7 @@ Atsakyk tiksliai ir remkis tik dokumento turiniu. Jei informacijos dokumente nė
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <>
-
-                  {/* Chat Messages */}
-                  <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-                    {chatMessages.length === 0 && !chatStreaming && (
-                      <div className="flex-1 flex items-center justify-center">
-                        <div className="text-center px-4">
-                          <MessageSquare className="w-8 h-8 mx-auto mb-2" style={{ color: '#d1cdc7' }} />
-                          <p className="text-xs mb-3" style={{ color: '#8a857f' }}>
-                            Užduokite klausimą apie dokumentą
-                          </p>
-                          <button
-                            onClick={() => handleSendChat(TANK_EXTRACTION_PROMPT)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium transition-all hover:scale-[1.02]"
-                            style={{
-                              background: 'linear-gradient(180deg, rgba(0,122,255,0.08) 0%, rgba(0,122,255,0.14) 100%)',
-                              color: '#007AFF',
-                              border: '0.5px solid rgba(0,122,255,0.25)',
-                            }}
-                            disabled={chatLoading}
-                          >
-                            <FlaskConical className="w-3 h-3" />
-                            Ištraukti talpų specifikacijas
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {chatMessages.map(msg => {
-                      const rendered = msg.role === 'assistant' ? renderChatContent(msg.content) : null;
-                      const isExtractionPrompt = msg.role === 'user' && msg.content.includes('Kiekvienai talpai/reaktoriui') && msg.content.length > 200;
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className="max-w-[90%] px-3 py-2 rounded-xl text-xs leading-relaxed"
-                            style={{
-                              background: msg.role === 'user' ? '#007AFF' : 'rgba(0,0,0,0.04)',
-                              color: msg.role === 'user' ? '#fff' : '#3d3935',
-                              borderBottomRightRadius: msg.role === 'user' ? '4px' : undefined,
-                              borderBottomLeftRadius: msg.role === 'assistant' ? '4px' : undefined,
-                            }}
-                          >
-                            {rendered?.isJson ? (
-                              <SafeHtml html={rendered.html} />
-                            ) : isExtractionPrompt ? (
-                              <div className="flex items-center gap-1.5">
-                                <FlaskConical className="w-3 h-3 shrink-0" />
-                                <span>Talpų specifikacijų ištraukimas...</span>
-                              </div>
-                            ) : (
-                              <div className="whitespace-pre-wrap">{msg.content}</div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* Streaming response */}
-                    {chatStreaming && (
-                      <div className="flex justify-start">
-                        <div
-                          className="max-w-[90%] px-3 py-2 rounded-xl text-xs leading-relaxed"
-                          style={{ background: 'rgba(0,0,0,0.04)', color: '#3d3935', borderBottomLeftRadius: '4px' }}
-                        >
-                          <div className="whitespace-pre-wrap">{chatStreaming}</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {chatLoading && !chatStreaming && (
-                      <div className="flex justify-start">
-                        <div className="px-3 py-2 rounded-xl" style={{ background: 'rgba(0,0,0,0.04)' }}>
-                          <div className="flex gap-1">
-                            <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#8a857f', animationDelay: '0ms' }} />
-                            <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#8a857f', animationDelay: '150ms' }} />
-                            <div className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: '#8a857f', animationDelay: '300ms' }} />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div ref={chatEndRef} />
-                  </div>
-
-                  {/* Chat Input */}
-                  <div className="px-3 pb-3 pt-1 shrink-0">
-                    <div
-                      className="flex items-end gap-2 rounded-xl p-2"
-                      style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.1)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
-                    >
-                      <textarea
-                        ref={chatInputRef}
-                        value={chatInput}
-                        onChange={e => setChatInput(e.target.value)}
-                        onKeyDown={handleChatKeyDown}
-                        placeholder="Klauskite apie dokumentą..."
-                        rows={1}
-                        className="flex-1 text-xs resize-none outline-none py-1 px-1"
-                        style={{ color: '#3d3935', maxHeight: '80px' }}
-                        onInput={e => {
-                          const t = e.currentTarget;
-                          t.style.height = 'auto';
-                          t.style.height = Math.min(t.scrollHeight, 80) + 'px';
-                        }}
-                      />
-                      <button
-                        onClick={handleSendChat}
-                        disabled={!chatInput.trim() || chatLoading}
-                        className="p-1.5 rounded-lg transition-all disabled:opacity-30"
-                        style={{ background: '#007AFF', color: '#fff' }}
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                    </>
-                  )}
                 </div>
-              )}
             </div>
           </>
         )}
