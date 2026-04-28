@@ -7,6 +7,7 @@
  * - get_products: Query products table by product_code
  * - get_prices: Query pricing table by product id
  * - get_multiplier: Get latest price multiplier
+ * - read_google_sheet: Read public Google Sheet rows via same-origin backend
  * - display_buttons: Display interactive buttons in UI (special handling)
  *
  * NOTE: The database layer uses Directus API, NOT Supabase. See ./directus.ts.
@@ -251,6 +252,67 @@ export async function executeDisplayButtonsTool(input: { message?: string; butto
 }
 
 /**
+ * Execute read_google_sheet tool.
+ *
+ * This intentionally goes through a same-origin backend endpoint. Public
+ * Google Sheets CSV exports are inconsistent with browser CORS, and private
+ * URLs must fail clearly instead of making Claude hallucinate rows.
+ */
+export async function executeReadGoogleSheetTool(input: {
+  url: string;
+  gid?: string;
+  max_rows?: number;
+  include_raw_csv?: boolean;
+}): Promise<string> {
+  try {
+    const url = typeof input?.url === 'string' ? input.url.trim() : '';
+    if (!url) {
+      return JSON.stringify({ success: false, error: 'Missing Google Sheet URL' });
+    }
+
+    const response = await fetch('/api/google-sheet-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        gid: input.gid,
+        max_rows: input.max_rows,
+        include_raw_csv: input.include_raw_csv === true,
+      }),
+    });
+
+    const responseText = await response.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      payload = {
+        success: false,
+        error: responseText || `Google Sheet reader returned ${response.status}`,
+      };
+    }
+
+    if (!response.ok) {
+      return JSON.stringify({
+        success: false,
+        error: payload && typeof payload === 'object' && 'error' in payload
+          ? (payload as { error?: unknown }).error
+          : `Google Sheet reader returned ${response.status}`,
+        status: response.status,
+      }, null, 2);
+    }
+
+    return JSON.stringify(payload, null, 2);
+  } catch (error: any) {
+    console.error('[Tool: read_google_sheet] Error:', error);
+    return JSON.stringify({
+      success: false,
+      error: error.message || 'Unknown error reading Google Sheet'
+    });
+  }
+}
+
+/**
  * Main tool executor - routes tool calls to appropriate executor
  */
 export async function executeTool(toolName: string, toolInput: any): Promise<string> {
@@ -266,13 +328,16 @@ export async function executeTool(toolName: string, toolInput: any): Promise<str
     case 'get_multiplier':
       return await executeGetMultiplierTool();
 
+    case 'read_google_sheet':
+      return await executeReadGoogleSheetTool(toolInput);
+
     case 'display_buttons':
       return await executeDisplayButtonsTool(toolInput);
 
     default:
       return JSON.stringify({
         success: false,
-        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier, display_buttons`
+        error: `Unknown tool: ${toolName}. Available tools: get_products, get_prices, get_multiplier, read_google_sheet, display_buttons`
       });
   }
 }

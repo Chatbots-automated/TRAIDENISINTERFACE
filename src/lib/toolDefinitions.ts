@@ -5,6 +5,7 @@ import Anthropic from '@anthropic-ai/sdk';
  * - get_products: Query products by code
  * - get_prices: Query prices by product ID
  * - get_multiplier: Get latest multiplier
+ * - read_google_sheet: Read public Google Sheet rows
  * - display_buttons: Display interactive buttons in UI
  */
 export const tools: Anthropic.Tool[] = [
@@ -43,6 +44,28 @@ export const tools: Anthropic.Tool[] = [
       type: 'object',
       properties: {},
       required: []
+    }
+  },
+  {
+    name: 'read_google_sheet',
+    description: 'Read rows from a publicly accessible Google Sheets URL. Use this when the user provides a Google Sheets link and asks to use, inspect, import, or calculate from its data.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'Public Google Sheets URL from docs.google.com/spreadsheets.'
+        },
+        gid: {
+          type: 'string',
+          description: 'Optional sheet gid. If omitted, use the gid in the URL or the first sheet.'
+        },
+        max_rows: {
+          type: 'number',
+          description: 'Maximum rows to return. Defaults to 200, maximum 1000.'
+        }
+      },
+      required: ['url']
     }
   },
   {
