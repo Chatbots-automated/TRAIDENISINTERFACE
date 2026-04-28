@@ -15,20 +15,17 @@ exports.handler = async function handler(event) {
   const includeRawCsv = body.include_raw_csv === true;
 
   try {
-    const csvUrl = buildGoogleSheetCsvUrl(url, body.gid);
-    const response = await fetch(csvUrl, {
-      headers: {
-        accept: 'text/csv,text/plain,*/*',
-        'user-agent': 'TraidenisInterface/1.0 GoogleSheetReader',
-      },
-    });
+    const exportUrls = buildGoogleSheetCsvUrls(url, body.gid);
+    const { response, csvUrl, attempts } = await fetchFirstWorkingCsv(exportUrls);
 
-    if (!response.ok) {
-      return jsonResponse(response.status, {
+    if (!response?.ok) {
+      const status = response?.status || 400;
+      return jsonResponse(status, {
         success: false,
-        error: response.status === 401 || response.status === 403
+        error: status === 401 || status === 403
           ? 'Google Sheet is not public. Publish it or share it publicly, then try again.'
-          : `Google Sheet export failed (${response.status})`,
+          : `Google Sheet export failed (${status}). This usually means the selected tab gid is wrong or the sheet cannot be exported as CSV.`,
+        attempts,
       });
     }
 
@@ -62,7 +59,25 @@ exports.handler = async function handler(event) {
   }
 };
 
-function buildGoogleSheetCsvUrl(inputUrl, explicitGid) {
+async function fetchFirstWorkingCsv(urls) {
+  const attempts = [];
+
+  for (const csvUrl of urls) {
+    const response = await fetch(csvUrl, {
+      headers: {
+        accept: 'text/csv,text/plain,*/*',
+        'user-agent': 'TraidenisInterface/1.0 GoogleSheetReader',
+      },
+    });
+
+    attempts.push({ url: csvUrl, status: response.status });
+    if (response.ok) return { response, csvUrl, attempts };
+  }
+
+  return { response: null, csvUrl: urls[0], attempts };
+}
+
+function buildGoogleSheetCsvUrls(inputUrl, explicitGid) {
   if (!inputUrl) throw new Error('Missing Google Sheet URL');
 
   const parsed = new URL(inputUrl);
@@ -74,8 +89,35 @@ function buildGoogleSheetCsvUrl(inputUrl, explicitGid) {
   const spreadsheetId = match?.[1];
   if (!spreadsheetId) throw new Error('Invalid Google Sheets URL');
 
-  const gid = String(explicitGid || parsed.searchParams.get('gid') || '0').replace(/[^\d]/g, '') || '0';
-  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
+  const gid = getGoogleSheetGid(parsed, explicitGid);
+  const gids = [...new Set([gid, '0'].filter(Boolean))];
+
+  return gids.flatMap((candidateGid) => [
+    `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${candidateGid}`,
+    `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=${candidateGid}`,
+  ]);
+}
+
+function getGoogleSheetGid(parsedUrl, explicitGid) {
+  const explicit = cleanGid(explicitGid);
+  if (explicit) return explicit;
+
+  const queryGid = cleanGid(parsedUrl.searchParams.get('gid'));
+  if (queryGid) return queryGid;
+
+  const hashParams = new URLSearchParams((parsedUrl.hash || '').replace(/^#/, ''));
+  const hashGid = cleanGid(hashParams.get('gid'));
+  if (hashGid) return hashGid;
+
+  const hashMatch = (parsedUrl.hash || '').match(/gid=(\d+)/);
+  if (hashMatch?.[1]) return hashMatch[1];
+
+  return '0';
+}
+
+function cleanGid(value) {
+  const cleaned = String(value || '').replace(/[^\d]/g, '');
+  return cleaned || null;
 }
 
 function clampInteger(value, min, max, fallback) {
