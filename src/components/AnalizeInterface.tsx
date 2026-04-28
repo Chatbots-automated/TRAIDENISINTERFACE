@@ -3,7 +3,7 @@ import {
   Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
   AlertCircle, CheckCircle, Loader2, Image,
   Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
-  Download, ClipboardCopy, Braces, SlidersHorizontal
+  Download, ClipboardCopy, Braces, SlidersHorizontal, History, FolderOpen
 } from 'lucide-react';
 import type { AppUser, ParsedDocument, ParseTier } from '../types';
 import { parseDocument as llamaParse } from '../lib/llamaParseService';
@@ -22,6 +22,8 @@ import {
   deleteParsedDocument,
   uploadOriginalDocument,
   saveExtractionRun,
+  fetchExtractionRuns,
+  type LlamaParseExtraction,
 } from '../lib/analizeService';
 import SafeHtml from './SafeHtml';
 import { renderMarkdown } from './analize/markdownRenderer';
@@ -84,12 +86,26 @@ interface AnalizeInterfaceProps {
   projectId: string;
 }
 
+function extractionToJob(run: LlamaParseExtraction): ExtractJob {
+  return {
+    id: run.extract_job_id || run.id,
+    status: run.extract_status,
+    file_input: run.file_id,
+    created_at: run.created_at,
+    configuration: run.extract_config,
+    error_message: run.error_message || null,
+    extract_result: run.extract_result,
+    extract_metadata: run.extract_metadata,
+  };
+}
+
 export default function AnalizeInterface({ user, projectId }: AnalizeInterfaceProps) {
   void projectId;
   // --- Document list ---
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
-  const [docsLoading, setDocsLoading] = useState(true);
+  const [docsLoading, setDocsLoading] = useState(false);
   const [docsError, setDocsError] = useState('');
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // --- Selected document ---
@@ -128,6 +144,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [extractStatus, setExtractStatus] = useState('');
   const [extractError, setExtractError] = useState('');
   const [extractResult, setExtractResult] = useState<ExtractJob | null>(null);
+  const [extractionRuns, setExtractionRuns] = useState<LlamaParseExtraction[]>([]);
 
   // --- Image lightbox ---
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -139,6 +156,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       setDocsError('');
       const docs = await fetchParsedDocuments(user.id);
       setDocuments(docs);
+      setHistoryLoaded(true);
     } catch (err: unknown) {
       console.error('Failed to load documents:', err);
       const msg = err instanceof Error ? err.message : '';
@@ -148,20 +166,31 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     }
   }, [user.id]);
 
-  useEffect(() => {
-    loadDocuments();
-  }, [loadDocuments]);
-
   const selectedDocId = selectedDoc?.id;
 
   // ---- Load full document when selected ----
   useEffect(() => {
     if (!selectedDocId) {
       setSelectedDocFull(null);
+      setExtractionRuns([]);
+      setExtractResult(null);
       return;
     }
     loadFullDocument(selectedDocId);
-  }, [selectedDocId]);
+    loadExtractionHistory(selectedDocId);
+  }, [selectedDocId, loadExtractionHistory]);
+
+  const loadExtractionHistory = useCallback(async (id: string) => {
+    try {
+      const runs = await fetchExtractionRuns(id);
+      setExtractionRuns(runs);
+      const latestCompleted = runs.find(run => run.extract_result);
+      setExtractResult(latestCompleted ? extractionToJob(latestCompleted) : null);
+    } catch (err) {
+      console.error('Failed to load extraction history:', err);
+      setExtractionRuns([]);
+    }
+  }, []);
 
   const loadFullDocument = async (id: string) => {
     try {
@@ -175,6 +204,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       setDocLoading(false);
     }
   };
+
 
   // ---- Filtered documents ----
   const filteredDocs = useMemo(() => {
@@ -287,9 +317,12 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       setSelectedFile(null);
       setUserPrompt('');
 
-      // Reload and select
-      await loadDocuments();
+      // Load the freshly processed record without forcing full history open.
       const fullDoc = await getParsedDocument(doc.id);
+      setDocuments(prev => {
+        const withoutDuplicate = prev.filter(item => item.id !== fullDoc.id);
+        return [fullDoc, ...withoutDuplicate];
+      });
       setSelectedDoc(fullDoc);
       setSelectedDocFull(fullDoc);
     } catch (err: unknown) {
@@ -346,7 +379,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
         onStatus: setExtractStatus,
       });
 
-      await saveExtractionRun({
+      const savedRun = await saveExtractionRun({
         file_id: selectedDocFull.id,
         extract_job_id: job.id,
         extract_status: job.status,
@@ -357,6 +390,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       });
 
       setExtractResult(job);
+      setExtractionRuns(prev => [savedRun, ...prev.filter(run => run.id !== savedRun.id)]);
       setExtractStatus('Ištraukimas baigtas');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ištraukimas nepavyko';
@@ -397,21 +431,41 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       {/* LEFT SIDEBAR — Document List & Upload                              */}
       {/* ================================================================== */}
       <div
-        className="w-72 flex-shrink-0 flex flex-col h-full"
+        className="w-80 flex-shrink-0 flex flex-col h-full"
         style={{ borderRight: '1px solid #f0ede8' }}
       >
         {/* Header */}
-        <div className="px-4 pt-5 pb-3 shrink-0">
-          <h2 className="text-lg font-semibold mb-3" style={{ color: '#3d3935' }}>Analizė</h2>
+        <div className="px-5 pt-5 pb-4 shrink-0">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold" style={{ color: '#3d3935' }}>Analizė</h2>
+              <p className="text-xs mt-0.5" style={{ color: '#8a857f' }}>Dokumentų ištraukimas</p>
+            </div>
+            <button
+              onClick={loadDocuments}
+              disabled={docsLoading}
+              className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium transition-all disabled:opacity-60"
+              style={{
+                background: '#fff',
+                border: '0.5px solid rgba(0,0,0,0.1)',
+                color: '#3d3935',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+              }}
+            >
+              {docsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <History className="h-3.5 w-3.5" />}
+              Istorija
+            </button>
+          </div>
 
           {/* Upload Zone */}
           <div
-            className={`relative rounded-xl p-4 text-center cursor-pointer transition-all duration-200 ${
+            className={`relative rounded-xl p-5 text-left cursor-pointer transition-all duration-200 ${
               dragOver ? 'scale-[1.02]' : ''
             }`}
             style={{
-              border: `2px dashed ${dragOver ? '#007AFF' : 'rgba(0,0,0,0.12)'}`,
-              background: dragOver ? 'rgba(0,122,255,0.04)' : 'rgba(0,0,0,0.02)',
+              border: `1px dashed ${dragOver ? '#007AFF' : 'rgba(0,0,0,0.14)'}`,
+              background: dragOver ? 'rgba(0,122,255,0.04)' : '#fff',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
             }}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -429,44 +483,54 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                 e.target.value = '';
               }}
             />
-            <Upload className="w-6 h-6 mx-auto mb-2" style={{ color: '#8a857f' }} />
-            <p className="text-xs font-medium" style={{ color: '#5a5550' }}>
-              Vilkite failą arba paspauskite
-            </p>
-            <p className="text-[10px] mt-1" style={{ color: '#8a857f' }}>
-              PDF, DOCX, PPTX, XLSX, HTML, vaizdai...
-            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+                <Upload className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium" style={{ color: '#3d3935' }}>
+                  Įkelti dokumentą
+                </p>
+                <p className="mt-0.5 text-xs" style={{ color: '#8a857f' }}>
+                  PDF, DOCX, XLSX, HTML, vaizdai ir tekstas
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Selected file info */}
           {selectedFile && (
-            <div className="mt-3 p-3 rounded-lg" style={{ background: 'rgba(0,122,255,0.05)', border: '0.5px solid rgba(0,122,255,0.15)' }}>
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-4 h-4 shrink-0" style={{ color: '#007AFF' }} />
-                <span className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>{selectedFile.name}</span>
-                <button onClick={() => setSelectedFile(null)} className="ml-auto p-0.5 rounded hover:bg-black/5">
-                  <X className="w-3 h-3" style={{ color: '#8a857f' }} />
+            <div className="mt-3 rounded-xl bg-white p-3.5 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.09)' }}>
+              <div className="mb-3 flex items-start gap-2">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#007AFF' }} />
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-medium" style={{ color: '#3d3935' }}>{selectedFile.name}</span>
+                  <p className="mt-0.5 text-[10px]" style={{ color: '#8a857f' }}>{formatFileSize(selectedFile.size)}</p>
+                </div>
+                <button onClick={() => setSelectedFile(null)} className="rounded-md p-1 transition-colors hover:bg-black/5">
+                  <X className="h-3.5 w-3.5" style={{ color: '#8a857f' }} />
                 </button>
               </div>
-              <p className="text-[10px] mb-2" style={{ color: '#8a857f' }}>{formatFileSize(selectedFile.size)}</p>
 
               {/* Tier selector */}
-              <div className="mb-2">
-                <label className="text-[10px] font-medium block mb-1" style={{ color: '#8a857f' }}>Apdorojimo lygis</label>
-                <div className="grid grid-cols-2 gap-1">
+              <div className="mb-3">
+                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apdorojimo lygis</label>
+                <div className="grid grid-cols-1 gap-1.5">
                   {TIERS.map(t => (
                     <button
                       key={t.value}
                       onClick={() => setParseTier(t.value)}
-                      className="px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all text-left"
+                      className="rounded-lg px-3 py-2 text-left text-xs font-medium transition-all"
                       style={{
-                        background: parseTier === t.value ? 'rgba(0,122,255,0.1)' : 'rgba(0,0,0,0.03)',
-                        color: parseTier === t.value ? '#007AFF' : '#5a5550',
-                        border: parseTier === t.value ? '1px solid rgba(0,122,255,0.3)' : '0.5px solid rgba(0,0,0,0.06)',
+                        background: parseTier === t.value ? 'rgba(0,122,255,0.08)' : '#faf9f7',
+                        color: parseTier === t.value ? '#007AFF' : '#3d3935',
+                        border: parseTier === t.value ? '0.5px solid rgba(0,122,255,0.3)' : '0.5px solid rgba(0,0,0,0.06)',
                       }}
                     >
-                      <span className="block">{t.label}</span>
-                      <span className="block opacity-60 mt-0.5" style={{ fontSize: '9px' }}>{t.desc}</span>
+                      <span className="flex items-center justify-between gap-2">
+                        <span>{t.label}</span>
+                        <span className="text-[10px] font-normal" style={{ color: parseTier === t.value ? '#007AFF' : '#8a857f' }}>{t.desc}</span>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -504,10 +568,10 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
               <button
                 onClick={handleParse}
                 disabled={parseStatus === 'uploading' || parseStatus === 'parsing'}
-                className="w-full mt-2 py-2 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                className="mt-3 h-10 w-full rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
                 style={{
-                  background: 'linear-gradient(180deg, #3a8dff 0%, #007AFF 100%)',
-                  boxShadow: '0 1px 3px rgba(0,122,255,0.3)',
+                  background: '#1f2937',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
                 }}
               >
                 {parseStatus === 'uploading' || parseStatus === 'parsing' ? (
@@ -541,25 +605,35 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
         </div>
 
         {/* Search */}
-        <div className="px-4 pb-2 shrink-0">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
-            <input
-              type="text"
-              placeholder="Ieškoti dokumentų..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full h-8 text-xs rounded-lg pl-8 pr-3 outline-none transition-all"
-              style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
-              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
-              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-            />
+        {historyLoaded && (
+          <div className="px-5 pb-2 shrink-0">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
+              <input
+                type="text"
+                placeholder="Ieškoti istorijoje..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full h-9 text-xs rounded-lg pl-8 pr-3 outline-none transition-all"
+                style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; }}
+                onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; }}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Document List */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {docsLoading ? (
+          {!historyLoaded && !docsLoading ? (
+            <div className="mx-3 mt-2 rounded-xl bg-white p-4 text-center" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+              <FolderOpen className="mx-auto mb-2 h-7 w-7" style={{ color: '#d1cdc7' }} />
+              <p className="text-xs font-medium" style={{ color: '#3d3935' }}>Istorija neįkelta</p>
+              <p className="mt-1 text-[11px] leading-5" style={{ color: '#8a857f' }}>
+                Dokumentų sąrašas kraunamas tik paspaudus istoriją.
+              </p>
+            </div>
+          ) : docsLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#8a857f' }} />
             </div>
@@ -642,9 +716,9 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <FileText className="w-16 h-16 mx-auto mb-4" style={{ color: '#d1cdc7' }} />
-              <h3 className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>Pasirinkite dokumentą</h3>
+              <h3 className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>Įkelkite dokumentą</h3>
               <p className="text-sm" style={{ color: '#8a857f' }}>
-                Įkelkite naują failą arba pasirinkite iš sąrašo kairėje
+                Istorija nebus kraunama automatiškai. Paspauskite „Istorija“, jei norite atidaryti ankstesnį failą.
               </p>
             </div>
           </div>
@@ -993,6 +1067,40 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                         <div className="rounded-xl p-3 text-xs flex gap-2" style={{ background: 'rgba(239,68,68,0.07)', color: '#ef4444', border: '0.5px solid rgba(239,68,68,0.18)' }}>
                           <AlertCircle className="w-4 h-4 shrink-0" />
                           <span>{extractError}</span>
+                        </div>
+                      )}
+
+                      {extractionRuns.length > 0 && (
+                        <div className="rounded-xl bg-white p-3 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Ištraukimo istorija</span>
+                            <span className="text-[10px]" style={{ color: '#8a857f' }}>{extractionRuns.length}</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {extractionRuns.slice(0, 5).map(run => (
+                              <button
+                                key={run.id}
+                                onClick={() => {
+                                  setExtractResult(extractionToJob(run));
+                                  if (run.extract_config?.data_schema) {
+                                    setExtractSchemaText(JSON.stringify(run.extract_config.data_schema, null, 2));
+                                  }
+                                }}
+                                className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-black/[0.03]"
+                                style={{ border: '0.5px solid rgba(0,0,0,0.06)' }}
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-[11px] font-medium" style={{ color: '#3d3935' }}>
+                                    {run.extract_status === 'COMPLETED' ? 'Rezultatas paruoštas' : run.extract_status}
+                                  </p>
+                                  <p className="mt-0.5 text-[10px]" style={{ color: '#8a857f' }}>
+                                    {formatDate(run.created_at || '')}
+                                  </p>
+                                </div>
+                                <Braces className="h-3.5 w-3.5 shrink-0" style={{ color: '#8a857f' }} />
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
 

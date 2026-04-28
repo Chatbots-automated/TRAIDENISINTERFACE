@@ -10,21 +10,17 @@
  * ============================================================================
  */
 
-const API_BASE = 'https://api.cloud.llamaindex.ai';
+const API_BASE = '/api/llamacloud';
 
 function getApiKey(): string {
-  const key = import.meta.env.VITE_LLAMAPARSE_API_KEY;
-  if (!key) {
-    throw new Error('VITE_LLAMAPARSE_API_KEY is not configured');
-  }
-  return key;
+  return import.meta.env.VITE_LLAMAPARSE_API_KEY || '';
 }
 
 function authHeaders(): Record<string, string> {
-  return {
-    'Authorization': `Bearer ${getApiKey()}`,
-    'Accept': 'application/json',
-  };
+  const key = getApiKey();
+  return key
+    ? { Authorization: `Bearer ${key}`, Accept: 'application/json' }
+    : { Accept: 'application/json' };
 }
 
 // ============================================================================

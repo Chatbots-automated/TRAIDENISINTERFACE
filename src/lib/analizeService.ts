@@ -53,7 +53,6 @@ export interface LlamaParseExtraction {
   extract_metadata: any;
   error_message?: string | null;
   created_at?: string;
-  date_created?: string;
 }
 
 function normalizeFile(row: any): ParsedDocument {
@@ -75,7 +74,7 @@ function normalizeFile(row: any): ParsedDocument {
     page_count: Number(row.page_count || 0),
     images_metadata: row.images_metadata || null,
     user_prompt: row.parse_user_prompt || row.user_prompt || undefined,
-    created_at: row.created_at || row.date_created || new Date().toISOString(),
+    created_at: row.created_at || new Date().toISOString(),
   };
 }
 
@@ -167,7 +166,7 @@ export async function fetchParsedDocuments(userId: string): Promise<ParsedDocume
     .from(FILES_COLLECTION)
     .select('*,original_file.id,original_file.filename_download,original_file.title,original_file.type,original_file.filesize,original_file.uploaded_on')
     .eq('user_id', userId)
-    .order('date_created', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching LlamaParse files:', error);
@@ -250,7 +249,7 @@ export async function fetchExtractionRuns(fileId: string): Promise<LlamaParseExt
     .from(EXTRACTIONS_COLLECTION)
     .select('*')
     .eq('file_id', fileId)
-    .order('date_created', { ascending: false });
+    .order('created_at', { ascending: false });
 
   if (error) {
     console.error('Error fetching extraction runs:', error);
