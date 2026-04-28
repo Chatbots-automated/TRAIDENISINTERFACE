@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { db } from './database';
 import { getInstructionVariable } from './instructionsService';
+import { getClaudeModel } from './modelSettingsService';
 
 export type InternetAnalysisId = 'nafta' | 'politika' | 'kainos';
 
@@ -379,8 +380,10 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
       dangerouslyAllowBrowser: true,
     });
 
+    const model = await getClaudeModel();
+
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+      model,
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
       ...(tools.length > 0 ? { tools } : {}),

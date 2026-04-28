@@ -59,6 +59,7 @@ import { executeTool } from '../lib/toolExecutors';
 import { getEconomists, getManagers, getShareableUsers, type AppUserData } from '../lib/userService';
 import { OFFER_PARAMETER_DEFINITIONS } from '../lib/offerParametersService';
 import { getInstructionVariable } from '../lib/instructionsService';
+import { getClaudeModel } from '../lib/modelSettingsService';
 import {
   shareConversation,
   getSharedConversations,
@@ -1045,6 +1046,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     currentMessages: SDKMessage[],
     accumulatedToolXml: string = ''
   ): Promise<void> => {
+    let claudeModel = '';
     try {
       // CRITICAL: Validate messages before API call
       console.log('───────────────────────────────────────────────────');
@@ -1131,6 +1133,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       console.log('[API CALL] Serialized messages:', JSON.stringify(messages, null, 2));
       console.log('───────────────────────────────────────────────────');
 
+      claudeModel = await getClaudeModel();
       const apiStartedAt = Date.now();
       await appLogger.logAPI({
         action: 'sdk_anthropic_request_started',
@@ -1140,12 +1143,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         method: 'POST',
         metadata: {
           conversation_id: conversation.id,
-          message_count: messages.length
+          message_count: messages.length,
+          model: claudeModel
         }
       });
 
       const stream = await anthropic.messages.stream({
-        model: 'claude-sonnet-4-20250514',
+        model: claudeModel,
         max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
         system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
@@ -1588,7 +1592,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         level: 'error',
         metadata: {
           conversation_id: conversation.id,
-          message_count: messages.length
+          message_count: messages.length,
+          model: claudeModel
         }
       });
       setIsStreamingArtifact(false); // Reset on error too
@@ -2963,8 +2968,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         dangerouslyAllowBrowser: true
       });
 
+      const claudeModel = await getClaudeModel();
+
       const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
+        model: claudeModel,
         max_tokens: 4000,
         system: promptVar.content,
         messages: [{ role: 'user', content: componentsList }],
