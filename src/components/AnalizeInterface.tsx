@@ -168,18 +168,6 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
 
   const selectedDocId = selectedDoc?.id;
 
-  // ---- Load full document when selected ----
-  useEffect(() => {
-    if (!selectedDocId) {
-      setSelectedDocFull(null);
-      setExtractionRuns([]);
-      setExtractResult(null);
-      return;
-    }
-    loadFullDocument(selectedDocId);
-    loadExtractionHistory(selectedDocId);
-  }, [selectedDocId, loadExtractionHistory]);
-
   const loadExtractionHistory = useCallback(async (id: string) => {
     try {
       const runs = await fetchExtractionRuns(id);
@@ -192,7 +180,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     }
   }, []);
 
-  const loadFullDocument = async (id: string) => {
+  const loadFullDocument = useCallback(async (id: string) => {
     try {
       setDocLoading(true);
       const doc = await getParsedDocument(id);
@@ -203,8 +191,19 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     } finally {
       setDocLoading(false);
     }
-  };
+  }, []);
 
+  // ---- Load full document when selected ----
+  useEffect(() => {
+    if (!selectedDocId) {
+      setSelectedDocFull(null);
+      setExtractionRuns([]);
+      setExtractResult(null);
+      return;
+    }
+    loadFullDocument(selectedDocId);
+    loadExtractionHistory(selectedDocId);
+  }, [selectedDocId, loadFullDocument, loadExtractionHistory]);
 
   // ---- Filtered documents ----
   const filteredDocs = useMemo(() => {
