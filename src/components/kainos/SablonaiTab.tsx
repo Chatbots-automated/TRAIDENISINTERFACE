@@ -53,6 +53,15 @@ export function SablonaiTab() {
     return Number.isFinite(value) ? value : null;
   }, []);
 
+  const sanitizeCapacityFilter = useCallback((value: string) => {
+    const cleaned = value.replace(/[^\d.,]/g, '');
+    const firstSeparatorIndex = cleaned.search(/[.,]/);
+    if (firstSeparatorIndex === -1) return cleaned;
+
+    return cleaned.slice(0, firstSeparatorIndex + 1)
+      + cleaned.slice(firstSeparatorIndex + 1).replace(/[.,]/g, '');
+  }, []);
+
   const formatCapacity = useCallback((capacity: number | null) => {
     if (capacity === null) return 'Kiti';
     return `${Number.isInteger(capacity) ? capacity : String(capacity).replace('.', ',')} m3`;
@@ -123,7 +132,7 @@ export function SablonaiTab() {
   };
 
   const filteredSablonai = useMemo(() => {
-    const normalized = capacityFilter.trim().replace(',', '.');
+    const normalized = sanitizeCapacityFilter(capacityFilter.trim()).replace(',', '.');
     if (!normalized) return sablonai;
     const wantedCapacity = Number(normalized);
     return sablonai.filter(s => {
@@ -135,13 +144,16 @@ export function SablonaiTab() {
         .replace(/[–—]/g, '-');
 
       // Fallback: V + capacity in any spacing/hyphen format (e.g. V-230, V - 230, V- 230, V230)
-      const vMatches = Array.from(title.matchAll(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/gi)).map(m => m[1].replace(',', '.'));
-      if (vMatches.includes(normalized)) return true;
+      const vMatches = Array.from(title.matchAll(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/gi))
+        .map(m => Number(m[1].replace(',', '.')))
+        .filter(Number.isFinite);
+      if (Number.isFinite(wantedCapacity) && vMatches.includes(wantedCapacity)) return true;
 
       // Fallback: plain numeric token match, if title was entered without V prefix
-      return new RegExp(`\\b${normalized}\\b`).test(title);
+      const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^\\d.,])${escaped}([^\\d.,]|$)`).test(title.replace(',', '.'));
     });
-  }, [sablonai, capacityFilter, getCapacity]);
+  }, [sablonai, capacityFilter, getCapacity, sanitizeCapacityFilter]);
 
   const capacityGroups = useMemo(() => {
     const groups = new Map<string, { capacity: number | null; label: string; items: MedziaguSablonas[] }>();
@@ -319,9 +331,9 @@ export function SablonaiTab() {
             <span className="font-medium">V-</span>
             <input
               value={capacityFilter}
-              onChange={e => setCapacityFilter(e.target.value.replace(/[^\d]/g, ''))}
-              inputMode="numeric"
-              placeholder="talpa"
+              onChange={e => setCapacityFilter(sanitizeCapacityFilter(e.target.value))}
+              inputMode="decimal"
+              placeholder="2,5"
               className="w-14 bg-transparent outline-none"
               aria-label="Filtruoti pagal talpą"
             />
