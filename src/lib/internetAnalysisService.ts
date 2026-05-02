@@ -382,9 +382,11 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
 
     const model = await getClaudeModel();
 
+    const maxTokens = analysisId === 'kainos' ? 6000 : 2500;
+
     const response = await client.messages.create({
       model,
-      max_tokens: 1024,
+      max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
       ...(tools.length > 0 ? { tools } : {}),
     });
@@ -405,6 +407,8 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
       input_tokens: Number.isFinite(inputTokens) ? inputTokens : 0,
       output_tokens: Number.isFinite(outputTokens) ? outputTokens : 0,
       total_tokens: (Number.isFinite(inputTokens) ? inputTokens : 0) + (Number.isFinite(outputTokens) ? outputTokens : 0),
+      stop_reason: (response as any).stop_reason || null,
+      max_tokens: maxTokens,
     });
 
     const { error } = await db

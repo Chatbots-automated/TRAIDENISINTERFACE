@@ -307,7 +307,7 @@ export default function Layout({
                     {sidebarCollapsed ? <ChevronsRight className="w-4 h-4 flex-shrink-0" /> : <ChevronsLeft className="w-4 h-4 flex-shrink-0" />}
                   </button>
                   {!sidebarCollapsed && (
-                    <span className="text-sm text-base-content/45 select-none">
+                    <span className="text-xs text-base-content/35 select-none">
                       v{APP_VERSION}
                     </span>
                   )}

@@ -21,6 +21,7 @@ import { SablonaiTab } from './kainos/SablonaiTab';
 import { GrafaTab } from './kainos/GrafaTab';
 import {
   extractUrlCitationsFromText,
+  getAnalysisMarkdownForDisplay,
   type AnalysisDebugState,
   type AnalysisSectionKey,
   type AnalysisSectionMeta,
@@ -406,26 +407,27 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   );
 
   const replaceForecastJsonBlock = (text: string) => {
+    const sourceText = getAnalysisMarkdownForDisplay(text);
     const note = '> Peržiūrėkite kainų pokytį Grafa puslapyje paspaudę „Su DI“.';
-    const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?"forecasts"[\s\S]*?)```/);
+    const fenced = sourceText.match(/```(?:json)?\s*\n?([\s\S]*?"forecasts"[\s\S]*?)```/);
     if (fenced?.index !== undefined) {
-      const before = text.slice(0, fenced.index).trimEnd();
-      const after = text.slice(fenced.index + fenced[0].length).trimStart();
+      const before = sourceText.slice(0, fenced.index).trimEnd();
+      const after = sourceText.slice(fenced.index + fenced[0].length).trimStart();
       return [before, note, after].filter(Boolean).join('\n\n');
     }
 
     const marker = '"forecasts"';
-    const markerIndex = text.indexOf(marker);
-    if (markerIndex === -1) return text;
+    const markerIndex = sourceText.indexOf(marker);
+    if (markerIndex === -1) return sourceText;
 
-    const start = text.lastIndexOf('{', markerIndex);
-    if (start === -1) return text;
+    const start = sourceText.lastIndexOf('{', markerIndex);
+    if (start === -1) return sourceText;
 
     let depth = 0;
     let inString = false;
     let escaped = false;
-    for (let i = start; i < text.length; i += 1) {
-      const char = text[i];
+    for (let i = start; i < sourceText.length; i += 1) {
+      const char = sourceText[i];
       if (escaped) {
         escaped = false;
         continue;
@@ -443,13 +445,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       if (char === '}') {
         depth -= 1;
         if (depth === 0) {
-          const before = text.slice(0, start).trimEnd();
-          const after = text.slice(i + 1).trimStart();
+          const before = sourceText.slice(0, start).trimEnd();
+          const after = sourceText.slice(i + 1).trimStart();
           return [before, note, after].filter(Boolean).join('\n\n');
         }
       }
     }
-    return text;
+    return sourceText;
   };
 
   const naftaDisplay = streamNafta || internetAnalyses.nafta?.content || '';
