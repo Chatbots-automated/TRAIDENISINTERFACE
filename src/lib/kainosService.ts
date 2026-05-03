@@ -626,8 +626,11 @@ export interface MaterialPriceEstimatePayloadItem {
   vienetas: string;
   latest_price: { data: string; kaina_min: number | null; kaina_max: number | null } | null;
   is_stale: boolean;
+  price_source: 'current' | 'math' | 'ai' | 'none';
   predicted_current_date: { data: string; kaina_min: number | null; kaina_max: number | null; source: 'math' | 'ai' } | null;
 }
+
+export type MaterialEstimatePriceMode = 'current' | 'math' | 'ai';
 
 /**
  * Fetch material prices enriched with staleness flag and math prediction.
@@ -656,110 +659,181 @@ export async function fetchMaterialPricesForEstimate(): Promise<MaterialPriceFor
   });
 }
 
-function tryExtractAiPrice(content: string): { kaina: number | null; data: string | null } {
-  const text = (content || '').trim();
-  if (!text) return { kaina: null, data: null };
+function extractJsonPayloadLoose(text: string): unknown | null {
+  const raw = (text || '').replace(/```json/gi, '```').trim();
+  if (!raw) return null;
 
-  const tryJson = (raw: string): any => {
-    try { return JSON.parse(raw); } catch { return null; }
+  const tryParse = (candidate: string): unknown | null => {
+    try { return JSON.parse(candidate); } catch { return null; }
   };
 
-  const blockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const jsonCandidate = blockMatch?.[1] || text;
-  let parsed = tryJson(jsonCandidate);
-  if (!parsed) {
-    const arrMatch = text.match(/\[[\s\S]*\]/);
-    if (arrMatch) parsed = tryJson(arrMatch[0]);
-  }
-  if (!parsed) {
-    const objMatch = text.match(/\{[\s\S]*\}/);
-    if (objMatch) parsed = tryJson(objMatch[0]);
+  const direct = tryParse(raw.replace(/```/g, '').trim());
+  if (direct !== null) return direct;
+
+  const blocks = Array.from(raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi))
+    .map((m) => (m[1] || '').trim())
+    .filter(Boolean);
+  for (const block of blocks) {
+    const parsed = tryParse(block);
+    if (parsed !== null) return parsed;
   }
 
-  const pickFromObj = (obj: any): { kaina: number | null; data: string | null } => {
-    if (!obj || typeof obj !== 'object') return { kaina: null, data: null };
-    const raw = obj.kaina ?? obj.kaina_min ?? obj.price ?? obj.predicted_price ?? null;
-    const n = raw == null ? null : Number(raw);
-    const date = obj.data ?? obj.date ?? null;
-    return {
-      kaina: n != null && !isNaN(n) ? n : null,
-      data: typeof date === 'string' && date.trim() ? date.trim() : null,
-    };
+  const forecastsIdx = raw.search(/"forecasts"\s*:/i);
+  if (forecastsIdx >= 0) {
+    const start = raw.lastIndexOf('{', forecastsIdx);
+    if (start >= 0) {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = start; i < raw.length; i += 1) {
+        const ch = raw[i];
+        if (inString) {
+          if (escaped) escaped = false;
+          else if (ch === '\\') escaped = true;
+          else if (ch === '"') inString = false;
+          continue;
+        }
+        if (ch === '"') {
+          inString = true;
+          continue;
+        }
+        if (ch === '{') depth += 1;
+        if (ch === '}') {
+          depth -= 1;
+          if (depth === 0) return tryParse(raw.slice(start, i + 1));
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractGraphAiPriceMap(
+  analysisContent: string,
+  materials: Array<Pick<MaterialPriceForEstimate, 'artikulas' | 'pavadinimas'>>,
+): Map<string, { kaina: number; data: string }> {
+  const normalizeName = (value: string) => value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+
+  const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const toNumber = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value.replace(',', '.').trim());
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+  const toIsoDate = (value: unknown, fallback: string): string => (
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : fallback
+  );
+
+  const fallbackDate = new Date().toISOString().slice(0, 10);
+  const knownCodes = materials.map((m) => String(m.artikulas || '').trim()).filter(Boolean).sort((a, b) => b.length - a.length);
+  const byName = new Map(materials.map((m) => [normalizeName(String(m.pavadinimas || '')), String(m.artikulas || '')]));
+
+  const resolveCode = (value: unknown): string | null => {
+    if (typeof value !== 'string') return null;
+    const text = value.trim();
+    if (!text) return null;
+    if (knownCodes.includes(text)) return text;
+    for (const code of knownCodes) {
+      if (new RegExp(`(^|[^A-Za-z0-9-])${escapeRegex(code)}([^A-Za-z0-9-]|$)`).test(text)) return code;
+    }
+    const normalized = normalizeName(text.replace(/\[[^\]]+\]/g, '').trim());
+    return byName.get(normalized) || null;
   };
 
-  if (Array.isArray(parsed) && parsed.length > 0) {
-    const v = pickFromObj(parsed[0]);
-    if (v.kaina != null) return v;
-  } else if (parsed && typeof parsed === 'object') {
-    const v = pickFromObj(parsed);
-    if (v.kaina != null) return v;
+  const payload = extractJsonPayloadLoose(analysisContent);
+  const forecasts = Array.isArray(payload)
+    ? payload
+    : Array.isArray((payload as any)?.forecasts)
+      ? (payload as any).forecasts
+      : [];
+
+  const map = new Map<string, { kaina: number; data: string }>();
+  for (const item of forecasts) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const artikulas = resolveCode(row.artikulas) || resolveCode(row.material_code) || resolveCode(row.material) || resolveCode(row.name);
+    if (!artikulas) continue;
+
+    const candidates = Array.isArray(row.points) && row.points.length > 0
+      ? row.points
+      : [row];
+
+    for (const candidate of candidates) {
+      const point = candidate && typeof candidate === 'object' ? candidate as Record<string, unknown> : {};
+      const kaina = toNumber(point.price ?? point.kaina ?? point.value);
+      if (kaina === null || kaina < 0) continue;
+      const data = toIsoDate(point.date ?? point.data ?? row.data ?? row.date, fallbackDate);
+      const existing = map.get(artikulas);
+      if (!existing || data >= existing.data) map.set(artikulas, { kaina, data });
+    }
   }
 
-  const numMatch = text.match(/(\d+(?:[.,]\d+)?)/);
-  const dateMatch = text.match(/\b\d{4}-\d{2}-\d{2}\b/);
-  return {
-    kaina: numMatch ? Number(numMatch[1].replace(',', '.')) : null,
-    data: dateMatch ? dateMatch[0] : null,
-  };
+  return map;
 }
 
 export async function fetchMaterialPricesForEstimatePayload(
-  mode: 'math' | 'ai',
+  mode: MaterialEstimatePriceMode,
 ): Promise<MaterialPriceEstimatePayloadItem[]> {
   const base = await fetchMaterialPricesForEstimate();
   const today = new Date().toISOString().split('T')[0];
 
-  let aiMap = new Map<string, { kaina: number | null; data: string | null }>();
+  let aiMap = new Map<string, { kaina: number; data: string }>();
   if (mode === 'ai') {
     try {
-      const rows = await fetchPrognozėInternetas();
-      aiMap = new Map(
-        rows
-          .filter(r => r.artikulas && r.artikulas !== '__general__')
-          .map(r => [r.artikulas, tryExtractAiPrice(r.content || '')]),
-      );
+      const { data, error } = await db
+        .from('medziagos_analize_internetas')
+        .select('content')
+        .eq('id', 'kainos')
+        .single();
+      if (error) throw error;
+      aiMap = extractGraphAiPriceMap(String(data?.content || ''), base);
     } catch {
       aiMap = new Map();
     }
   }
 
   return base.map((m): MaterialPriceEstimatePayloadItem => {
-    let predicted: MaterialPriceEstimatePayloadItem['predicted_current_date'] = null;
-    if (m.is_stale) {
-      if (mode === 'ai') {
-        const ai = aiMap.get(m.artikulas);
-        if (ai?.kaina != null && !isNaN(ai.kaina)) {
-          predicted = {
-            data: today,
-            kaina_min: ai.kaina,
-            kaina_max: ai.kaina,
-            source: 'ai',
-          };
-        } else if (m.prediction_math) {
-          predicted = {
-            data: today,
-            kaina_min: m.prediction_math.kaina_min,
-            kaina_max: m.prediction_math.kaina_max,
-            source: 'math',
-          };
-        }
-      } else if (m.prediction_math) {
-        predicted = {
-          data: today,
-          kaina_min: m.prediction_math.kaina_min,
-          kaina_max: m.prediction_math.kaina_max,
-          source: 'math',
+    let effectivePrice: MaterialPriceEstimatePayloadItem['latest_price'] = m.latest_price;
+    let priceSource: MaterialPriceEstimatePayloadItem['price_source'] = m.latest_price ? 'current' : 'none';
+
+    if (mode === 'ai') {
+      const ai = aiMap.get(m.artikulas);
+      if (ai) {
+        effectivePrice = {
+          data: ai.data || today,
+          kaina_min: ai.kaina,
+          kaina_max: ai.kaina,
         };
+        priceSource = 'ai';
+      } else {
+        effectivePrice = null;
+        priceSource = 'none';
       }
+    } else if (mode === 'math' && m.is_stale && m.prediction_math) {
+      effectivePrice = {
+        data: today,
+        kaina_min: m.prediction_math.kaina_min,
+        kaina_max: m.prediction_math.kaina_max,
+      };
+      priceSource = 'math';
     }
 
     return {
       artikulas: m.artikulas,
       pavadinimas: m.pavadinimas,
       vienetas: m.vienetas,
-      latest_price: m.latest_price,
+      latest_price: effectivePrice,
       is_stale: m.is_stale,
-      predicted_current_date: predicted,
+      price_source: priceSource,
+      predicted_current_date: null,
     };
   });
 }

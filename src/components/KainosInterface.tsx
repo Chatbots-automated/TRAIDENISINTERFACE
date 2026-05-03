@@ -409,19 +409,24 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const replaceForecastJsonBlock = (text: string) => {
     const sourceText = getAnalysisMarkdownForDisplay(text);
     const note = '> Peržiūrėkite kainų pokytį Grafa puslapyje paspaudę „Su DI“.';
+    const withGraphNote = (value: string) => (
+      value.includes('Peržiūrėkite kainų pokytį Grafa puslapyje')
+        ? value
+        : [value.trim(), note].filter(Boolean).join('\n\n')
+    );
     const fenced = sourceText.match(/```(?:json)?\s*\n?([\s\S]*?"forecasts"[\s\S]*?)```/);
     if (fenced?.index !== undefined) {
       const before = sourceText.slice(0, fenced.index).trimEnd();
       const after = sourceText.slice(fenced.index + fenced[0].length).trimStart();
-      return [before, note, after].filter(Boolean).join('\n\n');
+      return withGraphNote([before, after].filter(Boolean).join('\n\n'));
     }
 
     const marker = '"forecasts"';
     const markerIndex = sourceText.indexOf(marker);
-    if (markerIndex === -1) return sourceText;
+    if (markerIndex === -1) return withGraphNote(sourceText);
 
     const start = sourceText.lastIndexOf('{', markerIndex);
-    if (start === -1) return sourceText;
+    if (start === -1) return withGraphNote(sourceText);
 
     let depth = 0;
     let inString = false;
@@ -447,11 +452,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
         if (depth === 0) {
           const before = sourceText.slice(0, start).trimEnd();
           const after = sourceText.slice(i + 1).trimStart();
-          return [before, note, after].filter(Boolean).join('\n\n');
+          return withGraphNote([before, after].filter(Boolean).join('\n\n'));
         }
       }
     }
-    return sourceText;
+    return withGraphNote(sourceText);
   };
 
   const naftaDisplay = streamNafta || internetAnalyses.nafta?.content || '';

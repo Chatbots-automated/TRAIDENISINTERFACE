@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, ChevronDown, FileText, Loader2, Plus, Sparkles, Trash2, X } from 'lucide-react';
-import MaterialSlateView from '../MaterialSlateView';
-import { createSablonas, deleteSablonas, fetchSablonai, generateStructuredJson, updateSablonas } from '../../lib/sablonaiService';
+import { AlertTriangle, Check, ChevronDown, FileText, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { createSablonas, deleteSablonas, fetchSablonai, updateSablonas } from '../../lib/sablonaiService';
 import type { MedziaguSablonas } from '../../lib/sablonaiService';
 
 export function SablonaiTab() {
@@ -22,14 +21,9 @@ export function SablonaiTab() {
   const [showSavedHint, setShowSavedHint] = useState(false);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Generate / structurize
-  const [generating, setGenerating] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-
   // Delete
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [generatingId, setGeneratingId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -197,7 +191,7 @@ export function SablonaiTab() {
       setDraftCard(prev => prev ? { ...prev, isSaving: true, saveError: null, name: inferredName } : prev);
       try {
         if (!draftCard.id) {
-          const created = await createSablonas({ name: inferredName, raw_text: rawText, structured_json: null });
+          const created = await createSablonas({ name: inferredName, raw_text: rawText });
           setDraftCard(prev => prev ? { ...prev, id: created.id, isSaving: false } : prev);
           upsertLocalTemplate(created);
           setShowSavedHint(true);
@@ -220,22 +214,6 @@ export function SablonaiTab() {
     const timer = window.setTimeout(() => setShowSavedHint(false), 1200);
     return () => window.clearTimeout(timer);
   }, [showSavedHint]);
-
-  const handleViewGenerate = async (s: MedziaguSablonas) => {
-    setGenerating(true);
-    setGeneratingId(s.id);
-    setFormError(null);
-    try {
-      const json = await generateStructuredJson(s.raw_text.trim());
-      await updateSablonas(s.id, { structured_json: json });
-      await loadData();
-    } catch (err: any) {
-      setFormError(err?.message || 'Nepavyko sugeneruoti struktūros');
-    } finally {
-      setGenerating(false);
-      setGeneratingId(null);
-    }
-  };
 
   const handleDelete = async (id: number) => {
     setDeleting(true);
@@ -263,7 +241,7 @@ export function SablonaiTab() {
     try {
       let targetId = draftCard.id;
       if (!targetId) {
-        const created = await createSablonas({ name: inferredName, raw_text: rawText, structured_json: null });
+        const created = await createSablonas({ name: inferredName, raw_text: rawText });
         targetId = created.id;
         upsertLocalTemplate(created);
       } else {
@@ -314,12 +292,6 @@ export function SablonaiTab() {
       {error && (
         <div className="px-4 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,59,48,0.08)', color: '#FF3B30' }}>
           <AlertTriangle className="w-4 h-4 inline mr-2" />{error}
-        </div>
-      )}
-
-      {formError && (
-        <div className="px-4 py-3 rounded-xl text-sm" style={{ background: 'rgba(255,59,48,0.08)', color: '#FF3B30' }}>
-          {formError}
         </div>
       )}
 
@@ -460,16 +432,6 @@ export function SablonaiTab() {
                             )}
                           </div>
                           <div className="flex items-center gap-1">
-                            {!s.structured_json && isExpanded && (
-                              <button
-                                onClick={() => handleViewGenerate(s)}
-                                disabled={generating}
-                                className="app-text-btn disabled:opacity-60"
-                              >
-                                {generating && generatingId === s.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                                Struktūrizuoti
-                              </button>
-                            )}
                             <button onClick={() => setConfirmDeleteId(s.id)} className="app-icon-btn" title="Ištrinti">
                               <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
                             </button>
@@ -485,18 +447,12 @@ export function SablonaiTab() {
 
                         {isExpanded && (
                           <div className="mt-2 rounded-lg p-2.5 border border-base-content/8 bg-base-content/[0.015] flex-1 overflow-hidden">
-                            {s.structured_json ? (
-                              <div>
-                                <MaterialSlateView data={s.structured_json} variant="panel" />
-                              </div>
-                            ) : (
-                              <p
-                                className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-                                style={{ color: '#5a5550' }}
-                              >
-                                {s.raw_text || 'Nėra teksto'}
-                              </p>
-                            )}
+                            <p
+                              className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
+                              style={{ color: '#5a5550' }}
+                            >
+                              {s.raw_text || 'Nėra teksto'}
+                            </p>
                           </div>
                         )}
 

@@ -78,9 +78,12 @@ interface AnalysisForecastResponsePayload {
     data?: string;
     confidence?: number;
     reasoning?: string;
+    current_price?: number;
+    currentPrice?: number;
     points?: Array<{
       date?: string;
       price?: number;
+      kaina?: number;
     }>;
   }>;
 }
@@ -138,10 +141,56 @@ export function getAnalysisMarkdownForDisplay(content: string): string {
     if (payload && typeof payload === 'object' && typeof payload.analysis_markdown === 'string' && payload.analysis_markdown.trim()) {
       return payload.analysis_markdown.trim();
     }
+    const generated = buildForecastMarkdownFromPayload(payload);
+    if (generated) return generated;
   } catch {
     // Legacy rows can still be plain markdown.
   }
   return content;
+}
+
+function buildForecastMarkdownFromPayload(payload: AnalysisForecastResponsePayload | unknown): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const forecasts = (payload as AnalysisForecastResponsePayload).forecasts;
+  if (!Array.isArray(forecasts) || forecasts.length === 0) return '';
+
+  const formatNumber = (value: unknown): string | null => {
+    const parsed = coerceFiniteNumber(value);
+    if (parsed === null) return null;
+    return parsed.toLocaleString('lt-LT', {
+      minimumFractionDigits: Number.isInteger(parsed) ? 0 : 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
+  const sections = forecasts.slice(0, 80).map((forecast, index) => {
+    if (!forecast || typeof forecast !== 'object') return '';
+    const label = forecast.material || forecast.artikulas || `Medžiaga ${index + 1}`;
+    const currentPrice = formatNumber(forecast.current_price ?? forecast.currentPrice);
+    const confidence = formatNumber(forecast.confidence);
+    const points = Array.isArray(forecast.points) ? forecast.points : [];
+    const directPrice = points.length === 0 ? formatNumber(forecast.kaina) : null;
+    const directDate = typeof forecast.data === 'string' && forecast.data.trim() ? forecast.data.trim() : '';
+
+    const lines = [`### ${label}`];
+    if (currentPrice) lines.push(`- Dabartinė kaina: ${currentPrice}`);
+    if (directPrice) lines.push(`- Prognozė${directDate ? ` (${directDate})` : ''}: ${directPrice}`);
+    for (const point of points) {
+      const price = formatNumber(point?.price ?? point?.kaina);
+      const date = typeof point?.date === 'string' && point.date.trim() ? point.date.trim() : 'prognozė';
+      if (price) lines.push(`- ${date}: ${price}`);
+    }
+    if (confidence) lines.push(`- Pasitikėjimas: ${confidence}%`);
+    if (forecast.reasoning?.trim()) lines.push(`- Pagrindimas: ${forecast.reasoning.trim()}`);
+    return lines.join('\n');
+  }).filter(Boolean);
+
+  if (!sections.length) return '';
+  return [
+    '## Kainų prognozė',
+    'Žemiau pateikiama struktūrizuota prognozė pagal sugeneruotus duomenis.',
+    ...sections,
+  ].join('\n\n');
 }
 
 

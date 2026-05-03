@@ -15,13 +15,15 @@ import {
   Eye,
   Pencil,
   Loader2,
-  Plus
+  Plus,
+  Trash2
 } from 'lucide-react';
 import type { AppUser } from '../types';
 import {
   getInstructionVariables,
   getInstructionVariable,
   createInstructionVariable,
+  deleteInstructionVariable,
   saveInstructionVariable,
   verifyUserPassword,
   getVersionHistory,
@@ -43,6 +45,7 @@ interface InstructionsInterfaceProps {
 type View = 'editor' | 'versions';
 
 const CHAT_VARIABLE_PREFIX = 'chat_';
+const CHAT_TEMPLATE_VARIABLE_KEY = 'chat_template';
 const isChatInstructionVariable = (variable: InstructionVariable) => (
   variable.variable_key.startsWith(CHAT_VARIABLE_PREFIX)
 );
@@ -117,6 +120,15 @@ function truncatePromptSection(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n...[sutrumpinta dėl ilgio: ${text.length - maxChars} simbolių]`;
 }
 
+function buildTemplateFromChatVariables(variables: InstructionVariable[]): string {
+  return variables
+    .filter(variable => variable.variable_key.startsWith(CHAT_VARIABLE_PREFIX))
+    .filter(variable => variable.variable_key !== CHAT_TEMPLATE_VARIABLE_KEY)
+    .sort((a, b) => (Number(a.display_order) || 0) - (Number(b.display_order) || 0))
+    .map(variable => `{{${variable.variable_key}}}`)
+    .join('\n\n');
+}
+
 export default function InstructionsInterface({ user }: InstructionsInterfaceProps) {
   const location = useLocation();
   const [view, setView] = useState<View>('editor');
@@ -158,6 +170,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   const [showCreateVariable, setShowCreateVariable] = useState(false);
   const [creatingVariable, setCreatingVariable] = useState(false);
   const [createVariableError, setCreateVariableError] = useState<string | null>(null);
+  const [deleteVariableKey, setDeleteVariableKey] = useState<string | null>(null);
+  const [deletingVariable, setDeletingVariable] = useState(false);
+  const [deleteVariableError, setDeleteVariableError] = useState<string | null>(null);
+  const [fillingTemplate, setFillingTemplate] = useState(false);
   const [newVariableForm, setNewVariableForm] = useState({
     variable_key: '',
     variable_name: '',
@@ -337,6 +353,75 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
       setCreateVariableError(err?.message || 'Nepavyko sukurti kintamojo');
     } finally {
       setCreatingVariable(false);
+    }
+  };
+
+  const handleDeleteVariable = async () => {
+    if (!deleteVariableKey || !user.is_admin) return;
+    if (deleteVariableKey === CHAT_TEMPLATE_VARIABLE_KEY) {
+      setDeleteVariableError('chat_template yra pagrindinis šablonas ir negali būti trinamas');
+      return;
+    }
+
+    const variableToDelete = instructionVariables.find(variable => variable.variable_key === deleteVariableKey);
+    const remainingVariables = instructionVariables.filter(variable => variable.variable_key !== deleteVariableKey);
+    const fallbackVariableKey = remainingVariables[Math.min(selectedIndex, Math.max(remainingVariables.length - 1, 0))]?.variable_key ?? null;
+
+    setDeletingVariable(true);
+    setDeleteVariableError(null);
+    try {
+      const result = await deleteInstructionVariable(deleteVariableKey, user.id, user.email, true);
+      if (!result.success) {
+        setDeleteVariableError(result.error || 'Nepavyko ištrinti kintamojo');
+        return;
+      }
+
+      addNotification('success', 'Kintamasis ištrintas', variableToDelete?.variable_name || deleteVariableKey);
+      setDeleteVariableKey(null);
+      await loadVariables(fallbackVariableKey);
+    } catch (err: any) {
+      setDeleteVariableError(err?.message || 'Nepavyko ištrinti kintamojo');
+    } finally {
+      setDeletingVariable(false);
+    }
+  };
+
+  const handleFillChatTemplate = async () => {
+    if (!selectedVariable || selectedVariable.variable_key !== CHAT_TEMPLATE_VARIABLE_KEY) return;
+
+    const nextContent = buildTemplateFromChatVariables(instructionVariables);
+    if (!nextContent.trim()) {
+      addNotification('error', 'Nėra kintamųjų', 'Nerasta kitų chat_ kintamųjų, kuriuos būtų galima įkelti.');
+      return;
+    }
+
+    if (isEditing) {
+      setEditContent(nextContent);
+      addNotification('success', 'Šablonas užpildytas', 'Peržiūrėkite pakeitimą ir išsaugokite.');
+      return;
+    }
+
+    setFillingTemplate(true);
+    try {
+      const result = await saveInstructionVariable(
+        CHAT_TEMPLATE_VARIABLE_KEY,
+        nextContent,
+        user.id,
+        user.email,
+        true
+      );
+
+      if (!result.success) {
+        addNotification('error', 'Nepavyko užpildyti', result.error || 'Nepavyko atnaujinti chat_template.');
+        return;
+      }
+
+      addNotification('success', 'Šablonas užpildytas', 'Įkelti visi chat_ kintamieji.');
+      await loadVariables(CHAT_TEMPLATE_VARIABLE_KEY);
+    } catch (err: any) {
+      addErrorNotification('Klaida', err, 'Nepavyko užpildyti chat_template');
+    } finally {
+      setFillingTemplate(false);
     }
   };
 
@@ -953,11 +1038,23 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   <h1 className="text-[18px] font-semibold text-base-content truncate">
                     {selectedVariable.variable_name}
                   </h1>
+                  {selectedVariable.description && (
+                    <p className="mt-1 max-w-3xl text-xs leading-5 text-base-content/50">
+                      {selectedVariable.description}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center space-x-2 ml-4">
                   {isEditing ? (
                     <>
+                      {selectedVariable.variable_key === CHAT_TEMPLATE_VARIABLE_KEY && (
+                        <FillTemplateButton
+                          onClick={handleFillChatTemplate}
+                          disabled={fillingTemplate}
+                          loading={fillingTemplate}
+                        />
+                      )}
                       <CancelButton onClick={handleCancelEdit} />
                       <SaveButton
                         onClick={handleSave}
@@ -966,7 +1063,24 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       />
                     </>
                   ) : (
-                    <EditButton onClick={() => setShowPasswordInput(true)} />
+                    <>
+                      {selectedVariable.variable_key === CHAT_TEMPLATE_VARIABLE_KEY && (
+                        <FillTemplateButton
+                          onClick={handleFillChatTemplate}
+                          disabled={fillingTemplate}
+                          loading={fillingTemplate}
+                        />
+                      )}
+                      {user.is_admin && selectedVariable.variable_key !== CHAT_TEMPLATE_VARIABLE_KEY && (
+                        <DeleteButton
+                          onClick={() => {
+                            setDeleteVariableError(null);
+                            setDeleteVariableKey(selectedVariable.variable_key);
+                          }}
+                        />
+                      )}
+                      <EditButton onClick={() => setShowPasswordInput(true)} />
+                    </>
                   )}
                 </div>
               </div>
@@ -1358,6 +1472,73 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         </div>
       )}
+      {deleteVariableKey && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(15,23,42,0.20)', backdropFilter: 'blur(6px)' }}
+          onClick={() => !deletingVariable && setDeleteVariableKey(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border bg-white shadow-2xl overflow-hidden"
+            style={{ borderColor: 'var(--app-border)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-base-300/70 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-base-content">Ištrinti instrukcijos kintamąjį</h3>
+                <p className="text-xs text-base-content/45 mt-0.5">Veiksmas išsaugos naują versijos įrašą, todėl prireikus galėsite atkurti ankstesnę būseną.</p>
+              </div>
+              <button className="app-icon-btn" onClick={() => setDeleteVariableKey(null)} disabled={deletingVariable}>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {(() => {
+                const variable = instructionVariables.find(item => item.variable_key === deleteVariableKey);
+                return (
+                  <div className="rounded-xl border border-base-300/70 bg-base-100/60 p-4">
+                    <div className="text-[11px] font-mono text-base-content/45">{deleteVariableKey}</div>
+                    <div className="mt-1 text-sm font-semibold text-base-content">{variable?.variable_name || 'Kintamasis'}</div>
+                    {variable?.description && (
+                      <div className="mt-2 text-xs leading-5 text-base-content/55">{variable.description}</div>
+                    )}
+                  </div>
+                );
+              })()}
+              {deleteVariableError && (
+                <div className="alert alert-soft alert-error text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{deleteVariableError}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-base-300/70 flex items-center justify-end gap-2 bg-base-100/70">
+              <button
+                className="app-text-btn min-h-9 text-xs"
+                onClick={() => setDeleteVariableKey(null)}
+                disabled={deletingVariable}
+              >
+                Atšaukti
+              </button>
+              <button
+                className="app-text-btn min-h-9 text-xs"
+                onClick={handleDeleteVariable}
+                disabled={deletingVariable}
+                style={{
+                  color: '#b42318',
+                  borderColor: 'rgba(180, 35, 24, 0.20)',
+                  background: 'rgba(180, 35, 24, 0.06)'
+                }}
+              >
+                {deletingVariable ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Ištrinti
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <NotificationContainer notifications={notifications} onRemove={removeNotification} />
     </div>
   );
@@ -1504,6 +1685,11 @@ function NavButton({
           }}>
             {variable.variable_name}
           </p>
+          {variable.description && (
+            <p className="text-[11px] mt-0.5 truncate" style={{ color: colors.text.tertiary }}>
+              {variable.description}
+            </p>
+          )}
           {!variable.content && (
             <p className="text-xs mt-0.5" style={{ color: colors.status.warningText }}>Tuščia</p>
           )}
@@ -1601,6 +1787,58 @@ function EditButton({ onClick }: { onClick: () => void }) {
     >
       <Pencil className="w-4 h-4" />
       <span>Redaguoti</span>
+    </button>
+  );
+}
+
+function DeleteButton({ onClick }: { onClick: () => void }) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="px-3 py-2 text-sm rounded-lg transition-colors flex items-center space-x-2"
+      style={{
+        color: '#b42318',
+        background: isHovered ? 'rgba(180, 35, 24, 0.08)' : 'rgba(180, 35, 24, 0.04)',
+        border: '1px solid rgba(180, 35, 24, 0.18)'
+      }}
+    >
+      <Trash2 className="w-4 h-4" />
+      <span>Ištrinti</span>
+    </button>
+  );
+}
+
+function FillTemplateButton({
+  onClick,
+  disabled,
+  loading
+}: {
+  onClick: () => void;
+  disabled: boolean;
+  loading: boolean;
+}) {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => !disabled && setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="px-2.5 py-1.5 text-[11px] rounded-lg disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center space-x-1.5"
+      style={{
+        color: colors.text.secondary,
+        background: isHovered ? colors.bg.secondary : colors.bg.white,
+        border: `1px solid ${colors.border.default}`
+      }}
+      title="Įkelti visus chat_ kintamuosius į chat_template"
+    >
+      {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+      <span>Įkelti visus kintamuosius</span>
     </button>
   );
 }

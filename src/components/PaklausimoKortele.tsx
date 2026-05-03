@@ -23,7 +23,7 @@ import type {
 } from '../lib/dokumentaiService';
 import { getWebhookUrl } from '../lib/webhooksService';
 import { fetchMaterialPricesForEstimatePayload } from '../lib/kainosService';
-import type { MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
+import type { MaterialEstimatePriceMode, MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
 import { fetchSablonai } from '../lib/sablonaiService';
 import type { MedziaguSablonas } from '../lib/sablonaiService';
 import MaterialSlateView from './MaterialSlateView';
@@ -106,6 +106,67 @@ function useProcessing(recordId: number, key: ProcessKey) {
     return () => { _listeners.delete(fn); };
   }, []);
   return isProcessing(recordId, key);
+}
+
+type PriceEstimateModeMap = Partial<Record<MaterialEstimatePriceMode, string>>;
+
+const PRICE_ESTIMATE_MODE_LABELS: Record<MaterialEstimatePriceMode, string> = {
+  current: 'Dabartinė',
+  math: 'Matematinė',
+  ai: 'Su DI',
+};
+
+const PRICE_ESTIMATE_RESPONSE_LABELS: Record<MaterialEstimatePriceMode, string> = {
+  current: 'Įvertinimas pagal paskutinias turimas kainas',
+  math: 'Įvertinimas pagal matematinį kainų numatymą',
+  ai: 'Įvertinimas pagal DI kainų numatymą',
+};
+
+function parsePriceEstimateModeMap(value: unknown): PriceEstimateModeMap {
+  if (!value) return {};
+  const parseMaybeJson = (raw: string): any => {
+    try { return JSON.parse(raw); } catch { return null; }
+  };
+  const parsed = typeof value === 'string' ? parseMaybeJson(value) : value;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const estimates = (parsed as any).estimates;
+    if (estimates && typeof estimates === 'object' && !Array.isArray(estimates)) {
+      const result: PriceEstimateModeMap = {};
+      for (const mode of ['current', 'math', 'ai'] as const) {
+        const entry = estimates[mode];
+        if (typeof entry === 'string' && entry.trim()) result[mode] = entry.trim();
+        else if (entry && typeof entry === 'object' && typeof entry.text === 'string' && entry.text.trim()) {
+          result[mode] = entry.text.trim();
+        }
+      }
+      return result;
+    }
+  }
+  if (typeof value === 'string' && value.trim()) {
+    return { math: value.trim() };
+  }
+  return {};
+}
+
+function buildPriceEstimateStorage(
+  existing: unknown,
+  mode: MaterialEstimatePriceMode,
+  text: string,
+): string {
+  const previous = parsePriceEstimateModeMap(existing);
+  const now = new Date().toISOString();
+  const estimates: Record<string, { mode: MaterialEstimatePriceMode; label: string; generated_at: string; text: string }> = {};
+  for (const key of ['current', 'math', 'ai'] as const) {
+    const existingText = key === mode ? text : previous[key];
+    if (!existingText) continue;
+    estimates[key] = {
+      mode: key,
+      label: PRICE_ESTIMATE_MODE_LABELS[key],
+      generated_at: key === mode ? now : '',
+      text: existingText,
+    };
+  }
+  return JSON.stringify({ version: 1, estimates });
 }
 
 // ---------------------------------------------------------------------------
@@ -647,7 +708,7 @@ function TabTalpos({
   // Price estimation state (per-idx)
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
-  const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, string | null>>({});
+  const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, PriceEstimateModeMap>>({});
   const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number } | null>>({});
   const [descriptionRefreshing, setDescriptionRefreshing] = useState<Record<number, boolean>>({});
   const [descriptionRefreshError, setDescriptionRefreshError] = useState<Record<number, string | null>>({});
@@ -1008,7 +1069,7 @@ function TabTalpos({
     }
   };
 
-  const estimatePrice = async (predictionMode: 'math' | 'ai' = 'math') => {
+  const estimatePrice = async (predictionMode: MaterialEstimatePriceMode = 'current') => {
     if (!currentTalposId || !currentTalposRow) return;
     setPriceEstimating(prev => ({ ...prev, [idx]: true }));
     setPriceEstimateError(prev => ({ ...prev, [idx]: null }));
@@ -1024,27 +1085,60 @@ function TabTalpos({
       };
 
       const rawSimilarItems = displayedSimilarEnriched ?? [];
-      const similarIdsWithScore = rawSimilarItems
-        .map((item: any) => ({
-          id: item?.id && typeof item.id === 'string' && item.id.length >= 32 ? item.id : null,
-          similarity_score: typeof item?.similarity_score === 'number' ? item.similarity_score : null,
-        }))
-        .filter((x: any) => x.id);
-      const similarRows = similarIdsWithScore.length > 0
-        ? await fetchTalposByIds(similarIdsWithScore.map((x: any) => x.id))
+      const looksLikeUuid = (value: unknown): value is string => (
+        typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+      );
+      const resolveSimilarTalposId = (item: any): string | null => {
+        const candidates = [
+          item?.id,
+          item?.talpos_id,
+          item?.talpa_id,
+          item?.talpa,
+          item?.uuid,
+          item?.tank_id,
+          item?.talpos?.id,
+          item?.row?.id,
+          item?.metadata?.id,
+        ];
+        for (const candidate of candidates) {
+          if (looksLikeUuid(candidate)) return candidate.trim();
+        }
+        return null;
+      };
+      const toNullableNumber = (value: unknown): number | null => {
+        if (typeof value === 'number' && Number.isFinite(value)) return value;
+        if (typeof value === 'string' && value.trim()) {
+          const parsed = Number(value.replace(',', '.'));
+          return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+      };
+      const similarItems = rawSimilarItems.map((item: any) => ({
+        id: resolveSimilarTalposId(item),
+        similarity_score: toNullableNumber(item?.similarity_score ?? item?.similarity ?? item?.score),
+        raw: item,
+      }));
+      const similarIds = Array.from(new Set(similarItems.map(item => item.id).filter((id): id is string => !!id)));
+      const similarRows = similarIds.length > 0
+        ? await fetchTalposByIds(similarIds)
         : [];
       const similarRowMap = new Map(similarRows.map((r: any) => [String(r.id), r]));
-      const similarTanksPayload = similarIdsWithScore.map((x: any) => {
-        const row = similarRowMap.get(String(x.id));
+      const similarTanksPayload = similarItems.map((x: any) => {
+        const row = x.id ? similarRowMap.get(String(x.id)) : null;
+        const raw = x.raw || {};
         return {
-          id: x.id,
+          id: x.id ?? raw.id ?? null,
           similarity_score: x.similarity_score,
-          json: row?.json ?? null,
-          derva_musu: row?.derva_musu ?? null,
-          derva_ai: row?.derva_ai ?? null,
-          material_slate: row?.material_slate ?? null,
-          kaina: row?.kaina ?? null,
-          kaina_ai: row?.kaina_ai ?? null,
+          pavadinimas: row?.pavadinimas ?? raw.pavadinimas ?? raw.name ?? raw.project_name ?? null,
+          project: row?.project ?? raw.project ?? raw.project_id ?? null,
+          json: row?.json ?? raw.json ?? raw.metadata ?? null,
+          derva_musu: row?.derva_musu ?? raw.derva_musu ?? null,
+          derva_ai: row?.derva_ai ?? raw.derva_ai ?? null,
+          material_slate: row?.material_slate ?? raw.material_slate ?? null,
+          kaina: row?.kaina ?? raw.kaina ?? null,
+          kaina_ai: row?.kaina_ai ?? raw.kaina_ai ?? null,
+          source_item: x.id ? undefined : raw,
         };
       });
 
@@ -1052,7 +1146,7 @@ function TabTalpos({
       try { materialPrices = await fetchMaterialPricesForEstimatePayload(predictionMode); } catch { /* non-fatal */ }
       const sourceSummary = materialPrices.reduce((acc, item) => {
         acc.total += 1;
-        const src = item.predicted_current_date?.source;
+        const src = item.price_source;
         if (src === 'ai') acc.ai += 1;
         else if (src === 'math') acc.math += 1;
         else acc.none += 1;
@@ -1073,7 +1167,7 @@ function TabTalpos({
           current_tank_specs: currentTankSpecs,
           similar_tanks: similarTanksPayload,
           material_prices: materialPrices,
-          material_price_source: predictionMode === 'ai' ? 'Su DI' : 'Matematinė',
+          material_price_source: predictionMode === 'ai' ? 'Su DI' : predictionMode === 'math' ? 'Matematinė' : 'Dabartinė',
         }),
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -1095,14 +1189,20 @@ function TabTalpos({
       })();
 
       if (fullResponseText) {
-        const kainaAiValue = fullResponseText;
+        const kainaAiValue = buildPriceEstimateStorage(currentTalposRow?.kaina_ai, predictionMode, fullResponseText);
         await updateTalposField(currentTalposId, 'kaina_ai', kainaAiValue);
         setTalposRows(prev => prev.map(r =>
           String(r.id) === String(currentTalposId)
             ? { ...r, kaina_ai: kainaAiValue }
             : r
         ));
-        setLocalKainaAiText(prev => ({ ...prev, [idx]: fullResponseText }));
+        setLocalKainaAiText(prev => ({
+          ...prev,
+          [idx]: {
+            ...(prev[idx] || parsePriceEstimateModeMap(currentTalposRow?.kaina_ai)),
+            [predictionMode]: fullResponseText,
+          },
+        }));
       } else {
         throw new Error('Negauta kaina iš atsakymo');
       }
@@ -3044,10 +3144,10 @@ function TabMedziagos({
   idx: number;
   sablonai: MedziaguSablonas[];
   sablonaiLoading: boolean;
-  estimatePrice: (mode: 'math' | 'ai') => Promise<void>;
+  estimatePrice: (mode: MaterialEstimatePriceMode) => Promise<void>;
   priceEstimating: boolean;
   priceEstimateError: string | null;
-  localKainaAiText: string | null;
+  localKainaAiText: PriceEstimateModeMap | null;
   priceSourceBreakdown: { ai: number; math: number; none: number; total: number } | null;
   onTalposRowUpdated?: (id: string, field: string, value: any) => void;
 }) {
@@ -3101,8 +3201,9 @@ function TabMedziagos({
   const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
   const [savingSlate, setSavingSlate] = useState(false);
   const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
-  const [predictionMode, setPredictionMode] = useState<'math' | 'ai'>('math');
+  const [predictionMode, setPredictionMode] = useState<MaterialEstimatePriceMode>('current');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
+  const [templateCapacityFilter, setTemplateCapacityFilter] = useState('');
   const [isSlateEditing, setIsSlateEditing] = useState(false);
   const [slateDraftEntries, setSlateDraftEntries] = useState<Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }>>([]);
   const [newSlateKey, setNewSlateKey] = useState('');
@@ -3110,6 +3211,46 @@ function TabMedziagos({
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
   const slateDraftOriginalPathsRef = useRef<string[]>([]);
   const internalSlateKeys = useMemo(() => new Set(['_template_id', '_template_name', '_manual']), []);
+
+  const sanitizeCapacityFilter = useCallback((value: string) => {
+    const cleaned = value.replace(/[^\d.,]/g, '');
+    const firstSeparatorIndex = cleaned.search(/[.,]/);
+    if (firstSeparatorIndex === -1) return cleaned;
+
+    return cleaned.slice(0, firstSeparatorIndex + 1)
+      + cleaned.slice(firstSeparatorIndex + 1).replace(/[.,]/g, '');
+  }, []);
+
+  const getTemplateCapacity = useCallback((template: MedziaguSablonas) => {
+    const haystack = `${template.name || ''}\n${template.raw_text || ''}`
+      .normalize('NFKC')
+      .replace(/[–—]/g, '-');
+    const match = haystack.match(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/i);
+    if (!match) return null;
+    const value = Number(match[1].replace(',', '.'));
+    return Number.isFinite(value) ? value : null;
+  }, []);
+
+  const matchesTemplateCapacity = useCallback((template: MedziaguSablonas, rawFilter: string) => {
+    const normalized = sanitizeCapacityFilter(rawFilter.trim()).replace(',', '.');
+    if (!normalized) return true;
+
+    const wantedCapacity = Number(normalized);
+    const parsedCapacity = getTemplateCapacity(template);
+    if (Number.isFinite(wantedCapacity) && parsedCapacity === wantedCapacity) return true;
+
+    const haystack = `${template.name || ''}\n${template.raw_text || ''}`
+      .normalize('NFKC')
+      .replace(/[–—]/g, '-')
+      .replace(',', '.');
+    const vMatches = Array.from(haystack.matchAll(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/gi))
+      .map(m => Number(m[1].replace(',', '.')))
+      .filter(Number.isFinite);
+    if (Number.isFinite(wantedCapacity) && vMatches.includes(wantedCapacity)) return true;
+
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^\\d.,])${escaped}([^\\d.,]|$)`).test(haystack);
+  }, [getTemplateCapacity, sanitizeCapacityFilter]);
 
   // Manual entry rows
   const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
@@ -3133,17 +3274,21 @@ function TabMedziagos({
 
   const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
     const template = sablonai.find(s => s.id === templateId);
-    if (!template?.structured_json || !currentTalposId) return false;
-    const normalized = normalizeStructuredSlate(template.structured_json);
-    if (!normalized) {
-      setTemplateSelectError('Šio šablono struktūra neteisinga. Prašome peržiūrėti Žaliavos → Medžiagų šablonai.');
+    if (!template || !currentTalposId) return false;
+    const rawText = String(template.raw_text || '').trim();
+    if (!rawText) {
+      setTemplateSelectError('Šis šablonas neturi teksto. Prašome peržiūrėti Žaliavos → Medžiagų šablonai.');
       return false;
     }
     setTemplateSelectError(null);
     setSelectedTemplateId(templateId);
     setSavingSlate(true);
     try {
-      const snapshot = { ...normalized, _template_id: template.id, _template_name: template.name };
+      const snapshot = {
+        raw_text: rawText,
+        _template_id: template.id,
+        _template_name: template.name,
+      };
       await updateTalposField(currentTalposId, 'material_slate', snapshot);
       setLocalSlate(snapshot);
       onTalposRowUpdated?.(currentTalposId, 'material_slate', snapshot);
@@ -3299,16 +3444,27 @@ function TabMedziagos({
     }
   };
 
-  // Get AI text from local override or talpos.json
-  const aiText: unknown = localKainaAiText
-    ?? (currentTalposRow?.kaina_ai ?? null)
-    ?? (() => {
-      const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text;
-      return v ?? null;
-    })();
+  const persistedEstimateMap = useMemo(
+    () => parsePriceEstimateModeMap(currentTalposRow?.kaina_ai),
+    [currentTalposRow?.kaina_ai],
+  );
+  const activeEstimateText = localKainaAiText?.[predictionMode] ?? persistedEstimateMap[predictionMode] ?? null;
+  const legacyJsonEstimate = (() => {
+    const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text;
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  })();
+  const aiText: unknown = activeEstimateText ?? (predictionMode === 'math' ? legacyJsonEstimate : null);
 
-  /** Render structured slate data — delegates to shared MaterialSlateView */
+  /** Render material slate data. New template selections keep the raw template text. */
   const renderSlateData = (data: Record<string, any>) => {
+    if (typeof data?.raw_text === 'string' && data.raw_text.trim()) {
+      return (
+        <p className="text-[11px] whitespace-pre-wrap break-words leading-relaxed text-base-content/70">
+          {data.raw_text.trim()}
+        </p>
+      );
+    }
+
     const normalized = normalizeStructuredSlate(data) || data;
     if (!normalized || typeof normalized !== 'object') {
       return <p className="text-xs text-base-content/40">Nėra tinkamų šablono duomenų atvaizdavimui.</p>;
@@ -3369,7 +3525,8 @@ function TabMedziagos({
 
   /** Template picker overlay */
   const TemplatePicker = () => {
-    const available = sablonai.filter(s => s.structured_json);
+    const baseAvailable = sablonai.filter(s => String(s.raw_text || '').trim());
+    const available = baseAvailable.filter(s => matchesTemplateCapacity(s, templateCapacityFilter));
     return (
       <div
         className="fixed inset-0 z-[10000] flex items-center justify-center"
@@ -3385,11 +3542,37 @@ function TabMedziagos({
           <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
             <div>
               <h3 className="text-sm font-semibold text-base-content">Medžiagų šablonai</h3>
-              <p className="text-[11px] text-base-content/40 mt-0.5">{available.length} šablonai su struktūra</p>
+              <p className="text-[11px] text-base-content/40 mt-0.5">
+                {available.length} iš {baseAvailable.length} šablonų
+              </p>
             </div>
-            <button onClick={() => setShowTemplatePicker(false)} className="p-1.5 rounded-lg hover:bg-base-content/5 transition-colors">
-              <X className="w-4 h-4 text-base-content/40" />
-            </button>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 rounded-xl border border-base-content/10 bg-base-100 px-2.5 py-1.5 shadow-sm">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-base-content/35">V</span>
+                <input
+                  value={templateCapacityFilter}
+                  onChange={e => setTemplateCapacityFilter(sanitizeCapacityFilter(e.target.value))}
+                  inputMode="decimal"
+                  pattern="[0-9]*[.,]?[0-9]*"
+                  placeholder="talpa"
+                  className="w-16 bg-transparent text-xs font-medium text-base-content outline-none placeholder:text-base-content/25"
+                  aria-label="Filtruoti pagal talpą"
+                />
+                <span className="text-[10px] text-base-content/35">m3</span>
+                {templateCapacityFilter && (
+                  <button
+                    onClick={() => setTemplateCapacityFilter('')}
+                    className="rounded-md p-0.5 text-base-content/30 hover:bg-base-content/5 hover:text-base-content/55"
+                    title="Išvalyti filtrą"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              <button onClick={() => setShowTemplatePicker(false)} className="p-1.5 rounded-lg hover:bg-base-content/5 transition-colors">
+                <X className="w-4 h-4 text-base-content/40" />
+              </button>
+            </div>
           </div>
 
           {/* Scrollable card grid */}
@@ -3397,8 +3580,12 @@ function TabMedziagos({
             {available.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <FileText className="w-10 h-10 mb-3 text-base-content/15" />
-                <p className="text-sm font-medium text-base-content/40">Nėra šablonų su struktūra</p>
-                <p className="text-xs text-base-content/30 mt-1">Sukurkite šablonus Žaliavos → Medžiagų šablonai</p>
+                <p className="text-sm font-medium text-base-content/40">
+                  {templateCapacityFilter ? 'Nėra šablonų pagal šią talpą' : 'Nėra šablonų'}
+                </p>
+                <p className="text-xs text-base-content/30 mt-1">
+                  {templateCapacityFilter ? 'Pakeiskite V filtro reikšmę' : 'Sukurkite šablonus Žaliavos → Medžiagų šablonai'}
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -3457,7 +3644,7 @@ function TabMedziagos({
             </div>
           )}
 
-          {/* Template selected — show structured data */}
+          {/* Template selected — show raw template text */}
           {localSlate && mode === 'template' && (
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -3610,30 +3797,32 @@ function TabMedziagos({
             <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">AI kainos įvertinimas</p>
           </div>
 
-          {/* Prediction mode toggle */}
-	          <div className="flex items-center gap-1 mb-2 shrink-0">
-	            <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
-              {(['math', 'ai'] as const).map(m => (
+          {/* Price source mode toggle */}
+          <div className="flex items-center gap-1 mb-2 shrink-0">
+            <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
+              {(['current', 'math', 'ai'] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setPredictionMode(m)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${predictionMode === m ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${predictionMode === m ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
                   style={predictionMode === m ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
                 >
-                  {m === 'math' ? 'Matematinė' : 'Su DI'}
+                  {m === 'current' ? 'Dabartinė' : m === 'math' ? 'Matematinė' : 'Su DI'}
                 </button>
               ))}
-	            </div>
-	          </div>
-	          {predictionMode === 'ai' && priceSourceBreakdown && (
-	            <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
-	              Efektyvus šaltinis: AI {priceSourceBreakdown.ai}/{priceSourceBreakdown.total}
-	              {' · '}Math fallback {priceSourceBreakdown.math}/{priceSourceBreakdown.total}
-	              {' · '}Be prognozės {priceSourceBreakdown.none}/{priceSourceBreakdown.total}
-	            </div>
-	          )}
+            </div>
+          </div>
+          {predictionMode !== 'current' && priceSourceBreakdown && (
+            <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
+              {predictionMode === 'ai' ? (
+                <>DI prognozė {priceSourceBreakdown.ai}/{priceSourceBreakdown.total} · Be prognozės {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
+              ) : (
+                <>Matematinė prognozė {priceSourceBreakdown.math}/{priceSourceBreakdown.total} · Dabartinė {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
+              )}
+            </div>
+          )}
 
-	          {/* Estimate button */}
+          {/* Estimate button */}
           <button
             onClick={() => estimatePrice(predictionMode)}
             disabled={priceEstimating}
@@ -3655,8 +3844,22 @@ function TabMedziagos({
 
           {/* AI response text */}
           {aiText ? (
-            <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3">
-              <NormalizedDisplayRenderer value={aiText} />
+            <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01]">
+              <div className="sticky top-0 z-10 flex justify-center border-b border-base-content/8 bg-base-100/90 px-3 py-2 backdrop-blur-xl">
+                <span
+                  className="rounded-full border px-3 py-1 text-[10px] font-medium text-base-content/55 shadow-sm"
+                  style={{
+                    background: 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(246,246,244,0.9))',
+                    borderColor: 'rgba(0,0,0,0.08)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.85), 0 1px 2px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  {PRICE_ESTIMATE_RESPONSE_LABELS[predictionMode]}
+                </span>
+              </div>
+              <div className="p-3">
+                <NormalizedDisplayRenderer value={aiText} />
+              </div>
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-base-content/10 bg-base-content/[0.02]">

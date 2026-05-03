@@ -3,6 +3,7 @@ import { db, dbAdmin } from './database';
 import { appLogger } from './appLogger';
 
 const CHAT_VARIABLE_PREFIX = 'chat_';
+const CHAT_TEMPLATE_VARIABLE_KEY = 'chat_template';
 const isChatVariableKey = (key: string) => key.startsWith(CHAT_VARIABLE_PREFIX);
 
 export interface InstructionVariable {
@@ -132,7 +133,7 @@ export async function updateInstructionVariable(
   return data;
 }
 
-async function deleteInstructionVariable(variableKey: string): Promise<void> {
+async function deleteInstructionVariableRow(variableKey: string): Promise<void> {
   let { error } = await db
     .from('instruction_variables')
     .delete()
@@ -146,6 +147,49 @@ async function deleteInstructionVariable(variableKey: string): Promise<void> {
   }
 
   if (error) throw error;
+}
+
+export async function deleteInstructionVariable(
+  variableKey: string,
+  userId: string,
+  userEmail: string,
+  createVersion: boolean = true
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const normalizedKey = variableKey.trim();
+    if (!isChatVariableKey(normalizedKey)) {
+      return { success: false, error: 'Galima trinti tik chat_ instrukcijų kintamuosius' };
+    }
+    if (normalizedKey === CHAT_TEMPLATE_VARIABLE_KEY) {
+      return { success: false, error: 'chat_template yra pagrindinis šablonas ir negali būti trinamas' };
+    }
+
+    const existing = await getInstructionVariable(normalizedKey);
+    if (!existing) {
+      return { success: false, error: 'Kintamasis nerastas' };
+    }
+
+    await deleteInstructionVariableRow(normalizedKey);
+
+    if (createVersion) {
+      await createVersionSnapshot(userId, `Ištrinta: ${existing.variable_name || normalizedKey}`);
+    }
+
+    await appLogger.logSystem({
+      action: 'instruction_deleted',
+      userId,
+      userEmail,
+      metadata: {
+        variable_key: normalizedKey,
+        variable_name: existing.variable_name
+      }
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error deleting instruction variable:', error);
+    return { success: false, error: error.message || 'Nepavyko ištrinti kintamojo' };
+  }
 }
 
 async function upsertInstructionVariableFromSnapshot(
@@ -410,7 +454,7 @@ export async function revertToVersion(
 
     for (const variable of currentVariables) {
       if (!snapshotKeys.has(variable.variable_key)) {
-        await deleteInstructionVariable(variable.variable_key);
+        await deleteInstructionVariableRow(variable.variable_key);
       }
     }
 
