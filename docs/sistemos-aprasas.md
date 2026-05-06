@@ -45,7 +45,13 @@ Administratoriai gali valdyti DI agento instrukcijas, naudotojus, dervų failus,
 
 Puslapis `Analizė` skirtas didelių dokumentų įkėlimui, nuskaitymui ir struktūrizuotam duomenų ištraukimui per LlamaParse ir LlamaCloud Extract.
 
-Dokumentas įkeliamas į Directus, siunčiamas į LlamaCloud, po apdorojimo išsaugomas tekstas, Markdown, JSON, puslapių ir vaizdų metaduomenys. Tada naudotojas gali konfigūruoti ištraukimo parametrus ir gauti struktūrizuotą rezultatą.
+Dokumentas įkeliamas į Directus, siunčiamas į LlamaCloud, po apdorojimo išsaugomas tekstas, Markdown, JSON, puslapių ir vaizdų metaduomenys. Tada naudotojas gali peržiūrėti originalų failą, pasirinkti Extract konfigūraciją ir gauti rezultatą `Markdown`, `Tekstas`, `JSON` arba `Vaizdai` formatais.
+
+Analizės UI sudaryta iš trijų pagrindinių dalių:
+
+- automatiškai kraunamos istorijos ir kompaktiško `Įkelti naują` veiksmo;
+- nepriklausomos dokumento peržiūros, kuri naudoja originalų Directus failą;
+- konfigūracijos ir rezultatų srities, kurioje nustatoma ištraukimo schema, tikslumas, apimtis ir rezultato formatas.
 
 ## Techninė architektūra
 
@@ -95,10 +101,56 @@ Administratorius įkelia dervų failus puslapyje `Derva` ir juos vektorizuoja. T
 ### Dokumentų analizės srautas
 
 1. Naudotojas įkelia dokumentą puslapyje `Analizė`.
-2. Failas išsaugomas Directus ir siunčiamas į LlamaCloud per programos proxy.
-3. Sistema laukia apdorojimo rezultato ir saugo ištrauktą turinį.
-4. Naudotojas gali matyti Markdown, tekstą, JSON ir vaizdų metaduomenis.
-5. Naudotojas gali paleisti struktūrizuotą Extract veiksmą su pasirinktais parametrais.
+2. Failas išsaugomas Directus failų saugykloje, o `llamaparse_files` įraše išsaugoma originalaus failo nuoroda.
+3. Programa rodo peržiūrą iš Directus failo ir leidžia pasirinkti LlamaParse paruošimo lygį.
+4. Failas siunčiamas į LlamaCloud per programos proxy.
+5. Sistema laukia apdorojimo rezultato ir saugo Markdown, tekstą, JSON, puslapius bei vaizdų metaduomenis.
+6. Naudotojas gali paleisti struktūrizuotą Extract veiksmą su pasirinktais parametrais.
+7. Extract rezultatas saugomas `llamaparse_extractions` kolekcijoje ir rodomas keliais formatais.
+
+### Dokumentų analizės konfigūracijos modelis
+
+Parse konfigūracija nustato, kaip dokumentas paruošiamas:
+
+- `cost_effective` - ekonomiškas tekstiniams dokumentams;
+- `agentic` - dokumentams su vaizdais, diagramomis ir lentelėmis;
+- `agentic_plus` - maksimaliam tikslumui;
+- `fast` - greitam erdvinio teksto nuskaitymui.
+
+Extract konfigūracija nustato, kaip iš paruošto dokumento paimamas atsakymas:
+
+- `tier` - `agentic` arba `cost_effective`;
+- `extraction_target` - visas dokumentas, kiekvienas puslapis arba lentelės eilutės;
+- `data_schema` - automatiškai suformuota schema, naudotojo įvesti laukai arba pilnas JSON schema objektas;
+- `system_prompt` - sistemos instrukcijos, sudarytos iš režimo aprašymo, naudotojo klausimo ir papildomų nustatymų;
+- `target_pages`, `max_pages`, `parse_config_id`, `extract_version`, `cite_sources`, `confidence_scores` - papildomi LlamaCloud Extract parametrai.
+
+### Diff skaitytojui: analizės pakeitimų segmentai
+
+`App.tsx` perduoda pagrindinio šoninio meniu būseną į `AnalizeInterface`, kad analizės puslapis galėtų derinti vidinio ir pagrindinio šoninių meniu išdėstymą.
+
+`types/index.ts` aprašo `ParsedDocument`. Laukas `original_file_id` reikalingas stabiliai dokumento peržiūrai, nes Directus relacijos kartais grąžinamos kaip objektas, o kartais kaip ID.
+
+`lib/analizeService.ts` yra Directus adapteris:
+
+- įkelia originalų failą;
+- sukuria ir atnaujina `llamaparse_files` įrašus;
+- normalizuoja Directus laukų pavadinimus į UI naudojamą `ParsedDocument`;
+- saugo Extract rezultatus į `llamaparse_extractions`.
+
+`lib/llamaParseService.ts` yra LlamaParse paruošimo klientas. Jis įkelia failą arba Directus failo nuorodą į LlamaCloud, pradeda parse job ir normalizuoja rezultatą.
+
+`lib/llamaExtractService.ts` yra LlamaCloud Extract klientas. Jis sukuria Extract job su `file_input` ir `configuration`, tada tikrina job būseną iki rezultato.
+
+`components/AnalizeInterface.tsx` yra pagrindinis UI valdiklis:
+
+- kairėje rodo įkėlimą, istoriją, paiešką ir parse žingsnius;
+- viduryje rodo dokumento peržiūrą iš Directus failo;
+- dešinėje rodo Extract konfigūraciją ir rezultatus;
+- įsimena pasirinktą dokumentą ir peržiūros failą naršyklės saugykloje;
+- atskiria `Markdown`, `Tekstas`, `JSON` ir `Vaizdai` rezultatų rodymą.
+
+`Tekstas` rezultato formatas nėra atskiras LlamaCloud rezultatas. Jis generuojamas UI pusėje iš JSON atsakymo pašalinant JSON ir Markdown žymes, kad naudotojas galėtų kopijuoti paprastą tekstą. `JSON` formatas paliekamas techniniam tikrinimui, o `Markdown` - patogiam skaitymui.
 
 ## Duomenų bazė
 

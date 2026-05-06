@@ -196,7 +196,7 @@ claude-sonnet-4-20250514
 
 ## LlamaParse ir dokumentų analizė
 
-Dokumentų analizės funkcija naudoja Directus ir LlamaCloud.
+Dokumentų analizės funkcija naudoja Directus, LlamaCloud LlamaParse ir LlamaCloud Extract. Naudotojo sąsajoje ši dalis vadinama `Dokumentų analizė`.
 
 Pagrindinės kolekcijos:
 
@@ -205,12 +205,81 @@ Pagrindinės kolekcijos:
 
 Svarbūs principai:
 
-- Dokumentas pirmiausia įkeliamas į Directus.
-- Tada per programos proxy siunčiamas į LlamaCloud.
-- Parse rezultatas saugomas atgal į Directus.
-- Extract rezultatai saugomi atskiroje kolekcijoje.
+- Dokumentas pirmiausia įkeliamas į Directus failų saugyklą.
+- `llamaparse_files.original_file` saugo nuorodą į originalų Directus failą. Programos tipuose taip pat naudojamas `original_file_id`, kad peržiūra veiktų ir tada, kai Directus grąžina tik ID.
+- Tada failas siunčiamas į LlamaCloud per programos proxy.
+- Parse rezultatas saugomas atgal į `llamaparse_files`: Markdown, tekstas, JSON, puslapių skaičius, vaizdų metaduomenys, parse lygis ir naudotojo instrukcija.
+- Extract rezultatai saugomi `llamaparse_extractions`: job ID, būsena, konfigūracija, rezultatas, metaduomenys ir klaidos tekstas.
 
 Jei LlamaCloud grąžina timeout arba pending būseną, tai nebūtinai reiškia klaidą. Dideli dokumentai gali būti apdorojami ilgiau.
+
+### Analizė puslapio UI ir nustatymai
+
+Kairėje pusėje istorija kraunama automatiškai pagal prisijungusį naudotoją. Atskiro istorijos mygtuko nėra. Paieška filtruoja jau įkeltus dokumentus. Aktyvus įrašas pažymimas kairiu mėlynu akcentu.
+
+`Įkelti naują` yra kompaktiškas įkėlimo veiksmas. Po failo pasirinkimo programa:
+
+1. įkelia originalų failą į Directus;
+2. sukuria `llamaparse_files` įrašą;
+3. įsimena pasirinktą dokumentą ir originalaus failo ID naršyklės `localStorage`;
+4. parodo failo peržiūrą ir paruošimo būseną.
+
+Apdorojimo lygiai:
+
+- `Ekonomiškas` - `cost_effective`.
+- `Agentinis` - `agentic`.
+- `Agentinis+` - `agentic_plus`.
+- `Greitas` - `fast`.
+
+Extract konfigūracija:
+
+- `Tikslus` - `agentic`.
+- `Ekonomiškas` - `cost_effective`.
+- `Visas dokumentas` - `per_doc`.
+- `Kiekvienas puslapis` - `per_page`.
+- `Lentelės eilutės` - `per_table_row`.
+
+Rezultato struktūros režimai:
+
+- `Automatiškai` sukuria schemą pagal naudotojo klausimą.
+- `Įvesti` leidžia nurodyti laukų pavadinimus, tipus ir aprašymus.
+- `JSON` leidžia įvesti pilną JSON schema objektą.
+
+Papildomi nustatymai perduodami į LlamaCloud Extract konfigūraciją: citatos, patikimumo balai, puslapių rėžiai, maksimalus puslapių skaičius, Extract versija, parse config ID ir papildomas system prompt.
+
+### Peržiūros veikimo principas
+
+Dokumento peržiūra remiasi originaliu Directus failu, o ne LlamaCloud rezultatu. Programa pirmiausia ieško `original_file_id`, tada `original_file.id`, tada naršyklėje įsiminto failo ID. Tai padaryta tam, kad peržiūra išliktų veikianti grįžus iš istorijos, po Extract rezultato arba po puslapio perkrovimo.
+
+PDF ir biuro dokumentai peržiūrai siunčiami į įterptą Google Docs Viewer URL, o vaizdai ir tekstiniai failai rodomi tiesiogiai iš Directus asset URL. Jei peržiūra neveikia, pirmiausia reikia tikrinti:
+
+- ar `original_file` yra užpildytas Directus įraše;
+- ar Directus failas pasiekiamas su naudojamu access token;
+- ar failo MIME tipas arba plėtinys patenka į palaikomus tipus;
+- ar naršyklė neužblokavo išorinio įterpto viewer.
+
+### Diff skaitytojui: ką reiškia pagrindiniai kodo segmentai
+
+`src/types/index.ts`:
+
+- `ParsedDocument.original_file_id` pridėtas tam, kad UI turėtų stabilų failo ID net tada, kai Directus relacija negrąžinama kaip pilnas objektas.
+
+`src/lib/analizeService.ts`:
+
+- `normalizeFile` suvienodina Directus atsakymą ir ištraukia originalaus failo ID.
+- `toFileInsert` ir `toFileUpdate` mapina UI laukus į Directus laukus, pavyzdžiui `parse_tier`, `parse_job_id`, `parse_user_prompt`.
+- `fetchParsedDocuments` ir `getParsedDocument` parsiunčia dokumentus su originalaus failo metaduomenimis.
+
+`src/components/AnalizeInterface.tsx`:
+
+- parse žingsniai (`PARSE_STEPS`) valdo kairėje rodomą dokumento paruošimo būseną.
+- `PREVIEW_FILE_CACHE_KEY` ir `SELECTED_DOCUMENT_CACHE_KEY` saugo peržiūros failą ir paskutinį pasirinktą dokumentą naršyklėje.
+- `getOriginalFileId`, `rememberPreviewFileId` ir `getRememberedPreviewFileId` sudaro peržiūros atsarginį kelią.
+- `handleFileSelect` iš karto įkelia failą į Directus, sukuria istorijos įrašą ir paruošia peržiūrą.
+- `handleRunExtract` sudaro Extract konfigūraciją iš UI pasirinkimų ir paleidžia LlamaCloud Extract.
+- `resultToPlainText` naudojamas `Markdown` rezultatų skaitomai versijai.
+- `resultToRawText` naudojamas `Tekstas` rezultatų versijai: jis pradeda nuo JSON atsakymo, pašalina JSON ir Markdown ženklus ir rodo likusį tekstą.
+- rezultato formatų juosta (`Markdown`, `Tekstas`, `JSON`, `Vaizdai`) naudoja paprastą pabraukimą aktyviam formatui, be kapsulinių kortelių.
 
 ## Directus administravimas
 

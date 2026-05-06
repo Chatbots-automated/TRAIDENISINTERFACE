@@ -88,7 +88,16 @@ export interface DirectusUploadInput {
   fileSize?: number;
 }
 
-const DEFAULT_PARSE_EXPANDS = ['markdown', 'text', 'items', 'metadata'];
+const DEFAULT_PARSE_EXPANDS = ['markdown', 'text', 'items', 'job_metadata'];
+const PARSE_RESULT_EXPAND_FALLBACKS = [
+  DEFAULT_PARSE_EXPANDS,
+  ['markdown', 'text', 'job_metadata'],
+  ['text', 'job_metadata'],
+  ['markdown', 'job_metadata'],
+  ['text'],
+  ['markdown'],
+  [],
+];
 
 function contentToString(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -130,6 +139,15 @@ function normalizeParseResult(data: ParseResult): ParseResult {
     result_content_text: text,
     result_content_json: json,
   };
+}
+
+function normalizeImagesMetadata(value: unknown): ImageMetadata[] {
+  if (Array.isArray(value)) return value as ImageMetadata[];
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record.images)) return record.images as ImageMetadata[];
+  }
+  return [];
 }
 
 // ============================================================================
@@ -232,7 +250,7 @@ export async function startParse(
  *  - markdown
  *  - text
  *  - items
- *  - metadata
+ *  - job_metadata
  *  - images_content_metadata
  */
 export async function getParseResult(
@@ -244,7 +262,10 @@ export async function getParseResult(
     params.append('expand', e);
   }
 
-  const res = await fetch(`${API_BASE}/api/v2/parse/${jobId}?${params.toString()}`, {
+  const query = params.toString();
+  const url = `${API_BASE}/api/v2/parse/${jobId}${query ? `?${query}` : ''}`;
+
+  const res = await fetch(url, {
     method: 'GET',
     headers: authHeaders(),
   });
@@ -257,12 +278,28 @@ export async function getParseResult(
   return normalizeParseResult(await res.json());
 }
 
+async function getCompletedParseResult(jobId: string): Promise<ParseResult> {
+  let lastError: unknown;
+
+  for (const expand of PARSE_RESULT_EXPAND_FALLBACKS) {
+    try {
+      return await getParseResult(jobId, expand);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Rezultato gauti nepavyko');
+}
+
 /**
  * Get extracted images metadata (presigned URLs) for a completed parse job.
  */
 export async function getParseImages(jobId: string): Promise<ImageMetadata[]> {
   const result = await getParseResult(jobId, ['images_content_metadata']);
-  return result.images_content_metadata || [];
+  return normalizeImagesMetadata(result.images_content_metadata);
 }
 
 /**
@@ -276,12 +313,13 @@ export async function pollUntilDone(
   maxAttempts: number = 120 // 6 minutes max in the foreground UI
 ): Promise<ParseResult> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const result = await getParseResult(jobId, DEFAULT_PARSE_EXPANDS);
+    const statusResult = await getParseResult(jobId, []);
 
-    const status = result.status || result.job?.status || result.metadata?.status || '';
+    const status = statusResult.status || statusResult.job?.status || statusResult.metadata?.status || '';
     onProgress?.(status);
 
     if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'PARTIAL_SUCCESS') {
+      const result = await getCompletedParseResult(jobId);
       // Fetch images too
       try {
         const images = await getParseImages(jobId);
@@ -293,7 +331,7 @@ export async function pollUntilDone(
     }
 
     if (status === 'ERROR' || status === 'FAILED' || status === 'CANCELLED') {
-      throw new Error(result.error_message || 'Dokumento paruošti nepavyko');
+      throw new Error(statusResult.error_message || 'Dokumento paruošti nepavyko');
     }
 
     // Wait before next poll

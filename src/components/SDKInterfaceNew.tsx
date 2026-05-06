@@ -2085,6 +2085,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     return parsed;
   };
 
+  const buildComponentsBulletlistYaml = (componentsList: string): string => {
+    const trimmed = componentsList.trim();
+    if (!trimmed) return '';
+    if (/^components_bulletlist\s*:/m.test(trimmed)) return trimmed;
+
+    return [
+      'components_bulletlist: |',
+      ...trimmed.split('\n').map(line => `  ${line}`),
+    ].join('\n');
+  };
+
   /**
    * Replace a single key's value in a YAML string without affecting other keys.
    * Handles both simple (key: value) and block scalar (key: |\n  line1\n  line2) formats.
@@ -2974,7 +2985,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         model: claudeModel,
         max_tokens: 4000,
         system: promptVar.content,
-        messages: [{ role: 'user', content: componentsList }],
+        messages: [{ role: 'user', content: buildComponentsBulletlistYaml(componentsList) }],
       });
 
       const text = response.content

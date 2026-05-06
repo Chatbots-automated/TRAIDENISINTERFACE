@@ -150,17 +150,78 @@ Jei atnaujinate pirmą arba antrą analizę, rekomenduojama atnaujinti ir treči
 
 ## Analizė puslapis
 
-`Analizė` puslapis skirtas dokumentų nuskaitymui ir duomenų ištraukimui.
+`Analizė` puslapis skirtas dokumentų nuskaitymui, dokumento peržiūrai ir duomenų ištraukimui iš įkelto failo. Puslapio antraštė rodoma kaip `Dokumentų analizė`.
 
 ### Dokumento įkėlimas
 
-1. Įkelkite dokumentą kairėje pusėje.
-2. Palaukite, kol sistema jį apdoros.
-3. Peržiūrėkite rezultatą `Markdown`, `Tekstas`, `JSON` arba `Vaizdai` skiltyse.
-4. Jei reikia, dešinėje pusėje sukonfigūruokite struktūrizuotą duomenų ištraukimą.
-5. Paleiskite ištraukimą ir peržiūrėkite rezultatą.
+1. Kairėje pusėje paspauskite kompaktišką veiksmą `Įkelti naują` arba užtempkite failą ant šios zonos.
+2. Failas iš karto įkeliamas į Directus ir atsiranda dokumentų istorijoje.
+3. Sistema parodo pasirinktą failą, jo būseną ir apdorojimo žingsnius.
+4. Jei dokumentas dar neapdorotas, pasirinkite apdorojimo lygį ir spauskite `Paruošti dokumentą`.
+5. Kai dokumentas paruoštas, dešinėje pusėje atsiranda ištraukimo konfigūracija.
 
-`Istorija` mygtukas leidžia atidaryti anksčiau apdorotus dokumentus, jei tokių yra.
+Palaikomi failai: PDF, DOCX, PPTX, XLSX, HTML, JPG, PNG, XML, EPUB, RTF, CSV ir TXT.
+
+### Istorija ir dokumento pasirinkimas
+
+Dokumentų istorija kraunama automatiškai. Atskiro `Istorija` mygtuko nebėra. Jei istorijoje yra dokumentų, jie rodomi kairėje po paieška.
+
+Istorijos kortelėje matomas failo pavadinimas, apdorojimo lygis, būsena ir data. Aktyvus dokumentas pažymimas kairiu mėlynu akcentu. Pasirinkimas įsimenamas naršyklėje, todėl grįžus į puslapį sistema bando atidaryti paskutinį naudotą dokumentą.
+
+### Dokumento peržiūra
+
+Vidurinė puslapio dalis skirta failo peržiūrai. Peržiūra veikia nepriklausomai nuo rezultatų skydelio:
+
+- PDF ir biuro dokumentai rodomi per įterptą dokumentų peržiūros langą.
+- Vaizdai rodomi tiesiogiai.
+- Tekstiniai failai rodomi įterptame tekstiniame lange.
+- Jei dokumentas neturi originalaus failo arba failas nepalaikomas peržiūrai, peržiūros vietoje rodoma tuščia arba informacinė būsena.
+
+Tarp peržiūros ir konfigūracijos yra atskiras vertikalus skyriklis, kad būtų aišku, kur baigiasi dokumentas ir prasideda duomenų ištraukimas.
+
+### Dokumento paruošimo konfigūracija
+
+Prieš struktūrizuotą ištraukimą dokumentas turi būti paruoštas. Galimi apdorojimo lygiai:
+
+- `Ekonomiškas` - greitas, tinkamas tekstiniams dokumentams.
+- `Agentinis` - geriau tinka vaizdams, diagramoms ir lentelėms.
+- `Agentinis+` - naudojamas, kai reikalingas maksimalus tikslumas.
+- `Greitas` - skirtas tik erdviniam tekstui.
+
+Papildomose instrukcijose galima įrašyti pastabas, kaip dokumentą ruošti. Šios instrukcijos saugomos prie dokumento.
+
+### Ištraukimo konfigūracija
+
+Kai dokumentas paruoštas, dešinėje rodoma vientisa `Konfiguracija` skiltis. Ji susideda iš kelių dalių:
+
+- `Ką norite sužinoti apie dokumentą?` - pagrindinis klausimas arba instrukcijos ištraukimui.
+- `Rezultato struktūra` - nustato, kaip sistema turi suformuoti atsakymo JSON struktūrą.
+- `Parametrai` - nustato tikslumą, ištraukimo apimtį ir papildomus nustatymus.
+
+Rezultato struktūros pasirinkimai:
+
+- `Automatiškai` - sistema pati parenka JSON laukus pagal klausimą.
+- `Įvesti` - naudotojas rankiniu būdu nurodo laukus, jų tipus ir paaiškinimus.
+- `JSON` - naudotojas pats įveda techninę JSON schemą.
+
+Parametrai:
+
+- `Tikslus` / `Ekonomiškas` - Extract tikslumo lygis.
+- `Ištraukimo apimtis` - `Visas dokumentas`, `Kiekvienas puslapis` arba `Lentelės eilutės`.
+- `Papildomi nustatymai` - citatos, patikimumo balai, puslapiai, maksimalus puslapių skaičius, Extract versija, parse config ID ir papildomos sistemos instrukcijos.
+
+### Rezultatų peržiūra
+
+Paspaudus `Analizuoti`, vyksta struktūrizuotas ištraukimas. Kol jis vyksta, rodoma centrinė krovimo būsena su besikeičiančiu tekstu. Baigus, automatiškai atidaroma `Rezultatai` skiltis.
+
+Rezultatų formatai:
+
+- `Markdown` - patogiai skaitomas atsakymas su antraštėmis ir sąrašo struktūra.
+- `Tekstas` - tekstinė versija be JSON ženklų; skirta paprastam kopijavimui.
+- `JSON` - pilnas techninis rezultatas.
+- `Vaizdai` - su dokumentu susiję vaizdai, jei jie buvo rasti.
+
+Kopijavimo mygtukas kopijuoja aktyvaus formato turinį.
 
 ## Nustatymai
 
