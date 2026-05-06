@@ -74,6 +74,7 @@ export interface ParsedDocument {
     filesize?: number;
     uploaded_on?: string;
   } | string | null;
+  original_file_id?: string | null;
   file_name: string;
   file_type: string;
   file_size: number;

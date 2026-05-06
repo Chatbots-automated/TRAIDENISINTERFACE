@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Upload, FileText, Search, Trash2, X, ChevronLeft, ChevronRight,
+  Plus, FileText, Search, Trash2, X, PanelLeft, PanelLeftClose,
   AlertCircle, CheckCircle, Loader2, Image,
   Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
-  ClipboardCopy, Braces, SlidersHorizontal, History, FolderOpen
+  ClipboardCopy, SlidersHorizontal
 } from 'lucide-react';
 import type { AppUser, ParsedDocument, ParseTier } from '../types';
 import { parseDirectusDocument, parseDocument as llamaParse, pollUntilDone } from '../lib/llamaParseService';
@@ -51,10 +51,31 @@ const EXTRACT_TIERS: { value: ExtractTier; label: string }[] = [
   { value: 'cost_effective', label: 'Ekonomiškas' },
 ];
 
+const DEFAULT_RAW_EXTRACT_SCHEMA = `{
+  "type": "object",
+  "properties": {
+    "atsakymas": {
+      "type": "string",
+      "description": "Aiškus atsakymas pagal dokumento turinį."
+    }
+  },
+  "required": ["atsakymas"]
+}`;
+
+const EXTRACT_LOADING_MESSAGES = [
+  'Skaitomas dokumento kontekstas',
+  'Ieškoma susijusių vietų',
+  'Formuojamas atsakymas',
+  'Tikrinama struktūra',
+];
+
+const PREVIEW_FILE_CACHE_KEY = 'traidenis_analize_preview_files';
+const SELECTED_DOCUMENT_CACHE_KEY = 'traidenis_analize_selected_document';
+
 type ViewTab = 'markdown' | 'text' | 'json' | 'images';
 type ParseStepKey = 'selected' | 'directus' | 'llama_upload' | 'parse_job' | 'result';
 type StepStatus = 'waiting' | 'active' | 'done' | 'error';
-type ExtractSchemaMode = 'auto' | 'fields';
+type ExtractSchemaMode = 'auto' | 'fields' | 'raw';
 type ExtractFieldType = 'string' | 'number' | 'boolean' | 'array' | 'object';
 type ExtractPanelTab = 'config' | 'results';
 
@@ -83,6 +104,7 @@ const DEFAULT_PARSE_STEPS = PARSE_STEPS.map(step => ({
 interface AnalizeInterfaceProps {
   user: AppUser;
   projectId: string;
+  mainSidebarCollapsed?: boolean;
 }
 
 function extractionToJob(run: LlamaParseExtraction): ExtractJob {
@@ -198,8 +220,65 @@ function getFieldDescriptionPlaceholder(type: ExtractFieldType): string {
 }
 
 function getOriginalFileId(doc?: ParsedDocument | null): string | null {
+  if (doc?.original_file_id) return doc.original_file_id;
   if (!doc?.original_file) return null;
   return typeof doc.original_file === 'string' ? doc.original_file : doc.original_file.id;
+}
+
+function readPreviewFileCache(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(PREVIEW_FILE_CACHE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function rememberPreviewFileId(documentId: string, fileId: string | null) {
+  if (!fileId) return;
+  try {
+    const cache = readPreviewFileCache();
+    cache[documentId] = fileId;
+    localStorage.setItem(PREVIEW_FILE_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Preview still works from live Directus data when storage is unavailable.
+  }
+}
+
+function getRememberedPreviewFileId(documentId?: string | null): string | null {
+  if (!documentId) return null;
+  return readPreviewFileCache()[documentId] || null;
+}
+
+function readSelectedDocumentCache(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(SELECTED_DOCUMENT_CACHE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function rememberSelectedDocumentId(userId: string, documentId: string) {
+  try {
+    const cache = readSelectedDocumentCache();
+    cache[userId] = documentId;
+    localStorage.setItem(SELECTED_DOCUMENT_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // History still opens manually when storage is unavailable.
+  }
+}
+
+function forgetSelectedDocumentId(userId: string) {
+  try {
+    const cache = readSelectedDocumentCache();
+    delete cache[userId];
+    localStorage.setItem(SELECTED_DOCUMENT_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Nothing to clear when storage is unavailable.
+  }
+}
+
+function getRememberedSelectedDocumentId(userId: string): string | null {
+  return readSelectedDocumentCache()[userId] || null;
 }
 
 function isMissingDirectusFileError(error: unknown): boolean {
@@ -219,11 +298,6 @@ function getPreviewKindFromMeta(fileName = '', mime = '', hasFile = false): 'pdf
   if (normalizedMime.startsWith('text/') || /\.(txt|csv|html?|xml|md|json|log|rtf)$/i.test(normalizedName)) return 'text';
   if (/\.(docx?|xlsx?|pptx?)$/i.test(normalizedName)) return 'office';
   return 'file';
-}
-
-function getPreviewKind(doc?: ParsedDocument | null): 'pdf' | 'image' | 'text' | 'office' | 'none' {
-  const kind = getPreviewKindFromMeta(doc?.file_name, doc?.file_type, Boolean(doc && getOriginalFileId(doc)));
-  return kind === 'file' ? 'none' : kind;
 }
 
 function formatResultLabel(key: string): string {
@@ -272,13 +346,55 @@ function resultToPlainText(value: unknown, indent = 0): string {
   return `${prefix}${String(value)}`;
 }
 
-export default function AnalizeInterface({ user, projectId }: AnalizeInterfaceProps) {
+function stripMarkdownForText(value: string): string {
+  return value
+    .replace(/```[\s\S]*?```/g, block => block.replace(/```[a-zA-Z0-9_-]*\n?/g, '').replace(/```/g, ''))
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .split('\n')
+    .map(line => line
+      .trim()
+      .replace(/^#{1,6}\s+/, '')
+      .replace(/^>\s?/, '')
+      .replace(/^[-*+]\s+/, '')
+      .replace(/^\d+[.)]\s+/, '')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/__([^_]+)__/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/_([^_]+)_/g, '$1')
+      .replace(/~~([^~]+)~~/g, '$1')
+    )
+    .filter(Boolean)
+    .join('\n');
+}
+
+function resultToRawText(value: unknown): string {
+  if (!isMeaningfulResultValue(value)) return '';
+  const source = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+
+  return stripMarkdownForText(source)
+    .split('\n')
+    .map(line => line
+      .trim()
+      .replace(/[{}[\],]/g, '')
+      .replace(/^"[^"]+"\s*:\s*/, '')
+      .replace(/^"/, '')
+      .replace(/"$/, '')
+      .replace(/\\"/g, '"')
+      .trim()
+    )
+    .filter(line => line && line !== ':' && line !== 'null')
+    .join('\n');
+}
+
+export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed = false }: AnalizeInterfaceProps) {
   void projectId;
   // --- Document list ---
   const [documents, setDocuments] = useState<ParsedDocument[]>([]);
-  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsLoading, setDocsLoading] = useState(true);
   const [docsError, setDocsError] = useState('');
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
 
@@ -286,6 +402,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [selectedDoc, setSelectedDoc] = useState<ParsedDocument | null>(null);
   const [selectedDocFull, setSelectedDocFull] = useState<ParsedDocument | null>(null);
   const [docLoading, setDocLoading] = useState(false);
+  const [previewFallbackFileId, setPreviewFallbackFileId] = useState<string | null>(null);
 
   // --- Upload & parsing ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -300,6 +417,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const failedResumeIdsRef = useRef<Set<string>>(new Set());
+  const selectedFileUploadSeqRef = useRef(0);
 
   // --- Result viewer ---
   const [resultViewTab, setResultViewTab] = useState<ViewTab>('markdown');
@@ -315,6 +433,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [extractVersion, setExtractVersion] = useState('latest');
   const [extractGoal, setExtractGoal] = useState('');
   const [extractSchemaMode, setExtractSchemaMode] = useState<ExtractSchemaMode>('auto');
+  const [rawExtractSchemaText, setRawExtractSchemaText] = useState(DEFAULT_RAW_EXTRACT_SCHEMA);
   const [extractFields, setExtractFields] = useState<ExtractFieldDraft[]>([
     { id: 'field_1', name: '', description: '', type: 'string', required: false },
   ]);
@@ -324,8 +443,9 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const [extractStatus, setExtractStatus] = useState('');
   const [extractError, setExtractError] = useState('');
   const [extractResult, setExtractResult] = useState<ExtractJob | null>(null);
-  const [extractionRuns, setExtractionRuns] = useState<LlamaParseExtraction[]>([]);
+  const [_extractionRuns, setExtractionRuns] = useState<LlamaParseExtraction[]>([]);
   const [extractPanelTab, setExtractPanelTab] = useState<ExtractPanelTab>('config');
+  const [extractLoadingMessageIndex, setExtractLoadingMessageIndex] = useState(0);
 
   // --- Image lightbox ---
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -337,6 +457,17 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       setDocsError('');
       const docs = await fetchParsedDocuments(user.id);
       setDocuments(docs);
+      docs.forEach(doc => rememberPreviewFileId(doc.id, getOriginalFileId(doc)));
+      const rememberedDocId = getRememberedSelectedDocumentId(user.id);
+      const rememberedDoc = rememberedDocId ? docs.find(doc => doc.id === rememberedDocId) : null;
+      if (rememberedDoc) {
+        setSelectedDoc(prev => prev || rememberedDoc);
+        setPreviewFallbackFileId(prev => (
+          prev
+          || getOriginalFileId(rememberedDoc)
+          || getRememberedPreviewFileId(rememberedDoc.id)
+        ));
+      }
       setHistoryLoaded(true);
     } catch (err: unknown) {
       console.error('Failed to load documents:', err);
@@ -347,7 +478,29 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     }
   }, [user.id]);
 
+  useEffect(() => {
+    loadDocuments();
+  }, [loadDocuments]);
+
+  const selectDocument = useCallback((doc: ParsedDocument) => {
+    setSelectedDoc(doc);
+    setSelectedDocFull(prev => (prev?.id === doc.id ? prev : null));
+    setPreviewFallbackFileId(getOriginalFileId(doc) || getRememberedPreviewFileId(doc.id));
+    rememberSelectedDocumentId(user.id, doc.id);
+  }, [user.id]);
+
   const selectedDocId = selectedDoc?.id;
+
+  useEffect(() => {
+    if (!extractLoading) {
+      setExtractLoadingMessageIndex(0);
+      return;
+    }
+    const interval = window.setInterval(() => {
+      setExtractLoadingMessageIndex(index => (index + 1) % EXTRACT_LOADING_MESSAGES.length);
+    }, 1400);
+    return () => window.clearInterval(interval);
+  }, [extractLoading]);
 
   const loadExtractionHistory = useCallback(async (id: string) => {
     try {
@@ -367,7 +520,10 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     try {
       setDocLoading(true);
       const doc = await getParsedDocument(id);
+      const fileId = getOriginalFileId(doc);
       setSelectedDocFull(doc);
+      setPreviewFallbackFileId(fileId || getRememberedPreviewFileId(doc.id));
+      rememberPreviewFileId(doc.id, fileId);
     } catch (err) {
       console.error('Failed to load document:', err);
     } finally {
@@ -400,14 +556,18 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     });
 
     const fullDoc = await getParsedDocument(documentId);
+    const fileId = getOriginalFileId(fullDoc);
+    setPreviewFallbackFileId(fileId || getRememberedPreviewFileId(fullDoc.id));
+    rememberPreviewFileId(fullDoc.id, fileId);
     setDocuments(prev => {
       const withoutDuplicate = prev.filter(item => item.id !== fullDoc.id);
       return [fullDoc, ...withoutDuplicate];
     });
     setSelectedDoc(fullDoc);
     setSelectedDocFull(fullDoc);
+    rememberSelectedDocumentId(user.id, fullDoc.id);
     return fullDoc;
-  }, []);
+  }, [user.id]);
 
   const removeHistoryRecord = useCallback(async (documentId: string, message: string) => {
     await deleteParsedDocument(documentId).catch((error) => {
@@ -417,14 +577,16 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     setDocuments(prev => prev.filter(item => item.id !== documentId));
     setSelectedDoc(prev => (prev?.id === documentId ? null : prev));
     setSelectedDocFull(prev => (prev?.id === documentId ? null : prev));
+    forgetSelectedDocumentId(user.id);
     setExtractionRuns([]);
     setExtractResult(null);
     setParseSteps(DEFAULT_PARSE_STEPS);
     setParseStatus('idle');
+    setPreviewFallbackFileId(null);
     setParseStatusText('');
     setParseError('');
     setDocsError(message);
-  }, []);
+  }, [user.id]);
 
   const resumePendingParse = useCallback(async (doc: ParsedDocument) => {
     if (!doc.job_id || resumingParseId === doc.id) return;
@@ -476,6 +638,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   useEffect(() => {
     if (!selectedDocId) {
       setSelectedDocFull(null);
+      setPreviewFallbackFileId(null);
       setExtractionRuns([]);
       setExtractResult(null);
       setExtractPanelTab('config');
@@ -519,23 +682,79 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   // FILE UPLOAD & PARSING
   // ===========================================================================
 
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
+    const uploadSeq = selectedFileUploadSeqRef.current + 1;
+    selectedFileUploadSeqRef.current = uploadSeq;
     setSelectedFile(file);
-    setParseStatus('idle');
-    setParseStatusText('Failas pasirinktas. Paleiskite analizę.');
+                    setSelectedDoc(null);
+                    setSelectedDocFull(null);
+                    setPreviewFallbackFileId(null);
+                    forgetSelectedDocumentId(user.id);
+                    setExtractionRuns([]);
+    setExtractResult(null);
+    setExtractPanelTab('config');
+    setParseStatus('uploading');
+    setParseStatusText('Įkeliama į Directus...');
     setParseError('');
     setParseSteps(DEFAULT_PARSE_STEPS.map(step => ({
       ...step,
-      status: step.key === 'selected' ? 'done' : 'waiting',
-      detail: step.key === 'selected' ? `${file.name} · ${formatFileSize(file.size)}` : '',
+      status: step.key === 'selected' ? 'done' : step.key === 'directus' ? 'active' : 'waiting',
+      detail: step.key === 'selected'
+        ? `${file.name} · ${formatFileSize(file.size)}`
+        : step.key === 'directus'
+        ? 'Failas siunčiamas į Directus saugyklą'
+        : '',
     })));
+
+    try {
+      const originalFile = await uploadOriginalDocument(file);
+      if (selectedFileUploadSeqRef.current !== uploadSeq) return;
+      setPreviewFallbackFileId(originalFile.id);
+
+      const doc = await saveParsedDocument({
+        user_id: user.id,
+        original_file: originalFile.id,
+        file_name: file.name,
+        file_type: file.type || file.name.split('.').pop() || 'unknown',
+        file_size: file.size,
+        tier: parseTier,
+        job_id: '',
+        status: 'PENDING',
+        user_prompt: userPrompt || undefined,
+      });
+      if (selectedFileUploadSeqRef.current !== uploadSeq) return;
+
+      setHistoryLoaded(true);
+      setDocuments(prev => [doc, ...prev.filter(item => item.id !== doc.id)]);
+      setSelectedDoc(doc);
+      setSelectedDocFull(doc);
+      setPreviewFallbackFileId(originalFile.id);
+      rememberPreviewFileId(doc.id, originalFile.id);
+      rememberSelectedDocumentId(user.id, doc.id);
+      setParseStatus('idle');
+      setParseStatusText('Failas įkeltas į Directus. Paleiskite analizę.');
+      setParseSteps(prev => prev.map(step => (
+        step.key === 'directus'
+          ? { ...step, status: 'done' as StepStatus, detail: originalFile.filename_download || originalFile.title || 'Failas išsaugotas' }
+          : step
+      )));
+    } catch (err) {
+      if (selectedFileUploadSeqRef.current !== uploadSeq) return;
+      const message = err instanceof Error ? err.message : 'Nepavyko įkelti failo į Directus';
+      setParseStatus('error');
+      setParseStatusText('');
+      setParseError(message);
+      setParseSteps(prev => prev.map(step => (
+        step.key === 'directus' ? { ...step, status: 'error' as StepStatus, detail: message } : step
+      )));
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(file);
+    if (file) void handleFileSelect(file);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -546,6 +765,13 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const handleParse = async () => {
     if (!selectedFile) return;
     let processingDocId: string | null = null;
+    let directusFileId = getOriginalFileId(selectedDocFull || selectedDoc);
+    const preparedDoc = directusFileId && (selectedDocFull || selectedDoc)?.status === 'PENDING'
+      ? (selectedDocFull || selectedDoc)
+      : null;
+    const preparedOriginalFile = preparedDoc?.original_file && typeof preparedDoc.original_file === 'object'
+      ? preparedDoc.original_file
+      : null;
 
     const setStep = (key: ParseStepKey, status: StepStatus, detail = '') => {
       setParseSteps(prev => prev.map(step => step.key === key ? { ...step, status, detail } : step));
@@ -556,27 +782,54 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     setParseError('');
 
     try {
-      setParseStatusText('Įkeliama į Directus...');
-      setStep('directus', 'active', 'Failas siunčiamas į Directus saugyklą');
-      const originalFile = await uploadOriginalDocument(selectedFile);
-      setStep('directus', 'done', originalFile.filename_download || originalFile.title || 'Failas išsaugotas');
+      let doc = preparedDoc;
+      let originalFile = preparedOriginalFile;
 
-      // Save placeholder to Directus first
-      const doc = await saveParsedDocument({
-        user_id: user.id,
-        original_file: originalFile.id,
-        file_name: selectedFile.name,
-        file_type: selectedFile.type || selectedFile.name.split('.').pop() || 'unknown',
-        file_size: selectedFile.size,
+      if (!doc || !directusFileId) {
+        setParseStatusText('Įkeliama į Directus...');
+        setStep('directus', 'active', 'Failas siunčiamas į Directus saugyklą');
+        originalFile = await uploadOriginalDocument(selectedFile);
+        directusFileId = originalFile.id;
+        setPreviewFallbackFileId(directusFileId);
+        setStep('directus', 'done', originalFile.filename_download || originalFile.title || 'Failas išsaugotas');
+
+        // Save placeholder to Directus first
+        doc = await saveParsedDocument({
+          user_id: user.id,
+          original_file: originalFile.id,
+          file_name: selectedFile.name,
+          file_type: selectedFile.type || selectedFile.name.split('.').pop() || 'unknown',
+          file_size: selectedFile.size,
+          tier: parseTier,
+          job_id: '',
+          status: 'PENDING',
+          user_prompt: userPrompt || undefined,
+        });
+      } else {
+        setPreviewFallbackFileId(directusFileId);
+        setStep('directus', 'done', preparedOriginalFile?.filename_download || preparedOriginalFile?.title || 'Failas jau yra Directus saugykloje');
+      }
+
+      if (!doc || !directusFileId) {
+        throw new Error('Nepavyko paruošti Directus failo.');
+      }
+
+      processingDocId = doc.id;
+      await updateParsedDocument(doc.id, {
         tier: parseTier,
-        job_id: '',
-        status: 'PENDING',
         user_prompt: userPrompt || undefined,
       });
-      processingDocId = doc.id;
+      doc = {
+        ...doc,
+        tier: parseTier,
+        user_prompt: userPrompt || undefined,
+      };
+      setHistoryLoaded(true);
       setDocuments(prev => [doc, ...prev.filter(item => item.id !== doc.id)]);
       setSelectedDoc(doc);
       setSelectedDocFull(doc);
+      rememberPreviewFileId(doc.id, directusFileId);
+      rememberSelectedDocumentId(user.id, doc.id);
 
       setParseStatus('parsing');
       setParseStatusText('Ruošiami duomenys...');
@@ -606,7 +859,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
         )
         : await parseDirectusDocument(
           {
-            directusFileId: originalFile.id,
+            directusFileId,
             fileName: selectedFile.name,
             fileType: selectedFile.type || undefined,
             fileSize: selectedFile.size,
@@ -659,6 +912,8 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
       await removeHistoryRecord(selectedDocFull.id, 'Istorijoje buvo nepasiekiamas failas. Įrašas pašalintas.');
       return;
     }
+    setPreviewFallbackFileId(directusFileId);
+    rememberPreviewFileId(selectedDocFull.id, directusFileId);
 
     const setStep = (key: ParseStepKey, status: StepStatus, detail = '') => {
       setParseSteps(prev => prev.map(step => step.key === key ? { ...step, status, detail } : step));
@@ -723,26 +978,42 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   const handleDeleteDoc = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     const wasSelected = selectedDoc?.id === id;
-    if (wasSelected) setSelectedDoc(null);
+    if (wasSelected) {
+      setSelectedDoc(null);
+      setPreviewFallbackFileId(null);
+      forgetSelectedDocumentId(user.id);
+    }
     try {
       await deleteParsedDocument(id);
       setDocuments(prev => prev.filter(d => d.id !== id));
     } catch (err) {
       console.error('Delete failed:', err);
-      if (wasSelected) setSelectedDoc(documents.find(d => d.id === id) ?? null);
+      if (wasSelected) {
+        const restoredDoc = documents.find(d => d.id === id) ?? null;
+        setSelectedDoc(restoredDoc);
+        if (restoredDoc) rememberSelectedDocumentId(user.id, restoredDoc.id);
+      }
       setDocsError('Nepavyko ištrinti dokumento');
     }
   };
 
   const activeExtractSchema = useMemo(() => {
-    return extractSchemaMode === 'fields'
-      ? buildSchemaFromFields(extractFields)
-      : buildAutoSchema(extractGoal);
-  }, [extractFields, extractGoal, extractSchemaMode]);
+    if (extractSchemaMode === 'fields') return buildSchemaFromFields(extractFields);
+    if (extractSchemaMode === 'raw') {
+      try {
+        const parsed = JSON.parse(rawExtractSchemaText);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return buildAutoSchema(extractGoal);
+  }, [extractFields, extractGoal, extractSchemaMode, rawExtractSchemaText]);
 
   const activeExtractSchemaText = useMemo(() => {
+    if (extractSchemaMode === 'raw') return rawExtractSchemaText;
     return JSON.stringify(activeExtractSchema, null, 2);
-  }, [activeExtractSchema]);
+  }, [activeExtractSchema, extractSchemaMode, rawExtractSchemaText]);
 
   const handleRunExtract = async () => {
     if (!selectedDocFull || selectedDocFull.status !== 'SUCCESS' || extractLoading) return;
@@ -754,10 +1025,15 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
     setExtractPanelTab('config');
 
     try {
-      const parsedSchema = activeExtractSchema;
+      const parsedSchema = extractSchemaMode === 'raw'
+        ? JSON.parse(rawExtractSchemaText)
+        : activeExtractSchema;
       const fieldKeys = Object.keys((parsedSchema.properties ?? {}) as Record<string, unknown>);
       if (extractSchemaMode === 'fields' && fieldKeys.length === 0) {
         throw new Error('Pridėkite bent vieną lauką arba perjunkite į automatinį režimą.');
+      }
+      if (!parsedSchema || typeof parsedSchema !== 'object' || Array.isArray(parsedSchema)) {
+        throw new Error('JSON schema turi būti objektas.');
       }
       const configuration: ExtractConfiguration = {
         data_schema: parsedSchema,
@@ -773,7 +1049,9 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
         system_prompt: [
           extractSchemaMode === 'auto'
             ? 'Naudok lanksčią ištraukimo struktūrą: pirmiausia atsakyk į naudotojo prašymą, tada išvardyk svarbiausius punktus ir aiškiai pažymėk, ko dokumente neradai.'
-            : 'Naudok tik naudotojo aprašytus laukus. Laukų pavadinimų nekeisk, reikšmes grąžink tik pagal dokumento turinį.',
+            : extractSchemaMode === 'fields'
+            ? 'Naudok tik naudotojo aprašytus laukus. Laukų pavadinimų nekeisk, reikšmes grąžink tik pagal dokumento turinį.'
+            : 'Naudok naudotojo įvestą JSON schemą. Grąžink tik tai, kas atitinka schemą ir dokumento turinį.',
           extractGoal.trim()
             ? `Naudotojo tikslas: ${extractGoal.trim()}`
             : 'Naudotojo tikslas: trumpai paaiškink, apie ką dokumentas, ir ištrauk svarbiausią informaciją.',
@@ -822,13 +1100,8 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
 
   const extractResultValue = useMemo(() => extractResult?.extract_result ?? null, [extractResult]);
 
-  const extractResultEntries = useMemo(() => {
-    if (!extractResultValue || typeof extractResultValue !== 'object' || Array.isArray(extractResultValue)) return [];
-    return Object.entries(extractResultValue as Record<string, unknown>)
-      .filter(([, value]) => isMeaningfulResultValue(value));
-  }, [extractResultValue]);
-
   const extractResultText = useMemo(() => resultToPlainText(extractResultValue), [extractResultValue]);
+  const extractResultRawText = useMemo(() => resultToRawText(extractResultValue), [extractResultValue]);
 
   const workflowStatus = useMemo(() => {
     if (parseStatus === 'uploading') {
@@ -891,11 +1164,31 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
   }[workflowStatus.tone];
 
   const canExtract = selectedDocFull?.status === 'SUCCESS' && !extractLoading;
-  const previewFileId = getOriginalFileId(selectedDocFull || selectedDoc);
-  const previewKind = getPreviewKind(selectedDocFull || selectedDoc);
-  const previewCacheKey = selectedDocFull?.created_at || selectedDoc?.created_at || selectedDocFull?.id || selectedDoc?.id;
-  const previewUrl = previewFileId ? buildDirectusAssetUrl(previewFileId, { cacheKey: previewCacheKey }) : '';
-  const embeddedPreviewUrl = previewUrl && (previewKind === 'pdf' || previewKind === 'office')
+  const canConfigureParsing = selectedDocFull?.status === 'PENDING' && !selectedDocFull.job_id && !extractResult;
+  const showWorkflowStatus = !extractResult && !canConfigureParsing && (
+    parseStatus === 'uploading'
+    || parseStatus === 'parsing'
+    || parseStatus === 'error'
+    || selectedDocFull?.status === 'ERROR'
+    || (selectedDocFull?.status === 'PENDING' && Boolean(selectedDocFull.job_id))
+  );
+  const previewDocument = selectedDocFull || selectedDoc;
+  const previewFileId = getOriginalFileId(previewDocument)
+    || previewFallbackFileId
+    || getRememberedPreviewFileId(previewDocument?.id);
+  const previewKindFromMeta = getPreviewKindFromMeta(
+    previewDocument?.file_name,
+    previewDocument?.file_type,
+    Boolean(previewFileId)
+  );
+  const previewKind = previewKindFromMeta === 'file' ? 'none' : previewKindFromMeta;
+  const previewFrameKey = [
+    previewDocument?.id,
+    previewFileId,
+    previewKind,
+  ].filter(Boolean).join(':');
+  const previewUrl = previewFileId ? buildDirectusAssetUrl(previewFileId) : '';
+  const embeddedPreviewUrl = previewUrl && (previewKind === 'office' || previewKind === 'pdf')
     ? buildGoogleDocsViewerUrl(previewUrl)
     : previewUrl;
 
@@ -917,99 +1210,71 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
 
   const tierLabel = (tier: string) => TIERS.find(t => t.value === tier)?.label || tier;
 
+  const getHistoryDocSteps = (doc: ParsedDocument) => DEFAULT_PARSE_STEPS.map(step => {
+    if (step.key === 'selected') return { ...step, status: 'done' as StepStatus, detail: doc.file_name };
+    if (step.key === 'directus' && getOriginalFileId(doc)) return { ...step, status: 'done' as StepStatus, detail: 'Failas yra Directus saugykloje' };
+    if (step.key === 'llama_upload' && doc.llama_file_id) return { ...step, status: 'done' as StepStatus, detail: doc.llama_file_id };
+    if (step.key === 'parse_job' && doc.job_id) return { ...step, status: doc.status === 'ERROR' ? 'error' as StepStatus : 'active' as StepStatus, detail: doc.status === 'ERROR' ? 'Apdorojimas nepavyko' : 'Dokumentas ruošiamas' };
+    if (step.key === 'result' && doc.status === 'SUCCESS') return { ...step, status: 'done' as StepStatus, detail: 'Paruošta ištraukimui' };
+    return { ...step, status: doc.status === 'ERROR' ? 'error' as StepStatus : step.status };
+  });
+
   return (
     <div className="h-full flex" style={{ background: '#fdfcfb' }}>
+      {historyCollapsed && (
+        <button
+          onClick={() => setHistoryCollapsed(false)}
+          className="fixed top-4 z-50 app-icon-btn rounded-r-lg transition-all duration-300 bg-white shadow-sm"
+          style={{
+            left: mainSidebarCollapsed ? '64px' : '208px',
+          }}
+          title="Išskleisti istoriją"
+          aria-label="Išskleisti istoriją"
+        >
+          <PanelLeft className="w-4 h-4" />
+        </button>
+      )}
 
       {/* ================================================================== */}
       {/* LEFT SIDEBAR — Document List & Upload                              */}
       {/* ================================================================== */}
       <div
-        className={`${historyCollapsed ? 'w-14' : 'w-80'} flex-shrink-0 flex flex-col h-full transition-all duration-200`}
-        style={{ borderRight: '1px solid #f0ede8' }}
+        className="flex-shrink-0 flex flex-col h-full transition-all duration-300"
+        style={{
+          width: historyCollapsed ? '0px' : '320px',
+          overflow: historyCollapsed ? 'hidden' : 'visible',
+          opacity: historyCollapsed ? 0 : 1,
+          borderRight: '1px solid #f0ede8',
+        }}
       >
-        {historyCollapsed ? (
-          <div className="flex h-full flex-col items-center gap-2 px-2 py-4">
-            <button
-              onClick={() => setHistoryCollapsed(false)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.04]"
-              style={{ color: '#3d3935', border: '0.5px solid rgba(0,0,0,0.08)', background: '#fff' }}
-              title="Išskleisti istoriją"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.04]"
-              style={{ color: '#007AFF', border: '0.5px solid rgba(0,122,255,0.18)', background: 'rgba(0,122,255,0.06)' }}
-              title="Įkelti dokumentą"
-            >
-              <Upload className="h-4 w-4" />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPTED_TYPES}
-              className="hidden"
-              onChange={e => {
-                const file = e.target.files?.[0];
-                if (file) handleFileSelect(file);
-                e.target.value = '';
-              }}
-            />
-            <button
-              onClick={loadDocuments}
-              disabled={docsLoading}
-              className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.04] disabled:opacity-60"
-              style={{ color: '#3d3935', border: '0.5px solid rgba(0,0,0,0.08)', background: '#fff' }}
-              title="Įkelti istoriją"
-            >
-              {docsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
-            </button>
-          </div>
-        ) : (
         <>
         {/* Header */}
         <div className="px-5 pt-5 pb-4 shrink-0">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold" style={{ color: '#3d3935' }}>Analizė</h2>
-              <p className="text-xs mt-0.5" style={{ color: '#8a857f' }}>Dokumentų ištraukimas</p>
+              <h2 className="text-lg font-semibold" style={{ color: '#3d3935' }}>Dokumentų analizė</h2>
             </div>
             <div className="flex items-center gap-1.5">
               <button
-                onClick={loadDocuments}
-                disabled={docsLoading}
-                className="inline-flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-medium transition-all disabled:opacity-60"
-                style={{
-                  background: '#fff',
-                  border: '0.5px solid rgba(0,0,0,0.1)',
-                  color: '#3d3935',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                }}
-              >
-                {docsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <History className="h-3.5 w-3.5" />}
-                Istorija
-              </button>
-              <button
                 onClick={() => setHistoryCollapsed(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.04]"
-                style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.1)', color: '#8a857f' }}
+                className="app-icon-btn"
                 title="Sutraukti"
+                aria-label="Sutraukti istoriją"
               >
-                <ChevronLeft className="h-4 w-4" />
+                <PanelLeftClose className="h-4 w-4" />
               </button>
             </div>
           </div>
 
           {/* Upload Zone */}
           <div
-            className={`relative rounded-xl p-5 text-left cursor-pointer transition-all duration-200 ${
+            className={`relative rounded-lg px-3 py-2 text-left cursor-pointer transition-all duration-200 ${
               dragOver ? 'scale-[1.02]' : ''
             }`}
             style={{
               border: `1px dashed ${dragOver ? '#007AFF' : 'rgba(0,0,0,0.14)'}`,
               background: dragOver ? 'rgba(0,122,255,0.04)' : '#fff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
             }}
             onDrop={handleDrop}
             onDragOver={handleDragOver}
@@ -1023,20 +1288,17 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
               className="hidden"
               onChange={e => {
                 const file = e.target.files?.[0];
-                if (file) handleFileSelect(file);
+                if (file) void handleFileSelect(file);
                 e.target.value = '';
               }}
             />
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
-                <Upload className="h-4 w-4" />
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+                <Plus className="h-3.5 w-3.5" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium" style={{ color: '#3d3935' }}>
-                  Įkelti dokumentą
-                </p>
-                <p className="mt-0.5 text-xs" style={{ color: '#8a857f' }}>
-                  PDF, DOCX, XLSX, HTML, vaizdai ir tekstas
+                <p className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                  Įkelti naują
                 </p>
               </div>
             </div>
@@ -1074,7 +1336,10 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                 </span>
                 <button
                   onClick={() => {
+                    selectedFileUploadSeqRef.current += 1;
                     setSelectedFile(null);
+                    setSelectedDoc(null);
+                    setSelectedDocFull(null);
                     setParseStatus('idle');
                     setParseStatusText('');
                     setParseError('');
@@ -1087,82 +1352,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                 </button>
               </div>
 
-              {/* Tier selector */}
-              <div className="mb-3">
-                <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apdorojimo lygis</label>
-                <div className="grid grid-cols-1 gap-1.5">
-                  {TIERS.map(t => (
-                    <button
-                      key={t.value}
-                      onClick={() => setParseTier(t.value)}
-                      className="rounded-lg px-3 py-2 text-left text-xs font-medium transition-all"
-                      style={{
-                        background: parseTier === t.value ? 'rgba(0,122,255,0.08)' : '#faf9f7',
-                        color: parseTier === t.value ? '#007AFF' : '#3d3935',
-                        border: parseTier === t.value ? '0.5px solid rgba(0,122,255,0.3)' : '0.5px solid rgba(0,0,0,0.06)',
-                      }}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span>{t.label}</span>
-                        <span className="text-[10px] font-normal" style={{ color: parseTier === t.value ? '#007AFF' : '#8a857f' }}>{t.desc}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom prompt toggle */}
-              <button
-                onClick={() => setShowPrompt(!showPrompt)}
-                className="flex items-center gap-1 text-[10px] font-medium mb-1"
-                style={{ color: '#8a857f' }}
-              >
-                <Settings2 className="w-3 h-3" />
-                <span>Papildomos instrukcijos</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${showPrompt ? 'rotate-180' : ''}`} />
-              </button>
-
-              {showPrompt && (
-                <textarea
-                  value={userPrompt}
-                  onChange={e => setUserPrompt(e.target.value)}
-                  placeholder="Pvz: Ištraukti tik lenteles ir skaičius..."
-                  className="w-full text-xs rounded-lg p-2 resize-none outline-none transition-all"
-                  style={{
-                    background: 'rgba(0,0,0,0.03)',
-                    border: '0.5px solid rgba(0,0,0,0.08)',
-                    color: '#3d3935',
-                    minHeight: '48px',
-                  }}
-                  onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; }}
-                  onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; }}
-                />
-              )}
-
-              {/* Parse button */}
-              <button
-                onClick={handleParse}
-                disabled={parseStatus === 'uploading' || parseStatus === 'parsing'}
-                className="mt-3 h-10 w-full rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
-                style={{
-                  background: '#1f2937',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
-                }}
-              >
-                {parseStatus === 'uploading' || parseStatus === 'parsing' ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    {parseStatusText || 'Apdorojama...'}
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Analizuoti
-                  </span>
-                )}
-              </button>
-
-              <div className="mt-3 space-y-1.5">
+              <div className="mb-3 space-y-1.5">
                 {parseSteps.map((step, index) => (
                   <div key={step.key} className="flex items-start gap-2 text-[11px]">
                     <span
@@ -1195,6 +1385,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                   </div>
                 ))}
               </div>
+
             </div>
           )}
 
@@ -1234,15 +1425,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
 
         {/* Document List */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {!historyLoaded && !docsLoading ? (
-            <div className="mx-3 mt-2 rounded-xl bg-white p-4 text-center" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
-              <FolderOpen className="mx-auto mb-2 h-7 w-7" style={{ color: '#d1cdc7' }} />
-              <p className="text-xs font-medium" style={{ color: '#3d3935' }}>Istorija neįkelta</p>
-              <p className="mt-1 text-[11px] leading-5" style={{ color: '#8a857f' }}>
-                Dokumentų sąrašas kraunamas tik paspaudus istoriją.
-              </p>
-            </div>
-          ) : docsLoading ? (
+          {docsLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-5 h-5 animate-spin" style={{ color: '#8a857f' }} />
             </div>
@@ -1263,14 +1446,15 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
               {filteredDocs.map(doc => (
                 <button
                   key={doc.id}
-                  onClick={() => setSelectedDoc(doc)}
+                  onClick={() => selectDocument(doc)}
                   className="w-full text-left p-2.5 rounded-lg transition-all group"
                   style={{
-                    background: selectedDoc?.id === doc.id ? 'rgba(0,122,255,0.08)' : 'transparent',
-                    border: selectedDoc?.id === doc.id ? '0.5px solid rgba(0,122,255,0.2)' : '0.5px solid transparent',
+                    background: '#fff',
+                    border: '0.5px solid transparent',
+                    borderLeft: selectedDoc?.id === doc.id ? '3px solid #007AFF' : '3px solid transparent',
                   }}
                   onMouseEnter={e => { if (selectedDoc?.id !== doc.id) e.currentTarget.style.background = 'rgba(0,0,0,0.03)'; }}
-                  onMouseLeave={e => { if (selectedDoc?.id !== doc.id) e.currentTarget.style.background = 'transparent'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
                 >
                   <div className="flex items-start gap-2">
                     <FileText className="w-4 h-4 mt-0.5 shrink-0" style={{ color: selectedDoc?.id === doc.id ? '#007AFF' : '#8a857f' }} />
@@ -1309,13 +1493,47 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                       <Trash2 className="w-3.5 h-3.5" style={{ color: '#ef4444' }} />
                     </button>
                   </div>
+                  {selectedDoc?.id === doc.id && doc.status !== 'SUCCESS' && (
+                    <div className="mt-3 space-y-1.5 pl-6">
+                      {(selectedFile ? parseSteps : getHistoryDocSteps(doc)).map((step, index) => (
+                        <div key={step.key} className="flex items-start gap-2 text-[11px]">
+                          <span
+                            className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
+                            style={{
+                              background: step.status === 'done'
+                                ? 'rgba(16,185,129,0.1)'
+                                : step.status === 'active'
+                                ? 'rgba(0,122,255,0.1)'
+                                : step.status === 'error'
+                                ? 'rgba(239,68,68,0.1)'
+                                : 'rgba(0,0,0,0.05)',
+                              color: step.status === 'done'
+                                ? '#10b981'
+                                : step.status === 'active'
+                                ? '#007AFF'
+                                : step.status === 'error'
+                                ? '#ef4444'
+                                : '#8a857f',
+                            }}
+                          >
+                            {step.status === 'active' ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p style={{ color: step.status === 'waiting' ? '#8a857f' : '#3d3935' }}>{step.label}</p>
+                            {step.detail && (
+                              <p className="truncate text-[10px]" style={{ color: '#8a857f' }}>{step.detail}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
           )}
         </div>
         </>
-        )}
       </div>
 
       {/* ================================================================== */}
@@ -1329,7 +1547,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
               <FileText className="w-16 h-16 mx-auto mb-4" style={{ color: '#d1cdc7' }} />
               <h3 className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>Įkelkite dokumentą</h3>
               <p className="text-sm" style={{ color: '#8a857f' }}>
-                Istorija nebus kraunama automatiškai. Paspauskite „Istorija“, jei norite atidaryti ankstesnį failą.
+                Pasirinkite dokumentą iš istorijos arba įkelkite naują failą.
               </p>
             </div>
           </div>
@@ -1350,38 +1568,40 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
             <div className="flex-1 flex min-h-0">
               {/* Viewer Content */}
               <div className="flex-1 basis-0 flex flex-col min-w-0">
-                <div className="flex-1 overflow-auto p-5">
+                <div className="flex-1 overflow-hidden p-4">
                   <div
-                    className="mx-auto bg-white rounded-xl shadow-sm overflow-hidden"
-                    style={{ maxWidth: '900px', minHeight: '620px', border: '0.5px solid rgba(0,0,0,0.06)' }}
+                    className="mx-auto h-full max-h-full bg-white rounded-xl shadow-sm overflow-hidden"
+                    style={{ maxWidth: '900px', border: '0.5px solid rgba(0,0,0,0.06)' }}
                   >
                     {previewFileId && previewKind !== 'none' ? (
                       <>
                         {previewKind === 'pdf' && (
                           <iframe
-                            key={embeddedPreviewUrl}
+                            key={previewFrameKey}
                             src={embeddedPreviewUrl}
-                            className="h-[620px] w-full border-0"
+                            className="block h-full w-full border-0 bg-white"
                             title={selectedDocFull?.file_name || selectedDoc.file_name}
                           />
                         )}
                         {previewKind === 'image' && (
-                          <div className="flex min-h-[620px] items-center justify-center bg-[#f8f7f5] p-4">
+                          <div className="flex h-full items-center justify-center bg-[#f8f7f5] p-4">
                             <img src={previewUrl} alt={selectedDocFull?.file_name || selectedDoc.file_name} className="max-h-[600px] max-w-full rounded-lg object-contain" />
                           </div>
                         )}
                         {previewKind === 'text' && (
-                          <iframe src={previewUrl} className="h-[620px] w-full border-0 bg-white" title={selectedDocFull?.file_name || selectedDoc.file_name} />
+                          <iframe key={previewFrameKey} src={previewUrl} className="h-full w-full border-0 bg-white" title={selectedDocFull?.file_name || selectedDoc.file_name} />
                         )}
                         {previewKind === 'office' && (
-                          <iframe key={embeddedPreviewUrl} src={embeddedPreviewUrl} className="h-[620px] w-full border-0" title={selectedDocFull?.file_name || selectedDoc.file_name} />
+                          <iframe key={previewFrameKey} src={embeddedPreviewUrl} className="h-full w-full border-0" title={selectedDocFull?.file_name || selectedDoc.file_name} />
                         )}
                       </>
                     ) : (
-                      <div className="flex min-h-[620px] items-center justify-center p-8 text-center">
+                      <div className="flex h-full items-center justify-center p-8 text-center">
                         <div>
                           <FileText className="mx-auto mb-2 h-8 w-8" style={{ color: '#d1cdc7' }} />
-                          <p className="text-sm" style={{ color: '#8a857f' }}>Failo peržiūra nepasiekiama</p>
+                          <p className="text-sm" style={{ color: '#8a857f' }}>
+                            Failo peržiūra nepasiekiama
+                          </p>
                         </div>
                       </div>
                     )}
@@ -1389,31 +1609,29 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                 </div>
               </div>
 
+              <div
+                aria-hidden="true"
+                className="h-full w-3 shrink-0"
+                style={{
+                  background: '#f4f2ef',
+                  borderLeft: '1px solid rgba(0,0,0,0.08)',
+                  borderRight: '1px solid rgba(0,0,0,0.1)',
+                  boxShadow: 'inset 1px 0 0 rgba(255,255,255,0.9)',
+                }}
+              />
+
               {/* ============================================================ */}
               {/* RIGHT PANEL — Extract                                        */}
               {/* ============================================================ */}
               <div
                 className="flex-1 basis-0 min-w-0 flex flex-col h-full"
-                style={{ borderLeft: '1px solid #f0ede8' }}
               >
-                  <div className="px-4 py-3 shrink-0" style={{ borderBottom: '1px solid #f0ede8' }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold" style={{ color: '#3d3935' }}>Duomenys</p>
-                        <p className="text-[10px] truncate" style={{ color: '#8a857f' }}>
-                          Struktūruotas ištraukimas iš įkelto dokumento
-                        </p>
-                      </div>
-                      <Braces className="w-4 h-4 shrink-0" style={{ color: '#007AFF' }} />
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
                       {(canExtract || extractResult) && (
-                        <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
+                        <div className="grid grid-cols-2 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
                           <button
                             onClick={() => setExtractPanelTab('config')}
-                            className="h-8 rounded-lg text-[11px] font-semibold transition-all"
+                            className="h-7 rounded-md text-[10px] font-semibold transition-all"
                             style={{
                               background: extractPanelTab === 'config' ? '#fff' : 'transparent',
                               color: extractPanelTab === 'config' ? '#1f2937' : '#6b655f',
@@ -1425,7 +1643,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                           <button
                             onClick={() => extractResult && setExtractPanelTab('results')}
                             disabled={!extractResult}
-                            className="h-8 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-40"
+                            className="h-7 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40"
                             style={{
                               background: extractPanelTab === 'results' ? '#fff' : 'transparent',
                               color: extractPanelTab === 'results' ? '#1f2937' : '#6b655f',
@@ -1438,7 +1656,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                       )}
 
                       {extractPanelTab === 'results' && extractResult && (
-                        <div className="flex items-center gap-1 overflow-x-auto rounded-xl p-1" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
+                        <div className="flex items-center gap-5 overflow-x-auto border-b" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
                           {([
                             { key: 'markdown' as ViewTab, icon: Type, label: 'Markdown' },
                             { key: 'text' as ViewTab, icon: Code, label: 'Tekstas' },
@@ -1448,11 +1666,11 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                             <button
                               key={tab.key}
                               onClick={() => setResultViewTab(tab.key)}
-                              className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition-all"
+                              className="flex h-8 flex-1 items-center justify-center gap-1.5 px-1 text-[11px] font-semibold transition-all"
                               style={{
                                 color: resultViewTab === tab.key ? '#007AFF' : '#8a857f',
-                                background: resultViewTab === tab.key ? '#fff' : 'transparent',
-                                boxShadow: resultViewTab === tab.key ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+                                background: 'transparent',
+                                borderBottom: resultViewTab === tab.key ? '2px solid #007AFF' : '2px solid transparent',
                               }}
                             >
                               <tab.icon className="w-3.5 h-3.5" />
@@ -1467,7 +1685,85 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                         </div>
                       )}
 
-                      {!extractResult && (
+                      {canConfigureParsing && (
+                        <div className="rounded-xl bg-white p-3 shadow-sm space-y-3" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+                          <div className="flex items-center gap-2">
+                            <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
+                            <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Dokumento apdorojimas</span>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apdorojimo lygis</label>
+                            <div className="grid grid-cols-1 gap-1.5">
+                              {TIERS.map(t => (
+                                <button
+                                  key={t.value}
+                                  onClick={() => setParseTier(t.value)}
+                                  className="rounded-lg px-3 py-2 text-left text-xs font-medium transition-all"
+                                  style={{
+                                    background: parseTier === t.value ? 'rgba(0,122,255,0.08)' : '#faf9f7',
+                                    color: parseTier === t.value ? '#007AFF' : '#3d3935',
+                                    border: parseTier === t.value ? '0.5px solid rgba(0,122,255,0.3)' : '0.5px solid rgba(0,0,0,0.06)',
+                                  }}
+                                >
+                                  <span className="flex items-center justify-between gap-2">
+                                    <span>{t.label}</span>
+                                    <span className="text-[10px] font-normal" style={{ color: parseTier === t.value ? '#007AFF' : '#8a857f' }}>{t.desc}</span>
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => setShowPrompt(!showPrompt)}
+                            className="flex items-center gap-1 text-[10px] font-medium"
+                            style={{ color: '#8a857f' }}
+                          >
+                            <Settings2 className="w-3 h-3" />
+                            <span>Papildomos instrukcijos</span>
+                            <ChevronDown className={`w-3 h-3 transition-transform ${showPrompt ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {showPrompt && (
+                            <textarea
+                              value={userPrompt}
+                              onChange={e => setUserPrompt(e.target.value)}
+                              placeholder="Pvz: Ištraukti tik lenteles ir skaičius..."
+                              className="w-full text-xs rounded-lg p-2 resize-none outline-none transition-all"
+                              style={{
+                                background: 'rgba(0,0,0,0.03)',
+                                border: '0.5px solid rgba(0,0,0,0.08)',
+                                color: '#3d3935',
+                                minHeight: '72px',
+                              }}
+                              onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; }}
+                              onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; }}
+                            />
+                          )}
+
+                          <button
+                            onClick={selectedFile ? handleParse : handlePrepareStoredDocument}
+                            disabled={parseStatus === 'uploading' || parseStatus === 'parsing'}
+                            className="h-10 w-full rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                            style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
+                          >
+                            {parseStatus === 'uploading' || parseStatus === 'parsing' ? (
+                              <span className="flex items-center justify-center gap-2">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                {parseStatusText || 'Apdorojama...'}
+                              </span>
+                            ) : (
+                              <span className="flex items-center justify-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Paruošti dokumentą
+                              </span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {showWorkflowStatus && (
                       <div
                         className="rounded-xl p-3"
                         style={{
@@ -1502,90 +1798,75 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                       </div>
                       )}
 
-                      {!canExtract && !extractResult && (
-                        <div className="rounded-xl bg-white p-3 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
-                          <div className="space-y-2">
-                            {parseSteps.map((step, index) => (
-                              <div key={step.key} className="flex items-start gap-2 text-[11px]">
-                                <span
-                                  className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
-                                  style={{
-                                    background: step.status === 'done'
-                                      ? 'rgba(16,185,129,0.1)'
-                                      : step.status === 'active'
-                                      ? 'rgba(0,122,255,0.1)'
-                                      : step.status === 'error'
-                                      ? 'rgba(239,68,68,0.1)'
-                                      : 'rgba(0,0,0,0.05)',
-                                    color: step.status === 'done'
-                                      ? '#10b981'
-                                      : step.status === 'active'
-                                      ? '#007AFF'
-                                      : step.status === 'error'
-                                      ? '#ef4444'
-                                      : '#8a857f',
-                                  }}
-                                >
-                                  {step.status === 'active' ? <Loader2 className="h-3 w-3 animate-spin" /> : index + 1}
-                                </span>
-                                <div className="min-w-0">
-                                  <p style={{ color: step.status === 'waiting' ? '#8a857f' : '#3d3935' }}>{step.label}</p>
-                                  {step.detail && (
-                                    <p className="truncate text-[10px]" style={{ color: '#8a857f' }}>{step.detail}</p>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
+                      {extractLoading && (
+                        <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
+                          <div className="relative mb-4 flex h-14 w-14 items-center justify-center">
+                            <div className="absolute inset-0 rounded-full border border-blue-100" />
+                            <div className="absolute inset-1 rounded-full border-2 border-transparent border-t-[#007AFF] animate-spin" />
+                            <Sparkles className="h-5 w-5" style={{ color: '#007AFF' }} />
                           </div>
+                          <p className="text-sm font-semibold" style={{ color: '#3d3935' }}>Analizuojama</p>
+                          <p className="mt-1 min-h-5 text-xs transition-all" style={{ color: '#8a857f' }}>
+                            {EXTRACT_LOADING_MESSAGES[extractLoadingMessageIndex]}
+                          </p>
                         </div>
                       )}
 
                       <div
-                        className="rounded-xl bg-white p-3 shadow-sm space-y-2"
+                        className="bg-transparent p-0 space-y-2"
                         style={{
-                          border: '0.5px solid rgba(0,0,0,0.08)',
-                          display: extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                          border: '0',
+                          display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
                         <div className="flex items-center gap-2">
                           <Sparkles className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-                          <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Ką ištraukti?</span>
+                          <span className="text-xs font-semibold" style={{ color: '#3d3935' }}>Ką norite sužinoti apie dokumentą?</span>
                         </div>
                         <textarea
                           value={extractGoal}
                           onChange={e => setExtractGoal(e.target.value)}
-                          className="w-full h-24 resize-none rounded-lg p-3 text-xs outline-none"
+                          className="w-full resize-none rounded-lg p-3 text-xs outline-none transition-all"
                           style={{
-                            background: '#faf9f7',
-                            border: '0.5px solid rgba(0,0,0,0.08)',
+                            minHeight: '90px',
+                            background: '#fbfdff',
+                            border: '1px solid rgba(0,122,255,0.16)',
                             color: '#3d3935',
+                            boxShadow: 'none',
                           }}
-                          placeholder="Pvz.: trumpai paaiškink, apie ką dokumentas, ir ištrauk svarbiausias rekomendacijas."
+                          onFocus={e => {
+                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.42)';
+                            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.08)';
+                          }}
+                          onBlur={e => {
+                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.16)';
+                            e.currentTarget.style.boxShadow = 'none';
+                          }}
+                          placeholder="Instrukcijos"
                         />
                       </div>
 
                       <div
-                        className="rounded-xl bg-white p-3 shadow-sm space-y-3"
+                        className="bg-transparent pt-3 space-y-2"
                         style={{
-                          border: '0.5px solid rgba(0,0,0,0.08)',
-                          display: extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                          border: '0',
+                          borderTop: '0.5px solid rgba(0,0,0,0.08)',
+                          display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
                         <div>
-                          <p className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Atsakymo forma</p>
-                          <p className="mt-0.5 text-[10px] leading-4" style={{ color: '#8a857f' }}>
-                            Automatinis režimas tinka klausimams ir santraukoms. Laukai tinka tada, kai norite konkrečios lentelės tipo išvesties.
-                          </p>
+                          <p className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Rezultato struktūra</p>
                         </div>
-                        <div className="grid grid-cols-2 gap-1 rounded-xl p-1" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
+                        <div className="grid grid-cols-3 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
                           {[
                             { mode: 'auto' as ExtractSchemaMode, label: 'Automatiškai' },
-                            { mode: 'fields' as ExtractSchemaMode, label: 'Nurodyti laukus' },
+                            { mode: 'fields' as ExtractSchemaMode, label: 'Įvesti' },
+                            { mode: 'raw' as ExtractSchemaMode, label: 'JSON' },
                           ].map(option => (
                             <button
                               key={option.mode}
                               onClick={() => setExtractSchemaMode(option.mode)}
-                              className="h-8 rounded-lg text-[11px] font-semibold transition-all"
+                              className="h-7 rounded-md text-[10px] font-semibold transition-all"
                               style={{
                                 background: extractSchemaMode === option.mode ? '#fff' : 'transparent',
                                 color: extractSchemaMode === option.mode ? '#1f2937' : '#6b655f',
@@ -1602,7 +1883,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                             {extractFields.map((field, index) => (
                               <div
                                 key={field.id}
-                                className="rounded-xl p-2.5"
+                                className="rounded-lg p-2"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)' }}
                               >
                                 <div className="grid grid-cols-[minmax(90px,0.9fr)_112px_minmax(140px,1.4fr)_32px] items-center gap-2">
@@ -1613,7 +1894,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, name: value } : item));
                                     }}
                                     placeholder="reikšmė"
-                                    className="h-8 min-w-0 rounded-lg px-2 text-xs outline-none"
+                                    className="h-7 min-w-0 rounded-md px-2 text-[11px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   />
                                   <select
@@ -1622,7 +1903,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                                       const value = e.target.value as ExtractFieldType;
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, type: value } : item));
                                     }}
-                                    className="h-8 w-full rounded-lg px-2 text-[11px] outline-none"
+                                    className="h-7 w-full rounded-md px-2 text-[10px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   >
                                     <option value="string">Tekstas</option>
@@ -1638,12 +1919,12 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, description: value } : item));
                                     }}
                                     placeholder={getFieldDescriptionPlaceholder(field.type)}
-                                    className="h-8 min-w-0 rounded-lg px-2 text-xs outline-none"
+                                    className="h-7 min-w-0 rounded-md px-2 text-[11px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   />
                                   <button
                                     onClick={() => setExtractFields(prev => prev.length === 1 ? [createExtractField()] : prev.filter(item => item.id !== field.id))}
-                                    className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors hover:bg-black/[0.04]"
+                                    className="h-7 w-7 rounded-md flex items-center justify-center transition-colors hover:bg-black/[0.04]"
                                     style={{ color: '#8a857f' }}
                                     title="Pašalinti lauką"
                                   >
@@ -1659,19 +1940,37 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                             ))}
                             <button
                               onClick={() => setExtractFields(prev => [...prev, createExtractField()])}
-                              className="h-8 rounded-lg px-3 text-[11px] font-semibold transition-colors hover:bg-black/[0.03]"
+                              className="h-7 rounded-md px-3 text-[10px] font-semibold transition-colors hover:bg-black/[0.03]"
                               style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#1f2937' }}
                             >
                               + Pridėti lauką
                             </button>
                           </div>
                         )}
+
+                        {extractSchemaMode === 'raw' && (
+                          <textarea
+                            value={rawExtractSchemaText}
+                            onChange={e => setRawExtractSchemaText(e.target.value)}
+                            spellCheck={false}
+                            className="h-40 w-full resize-none rounded-lg p-3 text-[11px] outline-none transition-all"
+                            style={{
+                              background: '#faf9f7',
+                              border: '0.5px solid rgba(0,0,0,0.08)',
+                              color: '#3d3935',
+                              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                            }}
+                            onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.35)'; }}
+                            onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; }}
+                          />
+                        )}
                       </div>
 
                       <div
-                        className="rounded-xl bg-white p-3 shadow-sm space-y-3"
+                        className="bg-transparent pt-3 space-y-2.5"
                         style={{
-                          border: '0.5px solid rgba(0,0,0,0.08)',
+                          border: '0',
+                          borderTop: '0.5px solid rgba(0,0,0,0.08)',
                           display: extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
@@ -1687,7 +1986,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                               <button
                                 key={tier.value}
                                 onClick={() => setExtractTier(tier.value)}
-                                className="h-8 rounded-lg text-xs font-medium transition-all"
+                                className="h-7 rounded-md text-[11px] font-medium transition-all"
                                 style={{
                                   background: extractTier === tier.value ? 'rgba(0,122,255,0.1)' : 'rgba(0,0,0,0.03)',
                                   color: extractTier === tier.value ? '#007AFF' : '#5a5550',
@@ -1705,7 +2004,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                           <select
                             value={extractTarget}
                             onChange={e => setExtractTarget(e.target.value as ExtractTarget)}
-                            className="w-full h-9 rounded-lg px-3 text-xs outline-none"
+                            className="w-full h-8 rounded-md px-3 text-xs outline-none"
                             style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                           >
                             {EXTRACT_TARGETS.map(target => (
@@ -1728,7 +2027,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                           <div className="space-y-3">
                             <div>
                               <div className="mb-2 flex items-center justify-between">
-                                <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Techninė schema</span>
+                                <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Schema</span>
                                 <button
                                   onClick={() => {
                                     setExtractSchemaMode('fields');
@@ -1813,7 +2112,7 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                         <button
                           onClick={handleRunExtract}
                           disabled={!canExtract}
-                          className="w-full h-10 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                          className="w-full h-9 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
                           style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
                         >
                           {extractLoading ? (
@@ -1838,10 +2137,16 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                       )}
 
                       {extractPanelTab === 'results' && extractResult && (
-                        <div className="rounded-xl bg-white shadow-sm overflow-hidden" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
-                          <div className="flex justify-end px-3 pt-3">
+                        <div className="bg-white overflow-hidden">
+                          <div className="flex justify-end pb-2">
                             <button
-                              onClick={() => navigator.clipboard.writeText(resultViewTab === 'json' ? extractResultJson : extractResultText || extractResultJson)}
+                              onClick={() => navigator.clipboard.writeText(
+                                resultViewTab === 'json'
+                                  ? extractResultJson
+                                  : resultViewTab === 'text'
+                                  ? extractResultRawText || extractResultJson
+                                  : extractResultText || extractResultJson
+                              )}
                               className="p-1.5 rounded-lg transition-colors hover:bg-black/5"
                               title="Kopijuoti"
                             >
@@ -1850,49 +2155,19 @@ export default function AnalizeInterface({ user, projectId }: AnalizeInterfacePr
                           </div>
 
                           {resultViewTab === 'markdown' && (
-                            <div className="space-y-3 px-4 pb-4">
-                              {extractResultEntries.length === 0 ? (
-                                <p className="rounded-lg p-3 text-sm" style={{ background: '#faf9f7', color: '#8a857f' }}>
-                                  Rezultate nėra rodomų duomenų.
-                                </p>
-                              ) : (
-                                extractResultEntries.map(([key, value]) => (
-                                  <div key={key} className="rounded-xl p-3" style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.06)' }}>
-                                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#8a857f' }}>
-                                      {formatResultLabel(key)}
-                                    </p>
-                                    {Array.isArray(value) ? (
-                                      <ul className="space-y-1.5">
-                                        {value.filter(isMeaningfulResultValue).map((item, index) => (
-                                          <li key={index} className="flex gap-2 text-sm leading-6" style={{ color: '#3d3935' }}>
-                                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: '#007AFF' }} />
-                                            <span>{typeof item === 'object' && item !== null ? resultToPlainText(item) : String(item)}</span>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    ) : typeof value === 'object' && value !== null ? (
-                                      <div className="whitespace-pre-wrap text-sm leading-6" style={{ color: '#3d3935' }}>
-                                        {resultToPlainText(value)}
-                                      </div>
-                                    ) : (
-                                      <p className="text-sm leading-6" style={{ color: '#3d3935' }}>{String(value)}</p>
-                                    )}
-                                  </div>
-                                ))
-                              )}
+                            <div className="whitespace-pre-wrap text-sm leading-7" style={{ color: '#3d3935' }}>
+                              {extractResultText || 'Rezultate nėra rodomų duomenų.'}
                             </div>
                           )}
 
                           {resultViewTab === 'text' && (
-                            <div className="px-4 pb-4">
-                              <div className="whitespace-pre-wrap rounded-xl p-3 text-sm leading-6" style={{ background: '#faf9f7', color: '#3d3935', border: '0.5px solid rgba(0,0,0,0.06)' }}>
-                                {extractResultText || 'Rezultate nėra teksto.'}
-                              </div>
+                            <div className="whitespace-pre-wrap text-sm leading-7" style={{ color: '#3d3935' }}>
+                              {extractResultRawText || 'Rezultate nėra teksto.'}
                             </div>
                           )}
 
                           {resultViewTab === 'json' && (
-                            <pre className="max-h-[calc(100vh-320px)] overflow-auto px-4 pb-4 pt-1 text-[11px] whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                            <pre className="max-h-[calc(100vh-320px)] overflow-auto text-[11px] whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
                               {extractResultJson}
                             </pre>
                           )}

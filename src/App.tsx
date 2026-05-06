@@ -210,7 +210,7 @@ function AppContent() {
           />
           <Route
             path="/analize"
-            element={<AnalizeInterface user={user} projectId={projectId} />}
+            element={<AnalizeInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />}
           />
           <Route
             path="/derva"

@@ -59,11 +59,15 @@ export interface LlamaParseExtraction {
 function normalizeFile(row: any): ParsedDocument {
   const originalFile: DirectusFileMeta | string | null = row.original_file || null;
   const fileMeta = typeof originalFile === 'object' ? originalFile : null;
+  const originalFileId = typeof originalFile === 'string'
+    ? originalFile
+    : fileMeta?.id || row.original_file_id || null;
 
   return {
     id: row.id,
     user_id: row.user_id,
     original_file: originalFile,
+    original_file_id: originalFileId,
     file_name: row.file_name || fileMeta?.filename_download || fileMeta?.title || 'Dokumentas',
     file_type: row.file_type || fileMeta?.type || 'unknown',
     file_size: Number(row.file_size || fileMeta?.filesize || 0),
@@ -118,12 +122,14 @@ export async function uploadOriginalDocument(file: File): Promise<DirectusFileMe
 }
 
 function toFileUpdate(
-  updates: Partial<Pick<ParsedDocument, 'status' | 'llama_file_id' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
+  updates: Partial<Pick<ParsedDocument, 'status' | 'tier' | 'llama_file_id' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata' | 'user_prompt'>>
 ) {
   const data: Record<string, any> = {};
   if ('status' in updates) data.parse_status = updates.status;
+  if ('tier' in updates) data.parse_tier = updates.tier;
   if ('llama_file_id' in updates) data.llama_file_id = updates.llama_file_id;
   if ('job_id' in updates) data.parse_job_id = updates.job_id;
+  if ('user_prompt' in updates) data.parse_user_prompt = updates.user_prompt || null;
   if ('parsed_markdown' in updates) data.parsed_markdown = updates.parsed_markdown;
   if ('parsed_text' in updates) data.parsed_text = updates.parsed_text;
   if ('parsed_json' in updates) data.parsed_json = updates.parsed_json;
@@ -153,7 +159,7 @@ export async function saveParsedDocument(input: CreateParsedDocumentInput): Prom
 
 export async function updateParsedDocument(
   id: string,
-  updates: Partial<Pick<ParsedDocument, 'status' | 'llama_file_id' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
+  updates: Partial<Pick<ParsedDocument, 'status' | 'tier' | 'llama_file_id' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata' | 'user_prompt'>>
 ): Promise<void> {
   const { error } = await db
     .from(FILES_COLLECTION)
