@@ -32,8 +32,10 @@ export type ParseTier = 'cost_effective' | 'agentic' | 'agentic_plus' | 'fast';
 export interface UploadResult {
   id: string;
   name: string;
-  size: number;
-  mime_type: string;
+  size?: number;
+  mime_type?: string;
+  file_type?: string;
+  purpose?: string;
 }
 
 export interface ParseJobResponse {
@@ -45,13 +47,25 @@ export interface ParseJobResponse {
 
 export interface ParseResult {
   id: string;
+  file_id?: string;
   status: 'PENDING' | 'SUCCESS' | 'ERROR' | string;
+  job?: {
+    id?: string;
+    status?: string;
+    error_message?: string | null;
+    [key: string]: any;
+  };
   result_content_markdown?: string;
   result_content_text?: string;
   result_content_json?: any;
+  markdown?: unknown;
+  markdown_full?: unknown;
+  text?: unknown;
+  text_full?: unknown;
+  items?: unknown;
+  metadata?: Record<string, any>;
   images_content_metadata?: ImageMetadata[];
   error_message?: string;
-  metadata?: Record<string, any>;
   [key: string]: any;
 }
 
@@ -64,6 +78,58 @@ export interface ImageMetadata {
 export interface ParseOptions {
   tier: ParseTier;
   userPrompt?: string;
+  onJobStarted?: (job: ParseJobResponse) => void | Promise<void>;
+}
+
+export interface DirectusUploadInput {
+  directusFileId: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+}
+
+const DEFAULT_PARSE_EXPANDS = ['markdown', 'text', 'items', 'metadata'];
+
+function contentToString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map(item => contentToString(item))
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['value', 'content', 'text', 'markdown', 'md']) {
+      const nested = contentToString(record[key]);
+      if (nested) return nested;
+    }
+  }
+  return '';
+}
+
+function normalizeParseResult(data: ParseResult): ParseResult {
+  const status = data.status || data.job?.status || '';
+  const markdown = data.result_content_markdown
+    || contentToString(data.markdown)
+    || contentToString(data.markdown_full);
+  const text = data.result_content_text
+    || contentToString(data.text)
+    || contentToString(data.text_full);
+  const json = data.result_content_json
+    ?? data.items
+    ?? data.metadata
+    ?? null;
+
+  return {
+    ...data,
+    id: data.id || data.job?.id || '',
+    status,
+    error_message: data.error_message || data.job?.error_message || undefined,
+    result_content_markdown: markdown,
+    result_content_text: text,
+    result_content_json: json,
+  };
 }
 
 // ============================================================================
@@ -77,8 +143,9 @@ export interface ParseOptions {
 export async function uploadFile(file: File): Promise<UploadResult> {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('purpose', 'parse');
 
-  const res = await fetch(`${API_BASE}/api/v1/files/`, {
+  const res = await fetch(`${API_BASE}/api/v1/beta/files`, {
     method: 'POST',
     headers: authHeaders(),
     body: formData,
@@ -86,7 +153,38 @@ export async function uploadFile(file: File): Promise<UploadResult> {
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Upload failed (${res.status}): ${errText}`);
+    throw new Error(`Failo įkelti nepavyko (${res.status}): ${errText}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Production-safe upload path.
+ *
+ * Large browser → Netlify multipart requests can fail at Cloudflare/function
+ * boundaries before our function code even runs. The app already stores the
+ * original file in Directus, so in production we send only the Directus file id
+ * to the Netlify proxy and let the server forward the binary to LlamaCloud.
+ */
+export async function uploadDirectusFile(input: DirectusUploadInput): Promise<UploadResult> {
+  const res = await fetch(`${API_BASE}/directus-file-upload`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      directus_file_id: input.directusFileId,
+      file_name: input.fileName,
+      file_type: input.fileType,
+      file_size: input.fileSize,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Failo paruošti nepavyko (${res.status}): ${errText}`);
   }
 
   return res.json();
@@ -108,10 +206,10 @@ export async function startParse(
   };
 
   if (userPrompt?.trim()) {
-    body.user_prompt = userPrompt.trim();
+    body.agentic_options = { custom_prompt: userPrompt.trim() };
   }
 
-  const res = await fetch(`${API_BASE}/api/v2/parse/`, {
+  const res = await fetch(`${API_BASE}/api/v2/parse`, {
     method: 'POST',
     headers: {
       ...authHeaders(),
@@ -122,7 +220,7 @@ export async function startParse(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Parse request failed (${res.status}): ${errText}`);
+    throw new Error(`Dokumento paruošti nepavyko (${res.status}): ${errText}`);
   }
 
   return res.json();
@@ -131,14 +229,15 @@ export async function startParse(
 /**
  * Get parse result by job ID with optional expand parameters.
  * Common expand values:
- *  - result_content_markdown
- *  - result_content_text
- *  - result_content_json
+ *  - markdown
+ *  - text
+ *  - items
+ *  - metadata
  *  - images_content_metadata
  */
 export async function getParseResult(
   jobId: string,
-  expand: string[] = ['result_content_markdown', 'result_content_text']
+  expand: string[] = DEFAULT_PARSE_EXPANDS
 ): Promise<ParseResult> {
   const params = new URLSearchParams();
   for (const e of expand) {
@@ -152,10 +251,10 @@ export async function getParseResult(
 
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error(`Get result failed (${res.status}): ${errText}`);
+    throw new Error(`Rezultato gauti nepavyko (${res.status}): ${errText}`);
   }
 
-  return res.json();
+  return normalizeParseResult(await res.json());
 }
 
 /**
@@ -173,20 +272,16 @@ export async function getParseImages(jobId: string): Promise<ImageMetadata[]> {
 export async function pollUntilDone(
   jobId: string,
   onProgress?: (status: string) => void,
-  intervalMs: number = 2000,
-  maxAttempts: number = 150 // 5 minutes max
+  intervalMs: number = 3000,
+  maxAttempts: number = 120 // 6 minutes max in the foreground UI
 ): Promise<ParseResult> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const result = await getParseResult(jobId, [
-      'result_content_markdown',
-      'result_content_text',
-      'result_content_json',
-    ]);
+    const result = await getParseResult(jobId, DEFAULT_PARSE_EXPANDS);
 
-    const status = result.status || result.metadata?.status || '';
+    const status = result.status || result.job?.status || result.metadata?.status || '';
     onProgress?.(status);
 
-    if (status === 'SUCCESS' || status === 'COMPLETED') {
+    if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'PARTIAL_SUCCESS') {
       // Fetch images too
       try {
         const images = await getParseImages(jobId);
@@ -197,15 +292,15 @@ export async function pollUntilDone(
       return result;
     }
 
-    if (status === 'ERROR' || status === 'FAILED') {
-      throw new Error(result.error_message || 'Parsing failed');
+    if (status === 'ERROR' || status === 'FAILED' || status === 'CANCELLED') {
+      throw new Error(result.error_message || 'Dokumento paruošti nepavyko');
     }
 
     // Wait before next poll
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
 
-  throw new Error('Parsing timed out — job is still pending');
+  throw new Error('Dokumentas vis dar ruošiamas. Bandykite dar kartą po kelių akimirkų.');
 }
 
 /**
@@ -223,13 +318,33 @@ export async function parseDocument(
   // Step 2: Start parsing
   onStatus?.('Pradedamas apdorojimas...');
   const job = await startParse(uploaded.id, options.tier, options.userPrompt);
+  await options.onJobStarted?.(job);
 
   const jobId = job.id;
 
   // Step 3: Poll until done
   const result = await pollUntilDone(jobId, (status) => {
-    onStatus?.(`Apdorojama... (${status})`);
+    onStatus?.(`Skaitomas dokumentas... (${status})`);
   });
 
-  return { ...result, id: jobId };
+  return { ...result, id: jobId, file_id: uploaded.id };
+}
+
+export async function parseDirectusDocument(
+  input: DirectusUploadInput,
+  options: ParseOptions,
+  onStatus?: (status: string) => void
+): Promise<ParseResult> {
+  onStatus?.('Ruošiamas failas...');
+  const uploaded = await uploadDirectusFile(input);
+
+  onStatus?.('Pradedamas apdorojimas...');
+  const job = await startParse(uploaded.id, options.tier, options.userPrompt);
+  await options.onJobStarted?.(job);
+
+  const result = await pollUntilDone(job.id, (status) => {
+    onStatus?.(`Skaitomas dokumentas... (${status})`);
+  });
+
+  return { ...result, id: job.id, file_id: uploaded.id };
 }

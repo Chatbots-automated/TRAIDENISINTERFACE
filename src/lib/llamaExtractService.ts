@@ -66,6 +66,10 @@ async function readError(res: Response): Promise<string> {
   return res.text().catch(() => '');
 }
 
+function normalizeExtractStatus(status?: string): string {
+  return String(status || '').trim().toUpperCase();
+}
+
 export async function uploadExtractText(content: string, fileName = 'document.md'): Promise<string> {
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
   const file = new File([blob], fileName.endsWith('.md') ? fileName : `${fileName}.md`, { type: blob.type });
@@ -135,16 +139,19 @@ export async function pollExtractJob(
 ): Promise<ExtractJob> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const job = await getExtractJob(jobId);
-    onStatus?.(job.status);
+    const status = normalizeExtractStatus(job.status);
+    onStatus?.(status || job.status);
 
-    if (job.status === 'COMPLETED') return job;
-    if (job.status === 'FAILED') throw new Error(job.error_message || 'Extraction failed');
-    if (job.status === 'CANCELLED') throw new Error('Extraction was cancelled');
+    if (['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'PARTIAL_SUCCESS'].includes(status)) {
+      return { ...job, status };
+    }
+    if (['FAILED', 'ERROR'].includes(status)) throw new Error(job.error_message || 'Extraction failed');
+    if (['CANCELLED', 'CANCELED'].includes(status)) throw new Error('Extraction was cancelled');
 
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
 
-  throw new Error('Extraction timed out — job is still running');
+  throw new Error('Duomenų ištraukimas vis dar vyksta. Bandykite dar kartą po kelių akimirkų.');
 }
 
 export async function runExtract(input: RunExtractInput): Promise<ExtractJob> {
@@ -156,7 +163,7 @@ export async function runExtract(input: RunExtractInput): Promise<ExtractJob> {
   }
 
   if (!fileInput) {
-    throw new Error('Extraction needs a LlamaParse job id or document text');
+    throw new Error('Pirmiausia paruoškite dokumentą arba pateikite tekstą.');
   }
 
   input.onStatus?.('Pradedamas ištraukimas...');

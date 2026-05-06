@@ -66,10 +66,19 @@ export type ParseStatus = 'PENDING' | 'SUCCESS' | 'ERROR';
 export interface ParsedDocument {
   id: string;
   user_id: string;
+  original_file?: {
+    id: string;
+    filename_download?: string;
+    title?: string;
+    type?: string;
+    filesize?: number;
+    uploaded_on?: string;
+  } | string | null;
   file_name: string;
   file_type: string;
   file_size: number;
   tier: ParseTier;
+  llama_file_id?: string | null;
   job_id: string;
   status: ParseStatus;
   parsed_markdown: string;

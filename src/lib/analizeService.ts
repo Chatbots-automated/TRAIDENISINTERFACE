@@ -33,6 +33,7 @@ export interface CreateParsedDocumentInput {
   file_type: string;
   file_size: number;
   tier: ParseTier;
+  llama_file_id?: string | null;
   job_id: string;
   status: ParseStatus;
   parsed_markdown?: string;
@@ -62,10 +63,12 @@ function normalizeFile(row: any): ParsedDocument {
   return {
     id: row.id,
     user_id: row.user_id,
+    original_file: originalFile,
     file_name: row.file_name || fileMeta?.filename_download || fileMeta?.title || 'Dokumentas',
     file_type: row.file_type || fileMeta?.type || 'unknown',
     file_size: Number(row.file_size || fileMeta?.filesize || 0),
     tier: row.parse_tier || row.tier || 'agentic',
+    llama_file_id: row.llama_file_id || null,
     job_id: row.parse_job_id || row.job_id || '',
     status: row.parse_status || row.status || 'PENDING',
     parsed_markdown: row.parsed_markdown || '',
@@ -82,6 +85,7 @@ function toFileInsert(input: CreateParsedDocumentInput) {
   return {
     user_id: input.user_id,
     original_file: input.original_file || null,
+    llama_file_id: input.llama_file_id || null,
     parse_tier: input.tier,
     parse_job_id: input.job_id,
     parse_status: input.status,
@@ -114,10 +118,11 @@ export async function uploadOriginalDocument(file: File): Promise<DirectusFileMe
 }
 
 function toFileUpdate(
-  updates: Partial<Pick<ParsedDocument, 'status' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
+  updates: Partial<Pick<ParsedDocument, 'status' | 'llama_file_id' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
 ) {
   const data: Record<string, any> = {};
   if ('status' in updates) data.parse_status = updates.status;
+  if ('llama_file_id' in updates) data.llama_file_id = updates.llama_file_id;
   if ('job_id' in updates) data.parse_job_id = updates.job_id;
   if ('parsed_markdown' in updates) data.parsed_markdown = updates.parsed_markdown;
   if ('parsed_text' in updates) data.parsed_text = updates.parsed_text;
@@ -148,7 +153,7 @@ export async function saveParsedDocument(input: CreateParsedDocumentInput): Prom
 
 export async function updateParsedDocument(
   id: string,
-  updates: Partial<Pick<ParsedDocument, 'status' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
+  updates: Partial<Pick<ParsedDocument, 'status' | 'llama_file_id' | 'job_id' | 'parsed_markdown' | 'parsed_text' | 'parsed_json' | 'page_count' | 'images_metadata'>>
 ): Promise<void> {
   const { error } = await db
     .from(FILES_COLLECTION)
