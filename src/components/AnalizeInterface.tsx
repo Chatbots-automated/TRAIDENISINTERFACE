@@ -11,6 +11,7 @@ import {
   parseDirectusDocument,
   parseDocument as llamaParse,
   pollUntilDone,
+  supportsParseInstructions,
   type ParseJobResponse,
   type ParseResult,
 } from '../lib/llamaParseService';
@@ -360,8 +361,15 @@ function buildParseJobRequestSnapshot(
   };
 }
 
+function getEffectiveParsePrompt(tier: ParseTier, prompt?: string | null): string | undefined {
+  if (!supportsParseInstructions(tier)) return undefined;
+  const trimmed = prompt?.trim();
+  return trimmed || undefined;
+}
+
 export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed = false }: AnalizeInterfaceProps) {
   void projectId;
+  const isAdmin = Boolean(user.is_admin);
   const navigate = useNavigate();
   const { documentId: routeDocumentId } = useParams<{ documentId?: string }>();
 
@@ -401,6 +409,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   const fileInputRef = useRef<HTMLInputElement>(null);
   const failedResumeIdsRef = useRef<Set<string>>(new Set());
   const selectedFileUploadSeqRef = useRef(0);
+  const canUseParseInstructions = supportsParseInstructions(parseTier);
 
   // --- Result viewer ---
   const [resultViewTab, setResultViewTab] = useState<ViewTab>('markdown');
@@ -531,15 +540,17 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     }
   ) => {
     const markdown = result.result_content_markdown || '';
+    const text = result.result_content_text || '';
+    const contentForPageCount = markdown || text;
     await updateParsedDocument(documentId, {
       status: 'SUCCESS',
       llama_file_id: result.file_id || null,
       job_id: result.id || '',
       parsed_markdown: markdown,
-      parsed_text: result.result_content_text || '',
+      parsed_text: text,
       parsed_json: result.result_content_json || null,
       images_metadata: result.images_content_metadata || null,
-      page_count: markdown ? markdown.split(/\n---\n/).length : 0,
+      page_count: contentForPageCount ? contentForPageCount.split(/\n\n---\n\n|\n---\n/).length : 0,
     });
 
 	    const fullDoc = await getParsedDocument(documentId);
@@ -719,6 +730,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       const originalFile = await uploadOriginalDocument(file);
       if (selectedFileUploadSeqRef.current !== uploadSeq) return;
       setPreviewFallbackFileId(originalFile.id);
+      const effectiveUserPrompt = getEffectiveParsePrompt(parseTier, userPrompt);
 
       const doc = await saveParsedDocument({
         user_id: user.id,
@@ -729,7 +741,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         tier: parseTier,
         job_id: '',
         status: 'PENDING',
-        user_prompt: userPrompt || undefined,
+        user_prompt: effectiveUserPrompt,
       });
       if (selectedFileUploadSeqRef.current !== uploadSeq) return;
 
@@ -774,6 +786,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     if (!selectedFile) return;
     let processingDocId: string | null = null;
     let directusFileId = getOriginalFileId(selectedDocFull || selectedDoc);
+    const effectiveUserPrompt = getEffectiveParsePrompt(parseTier, userPrompt);
     const preparedDoc = directusFileId && (selectedDocFull || selectedDoc)?.status === 'PENDING'
       ? (selectedDocFull || selectedDoc)
       : null;
@@ -823,7 +836,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           tier: parseTier,
           job_id: '',
           status: 'PENDING',
-          user_prompt: userPrompt || undefined,
+          user_prompt: effectiveUserPrompt,
         });
       } else {
         setPreviewFallbackFileId(directusFileId);
@@ -837,12 +850,12 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       processingDocId = doc.id;
       await updateParsedDocument(doc.id, {
         tier: parseTier,
-        user_prompt: userPrompt || undefined,
+        user_prompt: effectiveUserPrompt,
       });
       doc = {
         ...doc,
         tier: parseTier,
-        user_prompt: userPrompt || undefined,
+        user_prompt: effectiveUserPrompt,
       };
       setHistoryLoaded(true);
 	      setDocuments(prev => [doc, ...prev.filter(item => item.id !== doc.id)]);
@@ -862,7 +875,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           selectedFile,
           {
             tier: parseTier,
-            userPrompt: userPrompt || undefined,
+            userPrompt: effectiveUserPrompt,
             onJobStarted: async (job) => {
               setStep('llama_upload', 'done', job.file_id ? 'Failas priimtas' : 'Failas priimtas apdorojimui');
               setParseStatusText('Skaitomas dokumentas...');
@@ -879,7 +892,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                   fileType: selectedFile.type || undefined,
                   fileSize: selectedFile.size,
                   tier: parseTier,
-                  userPrompt: userPrompt || undefined,
+                  userPrompt: effectiveUserPrompt,
                   source: 'browser_file',
                 }),
                 response_json: job,
@@ -908,7 +921,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           },
           {
             tier: parseTier,
-            userPrompt: userPrompt || undefined,
+            userPrompt: effectiveUserPrompt,
             onJobStarted: async (job) => {
               setStep('llama_upload', 'done', job.file_id ? 'Failas priimtas' : 'Failas priimtas apdorojimui');
               setParseStatusText('Skaitomas dokumentas...');
@@ -925,7 +938,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                   fileType: selectedFile.type || undefined,
                   fileSize: selectedFile.size,
                   tier: parseTier,
-                  userPrompt: userPrompt || undefined,
+                  userPrompt: effectiveUserPrompt,
                   source: 'directus_file',
                 }),
                 response_json: job,
@@ -994,7 +1007,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       await removeHistoryRecord(selectedDocFull.id, 'Istorijoje buvo nepasiekiamas failas. Įrašas pašalintas.');
       return;
     }
-	    setPreviewFallbackFileId(directusFileId);
+    setPreviewFallbackFileId(directusFileId);
+    const storedTier = selectedDocFull.tier || parseTier;
+    const storedUserPrompt = getEffectiveParsePrompt(storedTier, selectedDocFull.user_prompt);
 
     const setStep = (key: ParseStepKey, status: StepStatus, detail = '') => {
       setParseSteps(prev => prev.map(step => step.key === key ? { ...step, status, detail } : step));
@@ -1031,8 +1046,8 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           fileSize: selectedDocFull.file_size || undefined,
         },
         {
-          tier: selectedDocFull.tier || parseTier,
-          userPrompt: selectedDocFull.user_prompt || undefined,
+          tier: storedTier,
+          userPrompt: storedUserPrompt,
           onJobStarted: async (job) => {
             setStep('llama_upload', 'done', job.file_id ? 'Failas priimtas' : 'Failas priimtas apdorojimui');
             setStep('parse_job', 'active', 'Dokumentas ruošiamas');
@@ -1048,8 +1063,8 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                 fileName: selectedDocFull.file_name,
                 fileType: selectedDocFull.file_type || undefined,
                 fileSize: selectedDocFull.file_size || undefined,
-                tier: selectedDocFull.tier || parseTier,
-                userPrompt: selectedDocFull.user_prompt || undefined,
+                tier: storedTier,
+                userPrompt: storedUserPrompt,
                 source: 'directus_file',
               }),
               response_json: job,
@@ -1149,7 +1164,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   }, [activeExtractSchema, extractSchemaMode, rawExtractSchemaText]);
 
   const handleRunExtract = async () => {
-    if (!selectedDocFull || selectedDocFull.status !== 'SUCCESS' || extractLoading) return;
+    if (!isAdmin || !selectedDocFull || selectedDocFull.status !== 'SUCCESS' || extractLoading) return;
 
     setExtractLoading(true);
     setExtractError('');
@@ -1326,6 +1341,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   }[workflowStatus.tone];
 
   const canExtract = selectedDocFull?.status === 'SUCCESS' && !extractLoading;
+  const canStartExtract = isAdmin && canExtract;
   const canConfigureParsing = selectedDocFull?.status === 'PENDING' && !selectedDocFull.job_id && !extractResult;
   const showWorkflowStatus = !extractResult && !canConfigureParsing && (
     parseStatus === 'uploading'
@@ -1836,7 +1852,10 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               {TIERS.map(t => (
                                 <button
                                   key={t.value}
-                                  onClick={() => setParseTier(t.value)}
+                                  onClick={() => {
+                                    setParseTier(t.value);
+                                    if (!supportsParseInstructions(t.value)) setShowPrompt(false);
+                                  }}
                                   className="rounded-lg px-3 py-2 text-left text-xs font-medium transition-all"
                                   style={{
                                     background: parseTier === t.value ? 'rgba(0,122,255,0.08)' : '#faf9f7',
@@ -1853,17 +1872,19 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             </div>
                           </div>
 
-                          <button
-                            onClick={() => setShowPrompt(!showPrompt)}
-                            className="flex items-center gap-1 text-[10px] font-medium"
-                            style={{ color: '#8a857f' }}
-                          >
-                            <Settings2 className="w-3 h-3" />
-                            <span>Papildomos instrukcijos</span>
-                            <ChevronDown className={`w-3 h-3 transition-transform ${showPrompt ? 'rotate-180' : ''}`} />
-                          </button>
+                          {canUseParseInstructions && (
+                            <button
+                              onClick={() => setShowPrompt(!showPrompt)}
+                              className="flex items-center gap-1 text-[10px] font-medium"
+                              style={{ color: '#8a857f' }}
+                            >
+                              <Settings2 className="w-3 h-3" />
+                              <span>Papildomos instrukcijos</span>
+                              <ChevronDown className={`w-3 h-3 transition-transform ${showPrompt ? 'rotate-180' : ''}`} />
+                            </button>
+                          )}
 
-                          {showPrompt && (
+                          {canUseParseInstructions && showPrompt && (
                             <textarea
                               value={userPrompt}
                               onChange={e => setUserPrompt(e.target.value)}
@@ -2265,24 +2286,26 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           </div>
                         )}
 
-                        <button
-                          onClick={handleRunExtract}
-                          disabled={!canExtract}
-                          className="w-full h-9 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
-                          style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
-                        >
-                          {extractLoading ? (
-                            <span className="inline-flex items-center gap-2">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              {extractStatus || 'Analizuojama...'}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-2">
-                              <Sparkles className="w-3.5 h-3.5" />
-                              Analizuoti
-                            </span>
-                          )}
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={handleRunExtract}
+                            disabled={!canStartExtract}
+                            className="w-full h-9 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                            style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
+                          >
+                            {extractLoading ? (
+                              <span className="inline-flex items-center gap-2">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                {extractStatus || 'Analizuojama...'}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-2">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Analizuoti
+                              </span>
+                            )}
+                          </button>
+                        )}
                       </div>
 
                       {extractError && (

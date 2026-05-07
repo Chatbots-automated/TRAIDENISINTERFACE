@@ -9,7 +9,6 @@ import {
   Check,
   AlertCircle,
   X,
-  Shield,
   BookOpen,
   Lock,
   Eye,
@@ -192,6 +191,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     [variables]
   );
   const selectedVariable = instructionVariables[selectedIndex] || null;
+  const isAdmin = Boolean(user.is_admin);
+  const canEditSelectedVariable = Boolean(
+    selectedVariable && (isAdmin || isChatInstructionVariable(selectedVariable))
+  );
 
   useEffect(() => {
     loadVariables();
@@ -207,16 +210,22 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     const params = new URLSearchParams(location.search);
     const schemaParam = params.get('schema');
     const variableParam = params.get('variable');
-    if (schemaParam === 'sdk') {
+    if (isAdmin && schemaParam === 'sdk') {
       openCombinedEditor('schema', 'sdk_chat_tool_schemas');
-    } else if (schemaParam === 'kainos') {
+    } else if (isAdmin && schemaParam === 'kainos') {
       openCombinedEditor('schema', 'kainos_ai_tool_schemas');
-    } else if (schemaParam === 'kainos-prompt') {
+    } else if (isAdmin && schemaParam === 'kainos-prompt') {
       openCombinedEditor('kainos_prompt');
     } else if (variableParam) {
       loadVariables(variableParam);
     }
-  }, [location.search]);
+  }, [location.search, isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin && view === 'versions') {
+      setView('editor');
+    }
+  }, [isAdmin, view]);
 
   useEffect(() => {
     if (view === 'versions') {
@@ -270,6 +279,10 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
   const handleAuthenticate = async () => {
     setPasswordError('');
+    if (!canEditSelectedVariable) {
+      setPasswordError('Šį kintamąjį gali redaguoti tik administratorius');
+      return;
+    }
     const isValid = await verifyUserPassword(user.email, password);
     if (isValid) {
       setIsAuthenticated(true);
@@ -283,6 +296,15 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
   const handleSave = async () => {
     if (!selectedVariable) return;
+    if (!canEditSelectedVariable) {
+      setError('Šį kintamąjį gali redaguoti tik administratorius');
+      return;
+    }
+    if (!isAdmin && !isAuthenticated) {
+      setShowPasswordInput(true);
+      setError('Norint redaguoti chat_ kintamuosius reikia atrakinti redagavimą slaptažodžiu');
+      return;
+    }
 
     try {
       setSaving(true);
@@ -315,6 +337,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const handleCreateVariable = async () => {
+    if (!isAdmin) return;
     const variableKey = normalizeChatVariableKey(newVariableForm.variable_key);
     const variableName = newVariableForm.variable_name.trim();
 
@@ -357,7 +380,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const handleDeleteVariable = async () => {
-    if (!deleteVariableKey || !user.is_admin) return;
+    if (!deleteVariableKey || !isAdmin) return;
     if (deleteVariableKey === CHAT_TEMPLATE_VARIABLE_KEY) {
       setDeleteVariableError('chat_template yra pagrindinis šablonas ir negali būti trinamas');
       return;
@@ -388,6 +411,11 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
   const handleFillChatTemplate = async () => {
     if (!selectedVariable || selectedVariable.variable_key !== CHAT_TEMPLATE_VARIABLE_KEY) return;
+    if (!isAdmin && !isAuthenticated) {
+      setShowPasswordInput(true);
+      setPasswordError('Atrakinkite redagavimą slaptažodžiu');
+      return;
+    }
 
     const nextContent = buildTemplateFromChatVariables(instructionVariables);
     if (!nextContent.trim()) {
@@ -426,6 +454,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const handleRevert = async (versionNumber: number) => {
+    if (!isAdmin) return;
     try {
       setRevertingVersion(versionNumber);
       const result = await revertToVersion(versionNumber, user.id, user.email);
@@ -511,6 +540,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const loadSchemaContent = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    if (!isAdmin) return;
     setSchemaLoading(true);
     setSchemaError(null);
     try {
@@ -533,6 +563,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const openSchemaEditor = async (targetKey: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    if (!isAdmin) return;
     setEditorTab('schema');
     setSchemaKey(targetKey);
     setSchemaSuccess(null);
@@ -564,6 +595,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const saveSchema = async () => {
+    if (!isAdmin) return;
     setSchemaSaving(true);
     setSchemaError(null);
     setSchemaSuccess(null);
@@ -609,6 +641,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const openPromptEditor = async (targetKey: KainosPromptKey = kainosPromptKey) => {
+    if (!isAdmin) return;
     setPromptLoading(true);
     setPromptError(null);
     setPromptSuccess(null);
@@ -631,6 +664,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const openCombinedEditor = async (tab: 'schema' | 'kainos_prompt', schemaTarget?: 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas') => {
+    if (!isAdmin) return;
     setShowSchemaEditor(true);
     setEditorTab(tab);
     setEditorUnlocked(false);
@@ -660,6 +694,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const saveKainosPrompt = async () => {
+    if (!isAdmin) return;
     setPromptSaving(true);
     setPromptError(null);
     setPromptSuccess(null);
@@ -705,6 +740,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
   };
 
   const generatePromptPreview = async () => {
+    if (!isAdmin) return;
     setPromptPreviewLoading(true);
     setPromptPreviewError(null);
     setPromptPreviewMissing([]);
@@ -763,23 +799,6 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
     if (diffDays < 30) return `${diffDays} d.`;
     return date.toLocaleDateString('lt-LT');
   };
-
-  if (!user.is_admin) {
-    return (
-      <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.secondary }}>
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4" style={{
-            background: colors.status.error,
-            color: colors.status.errorText
-          }}>
-            <Shield className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>Prieiga uždrausta</h3>
-          <p style={{ color: colors.text.secondary }}>Jums reikia administratoriaus teisių</p>
-        </div>
-      </div>
-    );
-  }
 
   // Versions View
   if (view === 'versions') {
@@ -987,31 +1006,35 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
 
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-base-300/70">
-          <div className="mb-2 space-y-2">
-            <button
-              onClick={() => {
-                setCreateVariableError(null);
-                setShowCreateVariable(true);
-              }}
-              className="app-text-btn app-text-btn-primary w-full justify-start min-h-8 text-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Naujas kintamasis
-            </button>
-            <button
-              onClick={() => openCombinedEditor('schema', 'sdk_chat_tool_schemas')}
-              className="app-text-btn w-full justify-start min-h-8 text-xs"
-            >
-              Schemos
-            </button>
-            <button
-              onClick={() => openCombinedEditor('kainos_prompt')}
-              className="app-text-btn w-full justify-start min-h-8 text-xs"
-            >
-              Promptai
-            </button>
-          </div>
-          <VersionHistoryButton onClick={() => setView('versions')} />
+          {isAdmin && (
+            <>
+              <div className="mb-2 space-y-2">
+                <button
+                  onClick={() => {
+                    setCreateVariableError(null);
+                    setShowCreateVariable(true);
+                  }}
+                  className="app-text-btn app-text-btn-primary w-full justify-start min-h-8 text-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Naujas kintamasis
+                </button>
+                <button
+                  onClick={() => openCombinedEditor('schema', 'sdk_chat_tool_schemas')}
+                  className="app-text-btn w-full justify-start min-h-8 text-xs"
+                >
+                  Schemos
+                </button>
+                <button
+                  onClick={() => openCombinedEditor('kainos_prompt')}
+                  className="app-text-btn w-full justify-start min-h-8 text-xs"
+                >
+                  Promptai
+                </button>
+              </div>
+              <VersionHistoryButton onClick={() => setView('versions')} />
+            </>
+          )}
         </div>
       </div>
 
@@ -1058,7 +1081,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       <CancelButton onClick={handleCancelEdit} />
                       <SaveButton
                         onClick={handleSave}
-                        disabled={saving || editContent === selectedVariable.content}
+                        disabled={saving || editContent === selectedVariable.content || !canEditSelectedVariable}
                         saving={saving}
                       />
                     </>
@@ -1071,7 +1094,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                           loading={fillingTemplate}
                         />
                       )}
-                      {user.is_admin && selectedVariable.variable_key !== CHAT_TEMPLATE_VARIABLE_KEY && (
+                      {isAdmin && selectedVariable.variable_key !== CHAT_TEMPLATE_VARIABLE_KEY && (
                         <DeleteButton
                           onClick={() => {
                             setDeleteVariableError(null);
@@ -1079,7 +1102,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                           }}
                         />
                       )}
-                      <EditButton onClick={() => setShowPasswordInput(true)} />
+                      {canEditSelectedVariable && <EditButton onClick={() => setShowPasswordInput(true)} />}
                     </>
                   )}
                 </div>
@@ -1179,7 +1202,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
         )}
       </div>
 
-      {showSchemaEditor && (
+      {showSchemaEditor && isAdmin && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-8"
           style={{ background: 'rgba(15,23,42,0.22)', backdropFilter: 'blur(6px)' }}
@@ -1383,7 +1406,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         </div>
       )}
-      {showCreateVariable && (
+      {showCreateVariable && isAdmin && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(15,23,42,0.20)', backdropFilter: 'blur(6px)' }}
@@ -1472,7 +1495,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
           </div>
         </div>
       )}
-      {deleteVariableKey && (
+      {deleteVariableKey && isAdmin && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(15,23,42,0.20)', backdropFilter: 'blur(6px)' }}

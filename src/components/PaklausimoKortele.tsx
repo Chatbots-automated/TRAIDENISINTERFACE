@@ -4351,7 +4351,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
-export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void }) {
+export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDelete = true }: { record: NestandartiniaiRecord; onClose: () => void; onDeleted?: () => void; onRefresh?: (updated: NestandartiniaiRecord) => void; canDelete?: boolean }) {
   const readModalStateFromUrl = () => {
     const params = new URLSearchParams(window.location.search);
     const rid = params.get('pm_rid');
@@ -4481,6 +4481,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleDeleteRecord = async () => {
+    if (!canDelete) return;
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -4730,7 +4731,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
             )}
             {/* Delete record – pushed to bottom */}
             <div className="mt-auto pt-3">
-              {!isLocked && (
+              {canDelete && !isLocked && (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
                   className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs text-base-content/35 border border-transparent transition-all duration-150 hover:text-error hover:bg-error/5 hover:border-error/10"
@@ -4830,7 +4831,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh }: { rec
       )}
 
       {/* Delete confirmation dialog */}
-      {showDeleteConfirm && (
+      {canDelete && showDeleteConfirm && (
         <div
           className="fixed inset-0 z-[10000] flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}

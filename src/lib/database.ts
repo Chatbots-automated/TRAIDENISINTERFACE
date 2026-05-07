@@ -466,6 +466,27 @@ export const createVadybininkas = async (fullName: string, kodas: string) => {
   }
 };
 
+export const updateVadybininkas = async (id: string, updates: { full_name?: string; kodas?: string }) => {
+  try {
+    const { data, error } = await db
+      .from('vadybininkai')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating vadybininkas:', error);
+      return { data: null, error };
+    }
+
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error in updateVadybininkas:', error);
+    return { data: null, error };
+  }
+};
+
 export const deleteVadybininkas = async (id: string) => {
   try {
     const { data, error } = await db

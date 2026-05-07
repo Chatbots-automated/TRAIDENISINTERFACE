@@ -3,7 +3,11 @@ import { AlertTriangle, Check, ChevronDown, FileText, Loader2, Plus, Trash2, X }
 import { createSablonas, deleteSablonas, fetchSablonai, updateSablonas } from '../../lib/sablonaiService';
 import type { MedziaguSablonas } from '../../lib/sablonaiService';
 
-export function SablonaiTab() {
+interface SablonaiTabProps {
+  canEdit?: boolean;
+}
+
+export function SablonaiTab({ canEdit = false }: SablonaiTabProps) {
   const [sablonai, setSablonai] = useState<MedziaguSablonas[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +42,12 @@ export function SablonaiTab() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (canEdit) return;
+    setDraftCard(null);
+    setConfirmDeleteId(null);
+  }, [canEdit]);
 
   const getCapacity = useCallback((name: string) => {
     const normalized = name.normalize('NFKC').replace(/[–—]/g, '-');
@@ -82,6 +92,7 @@ export function SablonaiTab() {
   }, [draftCard?.localId]);
 
   useEffect(() => {
+    if (!canEdit) return;
     const shouldWarn = !!draftCard && (draftCard.isSaving || (!!draftCard.rawText.trim() && !draftCard.id));
     if (!shouldWarn) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -90,7 +101,7 @@ export function SablonaiTab() {
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [draftCard]);
+  }, [canEdit, draftCard]);
 
   const toggleCard = (id: string) => {
     setExpandedCards(prev => {
@@ -104,6 +115,7 @@ export function SablonaiTab() {
   };
 
   const startNew = () => {
+    if (!canEdit) return;
     if (draftCard) {
       setExpandedCards(prev => {
         const collapsed: Record<string, boolean> = {};
@@ -182,6 +194,7 @@ export function SablonaiTab() {
   }, []);
 
   useEffect(() => {
+    if (!canEdit) return;
     if (!draftCard) return;
     const rawText = draftCard.rawText.trim();
     if (!rawText) return;
@@ -207,7 +220,7 @@ export function SablonaiTab() {
     }, 700);
 
     return () => window.clearTimeout(timer);
-  }, [draftCard?.rawText, draftCard?.name, draftCard?.id, upsertLocalTemplate]);
+  }, [canEdit, draftCard?.rawText, draftCard?.name, draftCard?.id, upsertLocalTemplate]);
 
   useEffect(() => {
     if (!showSavedHint) return;
@@ -216,6 +229,7 @@ export function SablonaiTab() {
   }, [showSavedHint]);
 
   const handleDelete = async (id: number) => {
+    if (!canEdit) return;
     setDeleting(true);
     try {
       await deleteSablonas(id);
@@ -229,6 +243,7 @@ export function SablonaiTab() {
   };
 
   const handleFinishDraft = async () => {
+    if (!canEdit) return;
     if (!draftCard) return;
     const rawText = draftCard.rawText.trim();
     if (!rawText) {
@@ -264,6 +279,7 @@ export function SablonaiTab() {
   };
 
   const cancelDraft = async () => {
+    if (!canEdit) return;
     if (!draftCard) return;
     const targetId = draftCard.id;
     setDraftCard(prev => prev ? { ...prev, isSaving: true, saveError: null } : prev);
@@ -311,12 +327,14 @@ export function SablonaiTab() {
             />
           </label>
         </div>
-        <button
-          onClick={startNew}
-          className="app-text-btn"
-        >
-          <Plus className="w-3.5 h-3.5" />Naujas šablonas
-        </button>
+        {canEdit && (
+          <button
+            onClick={startNew}
+            className="app-text-btn"
+          >
+            <Plus className="w-3.5 h-3.5" />Naujas šablonas
+          </button>
+        )}
       </div>
 
       {/* Templates list */}
@@ -324,11 +342,17 @@ export function SablonaiTab() {
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <FileText className="w-10 h-10 mb-3" style={{ color: '#d1cdc7' }} />
           <p className="text-sm font-medium" style={{ color: '#8a857f' }}>{capacityFilter ? 'Nėra šablonų pagal šį V- filtrą' : 'Nėra medžiagų šablonų'}</p>
-          <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>{capacityFilter ? 'Pakeiskite V- filtro reikšmę' : 'Sukurkite pirmą šabloną paspaudę „Naujas šablonas"'}</p>
+          <p className="text-xs mt-1" style={{ color: '#b5b0aa' }}>
+            {capacityFilter
+              ? 'Pakeiskite V- filtro reikšmę'
+              : canEdit
+                ? 'Sukurkite pirmą šabloną paspaudę „Naujas šablonas"'
+                : 'Šablonai bus matomi čia, kai administratorius juos sukurs'}
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
-            {draftCard && (
+            {canEdit && draftCard && (
               <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-5 items-start">
                 <div className="relative h-full min-h-[120px] pl-4 pt-3 before:absolute before:left-1 before:top-0 before:bottom-0 before:w-px before:bg-primary/20 after:absolute after:left-1 after:top-5 after:h-px after:w-2 after:bg-primary">
                   <span className="text-xs font-semibold text-primary">Naujas</span>
@@ -432,9 +456,11 @@ export function SablonaiTab() {
                             )}
                           </div>
                           <div className="flex items-center gap-1">
-                            <button onClick={() => setConfirmDeleteId(s.id)} className="app-icon-btn" title="Ištrinti">
-                              <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
-                            </button>
+                            {canEdit && (
+                              <button onClick={() => setConfirmDeleteId(s.id)} className="app-icon-btn" title="Ištrinti">
+                                <Trash2 className="w-3.5 h-3.5 text-base-content/55" />
+                              </button>
+                            )}
                             <button
                               onClick={() => toggleCard(cardKey)}
                               className="p-1 text-base-content/60 hover:text-base-content"
@@ -456,7 +482,7 @@ export function SablonaiTab() {
                           </div>
                         )}
 
-                        {confirmDeleteId === s.id && (
+                        {canEdit && confirmDeleteId === s.id && (
                           <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: '1px solid #f0ede8' }}>
                             <span className="text-xs" style={{ color: '#FF3B30' }}>Ištrinti šį šabloną?</span>
                             <button onClick={() => handleDelete(s.id)} disabled={deleting}

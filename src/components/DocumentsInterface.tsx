@@ -590,6 +590,7 @@ function FilterBar({ filters, onChange, options }: {
 // ---------------------------------------------------------------------------
 
 export default function DocumentsInterface({ user, projectId: _projectId }: DocumentsInterfaceProps) {
+  const isAdmin = Boolean(user.is_admin);
   const [selectedTable, setSelectedTable] = useState<TableName>('n8n_vector_store');
   const [standartiniaiData, setStandartiniaiData] = useState<any[]>([]);
   const [nestandartiniaiData, setNestandartiniaiData] = useState<NestandartiniaiRecord[]>([]);
@@ -618,6 +619,12 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
 
   const isNestandartiniai = selectedTable === 'n8n_vector_store';
   const isTalpos = selectedTable === 'talpos';
+
+  useEffect(() => {
+    if (isAdmin) return;
+    setSelectedIds(new Set());
+    setShowBulkDeleteConfirm(false);
+  }, [isAdmin]);
 
   const [paramSearchKey, setParamSearchKey] = useState('');
   const [paramSearchValue, setParamSearchValue] = useState('');
@@ -875,6 +882,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   };
 
   const toggleSelectId = (id: number) => {
+    if (!isAdmin) return;
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -883,6 +891,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   };
 
   const toggleSelectAll = () => {
+    if (!isAdmin) return;
     const visibleIds = pagedData.map((r: any) => r.id as number);
     const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
     if (allSelected) {
@@ -901,6 +910,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   };
 
   const handleBulkDelete = async () => {
+    if (!isAdmin) return;
     setBulkDeleting(true);
     try {
       if (isNestandartiniai) {
@@ -1187,7 +1197,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
           /* ---- Nestandartiniai table (fixed columns) ---- */
           <div className="app-table-shell">
             {/* Bulk actions bar */}
-            {selectedIds.size > 0 && (
+            {isAdmin && selectedIds.size > 0 && (
               <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
                 <span className="text-xs font-medium" style={{ color: '#007AFF' }}>
                   Pasirinkta: {selectedIds.size}
@@ -1216,15 +1226,17 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
             <table className="app-data-table">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  <th className="w-10 px-2 py-3">
-                    <input
-                      type="checkbox"
-                      checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-                      title="Pasirinkti visus"
-                    />
-                  </th>
+                  {isAdmin && (
+                    <th className="w-10 px-2 py-3">
+                      <input
+                        type="checkbox"
+                        checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                        title="Pasirinkti visus"
+                      />
+                    </th>
+                  )}
                   <th className="w-10 px-2 py-3"></th>
                   {(['project_name', 'talpu_kiekis', 'klientas', 'pateikimo_data', 'description', 'talpa_m3'] as const).map(key => {
                     const label = key === 'project_name' ? 'Projektas' : key === 'talpu_kiekis' ? 'Talpų Kiekis' : key === 'klientas' ? 'Klientas' : key === 'pateikimo_data' ? 'Data' : key === 'description' ? 'Santrauka' : 'Talpa m3';
@@ -1261,23 +1273,26 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                   // Talpų Kiekis: use UUID field count, fall back to metadata array length
                   const uuidIds = (row.talpos || '').split(',').map((s: string) => s.trim()).filter(Boolean);
                   const talpaKiekis = uuidIds.length > 0 ? String(uuidIds.length) : (metaTalpos.length > 0 ? String(metaTalpos.length) : '—');
-                  return (
-                    <tr
-                      key={row.id ?? i}
-                      className="transition-colors"
-                      onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
-                      style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
-                    >
-                      <td className="w-10 px-2 py-2.5">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(row.id as number)}
-                          onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
-                          onClick={e => e.stopPropagation()}
-                          className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-                        />
-                      </td>
+                    const isSelected = isAdmin && selectedIds.has(row.id as number);
+	                  return (
+	                    <tr
+	                      key={row.id ?? i}
+	                      className="transition-colors"
+	                      onMouseEnter={e => (e.currentTarget.style.background = isSelected ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
+	                      onMouseLeave={e => (e.currentTarget.style.background = isSelected ? 'rgba(0,122,255,0.03)' : '')}
+	                      style={{ borderBottom: '1px solid #f8f6f3', background: isSelected ? 'rgba(0,122,255,0.03)' : '' }}
+	                    >
+                      {isAdmin && (
+	                      <td className="w-10 px-2 py-2.5">
+	                        <input
+	                          type="checkbox"
+	                          checked={selectedIds.has(row.id as number)}
+	                          onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
+	                          onClick={e => e.stopPropagation()}
+	                          className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+	                        />
+	                      </td>
+                      )}
                       <td className="w-10 px-2 py-2.5">
                         <button
                           className="p-1.5 rounded-md transition-colors"
@@ -1400,7 +1415,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
           /* ---- Standartiniai table (configurable columns) ---- */
           <div className="app-table-shell">
             {/* Bulk actions bar */}
-            {selectedIds.size > 0 && (
+            {isAdmin && selectedIds.size > 0 && (
               <div className="flex items-center gap-3 px-4 py-2" style={{ background: 'rgba(0,122,255,0.04)', borderBottom: '1px solid #f0ede8' }}>
                 <span className="text-xs font-medium" style={{ color: '#007AFF' }}>
                   Pasirinkta: {selectedIds.size}
@@ -1429,15 +1444,17 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
             <table className="app-data-table">
               <thead>
                 <tr style={{ borderBottom: '1px solid #f0ede8' }}>
-                  <th className="w-10 px-2 py-3">
-                    <input
-                      type="checkbox"
-                      checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
-                      onChange={toggleSelectAll}
-                      className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-                      title="Pasirinkti visus"
-                    />
-                  </th>
+                  {isAdmin && (
+                    <th className="w-10 px-2 py-3">
+                      <input
+                        type="checkbox"
+                        checked={sortedData.length > 0 && sortedData.every((r: any) => selectedIds.has(r.id))}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                        title="Pasirinkti visus"
+                      />
+                    </th>
+                  )}
                   <th className="w-20 px-2 py-3">
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Failas</span>
                   </th>
@@ -1459,23 +1476,27 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                 </tr>
               </thead>
               <tbody>
-                {sortedData.map((row, i) => (
+                {sortedData.map((row, i) => {
+                  const isSelected = isAdmin && selectedIds.has(row.id as number);
+                  return (
                   <tr
                     key={row.id ?? i}
                     className="transition-colors"
-                    style={{ borderBottom: '1px solid #f8f6f3', background: selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = selectedIds.has(row.id as number) ? 'rgba(0,122,255,0.03)' : '')}
+                    style={{ borderBottom: '1px solid #f8f6f3', background: isSelected ? 'rgba(0,122,255,0.03)' : '' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = isSelected ? 'rgba(0,122,255,0.06)' : 'rgba(0,122,255,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = isSelected ? 'rgba(0,122,255,0.03)' : '')}
                   >
-                    <td className="w-10 px-2 py-2.5">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(row.id as number)}
-                        onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
-                        onClick={e => e.stopPropagation()}
-                        className="w-4 h-4 rounded cursor-pointer accent-blue-500"
-                      />
-                    </td>
+                    {isAdmin && (
+                      <td className="w-10 px-2 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(row.id as number)}
+                          onChange={e => { e.stopPropagation(); toggleSelectId(row.id as number); }}
+                          onClick={e => e.stopPropagation()}
+                          className="w-4 h-4 rounded cursor-pointer accent-blue-500"
+                        />
+                      </td>
+                    )}
                     <td className="w-20 px-2 py-2.5">
                       {(() => {
                         const fileId = extractDirectusFileId(row.document ?? row.docx_file_id);
@@ -1534,7 +1555,8 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                       );
                     })}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
 
@@ -1546,7 +1568,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
       </div>
 
       {/* Bulk delete confirmation */}
-      {showBulkDeleteConfirm && (
+      {isAdmin && showBulkDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => !bulkDeleting && setShowBulkDeleteConfirm(false)}>
           <div
             className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4"
@@ -1586,7 +1608,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
       )}
 
       {selectedCard && (
-        <PaklausimoModal record={selectedCard} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
+        <PaklausimoModal record={selectedCard} canDelete={isAdmin} onClose={() => setSelectedCard(null)} onDeleted={loadNestandartiniai} onRefresh={(updated) => { setSelectedCard(updated); loadNestandartiniai(); }} />
       )}
 
       {showManualProjectModal && (

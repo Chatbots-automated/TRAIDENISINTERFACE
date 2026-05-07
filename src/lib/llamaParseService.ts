@@ -93,6 +93,10 @@ const PARSE_RESULT_EXPAND_FALLBACKS = [
   [],
 ];
 
+export function supportsParseInstructions(tier: ParseTier): boolean {
+  return tier !== 'fast';
+}
+
 function contentToString(value: unknown): string {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) {
@@ -103,12 +107,33 @@ function contentToString(value: unknown): string {
   }
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
+    if (Array.isArray(record.pages)) {
+      return record.pages
+        .map(page => contentToString(page))
+        .filter(Boolean)
+        .join('\n\n---\n\n');
+    }
+
+    if (Array.isArray(record.items)) {
+      return record.items
+        .map(item => contentToString(item))
+        .filter(Boolean)
+        .join('\n');
+    }
+
     for (const key of ['value', 'content', 'text', 'markdown', 'md']) {
       const nested = contentToString(record[key]);
       if (nested) return nested;
     }
   }
   return '';
+}
+
+function hasResultContent(result: ParseResult): boolean {
+  if (result.result_content_text?.trim()) return true;
+  if (result.result_content_markdown?.trim()) return true;
+  if (result.result_content_json != null) return true;
+  return false;
 }
 
 function normalizeParseResult(data: ParseResult): ParseResult {
@@ -217,7 +242,7 @@ export async function startParse(
     version: 'latest',
   };
 
-  if (userPrompt?.trim()) {
+  if (supportsParseInstructions(tier) && userPrompt?.trim()) {
     body.agentic_options = { custom_prompt: userPrompt.trim() };
   }
 
@@ -278,13 +303,20 @@ export async function getParseResult(
 
 async function getCompletedParseResult(jobId: string): Promise<ParseResult> {
   let lastError: unknown;
+  let lastResult: ParseResult | null = null;
 
   for (const expand of PARSE_RESULT_EXPAND_FALLBACKS) {
     try {
-      return await getParseResult(jobId, expand);
+      const result = await getParseResult(jobId, expand);
+      if (hasResultContent(result)) return result;
+      lastResult = result;
     } catch (err) {
       lastError = err;
     }
+  }
+
+  if (lastResult) {
+    throw new Error('Dokumentas apdorotas, bet LlamaParse negrąžino teksto, Markdown ar struktūrinių elementų.');
   }
 
   throw lastError instanceof Error

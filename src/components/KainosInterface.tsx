@@ -42,6 +42,8 @@ interface KainosInterfaceProps { user: AppUser; }
 // ---------------------------------------------------------------------------
 
 export default function KainosInterface({ user }: KainosInterfaceProps) {
+  const isAdmin = Boolean(user.is_admin);
+
   // ---- data state ----
   const [medziagas, setMedziagas] = useState<Medžiaga[]>([]);
   const [istorija, setIstorija] = useState<KainuIrašas[]>([]);
@@ -175,6 +177,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   }, [loadInternetAnalysisState]);
 
   const generateSingleAnalysis = useCallback(async (section: 'nafta' | 'geo' | 'analysis') => {
+    if (!isAdmin) return;
     if (genLoading || runningSections[section]) return;
     setGenLoading(true);
     setGenStep(section);
@@ -185,7 +188,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       await loadInternetAnalysisState(true);
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
-      if (err instanceof InternetAnalysisConfigError) {
+      if (isAdmin && err instanceof InternetAnalysisConfigError) {
         setConfigWarning({
           reason: err.reason,
           promptContent: err.promptContent,
@@ -199,24 +202,27 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       setGenStep('idle');
       setRunningSections((prev) => ({ ...prev, [section]: false }));
     }
-  }, [genLoading, loadInternetAnalysisState, runningSections]);
+  }, [genLoading, isAdmin, loadInternetAnalysisState, runningSections]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
 
   // ---- CRUD handlers ----
   const handleAddMat = async (art: string, pav: string, vnt: string) => {
+    if (!isAdmin) return;
     await insertMedžiaga(art, pav, vnt);
     await loadData();
     addNotif('success', 'Pridėta', `Medžiaga "${pav}" pridėta`);
   };
   const handleUpdateMat = async (_art: string, pav: string, vnt: string) => {
+    if (!isAdmin) return;
     if (!editingMat) return;
     await updateMedžiaga(editingMat.artikulas, pav, vnt);
     await loadData();
     addNotif('success', 'Atnaujinta', 'Medžiaga atnaujinta');
   };
   const handleDeleteMat = async (m: Medžiaga) => {
+    if (!isAdmin) return;
     if (!confirm(`Ištrinti "${m.pavadinimas}" ir visus jos kainų įrašus?`)) return;
     setDelMatArt(m.artikulas);
     try { await deleteMedžiaga(m.artikulas); await loadData(); addNotif('info', 'Ištrinta', `"${m.pavadinimas}" pašalinta`); }
@@ -224,17 +230,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     finally { setDelMatArt(null); }
   };
   const handleAddPrice = async (art: string, data: string, min: number|null, max: number|null, notes: string|null) => {
+    if (!isAdmin) return;
     await insertIrašas(art, data, min, max, notes);
     await loadData();
     addNotif('success', 'Pridėta', 'Kaina pridėta');
   };
   const handleUpdatePrice = async (_art: string, data: string, min: number|null, max: number|null, notes: string|null) => {
+    if (!isAdmin) return;
     if (!editingIras) return;
     await updateIrašas(editingIras.id, data, min, max, notes);
     await loadData();
     addNotif('success', 'Atnaujinta', 'Kaina atnaujinta');
   };
   const handleDeletePrice = async (id: number) => {
+    if (!isAdmin) return;
     setDelIrasId(id);
     try { await deleteIrašas(id); await loadData(); }
     catch (err: any) { addNotif('error', 'Klaida', err.message); }
@@ -243,6 +252,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // ---- Excel import handler ----
   const handleExcelFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isAdmin) return;
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -379,6 +389,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   };
 
   const handleExcelImport = async () => {
+    if (!isAdmin) return;
     if (!excelPreview) return;
     setImporting(true);
     try {
@@ -505,7 +516,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       <div className="app-workspace-header shrink-0 pb-0">
         <div className="flex items-center justify-between mb-4">
           <h2 className="app-workspace-title">Žaliavos</h2>
-          {activeTab === 'lentele' && (
+          {activeTab === 'lentele' && isAdmin && (
             <div className="flex items-center gap-2">
               <input ref={fileInputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelFile} />
               <button onClick={() => fileInputRef.current?.click()}
@@ -554,12 +565,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           medziagas.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 gap-3">
               <BarChart2 className="w-10 h-10" style={{ color: '#d4cfc8' }} />
-              <p className="text-sm" style={{ color: '#8a857f' }}>Nėra medžiagų. Pridėkite pirmąją.</p>
-              <button onClick={() => setShowAddMat(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white"
-                style={{ background: '#007AFF' }}>
-                <Plus className="w-3.5 h-3.5" />Nauja medžiaga
-              </button>
+              <p className="text-sm" style={{ color: '#8a857f' }}>
+                {isAdmin ? 'Nėra medžiagų. Pridėkite pirmąją.' : 'Nėra medžiagų.'}
+              </p>
+              {isAdmin && (
+                <button onClick={() => setShowAddMat(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium text-white"
+                  style={{ background: '#007AFF' }}>
+                  <Plus className="w-3.5 h-3.5" />Nauja medžiaga
+                </button>
+              )}
             </div>
           ) : (
             <div className="app-table-shell" style={{ maxHeight: 'calc(100vh - 220px)' }}>
@@ -577,9 +592,11 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                         <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>{fmtDate(d)}</span>
                       </th>
                     ))}
-                    <th className="px-3 py-3 text-right whitespace-nowrap">
-                      <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Veiksmai</span>
-                    </th>
+                    {isAdmin && (
+                      <th className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Veiksmai</span>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -599,6 +616,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                         return (
                           <td key={d} className="px-2 py-1.5 text-center" style={{ minWidth: 90 }}>
                             {e ? (
+                              isAdmin ? (
                               <div className="flex items-center justify-center gap-0.5 group/cell">
                                 <button onClick={() => setEditingIras(e)}
                                   className="px-2 py-1 rounded text-xs font-mono hover:bg-blue-50 transition-colors"
@@ -612,29 +630,40 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                                     : <X className="w-2.5 h-2.5" style={{ color: '#b91c1c' }} />}
                                 </button>
                               </div>
+                              ) : (
+                                <span className="px-2 py-1 text-xs font-mono" style={{ color: '#3d3935' }}>
+                                  {formatPrice(e)}
+                                </span>
+                              )
                             ) : (
-                              <button onClick={() => setShowPriceMod({ defArt: m.artikulas, defDate: d })}
-                                className="px-2 py-1 rounded text-xs text-gray-300 hover:text-blue-400 hover:bg-blue-50 transition-colors" title="Pridėti kainą">
-                                +
-                              </button>
+                              isAdmin ? (
+                                <button onClick={() => setShowPriceMod({ defArt: m.artikulas, defDate: d })}
+                                  className="px-2 py-1 rounded text-xs text-gray-300 hover:text-blue-400 hover:bg-blue-50 transition-colors" title="Pridėti kainą">
+                                  +
+                                </button>
+                              ) : (
+                                <span className="text-xs text-base-content/25">—</span>
+                              )
                             )}
                           </td>
                         );
                       })}
-                      <td className="px-3 py-2.5 text-right">
-                        <div className="flex items-center justify-end gap-0.5">
-                          <button onClick={() => setEditingMat(m)}
-                            className="p-1.5 rounded-md hover:bg-black/5 transition-colors" title="Redaguoti">
-                            <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
-                          </button>
-                          <button onClick={() => handleDeleteMat(m)} disabled={delMatArt === m.artikulas}
-                            className="p-1.5 rounded-md hover:bg-red-50 transition-colors" title="Ištrinti">
-                            {delMatArt === m.artikulas
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
-                              : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />}
-                          </button>
-                        </div>
-                      </td>
+                      {isAdmin && (
+                        <td className="px-3 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-0.5">
+                            <button onClick={() => setEditingMat(m)}
+                              className="p-1.5 rounded-md hover:bg-black/5 transition-colors" title="Redaguoti">
+                              <Pencil className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                            </button>
+                            <button onClick={() => handleDeleteMat(m)} disabled={delMatArt === m.artikulas}
+                              className="p-1.5 rounded-md hover:bg-red-50 transition-colors" title="Ištrinti">
+                              {delMatArt === m.artikulas
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
+                                : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />}
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -649,7 +678,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           )
         ) : activeTab === 'sablonai' ? (
           /* ---- SABLONAI TAB ---- */
-          <SablonaiTab />
+          <SablonaiTab canEdit={isAdmin} />
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
           <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
@@ -702,14 +731,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => generateSingleAnalysis(analysisFocus)}
-                    disabled={isGenerationBlocked}
-                    className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs disabled:opacity-50"
-                  >
-                    {isGenerationBlocked && genStep === analysisFocus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    Generuoti
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => generateSingleAnalysis(analysisFocus)}
+                      disabled={isGenerationBlocked}
+                      className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs disabled:opacity-50"
+                    >
+                      {isGenerationBlocked && genStep === analysisFocus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                      Generuoti
+                    </button>
+                  )}
                 </div>
                 <div className="px-5 py-4 h-[520px] overflow-y-auto">
                   {genLoading && genStep === analysisFocus ? (
@@ -754,7 +785,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       </div>
 
       {/* Excel Import Preview Modal */}
-      {excelPreview && (
+      {isAdmin && excelPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
           onClick={() => setExcelPreview(null)}>
@@ -851,22 +882,22 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       )}
 
       {/* Modals */}
-      {showAddMat && (
+      {isAdmin && showAddMat && (
         <AddMaterialModal onSave={handleAddMat} onClose={() => setShowAddMat(false)} />
       )}
-      {editingMat && (
+      {isAdmin && editingMat && (
         <AddMaterialModal initial={editingMat} onSave={handleUpdateMat} onClose={() => setEditingMat(null)} />
       )}
-      {showPriceMod && (
+      {isAdmin && showPriceMod && (
         <PriceModal medziagas={medziagas} defaultArtikulas={showPriceMod.defArt} defaultDate={showPriceMod.defDate}
           onSave={handleAddPrice} onClose={() => setShowPriceMod(null)} />
       )}
-      {editingIras && (
+      {isAdmin && editingIras && (
         <PriceModal medziagas={medziagas} initial={editingIras}
           onSave={handleUpdatePrice} onClose={() => setEditingIras(null)} />
       )}
 
-      {configWarning && (
+      {isAdmin && configWarning && (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4"
           style={{ background: 'rgba(15,23,42,0.45)' }}
           onClick={() => setConfigWarning(null)}>

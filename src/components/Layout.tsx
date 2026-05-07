@@ -192,18 +192,16 @@ export default function Layout({
                   {!sidebarCollapsed && <span className="whitespace-nowrap">Žaliavos</span>}
                 </button>
               </li>
-              {user.is_admin && (
-                <li>
-                  <button
-                    onClick={() => onViewModeChange?.('derva')}
-                    className={viewMode === 'derva' ? 'active' : ''}
-                    title={sidebarCollapsed ? 'Derva' : undefined}
-                  >
-                    <Beaker className="w-4 h-4" />
-                    {!sidebarCollapsed && <span className="whitespace-nowrap">Derva</span>}
-                  </button>
-                </li>
-              )}
+              <li>
+                <button
+                  onClick={() => onViewModeChange?.('derva')}
+                  className={viewMode === 'derva' ? 'active' : ''}
+                  title={sidebarCollapsed ? 'Derva' : undefined}
+                >
+                  <Beaker className="w-4 h-4" />
+                  {!sidebarCollapsed && <span className="whitespace-nowrap">Derva</span>}
+                </button>
+              </li>
             </ul>
 
           {/* Spacer to push footer to bottom */}
@@ -213,33 +211,26 @@ export default function Layout({
           <div className="mt-auto">
             {/* Footer controls - single unified menu */}
             <div>
-              {user.is_admin && (
-                <div className={`overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-h-0 opacity-0' : 'max-h-8 opacity-100'}`}>
-                  <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Valdymas</div>
-                </div>
-              )}
+              <div className={`overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-h-0 opacity-0' : 'max-h-8 opacity-100'}`}>
+                <div className="px-4 pt-1 pb-0.5 text-[10px] uppercase tracking-wider text-base-content/40">Valdymas</div>
+              </div>
               <div className="flex flex-col gap-0.5 px-2 pb-1">
-                {/* Admin buttons */}
-                {user.is_admin && (
-                  <>
-                    <button
-                      onClick={() => onViewModeChange?.('instrukcijos')}
-                      className={`sidebar-footer-btn ${viewMode === 'instrukcijos' ? 'bg-primary/10 text-primary' : ''}`}
-                      title={sidebarCollapsed ? 'Instrukcijos' : undefined}
-                    >
-                      <BookOpen className="w-4 h-4 flex-shrink-0" />
-                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Instrukcijos</span>
-                    </button>
-                    <button
-                      onClick={() => onViewModeChange?.('users')}
-                      className={`sidebar-footer-btn ${viewMode === 'users' ? 'bg-primary/10 text-primary' : ''}`}
-                      title={sidebarCollapsed ? 'Naudotojai' : undefined}
-                    >
-                      <Users className="w-4 h-4 flex-shrink-0" />
-                      <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Naudotojai</span>
-                    </button>
-                  </>
-                )}
+                <button
+                  onClick={() => onViewModeChange?.('instrukcijos')}
+                  className={`sidebar-footer-btn ${viewMode === 'instrukcijos' ? 'bg-primary/10 text-primary' : ''}`}
+                  title={sidebarCollapsed ? 'Instrukcijos' : undefined}
+                >
+                  <BookOpen className="w-4 h-4 flex-shrink-0" />
+                  <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Instrukcijos</span>
+                </button>
+                <button
+                  onClick={() => onViewModeChange?.('users')}
+                  className={`sidebar-footer-btn ${viewMode === 'users' ? 'bg-primary/10 text-primary' : ''}`}
+                  title={sidebarCollapsed ? 'Naudotojai' : undefined}
+                >
+                  <Users className="w-4 h-4 flex-shrink-0" />
+                  <span className={`whitespace-nowrap overflow-hidden transition-all duration-300 ${sidebarCollapsed ? 'max-w-0 opacity-0' : 'max-w-[10rem] opacity-100'}`}>Naudotojai</span>
+                </button>
                 {/* Settings + Dropdown */}
                 <div className="relative" ref={settingsDropdownRef}>
                   {!sidebarCollapsed && settingsDropdownOpen && (

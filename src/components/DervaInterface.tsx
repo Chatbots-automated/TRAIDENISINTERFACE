@@ -181,6 +181,8 @@ function FilePreviewModal({ file, onClose }: { file: DervaFile; onClose: () => v
 // ---------------------------------------------------------------------------
 
 export default function DervaInterface({ user }: DervaInterfaceProps) {
+  const canEditFiles = Boolean(user.is_admin);
+
   // Data
   const [files, setFiles] = useState<DervaFile[]>([]);
 
@@ -256,6 +258,12 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
 
   useEffect(() => { loadFiles(); }, []);
 
+  useEffect(() => {
+    if (canEditFiles) return;
+    setDragOver(false);
+    setSelectedFiles([]);
+  }, [canEditFiles]);
+
   // ---------- Sorting (files) ----------
   const sortedFiles = useMemo(() => {
     if (!filesSortConfig.column) return files;
@@ -286,6 +294,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   const MAX_FILES = 30;
 
   const addFiles = (incoming: FileList | File[]) => {
+    if (!canEditFiles) return;
     const arr = Array.from(incoming);
     setSelectedFiles(prev => {
       const combined = [...prev, ...arr];
@@ -298,27 +307,32 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canEditFiles) return;
     if (e.target.files?.length) addFiles(e.target.files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!canEditFiles) return;
     setDragOver(false);
     if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
   };
 
   const removeSelectedFile = (index: number) => {
+    if (!canEditFiles) return;
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const clearSelectedFiles = () => {
+    if (!canEditFiles) return;
     setSelectedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // ---------- Upload ----------
   const handleUpload = async () => {
+    if (!canEditFiles) return;
     if (selectedFiles.length === 0) return;
     const toUpload = [...selectedFiles];
     let succeeded = 0;
@@ -368,6 +382,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
 
   // ---------- Vectorize ----------
   const handleVectorize = async (file: DervaFile) => {
+    if (!canEditFiles) return;
     if (!file.directus_file_id) {
       addNotification('error', 'Klaida', 'Failas neturi Directus nuorodos');
       return;
@@ -406,6 +421,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
 
   // ---------- Delete ----------
   const handleDelete = async (file: DervaFile) => {
+    if (!canEditFiles) return;
     if (!confirm(`Ar tikrai norite ištrinti "${file.file_name}"?`)) return;
     try {
       setDeletingId(file.id);
@@ -430,22 +446,24 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
   return (
     <div
       className="h-full flex flex-col app-workspace"
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
-      onDrop={handleDrop}
+      onDragOver={canEditFiles ? (e) => { e.preventDefault(); setDragOver(true); } : undefined}
+      onDragLeave={canEditFiles ? (e) => { if (e.currentTarget === e.target) setDragOver(false); } : undefined}
+      onDrop={canEditFiles ? handleDrop : undefined}
     >
       {/* Header */}
       <div className="app-workspace-header shrink-0">
         <div className="flex items-center justify-between">
           <h2 className="app-workspace-title">Dervų failai</h2>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="app-text-btn app-text-btn-primary"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Įkelti failus
-            </button>
+            {canEditFiles && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="app-text-btn app-text-btn-primary"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Įkelti failus
+              </button>
+            )}
             <button
               onClick={loadFiles}
               disabled={loadingFiles}
@@ -459,7 +477,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
       </div>
 
       {/* Upload preview bar */}
-      {(selectedFiles.length > 0 || dragOver) && (
+      {canEditFiles && (selectedFiles.length > 0 || dragOver) && (
         <div className="px-6 pt-3">
           {dragOver && selectedFiles.length === 0 && (
             <div
@@ -520,14 +538,16 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         </div>
       )}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept={ACCEPTED_TYPES}
-        multiple
-        onChange={handleFileSelect}
-        className="hidden"
-      />
+      {canEditFiles && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_TYPES}
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+      )}
 
       {/* Table area */}
       <div className="app-workspace-content flex-1 overflow-auto">
@@ -629,7 +649,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                           >
                             <Loader2 className="w-3 h-3 animate-spin" /> Vektorizuojama...
                           </span>
-                        ) : (
+                        ) : canEditFiles ? (
                           <button
                             onClick={() => handleVectorize(file)}
                             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer hover:brightness-95"
@@ -642,6 +662,8 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: isFailed ? '#b91c1c' : '#ea580c' }} />
                             {isFailed ? 'Pakartoti' : 'Pradėti'}
                           </button>
+                        ) : (
+                          <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
                         )}
                       </td>
 
@@ -696,17 +718,19 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                               </a>
                             </>
                           )}
-                          <button
-                            onClick={() => handleDelete(file)}
-                            disabled={deletingId === file.id}
-                            className="p-1.5 rounded-md transition-colors hover:bg-red-50"
-                            title="Ištrinti"
-                          >
-                            {deletingId === file.id
-                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
-                              : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />
-                            }
-                          </button>
+                          {canEditFiles && (
+                            <button
+                              onClick={() => handleDelete(file)}
+                              disabled={deletingId === file.id}
+                              className="p-1.5 rounded-md transition-colors hover:bg-red-50"
+                              title="Ištrinti"
+                            >
+                              {deletingId === file.id
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: '#b91c1c' }} />
+                                : <Trash2 className="w-3.5 h-3.5" style={{ color: '#b91c1c' }} />
+                              }
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

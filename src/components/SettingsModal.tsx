@@ -69,7 +69,7 @@ export default function SettingsModal({ isOpen, onClose, user }: SettingsModalPr
 
   if (!isOpen) return null;
 
-  if (showLogsViewer) {
+  if (showLogsViewer && user.is_admin) {
     return (
       <LogsViewer
         isOpen={showLogsViewer}

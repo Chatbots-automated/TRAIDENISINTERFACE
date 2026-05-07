@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, CreditCard as Edit3, Trash2, Shield, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, UserPlus, Hash, Mail, Lock, Briefcase, ArrowLeft } from 'lucide-react';
-import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin, getVadybininkai, createVadybininkas, deleteVadybininkas } from '../lib/database';
+import { Users, Plus, CreditCard as Edit3, Trash2, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, UserPlus, Hash, Mail, Lock, Briefcase, ArrowLeft } from 'lucide-react';
+import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin, getVadybininkai, createVadybininkas, updateVadybininkas, deleteVadybininkas } from '../lib/database';
 import type { AppUser } from '../types';
 import { colors } from '../lib/designSystem';
 
@@ -21,6 +21,7 @@ interface UserData {
 }
 
 export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) {
+  const isAdmin = Boolean(user.is_admin);
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -35,6 +36,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   const [createMode, setCreateMode] = useState<'select' | 'komanda' | 'vadybininkas'>('select');
 
   const [vadybininkai, setVadybininkai] = useState<{ id: string; full_name?: string; kodas?: string; created_at: string }[]>([]);
+  const [editingVadybininkas, setEditingVadybininkas] = useState<{ id: string; fullName: string; kodas: string } | null>(null);
 
   const [newUserData, setNewUserData] = useState({
     email: '',
@@ -50,11 +52,17 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   });
 
   useEffect(() => {
-    loadUsers();
+    if (isAdmin) {
+      loadUsers();
+    } else {
+      setLoading(false);
+      setCreateMode('vadybininkas');
+    }
     loadVadybininkai();
-  }, []);
+  }, [isAdmin]);
 
   const loadUsers = async () => {
+    if (!isAdmin) return;
     try {
       setLoading(true);
       const { data, error } = await getAllUsers();
@@ -86,13 +94,14 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
   const resetCreateModal = () => {
     setShowCreateModal(false);
-    setCreateMode('select');
+    setCreateMode(isAdmin ? 'select' : 'vadybininkas');
     setNewUserData({ email: '', password: '', displayName: '', isAdmin: false, role: '' });
     setNewVadybininkas({ fullName: '', kodas: '' });
     setError(null);
   };
 
   const handleCreateKomanda = async () => {
+    if (!isAdmin) return;
     if (!newUserData.email.trim() || !newUserData.password.trim()) {
       setError('El. paštas ir slaptažodis yra privalomi');
       return;
@@ -106,7 +115,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
         newUserData.email,
         newUserData.password,
         newUserData.displayName,
-        newUserData.isAdmin,
+        isAdmin && newUserData.isAdmin,
         newUserData.role || undefined
       );
 
@@ -157,7 +166,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   };
 
   const handleUpdateUser = async () => {
-    if (!editingUser) return;
+    if (!editingUser || !isAdmin) return;
 
     setSaving(true);
     setError(null);
@@ -183,6 +192,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if (!isAdmin) return;
     if (!confirm('Ar tikrai norite ištrinti šį naudotoją?')) return;
 
     try {
@@ -191,6 +201,36 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
       await loadUsers();
     } catch (error: any) {
       setError(error.message);
+    }
+  };
+
+  const handleUpdateVadybininkas = async () => {
+    if (!editingVadybininkas) return;
+    if (!editingVadybininkas.fullName.trim()) {
+      setError('Vardas ir pavardė yra privalomi');
+      return;
+    }
+    if (!editingVadybininkas.kodas.trim()) {
+      setError('Kodas yra privalomas');
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const { error } = await updateVadybininkas(editingVadybininkas.id, {
+        full_name: editingVadybininkas.fullName.trim(),
+        kodas: editingVadybininkas.kodas.trim().toUpperCase(),
+      });
+      if (error) throw error;
+      setEditingVadybininkas(null);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+      await loadVadybininkai();
+    } catch (err: any) {
+      setError(err.message || 'Nepavyko atnaujinti vadybininko');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -203,34 +243,20 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
     return u.role?.toLowerCase() === roleFilter.toLowerCase();
   });
 
-  if (!user.is_admin) {
-    return (
-      <div className="flex-1 flex items-center justify-center" style={{ background: colors.bg.primary }}>
-        <div className="text-center">
-          <Shield className="w-16 h-16 mx-auto mb-4" style={{ color: colors.status.errorText }} />
-          <h3 className="text-lg font-medium mb-2" style={{ color: colors.text.primary }}>
-            Prieiga uždrausta
-          </h3>
-          <p style={{ color: colors.text.secondary }}>
-            Jums reikia administratoriaus teisių
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-full flex flex-col app-workspace">
       {/* Header */}
       <div className="app-workspace-header shrink-0">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="app-workspace-title">Naudotojų valdymas</h2>
-            <p className="text-sm text-base-content/50">Kurkite ir valdykite naudotojų paskyras</p>
+            <h2 className="app-workspace-title">{isAdmin ? 'Naudotojų valdymas' : 'Vadybininkai'}</h2>
+            <p className="text-sm text-base-content/50">
+              {isAdmin ? 'Kurkite ir valdykite naudotojų paskyras' : 'Kurkite ir valdykite vadybininkų sąrašą'}
+            </p>
           </div>
           <div className="flex items-center gap-3">
             {/* Role Filter */}
-            <div className="relative">
+            {isAdmin && <div className="relative">
               <button
                 onClick={() => setShowRoleDropdown(!showRoleDropdown)}
                 className="app-text-btn"
@@ -288,14 +314,17 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             <button
-              onClick={() => setShowCreateModal(true)}
+              onClick={() => {
+                setCreateMode(isAdmin ? 'select' : 'vadybininkas');
+                setShowCreateModal(true);
+              }}
               className="app-text-btn app-text-btn-primary"
             >
               <Plus className="w-4 h-4" />
-              <span>Pridėti naudotoją</span>
+              <span>{isAdmin ? 'Pridėti naudotoją' : 'Pridėti vadybininką'}</span>
             </button>
           </div>
         </div>
@@ -317,7 +346,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             <div className="px-5 py-4 border-b bg-white" style={{ borderColor: 'var(--app-border)' }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-4">
-                  {createMode !== 'select' && (
+                  {isAdmin && createMode !== 'select' && (
                     <button
                       onClick={() => { setCreateMode('select'); setError(null); }}
                       className="app-icon-btn -ml-1"
@@ -347,7 +376,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             </div>
 
             {/* Step 1: Selection */}
-            {createMode === 'select' && (
+            {isAdmin && createMode === 'select' && (
               <div className="px-6 py-5 space-y-3">
                 <button
                   onClick={() => setCreateMode('komanda')}
@@ -383,7 +412,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
             )}
 
             {/* Step 2a: Komanda form */}
-            {createMode === 'komanda' && (
+            {isAdmin && createMode === 'komanda' && (
               <>
                 <div className="px-6 py-5 space-y-4">
                   {error && (
@@ -586,7 +615,7 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
 
       {/* Users List */}
       <div className="app-workspace-content flex-1 overflow-y-auto">
-        {loading ? (
+        {isAdmin && (loading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4].map(i => (
               <div key={i} className="h-20 rounded-lg animate-pulse" style={{ background: colors.bg.secondary }} />
@@ -751,24 +780,87 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
               </tbody>
             </table>
           </div>
-        )}
+        ))}
 
         {/* Vadybininkai Table */}
-        {vadybininkai.length > 0 && (
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text.secondary }}>Vadybininkai</h3>
+        <div className={isAdmin ? 'mt-6' : ''}>
+          <h3 className="text-sm font-semibold mb-3" style={{ color: colors.text.secondary }}>Vadybininkai</h3>
+          {vadybininkai.length === 0 ? (
+            <div className="text-center py-12 rounded-xl border border-dashed" style={{ borderColor: colors.border.default }}>
+              <Briefcase className="w-12 h-12 mx-auto mb-3" style={{ color: colors.text.tertiary }} />
+              <h3 className="text-base font-medium mb-2" style={{ color: colors.text.primary }}>Vadybininkų dar nėra</h3>
+              <p className="text-sm mb-4" style={{ color: colors.text.secondary }}>Pridėkite pirmą vadybininką.</p>
+              <button
+                onClick={() => {
+                  setCreateMode('vadybininkas');
+                  setShowCreateModal(true);
+                }}
+                className="app-text-btn app-text-btn-primary mx-auto"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Pridėti vadybininką</span>
+              </button>
+            </div>
+          ) : (
             <div className="app-table-shell">
-              <table className="app-data-table">
-                <thead>
-                  <tr>
-                    <th>Vardas</th>
-                    <th>Kodas</th>
-                    <th>Sukurta</th>
-                    <th>Veiksmai</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {vadybininkai.map((v) => (
+            <table className="app-data-table">
+              <thead>
+                <tr>
+                  <th>Vardas</th>
+                  <th>Kodas</th>
+                  <th>Sukurta</th>
+                  <th>Veiksmai</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vadybininkai.map((v) => (
+                  editingVadybininkas?.id === v.id ? (
+                    <tr key={v.id}>
+                      <td>
+                        <input
+                          type="text"
+                          value={editingVadybininkas.fullName}
+                          onChange={(e) => {
+                            const fullName = e.target.value;
+                            setEditingVadybininkas(prev => prev ? {
+                              ...prev,
+                              fullName,
+                              kodas: prev.kodas || generateKodas(fullName),
+                            } : prev);
+                          }}
+                          className="input input-sm w-full"
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={editingVadybininkas.kodas}
+                          onChange={(e) => setEditingVadybininkas(prev => prev ? { ...prev, kodas: e.target.value.toUpperCase() } : prev)}
+                          className="input input-sm w-24 font-mono"
+                        />
+                      </td>
+                      <td className="whitespace-nowrap">{new Date(v.created_at).toLocaleDateString()}</td>
+                      <td>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={handleUpdateVadybininkas}
+                            disabled={saving}
+                            className="btn btn-circle btn-text btn-sm"
+                            title="Išsaugoti"
+                          >
+                            {saving ? <span className="loading loading-spinner loading-xs" /> : <Save className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => setEditingVadybininkas(null)}
+                            className="btn btn-circle btn-text btn-sm"
+                            title="Atšaukti"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
                     <tr key={v.id}>
                       <td>
                         <div className="flex items-center gap-2">
@@ -782,30 +874,40 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                       <td className="text-sm font-mono" style={{ color: colors.text.secondary }}>{v.kodas || '—'}</td>
                       <td className="whitespace-nowrap">{new Date(v.created_at).toLocaleDateString()}</td>
                       <td>
-                        <button
-                          onClick={async () => {
-                            if (!confirm(`Ištrinti ${v.full_name}?`)) return;
-                            try {
-                              const { error } = await deleteVadybininkas(v.id);
-                              if (error) throw error;
-                              await loadVadybininkai();
-                            } catch (err: any) {
-                              setError(err.message);
-                            }
-                          }}
-                          className="btn btn-circle btn-text btn-sm text-error"
-                          title="Ištrinti"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setEditingVadybininkas({ id: v.id, fullName: v.full_name || '', kodas: v.kodas || '' })}
+                            className="btn btn-circle btn-text btn-sm"
+                            title="Redaguoti"
+                          >
+                            <UserIcon className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Ištrinti ${v.full_name}?`)) return;
+                              try {
+                                const { error } = await deleteVadybininkas(v.id);
+                                if (error) throw error;
+                                await loadVadybininkai();
+                              } catch (err: any) {
+                                setError(err.message);
+                              }
+                            }}
+                            className="btn btn-circle btn-text btn-sm text-error"
+                            title="Ištrinti"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  )
+                ))}
+              </tbody>
+            </table>
           </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
