@@ -1,8 +1,8 @@
 /**
  * LlamaCloud Extract v2 client.
  *
- * Mirrors the official @llamaindex/llama-cloud Extract API while keeping the
- * existing browser-side API-key pattern used by the Analizė page.
+ * Mirrors the official @llamaindex/llama-cloud Extract API. The browser calls
+ * the local /api/llamacloud proxy; the proxy owns the LlamaCloud API key.
  */
 
 const API_BASE = '/api/llamacloud';
@@ -51,15 +51,8 @@ export interface RunExtractInput {
   onStatus?: (status: string) => void;
 }
 
-function getApiKey(): string {
-  return import.meta.env.VITE_LLAMAPARSE_API_KEY || '';
-}
-
-function authHeaders(): Record<string, string> {
-  const key = getApiKey();
-  return key
-    ? { Authorization: `Bearer ${key}`, Accept: 'application/json' }
-    : { Accept: 'application/json' };
+function requestHeaders(): Record<string, string> {
+  return { Accept: 'application/json' };
 }
 
 async function readError(res: Response): Promise<string> {
@@ -79,7 +72,7 @@ export async function uploadExtractText(content: string, fileName = 'document.md
 
   const res = await fetch(`${API_BASE}/api/v1/beta/files`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: requestHeaders(),
     body: formData,
   });
 
@@ -98,7 +91,7 @@ export async function createExtractJob(fileInput: string, configuration: Extract
   const res = await fetch(`${API_BASE}/api/v2/extract`, {
     method: 'POST',
     headers: {
-      ...authHeaders(),
+      ...requestHeaders(),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -121,7 +114,7 @@ export async function getExtractJob(jobId: string): Promise<ExtractJob> {
 
   const res = await fetch(`${API_BASE}/api/v2/extract/${jobId}?${params.toString()}`, {
     method: 'GET',
-    headers: authHeaders(),
+    headers: requestHeaders(),
   });
 
   if (!res.ok) {

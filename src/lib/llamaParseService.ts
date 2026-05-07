@@ -12,15 +12,8 @@
 
 const API_BASE = '/api/llamacloud';
 
-function getApiKey(): string {
-  return import.meta.env.VITE_LLAMAPARSE_API_KEY || '';
-}
-
-function authHeaders(): Record<string, string> {
-  const key = getApiKey();
-  return key
-    ? { Authorization: `Bearer ${key}`, Accept: 'application/json' }
-    : { Accept: 'application/json' };
+function requestHeaders(): Record<string, string> {
+  return { Accept: 'application/json' };
 }
 
 // ============================================================================
@@ -79,6 +72,7 @@ export interface ParseOptions {
   tier: ParseTier;
   userPrompt?: string;
   onJobStarted?: (job: ParseJobResponse) => void | Promise<void>;
+  onJobProgress?: (result: ParseResult) => void | Promise<void>;
 }
 
 export interface DirectusUploadInput {
@@ -165,7 +159,7 @@ export async function uploadFile(file: File): Promise<UploadResult> {
 
   const res = await fetch(`${API_BASE}/api/v1/beta/files`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: requestHeaders(),
     body: formData,
   });
 
@@ -189,7 +183,7 @@ export async function uploadDirectusFile(input: DirectusUploadInput): Promise<Up
   const res = await fetch(`${API_BASE}/directus-file-upload`, {
     method: 'POST',
     headers: {
-      ...authHeaders(),
+      ...requestHeaders(),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -230,7 +224,7 @@ export async function startParse(
   const res = await fetch(`${API_BASE}/api/v2/parse`, {
     method: 'POST',
     headers: {
-      ...authHeaders(),
+      ...requestHeaders(),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -241,7 +235,11 @@ export async function startParse(
     throw new Error(`Dokumento paruošti nepavyko (${res.status}): ${errText}`);
   }
 
-  return res.json();
+  const data = await res.json();
+  return {
+    ...data,
+    request_json: body,
+  };
 }
 
 /**
@@ -267,7 +265,7 @@ export async function getParseResult(
 
   const res = await fetch(url, {
     method: 'GET',
-    headers: authHeaders(),
+    headers: requestHeaders(),
   });
 
   if (!res.ok) {
@@ -308,7 +306,7 @@ export async function getParseImages(jobId: string): Promise<ImageMetadata[]> {
  */
 export async function pollUntilDone(
   jobId: string,
-  onProgress?: (status: string) => void,
+  onProgress?: (status: string, result: ParseResult) => void,
   intervalMs: number = 3000,
   maxAttempts: number = 120 // 6 minutes max in the foreground UI
 ): Promise<ParseResult> {
@@ -316,7 +314,7 @@ export async function pollUntilDone(
     const statusResult = await getParseResult(jobId, []);
 
     const status = statusResult.status || statusResult.job?.status || statusResult.metadata?.status || '';
-    onProgress?.(status);
+    onProgress?.(status, statusResult);
 
     if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'PARTIAL_SUCCESS') {
       const result = await getCompletedParseResult(jobId);
@@ -361,8 +359,9 @@ export async function parseDocument(
   const jobId = job.id;
 
   // Step 3: Poll until done
-  const result = await pollUntilDone(jobId, (status) => {
+  const result = await pollUntilDone(jobId, (status, statusResult) => {
     onStatus?.(`Skaitomas dokumentas... (${status})`);
+    void options.onJobProgress?.(statusResult);
   });
 
   return { ...result, id: jobId, file_id: uploaded.id };
@@ -380,8 +379,9 @@ export async function parseDirectusDocument(
   const job = await startParse(uploaded.id, options.tier, options.userPrompt);
   await options.onJobStarted?.(job);
 
-  const result = await pollUntilDone(job.id, (status) => {
+  const result = await pollUntilDone(job.id, (status, statusResult) => {
     onStatus?.(`Skaitomas dokumentas... (${status})`);
+    void options.onJobProgress?.(statusResult);
   });
 
   return { ...result, id: job.id, file_id: uploaded.id };

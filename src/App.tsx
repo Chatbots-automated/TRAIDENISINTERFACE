@@ -213,6 +213,10 @@ function AppContent() {
             element={<AnalizeInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />}
           />
           <Route
+            path="/analize/:documentId"
+            element={<AnalizeInterface user={user} projectId={projectId} mainSidebarCollapsed={mainSidebarCollapsed} />}
+          />
+          <Route
             path="/derva"
             element={<DervaInterface user={user} />}
           />
