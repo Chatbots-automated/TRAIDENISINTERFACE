@@ -11,12 +11,16 @@ import {
   parseDirectusDocument,
   parseDocument as llamaParse,
   pollUntilDone,
+  isRetryableParsePollError,
   supportsParseInstructions,
   type ParseJobResponse,
   type ParseResult,
 } from '../lib/llamaParseService';
 import {
-  runExtract,
+  createExtractJob,
+  isRetryableExtractPollError,
+  pollExtractJob,
+  uploadExtractText,
   type ExtractConfiguration,
   type ExtractJob,
   type ExtractTarget,
@@ -30,6 +34,7 @@ import {
   deleteParsedDocument,
   uploadOriginalDocument,
   saveExtractionRun,
+  updateExtractionRun,
   fetchExtractionRuns,
   saveExtractConfigSnapshot,
   saveParseJobAttempt,
@@ -53,9 +58,9 @@ const TIERS: { value: ParseTier; label: string; desc: string }[] = [
 const ACCEPTED_TYPES = '.pdf,.docx,.pptx,.xlsx,.html,.htm,.jpg,.jpeg,.png,.xml,.epub,.rtf,.csv,.txt';
 
 const EXTRACT_TARGETS: { value: ExtractTarget; label: string }[] = [
-  { value: 'per_doc', label: 'Document' },
-  { value: 'per_page', label: 'Pages' },
-  { value: 'per_table_row', label: 'Table rows' },
+  { value: 'per_doc', label: 'Visas dokumentas' },
+  { value: 'per_page', label: 'Puslapiai' },
+  { value: 'per_table_row', label: 'Lentelės' },
 ];
 
 const EXTRACT_TIERS: { value: ExtractTier; label: string }[] = [
@@ -98,7 +103,7 @@ interface ExtractFieldDraft {
 
 const PARSE_STEPS: { key: ParseStepKey; label: string }[] = [
   { key: 'selected', label: 'Failas pasirinktas' },
-  { key: 'directus', label: 'Įkeliama į Directus' },
+  { key: 'directus', label: 'Įkeliama į saugyklą' },
   { key: 'llama_upload', label: 'Ruošiami duomenys' },
   { key: 'parse_job', label: 'Skaitomas dokumentas' },
   { key: 'result', label: 'Paruošta ištraukimui' },
@@ -127,6 +132,10 @@ function extractionToJob(run: LlamaParseExtraction): ExtractJob {
     extract_result: run.extract_result,
     extract_metadata: run.extract_metadata,
   };
+}
+
+function isActiveExtractStatus(status?: string | null): boolean {
+  return ['PENDING', 'RUNNING', 'REQUESTED', 'PROCESSING', 'IN_PROGRESS'].includes(String(status || '').toUpperCase());
 }
 
 function normalizeSchemaKey(value: string): string {
@@ -435,9 +444,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   const [extractStatus, setExtractStatus] = useState('');
   const [extractError, setExtractError] = useState('');
   const [extractResult, setExtractResult] = useState<ExtractJob | null>(null);
-  const [_extractionRuns, setExtractionRuns] = useState<LlamaParseExtraction[]>([]);
+  const [extractionRuns, setExtractionRuns] = useState<LlamaParseExtraction[]>([]);
   const [extractPanelTab, setExtractPanelTab] = useState<ExtractPanelTab>('config');
   const [extractLoadingMessageIndex, setExtractLoadingMessageIndex] = useState(0);
+  const [resumingExtractionId, setResumingExtractionId] = useState<string | null>(null);
+  const failedExtractionResumeIdsRef = useRef<Set<string>>(new Set());
 
   // --- Image lightbox ---
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -499,6 +510,10 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     return () => window.clearInterval(interval);
   }, [extractLoading]);
 
+  const upsertExtractionRun = useCallback((run: LlamaParseExtraction) => {
+    setExtractionRuns(prev => [run, ...prev.filter(item => item.id !== run.id)]);
+  }, []);
+
   const loadExtractionHistory = useCallback(async (id: string) => {
     try {
       const runs = await fetchExtractionRuns(id);
@@ -512,6 +527,61 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       setExtractionRuns([]);
     }
   }, []);
+
+  const resumeExtractionRun = useCallback(async (run: LlamaParseExtraction) => {
+    if (!isAdmin || !run.extract_job_id || extractLoading || resumingExtractionId === run.id) return;
+
+    setResumingExtractionId(run.id);
+    setExtractLoading(true);
+    setExtractError('');
+    setExtractStatus('Tikrinama analizės būsena...');
+    setExtractPanelTab('config');
+
+    let statusHistory = Array.isArray(run.status_history_json) ? run.status_history_json : [];
+    const updateRun = async (status: string, job?: ExtractJob) => {
+      statusHistory = appendParseStatusHistory(statusHistory, status, job);
+      const updatedRun = await updateExtractionRun(run.id, {
+        file_input: job?.file_input || run.file_input || null,
+        extract_status: status,
+        extract_config: job?.configuration || run.extract_config,
+        extract_result: job?.extract_result ?? run.extract_result ?? null,
+        extract_metadata: job?.extract_metadata ?? job?.metadata ?? run.extract_metadata ?? null,
+        error_message: job?.error_message || null,
+        response_json: job || null,
+        status_history_json: statusHistory,
+      });
+      if (updatedRun) upsertExtractionRun(updatedRun);
+    };
+
+    try {
+      const job = await pollExtractJob(run.extract_job_id, async (status, statusJob) => {
+        setExtractStatus(status.replace('Ištraukiama', 'Analizuojama'));
+        await updateRun(status, statusJob);
+      });
+
+      await updateRun(job.status, job);
+      setExtractResult(job);
+      setExtractPanelTab('results');
+      setExtractStatus('Rezultatai paruošti');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Analizės būsenos patikrinti nepavyko';
+      const retryable = isRetryableExtractPollError(err);
+      const nextStatus = retryable ? (run.extract_status || 'PENDING') : 'FAILED';
+      statusHistory = appendParseStatusHistory(statusHistory, retryable ? 'POLL_RETRY_NEEDED' : 'FAILED', { error: message });
+      const updatedRun = await updateExtractionRun(run.id, {
+        extract_status: nextStatus,
+        error_message: message,
+        status_history_json: statusHistory,
+      }).catch(() => null);
+      if (updatedRun) upsertExtractionRun(updatedRun);
+      if (retryable) failedExtractionResumeIdsRef.current.add(run.id);
+      setExtractError(message);
+      setExtractStatus('');
+    } finally {
+      setExtractLoading(false);
+      setResumingExtractionId(null);
+    }
+  }, [extractLoading, isAdmin, resumingExtractionId, upsertExtractionRun]);
 
   const loadFullDocument = useCallback(async (id: string) => {
     try {
@@ -595,7 +665,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     setParseStatusText('Tikrinama dokumento būsena...');
     setParseSteps(DEFAULT_PARSE_STEPS.map(step => {
       if (step.key === 'selected') return { ...step, status: 'done', detail: doc.file_name };
-      if (step.key === 'directus') return { ...step, status: 'done', detail: 'Failas yra Directus saugykloje' };
+      if (step.key === 'directus') return { ...step, status: 'done', detail: 'Failas yra sistemos saugykloje' };
       if (step.key === 'llama_upload') return { ...step, status: 'done', detail: doc.llama_file_id || 'Failas perduotas apdorojimui' };
       if (step.key === 'parse_job') return { ...step, status: 'active', detail: 'Dokumentas ruošiamas' };
       return { ...step, status: 'waiting', detail: '' };
@@ -637,6 +707,21 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       setParseStatusText('Dokumentas apdorotas. Pasirinkite, ką norite ištraukti.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Nepavyko patikrinti dokumento būsenos';
+      if (isRetryableParsePollError(err)) {
+        await updateParseJobAttemptByParseJobId(doc.job_id, {
+          status: 'PENDING',
+          error_message: message,
+          status_history_json: appendParseStatusHistory(resumeStatusHistory, 'POLL_RETRY_NEEDED', { error: message }),
+        });
+        setParseSteps(prev => prev.map(step => (
+          step.status === 'active' ? { ...step, status: 'waiting' as StepStatus, detail: message } : step
+        )));
+        setParseStatus('idle');
+        setParseError(message);
+        setParseStatusText('');
+        failedResumeIdsRef.current.add(doc.id);
+        return;
+      }
       await updateParseJobAttemptByParseJobId(doc.job_id, {
         status: 'ERROR',
         error_message: message,
@@ -679,6 +764,17 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     }
   }, [resumingParseId, resumePendingParse, selectedDocFull]);
 
+  useEffect(() => {
+    if (!isAdmin || !selectedDocFull || extractLoading) return;
+    const activeRun = extractionRuns.find(run => (
+      run.extract_job_id
+      && !run.extract_result
+      && isActiveExtractStatus(run.extract_status)
+      && !failedExtractionResumeIdsRef.current.has(run.id)
+    ));
+    if (activeRun) void resumeExtractionRun(activeRun);
+  }, [extractLoading, extractionRuns, isAdmin, resumeExtractionRun, selectedDocFull]);
+
   // ---- Filtered documents ----
   const filteredDocs = useMemo(() => {
     if (!searchQuery.trim()) return documents;
@@ -714,7 +810,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     setExtractResult(null);
     setExtractPanelTab('config');
     setParseStatus('uploading');
-    setParseStatusText('Įkeliama į Directus...');
+    setParseStatusText('Įkeliama į saugyklą...');
     setParseError('');
     setParseSteps(DEFAULT_PARSE_STEPS.map(step => ({
       ...step,
@@ -722,7 +818,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       detail: step.key === 'selected'
         ? `${file.name} · ${formatFileSize(file.size)}`
         : step.key === 'directus'
-        ? 'Failas siunčiamas į Directus saugyklą'
+        ? 'Failas siunčiamas į sistemos saugyklą'
         : '',
     })));
 
@@ -752,7 +848,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	      setPreviewFallbackFileId(originalFile.id);
 	      navigateToDocument(doc.id, true);
 	      setParseStatus('idle');
-      setParseStatusText('Failas įkeltas į Directus. Paleiskite analizę.');
+      setParseStatusText('Failas įkeltas į saugyklą. Paleiskite analizę.');
       setParseSteps(prev => prev.map(step => (
         step.key === 'directus'
           ? { ...step, status: 'done' as StepStatus, detail: originalFile.filename_download || originalFile.title || 'Failas išsaugotas' }
@@ -760,7 +856,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       )));
     } catch (err) {
       if (selectedFileUploadSeqRef.current !== uploadSeq) return;
-      const message = err instanceof Error ? err.message : 'Nepavyko įkelti failo į Directus';
+      const message = err instanceof Error ? err.message : 'Nepavyko įkelti failo į saugyklą';
       setParseStatus('error');
       setParseStatusText('');
       setParseError(message);
@@ -819,14 +915,14 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       let originalFile = preparedOriginalFile;
 
       if (!doc || !directusFileId) {
-        setParseStatusText('Įkeliama į Directus...');
-        setStep('directus', 'active', 'Failas siunčiamas į Directus saugyklą');
+        setParseStatusText('Įkeliama į saugyklą...');
+        setStep('directus', 'active', 'Failas siunčiamas į sistemos saugyklą');
         originalFile = await uploadOriginalDocument(selectedFile);
         directusFileId = originalFile.id;
         setPreviewFallbackFileId(directusFileId);
         setStep('directus', 'done', originalFile.filename_download || originalFile.title || 'Failas išsaugotas');
 
-        // Save placeholder to Directus first
+        // Save placeholder record before starting the parse job.
         doc = await saveParsedDocument({
           user_id: user.id,
           original_file: originalFile.id,
@@ -840,11 +936,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         });
       } else {
         setPreviewFallbackFileId(directusFileId);
-        setStep('directus', 'done', preparedOriginalFile?.filename_download || preparedOriginalFile?.title || 'Failas jau yra Directus saugykloje');
+        setStep('directus', 'done', preparedOriginalFile?.filename_download || preparedOriginalFile?.title || 'Failas jau yra sistemos saugykloje');
       }
 
       if (!doc || !directusFileId) {
-        throw new Error('Nepavyko paruošti Directus failo.');
+        throw new Error('Nepavyko paruošti saugykloje esančio failo.');
       }
 
       processingDocId = doc.id;
@@ -982,6 +1078,20 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       await finishParsedDocument(doc.id, result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Apdorojimas nepavyko';
+      if (isRetryableParsePollError(err)) {
+        await updateParseJobAttempt(parseJobRecordId, {
+          status: 'PENDING',
+          error_message: message,
+          status_history_json: appendParseStatusHistory(parseStatusHistory, 'POLL_RETRY_NEEDED', { error: message }),
+        });
+        setParseSteps(prev => prev.map(step => (
+          step.status === 'active' ? { ...step, status: 'waiting' as StepStatus, detail: message } : step
+        )));
+        setParseStatus('idle');
+        setParseError(message);
+        setParseStatusText('');
+        return;
+      }
       await updateParseJobAttempt(parseJobRecordId, {
         status: 'ERROR',
         error_message: message,
@@ -1032,7 +1142,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     setParseStatusText('Ruošiamas dokumentas...');
     setParseSteps(DEFAULT_PARSE_STEPS.map(step => {
       if (step.key === 'selected') return { ...step, status: 'done', detail: selectedDocFull.file_name };
-      if (step.key === 'directus') return { ...step, status: 'done', detail: 'Failas jau yra Directus saugykloje' };
+      if (step.key === 'directus') return { ...step, status: 'done', detail: 'Failas jau yra sistemos saugykloje' };
       if (step.key === 'llama_upload') return { ...step, status: 'active', detail: 'Failas perduodamas apdorojimui' };
       return { ...step, status: 'waiting', detail: '' };
     }));
@@ -1103,6 +1213,20 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       setParseStatusText('Dokumentas paruoštas. Pasirinkite, ką norite ištraukti.');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Dokumento paruošti nepavyko';
+      if (isRetryableParsePollError(err)) {
+        await updateParseJobAttempt(parseJobRecordId, {
+          status: 'PENDING',
+          error_message: message,
+          status_history_json: appendParseStatusHistory(parseStatusHistory, 'POLL_RETRY_NEEDED', { error: message }),
+        });
+        setParseSteps(prev => prev.map(step => (
+          step.status === 'active' ? { ...step, status: 'waiting' as StepStatus, detail: message } : step
+        )));
+        setParseStatus('idle');
+        setParseError(message);
+        setParseStatusText('');
+        return;
+      }
       await updateParseJobAttempt(parseJobRecordId, {
         status: 'ERROR',
         error_message: message,
@@ -1166,6 +1290,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   const handleRunExtract = async () => {
     if (!isAdmin || !selectedDocFull || selectedDocFull.status !== 'SUCCESS' || extractLoading) return;
 
+    let savedRun: LlamaParseExtraction | null = null;
+    let statusHistory: Array<Record<string, unknown>> = [];
+
     setExtractLoading(true);
     setExtractError('');
     setExtractStatus('Analizuojama...');
@@ -1224,45 +1351,93 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         extract_goal: extractGoal,
         raw_schema_text: rawExtractSchemaText,
       });
-      const job = await runExtract({
-        fileInput,
-        fallbackText,
-        fallbackFileName: selectedDocFull.file_name.replace(/\.[^.]+$/, '') || 'document',
-        configuration,
-        onStatus: status => {
-          setExtractStatus(status.replace('Ištraukiama', 'Analizuojama').replace('Pradedamas ištraukimas', 'Pradedama analizė'));
+
+      let resolvedFileInput = fileInput?.trim();
+      const fallbackFileName = selectedDocFull.file_name.replace(/\.[^.]+$/, '') || 'document';
+      const fallbackUsed = !resolvedFileInput && Boolean(fallbackText.trim());
+
+      if (!resolvedFileInput && fallbackText.trim()) {
+        setExtractStatus('Įkeliamas dokumento tekstas...');
+        resolvedFileInput = await uploadExtractText(fallbackText, fallbackFileName);
+      }
+
+      if (!resolvedFileInput) {
+        throw new Error('Pirmiausia paruoškite dokumentą arba pateikite tekstą.');
+      }
+
+      setExtractStatus('Pradedama analizė...');
+      statusHistory = appendParseStatusHistory([], 'REQUESTED', requestPayload);
+      const initialJob = await createExtractJob(resolvedFileInput, configuration);
+      const initialStatus = initialJob.status || 'PENDING';
+      statusHistory = appendParseStatusHistory(statusHistory, initialStatus, initialJob);
+
+      savedRun = await saveExtractionRun({
+        file_id: selectedDocFull.id,
+        file_input: initialJob.file_input || resolvedFileInput,
+        extract_job_id: initialJob.id,
+        extract_status: initialStatus,
+        config_id: configId,
+        extract_config: configuration,
+        extract_result: initialJob.extract_result ?? null,
+        extract_metadata: initialJob.extract_metadata ?? initialJob.metadata ?? null,
+        error_message: initialJob.error_message || null,
+        request_json: {
+          ...requestPayload,
+          file_input: initialJob.file_input || resolvedFileInput,
+          fallback_used: fallbackUsed,
+          fallback_file_name: fallbackFileName,
         },
+        response_json: initialJob,
+        status_history_json: statusHistory,
+      });
+      upsertExtractionRun(savedRun);
+
+      const job = await pollExtractJob(initialJob.id, async (status, statusJob) => {
+        setExtractStatus(status.replace('Ištraukiama', 'Analizuojama').replace('Pradedamas ištraukimas', 'Pradedama analizė'));
+        statusHistory = appendParseStatusHistory(statusHistory, status, statusJob);
+        const updatedRun = await updateExtractionRun(savedRun?.id, {
+          file_input: statusJob.file_input || initialJob.file_input || resolvedFileInput || null,
+          extract_status: status,
+          extract_config: configuration,
+          extract_result: statusJob.extract_result ?? null,
+          extract_metadata: statusJob.extract_metadata ?? statusJob.metadata ?? null,
+          error_message: statusJob.error_message || null,
+          response_json: statusJob,
+          status_history_json: statusHistory,
+        });
+        if (updatedRun) upsertExtractionRun(updatedRun);
       });
 
-      const savedRun = await saveExtractionRun({
-        file_id: selectedDocFull.id,
-        file_input: job.file_input || fileInput || null,
-        extract_job_id: job.id,
+      statusHistory = appendParseStatusHistory(statusHistory, job.status, job);
+      const completedRun = await updateExtractionRun(savedRun.id, {
+        file_input: job.file_input || initialJob.file_input || resolvedFileInput || null,
         extract_status: job.status,
         config_id: configId,
         extract_config: configuration,
         extract_result: job.extract_result ?? null,
         extract_metadata: job.extract_metadata ?? job.metadata ?? null,
         error_message: job.error_message || null,
-        request_json: {
-          ...requestPayload,
-          file_input: job.file_input || fileInput || null,
-          fallback_used: !fileInput && Boolean(fallbackText.trim()),
-          fallback_file_name: selectedDocFull.file_name.replace(/\.[^.]+$/, '') || 'document',
-        },
         response_json: job,
-        status_history_json: [
-          { status: 'REQUESTED', at: new Date().toISOString() },
-          { status: job.status, at: new Date().toISOString() },
-        ],
+        status_history_json: statusHistory,
       });
 
       setExtractResult(job);
       setExtractPanelTab('results');
-      setExtractionRuns(prev => [savedRun, ...prev.filter(run => run.id !== savedRun.id)]);
+      if (completedRun) upsertExtractionRun(completedRun);
       setExtractStatus('Rezultatai paruošti');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ištraukimas nepavyko';
+      if (savedRun) {
+        const retryable = isRetryableExtractPollError(err);
+        statusHistory = appendParseStatusHistory(statusHistory, retryable ? 'POLL_RETRY_NEEDED' : 'FAILED', { error: message });
+        const updatedRun = await updateExtractionRun(savedRun.id, {
+          extract_status: retryable ? savedRun.extract_status : 'FAILED',
+          error_message: message,
+          status_history_json: statusHistory,
+        }).catch(() => null);
+        if (updatedRun) upsertExtractionRun(updatedRun);
+        if (retryable) failedExtractionResumeIdsRef.current.add(savedRun.id);
+      }
       setExtractError(message);
       setExtractStatus('');
     } finally {
@@ -1320,8 +1495,8 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     }
     if (selectedDocFull?.status === 'SUCCESS') {
       return {
-        title: 'Ką norite ištraukti?',
-        detail: 'Dokumentas apdorotas. Įrašykite, ką norite ištraukti.',
+        title: 'Ką norite sužinoti?',
+        detail: 'Dokumentas apdorotas. Įrašykite analizės instrukcijas.',
         tone: 'blue' as const,
       };
     }
@@ -1354,6 +1529,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   const previewFileId = getOriginalFileId(previewDocument) || previewFallbackFileId;
   const previewFileName = previewDocument?.file_name || selectedFile?.name || 'Dokumentas';
   const previewMimeType = previewDocument?.file_type || selectedFile?.type || '';
+  const showSelectedFileCard = Boolean(selectedFile && !selectedDoc);
 
   // ===========================================================================
   // RENDER
@@ -1375,7 +1551,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
   const getHistoryDocSteps = (doc: ParsedDocument) => DEFAULT_PARSE_STEPS.map(step => {
     if (step.key === 'selected') return { ...step, status: 'done' as StepStatus, detail: doc.file_name };
-    if (step.key === 'directus' && getOriginalFileId(doc)) return { ...step, status: 'done' as StepStatus, detail: 'Failas yra Directus saugykloje' };
+    if (step.key === 'directus' && getOriginalFileId(doc)) return { ...step, status: 'done' as StepStatus, detail: 'Failas yra sistemos saugykloje' };
     if (step.key === 'llama_upload' && doc.llama_file_id) return { ...step, status: 'done' as StepStatus, detail: doc.llama_file_id };
     if (step.key === 'parse_job' && doc.job_id) return { ...step, status: doc.status === 'ERROR' ? 'error' as StepStatus : 'active' as StepStatus, detail: doc.status === 'ERROR' ? 'Apdorojimas nepavyko' : 'Dokumentas ruošiamas' };
     if (step.key === 'result' && doc.status === 'SUCCESS') return { ...step, status: 'done' as StepStatus, detail: 'Paruošta ištraukimui' };
@@ -1468,7 +1644,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           </div>
 
           {/* Selected file info */}
-          {selectedFile && (
+          {showSelectedFileCard && selectedFile && (
             <div className="mt-3 rounded-xl bg-white p-3.5 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.09)' }}>
               <div className="mb-3 flex items-start gap-2">
                 <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#007AFF' }} />
@@ -1770,14 +1946,14 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                        <div className="space-y-3">
 	                          <div className="flex items-start justify-between gap-3">
 	                            <div>
-	                              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Configuration</h3>
-	                              <p className="mt-0.5 text-[11px]" style={{ color: '#6b7280' }}>Load a saved configuration or start fresh with defaults.</p>
+		                              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Nustatymai</h3>
+		                              <p className="mt-0.5 text-[11px]" style={{ color: '#6b7280' }}>Pasirinkite, ką ir kaip ištraukti.</p>
 	                            </div>
 	                            <button
 	                              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-[11px] font-medium"
 	                              style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.1)', color: '#374151' }}
 	                            >
-	                              Playground
+		                              Šablonai
 	                              <ChevronDown className="h-3 w-3" />
 	                            </button>
 	                          </div>
@@ -1791,7 +1967,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                                boxShadow: extractPanelTab === 'config' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
 	                              }}
 	                            >
-	                              Build
+		                              Nustatymai
 	                            </button>
 	                            <button
 	                              onClick={() => extractResult && setExtractPanelTab('results')}
@@ -1803,7 +1979,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                                boxShadow: extractPanelTab === 'results' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
 	                              }}
 	                            >
-	                              Results
+	                              Rezultatai
 	                            </button>
 	                          </div>
 	                        </div>
@@ -1812,7 +1988,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                       {extractPanelTab === 'results' && extractResult && (
                         <div className="flex items-center gap-5 overflow-x-auto border-b" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
                           {([
-                            { key: 'markdown' as ViewTab, icon: Type, label: 'Markdown' },
+                            { key: 'markdown' as ViewTab, icon: Type, label: 'Suformatuota' },
                             { key: 'text' as ViewTab, icon: Code, label: 'Tekstas' },
                             { key: 'json' as ViewTab, icon: FileJson, label: 'JSON' },
                             { key: 'images' as ViewTab, icon: Image, label: 'Vaizdai' },
@@ -1981,9 +2157,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                        <div>
 	                          <div className="flex items-center gap-2">
 	                            <Sparkles className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-	                            <span className="text-xs font-semibold" style={{ color: '#111827' }}>Extract Settings</span>
+		                            <span className="text-xs font-semibold" style={{ color: '#111827' }}>Instrukcijos</span>
 	                          </div>
-	                          <p className="mt-1 text-[11px]" style={{ color: '#6b7280' }}>Describe what the extraction should answer or prioritize.</p>
+		                          <p className="mt-1 text-[11px]" style={{ color: '#6b7280' }}>Parašykite, ką rasti dokumente.</p>
 	                        </div>
 	                        <textarea
                           value={extractGoal}
@@ -2016,12 +2192,12 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                         }}
                       >
                         <div>
-                          <p className="text-xs font-semibold" style={{ color: '#111827' }}>Target & Schema</p>
-                          <p className="mt-1 text-[11px]" style={{ color: '#6b7280' }}>Choose what each extraction returns and define the output shape.</p>
+                          <p className="text-xs font-semibold" style={{ color: '#111827' }}>Rezultatas</p>
+                          <p className="mt-1 text-[11px]" style={{ color: '#6b7280' }}>Nustatykite, iš kur imti duomenis ir kokia forma juos grąžinti.</p>
                         </div>
 
                         <div className="space-y-1.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Extract target</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apimtis</p>
                           <div className="grid grid-cols-3 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
                             {EXTRACT_TARGETS.map(target => (
                               <button
@@ -2041,7 +2217,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                         </div>
 
                         <div className="space-y-1.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Output schema</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Forma</p>
                           <div className="grid grid-cols-3 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
                             {[
                               { mode: 'auto' as ExtractSchemaMode, label: 'Automatiškai' },
@@ -2067,9 +2243,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                         {extractSchemaMode === 'fields' && (
                           <div className="space-y-2">
                             <div className="grid grid-cols-[minmax(90px,0.9fr)_112px_minmax(140px,1.4fr)_32px] gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>
-                              <span>Field</span>
-                              <span>Type</span>
-                              <span>Description</span>
+                              <span>Laukas</span>
+                              <span>Tipas</span>
+                              <span>Aprašymas</span>
                               <span />
                             </div>
                             {extractFields.map((field, index) => (
@@ -2085,7 +2261,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                       const value = e.target.value;
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, name: value } : item));
                                     }}
-                                    placeholder="field_name"
+                                    placeholder="lauko_pavadinimas"
                                     className="h-7 min-w-0 rounded-md px-2 text-[11px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   />
@@ -2098,11 +2274,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                     className="h-7 w-full rounded-md px-2 text-[10px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   >
-                                    <option value="string">String</option>
-                                    <option value="number">Number</option>
-                                    <option value="boolean">Boolean</option>
-                                    <option value="array">Array</option>
-                                    <option value="object">Object</option>
+                                    <option value="string">Tekstas</option>
+                                    <option value="number">Skaičius</option>
+                                    <option value="boolean">Taip / ne</option>
+                                    <option value="array">Sąrašas</option>
+                                    <option value="object">Objektas</option>
                                   </select>
                                   <input
                                     value={field.description}
@@ -2125,7 +2301,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                 </div>
                                 {field.name.trim() && (
                                   <p className="mt-1.5 text-[10px]" style={{ color: '#8a857f' }}>
-                                    Key: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{normalizeSchemaKey(field.name) || `field_${index + 1}`}</span>
+                                    Raktas: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{normalizeSchemaKey(field.name) || `laukas_${index + 1}`}</span>
                                   </p>
                                 )}
                               </div>
@@ -2135,7 +2311,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               className="h-7 rounded-md px-3 text-[10px] font-semibold transition-colors hover:bg-black/[0.03]"
                               style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#1f2937' }}
                             >
-                              + Add field
+                              + Pridėti lauką
                             </button>
                           </div>
                         )}
@@ -2167,11 +2343,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                       >
                         <div className="flex items-center gap-2">
                           <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-                          <span className="text-xs font-semibold" style={{ color: '#111827' }}>Options</span>
+                          <span className="text-xs font-semibold" style={{ color: '#111827' }}>Parametrai</span>
                         </div>
 
                         <div>
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.08em] block mb-1.5" style={{ color: '#8a857f' }}>Mode</label>
+                          <label className="text-[10px] font-semibold uppercase tracking-[0.08em] block mb-1.5" style={{ color: '#8a857f' }}>Tikslumas</label>
                           <div className="grid grid-cols-2 gap-1">
                             {EXTRACT_TIERS.map(tier => (
                               <button
@@ -2204,7 +2380,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           <div className="space-y-3">
                             <div>
                               <div className="mb-2 flex items-center justify-between">
-                                <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Schema preview</span>
+                                <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Schemos peržiūra</span>
                                 <button
                                   onClick={() => {
                                     setExtractSchemaMode('fields');
@@ -2218,7 +2394,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                   className="text-[10px] font-medium"
                                   style={{ color: '#007AFF' }}
                                 >
-                                  Load tank fields
+                                  Įkelti talpos laukus
                                 </button>
                               </div>
                               <textarea
@@ -2264,14 +2440,14 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               <input
                                 value={extractVersion}
                                 onChange={e => setExtractVersion(e.target.value)}
-                                placeholder="Versija: latest"
+                                placeholder="Versija: naujausia"
                                 className="h-8 rounded-lg px-2 text-xs outline-none"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                               />
                               <input
                                 value={extractParseConfigId}
                                 onChange={e => setExtractParseConfigId(e.target.value)}
-                                placeholder="Parse config ID"
+                                placeholder="Paruošimo konfig. ID"
                                 className="h-8 rounded-lg px-2 text-xs outline-none"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                               />
@@ -2367,9 +2543,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                       className="overflow-hidden rounded-xl bg-white text-left shadow-sm transition-all hover:shadow-md"
                                       style={{ border: '0.5px solid rgba(0,0,0,0.06)' }}
                                     >
-                                      <img src={img.url} alt={img.filename || `Image ${i + 1}`} className="h-32 w-full object-cover" />
+                                      <img src={img.url} alt={img.filename || `Vaizdas ${i + 1}`} className="h-32 w-full object-cover" />
                                       <p className="truncate px-2 py-1.5 text-[10px]" style={{ color: '#5a5550' }}>
-                                        {img.filename || `image_${i + 1}`}
+                                        {img.filename || `vaizdas_${i + 1}`}
                                       </p>
                                     </button>
                                   ))}
@@ -2403,7 +2579,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
             </button>
             <img
               src={lightboxUrl}
-              alt="Enlarged"
+              alt="Padidintas vaizdas"
               className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain"
             />
           </div>

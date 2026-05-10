@@ -121,6 +121,23 @@ export interface SaveAnalizeApiEventInput {
   error_message?: string | null;
 }
 
+export interface SaveExtractionRunInput {
+  file_id: string;
+  file_input?: string | null;
+  extract_job_id: string;
+  extract_status: string;
+  extract_config: any;
+  extract_result?: any;
+  extract_metadata?: any;
+  error_message?: string | null;
+  config_id?: string | null;
+  request_json?: any;
+  response_json?: any;
+  status_history_json?: any;
+}
+
+export type UpdateExtractionRunInput = Partial<Omit<SaveExtractionRunInput, 'file_id'>>;
+
 const directusFileMetaCache = new Map<string, Promise<DirectusFileMeta | null>>();
 
 function getOriginalFileIdFromRow(row: any): string | null {
@@ -279,6 +296,30 @@ async function insertSingleWithFieldFallback<T>(
     currentPayload = { ...currentPayload };
     for (const field of fields) delete currentPayload[field];
     result = await db.from(collection).insert([currentPayload]).select('*').single();
+    if (!result.error) return result.data as T;
+    lastError = result.error;
+  }
+
+  throw lastError;
+}
+
+async function updateSingleWithFieldFallback<T>(
+  collection: string,
+  id: string,
+  payload: Record<string, any>,
+  fallbackFieldGroups: string[][] = []
+): Promise<T> {
+  let currentPayload = { ...payload };
+  let result = await db.from(collection).update(currentPayload).eq('id', id).select('*').single();
+
+  if (!result.error) return result.data as T;
+
+  let lastError = result.error;
+  for (const fields of fallbackFieldGroups) {
+    if (!shouldRetryWithoutOptionalField(lastError)) break;
+    currentPayload = { ...currentPayload };
+    for (const field of fields) delete currentPayload[field];
+    result = await db.from(collection).update(currentPayload).eq('id', id).select('*').single();
     if (!result.error) return result.data as T;
     lastError = result.error;
   }
@@ -576,20 +617,7 @@ export async function saveAnalizeApiEvent(input: SaveAnalizeApiEventInput): Prom
   }
 }
 
-export async function saveExtractionRun(input: {
-  file_id: string;
-  file_input?: string | null;
-  extract_job_id: string;
-  extract_status: string;
-  extract_config: any;
-  extract_result?: any;
-  extract_metadata?: any;
-  error_message?: string | null;
-  config_id?: string | null;
-  request_json?: any;
-  response_json?: any;
-  status_history_json?: any;
-}): Promise<LlamaParseExtraction> {
+export async function saveExtractionRun(input: SaveExtractionRunInput): Promise<LlamaParseExtraction> {
   const isCompleted = ['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'PARTIAL_SUCCESS'].includes(String(input.extract_status || '').toUpperCase());
   const resolvedFileInput = input.file_input || input.request_json?.file_input || null;
   const requestJson = {
@@ -636,6 +664,52 @@ export async function saveExtractionRun(input: {
     current_extract_job: input.extract_job_id,
     active_extract_config: input.config_id || null,
   });
+
+  return normalizeExtraction(data);
+}
+
+export async function updateExtractionRun(
+  id: string | null | undefined,
+  updates: UpdateExtractionRunInput
+): Promise<LlamaParseExtraction | null> {
+  if (!id) return null;
+
+  const payload: Record<string, any> = {};
+  const resolvedFileInput = updates.file_input || updates.request_json?.file_input || null;
+  const status = updates.extract_status ? String(updates.extract_status).toUpperCase() : '';
+  const isCompleted = ['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'PARTIAL_SUCCESS'].includes(status);
+
+  if ('file_input' in updates || resolvedFileInput) payload.file_input = resolvedFileInput;
+  if ('extract_job_id' in updates) payload.extract_job_id = updates.extract_job_id || null;
+  if ('extract_status' in updates) {
+    payload.extract_status = updates.extract_status || null;
+    payload.status = updates.extract_status || null;
+    if (isCompleted) payload.completed_at = new Date().toISOString();
+  }
+  if ('extract_config' in updates) {
+    payload.extract_config = updates.extract_config || {};
+    payload.configuration_snapshot_json = updates.extract_config || {};
+  }
+  if ('extract_result' in updates) payload.extract_result = updates.extract_result ?? null;
+  if ('extract_metadata' in updates) payload.extract_metadata = updates.extract_metadata ?? null;
+  if ('error_message' in updates) payload.error_message = updates.error_message || null;
+  if ('config_id' in updates) payload.config_id = updates.config_id || null;
+  if ('request_json' in updates) {
+    payload.request_json = {
+      ...(updates.request_json || {}),
+      ...(resolvedFileInput ? { file_input: resolvedFileInput } : {}),
+      ...(updates.extract_config ? { configuration: updates.extract_config } : {}),
+    };
+  }
+  if ('response_json' in updates) payload.response_json = updates.response_json || null;
+  if ('status_history_json' in updates) payload.status_history_json = updates.status_history_json || [];
+
+  if (Object.keys(payload).length === 0) return null;
+
+  const data = await updateSingleWithFieldFallback<any>(EXTRACTIONS_COLLECTION, id, payload, [
+    ['completed_at'],
+    ['config_id', 'configuration_snapshot_json', 'request_json', 'response_json', 'status', 'status_history_json', 'parse_job_id'],
+  ]);
 
   return normalizeExtraction(data);
 }

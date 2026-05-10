@@ -878,6 +878,48 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     await loadConversationDetails(conversationId);
   };
 
+  const saveAssistantFailureMessage = async (
+    conversation: SDKConversation,
+    baseMessages: SDKMessage[],
+    error: unknown,
+    fallbackText = 'Atsakymas nutrūko dėl ryšio arba API klaidos. Jūsų paskutinė žinutė išsaugota, todėl galite bandyti dar kartą.'
+  ) => {
+    try {
+      const errorText = error instanceof Error && error.message ? `\n\nTechninė priežastis: ${error.message}` : '';
+      const assistantMessage: SDKMessage = {
+        role: 'assistant',
+        content: `${fallbackText}${errorText}`,
+        timestamp: new Date().toISOString()
+      };
+
+      await addMessageToConversation(conversation.id, assistantMessage);
+      const finalMessages = [...baseMessages, assistantMessage];
+      const updatedConversation: SDKConversation = {
+        ...conversation,
+        messages: finalMessages,
+        message_count: finalMessages.length,
+        last_message_at: assistantMessage.timestamp,
+        updated_at: new Date().toISOString()
+      };
+
+      setCurrentConversation(prev => (
+        prev?.id === conversation.id ? { ...prev, ...updatedConversation } : prev
+      ));
+      setConversations(prev => prev.map(conv => (
+        conv.id === conversation.id
+          ? {
+              ...conv,
+              message_count: finalMessages.length,
+              last_message_at: assistantMessage.timestamp,
+              updated_at: updatedConversation.updated_at
+            }
+          : conv
+      )));
+    } catch (saveError) {
+      console.error('[SDK] Failed to save assistant failure marker:', saveError);
+    }
+  };
+
   /**
    * Handle button click from display_buttons tool - sends silently to API
    */
@@ -1031,6 +1073,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         }
       });
       addErrorNotification('Klaida', err, 'Nepavyko gauti atsakymo iš AI');
+      await saveAssistantFailureMessage(
+        conversation,
+        [...conversation.messages, silentUserMessage],
+        err,
+        'Pasirinkimas išsaugotas, bet tęsinio gauti nepavyko. Galite pasirinkti arba parašyti dar kartą.'
+      );
       setLoading(false);
     }
   };
@@ -1729,6 +1777,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if ((err?.message || '').toLowerCase().includes('prompt is too long')) {
         addNotification('info', 'Per ilgas prompt', 'Kontekstas viršijo modelio limitą. Patikrinkite instrukcijas ir SDK schemų dydį.');
       }
+      await saveAssistantFailureMessage(conversation, updatedMessages, err);
       setConversationStreamingContent(conversation.id, '');
     } finally {
       setLoading(false);

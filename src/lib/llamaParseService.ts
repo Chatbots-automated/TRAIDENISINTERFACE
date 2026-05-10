@@ -65,6 +65,7 @@ export interface ParseResult {
 export interface ImageMetadata {
   filename: string;
   url: string;
+  presigned_url?: string;
   page_number?: number;
 }
 
@@ -161,12 +162,88 @@ function normalizeParseResult(data: ParseResult): ParseResult {
 }
 
 function normalizeImagesMetadata(value: unknown): ImageMetadata[] {
-  if (Array.isArray(value)) return value as ImageMetadata[];
+  const normalizeImage = (image: unknown, index: number): ImageMetadata | null => {
+    if (!image || typeof image !== 'object') return null;
+    const record = image as Record<string, unknown>;
+    const url = typeof record.url === 'string'
+      ? record.url
+      : typeof record.presigned_url === 'string'
+      ? record.presigned_url
+      : '';
+    if (!url) return null;
+
+    return {
+      ...(record as Partial<ImageMetadata>),
+      filename: typeof record.filename === 'string' && record.filename.trim()
+        ? record.filename
+        : `vaizdas_${index + 1}`,
+      url,
+      page_number: typeof record.page_number === 'number'
+        ? record.page_number
+        : typeof record.page === 'number'
+        ? record.page
+        : undefined,
+    };
+  };
+
+  if (Array.isArray(value)) {
+    return value
+      .map(normalizeImage)
+      .filter((image): image is ImageMetadata => Boolean(image));
+  }
+
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
-    if (Array.isArray(record.images)) return record.images as ImageMetadata[];
+    if (Array.isArray(record.images)) {
+      return record.images
+        .map(normalizeImage)
+        .filter((image): image is ImageMetadata => Boolean(image));
+    }
   }
+
   return [];
+}
+
+function buildExpandQuery(expand: string[]): string {
+  const uniqueExpands = [...new Set(expand.map(item => item.trim()).filter(Boolean))];
+  if (uniqueExpands.length === 0) return '';
+
+  const params = new URLSearchParams();
+  params.set('expand', uniqueExpands.join(','));
+  return params.toString();
+}
+
+export class RetryableParsePollError extends Error {
+  readonly retryable = true;
+
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'RetryableParsePollError';
+  }
+}
+
+export function isRetryableParsePollError(error: unknown): error is RetryableParsePollError {
+  return Boolean(error && typeof error === 'object' && (error as { retryable?: unknown }).retryable === true);
+}
+
+function isTransientPollError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const lower = message.toLowerCase();
+  const statusMatch = message.match(/\((\d{3})\)/);
+  const status = statusMatch ? Number(statusMatch[1]) : 0;
+
+  return (
+    status === 408
+    || status === 409
+    || status === 425
+    || status === 429
+    || status >= 500
+    || lower.includes('failed to fetch')
+    || lower.includes('network')
+    || lower.includes('timeout')
+    || lower.includes('temporarily')
+    || lower.includes('load failed')
+  );
 }
 
 // ============================================================================
@@ -280,12 +357,7 @@ export async function getParseResult(
   jobId: string,
   expand: string[] = DEFAULT_PARSE_EXPANDS
 ): Promise<ParseResult> {
-  const params = new URLSearchParams();
-  for (const e of expand) {
-    params.append('expand', e);
-  }
-
-  const query = params.toString();
+  const query = buildExpandQuery(expand);
   const url = `${API_BASE}/api/v2/parse/${jobId}${query ? `?${query}` : ''}`;
 
   const res = await fetch(url, {
@@ -304,6 +376,7 @@ export async function getParseResult(
 async function getCompletedParseResult(jobId: string): Promise<ParseResult> {
   let lastError: unknown;
   let lastResult: ParseResult | null = null;
+  let sawTransientError = false;
 
   for (const expand of PARSE_RESULT_EXPAND_FALLBACKS) {
     try {
@@ -312,7 +385,12 @@ async function getCompletedParseResult(jobId: string): Promise<ParseResult> {
       lastResult = result;
     } catch (err) {
       lastError = err;
+      if (isTransientPollError(err)) sawTransientError = true;
     }
+  }
+
+  if (sawTransientError && !lastResult) {
+    throw new RetryableParsePollError('Ryšys su apdorojimo rezultatu laikinai nutrūko. Dokumento būsena liko nebaigta ir bus galima tikrinti dar kartą.', lastError);
   }
 
   if (lastResult) {
@@ -342,14 +420,45 @@ export async function pollUntilDone(
   intervalMs: number = 3000,
   maxAttempts: number = 120 // 6 minutes max in the foreground UI
 ): Promise<ParseResult> {
+  let transientFailures = 0;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const statusResult = await getParseResult(jobId, []);
+    let statusResult: ParseResult;
+    try {
+      statusResult = await getParseResult(jobId, []);
+      transientFailures = 0;
+    } catch (err) {
+      if (!isTransientPollError(err)) throw err;
+
+      transientFailures += 1;
+      if (transientFailures >= 8) {
+        throw new RetryableParsePollError('Nepavyko patikrinti dokumento būsenos dėl laikino ryšio sutrikimo. Darbas nepažymėtas kaip klaida, pabandykite atidaryti dokumentą dar kartą.', err);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs * transientFailures, 15000)));
+      continue;
+    }
 
     const status = statusResult.status || statusResult.job?.status || statusResult.metadata?.status || '';
     onProgress?.(status, statusResult);
 
     if (status === 'SUCCESS' || status === 'COMPLETED' || status === 'PARTIAL_SUCCESS') {
-      const result = await getCompletedParseResult(jobId);
+      let result: ParseResult;
+      try {
+        result = await getCompletedParseResult(jobId);
+      } catch (err) {
+        if (!isRetryableParsePollError(err) && !isTransientPollError(err)) throw err;
+
+        transientFailures += 1;
+        if (transientFailures >= 8) {
+          throw err instanceof RetryableParsePollError
+            ? err
+            : new RetryableParsePollError('Dokumentas apdorotas, bet rezultato dabar nepavyko atsisiųsti. Būsena liko nebaigta, pabandykite dar kartą.', err);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs * transientFailures, 15000)));
+        continue;
+      }
       // Fetch images too
       try {
         const images = await getParseImages(jobId);
@@ -368,7 +477,7 @@ export async function pollUntilDone(
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
 
-  throw new Error('Dokumentas vis dar ruošiamas. Bandykite dar kartą po kelių akimirkų.');
+  throw new RetryableParsePollError('Dokumentas vis dar ruošiamas. Būsena liko nebaigta, pabandykite dar kartą po kelių akimirkų.');
 }
 
 /**

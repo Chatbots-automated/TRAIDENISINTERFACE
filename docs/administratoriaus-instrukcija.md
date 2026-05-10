@@ -1,322 +1,256 @@
 # Administratoriaus instrukcija
 
-## Administratoriaus atsakomybė
+Ši instrukcija aprašo tik administratoriui skirtus veiksmus. Bendri naudotojo veiksmai, kasdienis puslapių naudojimas ir įprasti darbo scenarijai aprašomi naudotojo instrukcijoje.
 
-Administratorius valdo sistemos dalis, kurios daro įtaką visų naudotojų darbui: naudotojus, DI instrukcijas, modelio nustatymus, medžiagų kainas, dervų failus, webhook adresus, dokumentų šablonus ir Directus duomenis.
+## Administratoriaus ribos
 
-Prieš keičiant instrukcijas, tool schemas, n8n eigas ar Directus struktūrą būtina suprasti, kokiai funkcijai tas elementas naudojamas. Neatsargūs pakeitimai gali sustabdyti SDK agentą, nestandartinių projektų kortelę, kainos įvertinimą ar dokumentų generavimą.
+Administratorius gali keisti sistemos dalis, kurios daro įtaką kitiems naudotojams:
 
-## Naudotojų valdymas
+- kurti, redaguoti ir trinti naudotojus;
+- suteikti arba nuimti administratoriaus teises;
+- valdyti vadybininkų įrašus;
+- redaguoti ne tik `chat_*`, bet ir kitus sistemos kintamuosius;
+- redaguoti JSON įrankių schemas;
+- matyti programos žurnalus;
+- trinti projektų, lentelių, šablonų ir failų įrašus ten, kur sąsaja tai leidžia;
+- valdyti kainų lentelę, medžiagų šablonus, dervos failus ir dokumentų analizės generavimo veiksmus.
 
-Naudotojai valdomi puslapyje `Naudotojai`.
+Ne administratoriams šie veiksmai turi būti paslėpti arba neprieinami. Jeigu mygtukas matomas paprastam naudotojui, bet veiksmas atmetamas tik po paspaudimo, tai laikoma nepakankamai aiškia naudotojo patirtimi.
 
-Administratorius gali:
+## Naudotojai
+
+Puslapyje `Naudotojai` administratorius gali:
 
 - sukurti naują naudotoją;
 - keisti naudotojo vardą, el. paštą, rolę ir administratoriaus statusą;
 - ištrinti naudotoją;
-- valdyti vadybininkų įrašus ir jų kodus.
+- valdyti vadybininkus: pridėti, redaguoti ir trinti jų įrašus.
 
-Naudotojo rolės naudojamos programos funkcijose, pavyzdžiui, komandos pasirinkime ir komercinių pasiūlymų duomenyse.
+Administratoriaus teisę kitiems naudotojams gali suteikti tik administratorius. Paprastas naudotojas negali priskirti administratoriaus rolės nei naujam, nei jau egzistuojančiam naudotojui.
 
-## Instrukcijų valdymas
+Paprastas naudotojas taip pat neturi redaguoti kitų naudotojų duomenų. Išimtis yra vadybininkų valdymas, jeigu konkrečioje aplinkoje tam palikta teisė.
 
-Puslapis `Instrukcijos` yra skirtas standartinio DI agento instrukcijoms ir susijusiems kintamiesiems valdyti.
+## Instrukcijos ir kintamieji
 
-### `chat_*` kintamieji
+Administratorius gali redaguoti visas instrukcijų ir nustatymų reikšmes, įskaitant tas, kurios nėra `chat_*` formato.
 
-Instrukcijų puslapis dirba su `chat_*` pradžią turinčiais kintamaisiais. Kuriant naują kintamąjį, sistema automatiškai prideda `chat_` prefiksą.
+`chat_*` kintamieji yra skirti pokalbio instrukcijoms ir gali būti atrakinami redagavimui pagal sąsajos taisykles. Kiti kintamieji yra administraciniai: jie gali keisti įrankių veikimą, rodymo taisykles, numatytus pasirinkimus ir kitas sistemos dalis.
 
-Kiekvienas kintamasis turi:
+Redaguojant kintamuosius svarbu:
 
-- raktą;
-- pavadinimą;
-- aprašymą;
-- turinį.
+- nekeisti rakto pavadinimo, jeigu nežinoma, kur jis naudojamas;
+- aprašyme aiškiai įvardyti, kam kintamasis skirtas;
+- vienu metu keisti vieną logišką dalį;
+- po pakeitimo patikrinti puslapį, kuriame reikšmė naudojama.
 
-Aprašymas turi paaiškinti, kam kintamasis skirtas ir kaip jį saugiai redaguoti.
+## JSON įrankių schemos
 
-### `chat_template`
+JSON įrankių schemas gali matyti ir redaguoti tik administratoriai. Paprastam naudotojui jos neturi būti atvaizduojamos.
 
-`chat_template` yra pagrindinis standartinio DI agento šablonas. Jis negali būti ištrinamas.
+Schema aprašo, kokį įrankį sistema gali naudoti ir kokius laukus tas įrankis priima. Keičiant schemą administratorius faktiškai keičia tai, ką sistema gali paprašyti įvykdyti.
 
-Šalia `chat_template` yra mažas veiksmo mygtukas `Įkelti visus kintamuosius`. Jis užpildo šabloną visais egzistuojančiais `chat_*` kintamaisiais. Šis veiksmas naudingas kai reikia atkurti arba greitai atnaujinti bendrą agento instrukcijų struktūrą.
+Dažniausi schemos elementai:
 
-### Instrukcijų versijos
+- `name` - stabilus techninis įrankio pavadinimas;
+- `description` - aiškus aprašymas, kada įrankį naudoti;
+- `input_schema` - laukų struktūra;
+- `properties` - leidžiami argumentai;
+- `required` - privalomi argumentai;
+- `type` - lauko tipas, pvz. `string`, `number`, `boolean`, `array`, `object`;
+- `enum` - ribotas leidžiamų reikšmių sąrašas.
 
-Versijų istorija taikoma tik `chat_*` kintamiesiems. Ji netaikoma visai Directus lentelei ir netaikoma kitiems programos nustatymams.
+Gera schema turi būti siaura ir aiški. Jei įrankis turi atlikti vieną veiksmą, nereikia į vieną schemą sudėti kelių skirtingų veiksmų. Geriau turėti kelis mažesnius įrankius nei vieną dviprasmišką.
 
-Atstatymo principas:
+## Schemų pakeitimų peržiūra
 
-1. Administratorius pasirenka senesnę versiją.
-2. Sistema prieš atstatymą išsaugo dabartinę `chat_*` būseną kaip naują versiją.
-3. Tada atkuriamas pasirinktos versijos turinys.
-4. Jei atstatymas netiko, galima grįžti į prieš tai automatiškai išsaugotą versiją.
+Peržiūrint schemos pakeitimą svarbiausia tikrinti ne tik tekstą, bet ir elgesio pasekmes:
 
-Tai leidžia bandyti pakeitimus saugiau, bet nepakeičia atsargumo poreikio.
+- ar nepasikeitė `name`, nuo kurio priklauso įrankio atpažinimas;
+- ar nebuvo pašalintas laukas, kurį sistema vis dar siunčia;
+- ar naujas `required` laukas tikrai visada gali būti užpildytas;
+- ar `enum` reikšmės sutampa su sąsajos pasirinkimais;
+- ar tipas atitinka realią reikšmę, pvz. skaičius nėra siunčiamas kaip tekstas be priežasties;
+- ar aprašymas neleidžia interpretuoti įrankio per plačiai;
+- ar JSON yra validus ir neturi komentarų, kabučių klaidų ar perteklinių kablelių.
 
-### Schemos ir promptai
+Saugus darbo principas: pakeisti vieną schemos dalį, išsaugoti, patikrinti susijusią funkciją, tik tada keisti kitą dalį.
 
-Instrukcijų puslapyje taip pat redaguojamos su įrankiais ir kainų analize susijusios reikšmės, pavyzdžiui:
+## Schemų šablonai ir raštai
 
-- `sdk_chat_tool_schemas`;
-- `kainos_ai_tool_schemas`;
-- `kainos_ai_nafta_prompt`;
-- `kainos_ai_geo_prompt`;
-- `kainos_ai_prediction_prompt`.
+Administratoriai dažniausiai dirba su keliais schemų raštais:
 
-Šių laukų pakeitimai gali pakeisti DI įrankių kvietimą ir analizės rezultatų formatą. Redaguoti reikia tik suprantant tool calling schemas, JSON struktūrą ir atitinkamą n8n arba programos logiką.
+- `Objektas` - kai rezultatas turi turėti konkrečius laukus, pvz. `pavadinimas`, `suma`, `pastabos`.
+- `Sąrašas` - kai reikia grąžinti kelias vienodo tipo reikšmes, pvz. punktus arba eilutes.
+- `Ribotas pasirinkimas` - kai reikšmė turi būti tik iš leidžiamo sąrašo.
+- `Laisvas tekstas` - kai svarbiausias yra paaiškinimas, o ne griežta struktūra.
+- `Mišri schema` - kai atsakymas turi turėti ir santrauką, ir struktūruotus laukus.
 
-## DOCX šablonas
+Jei laukas naudojamas tolimesniam skaičiavimui, jo pavadinimas turi būti stabilus. Jei laukas skirtas tik žmogui skaityti, aprašymas gali būti lankstesnis.
 
-Standartinio komercinio pasiūlymo DOCX šablonas valdomas SDK komercinio pasiūlymo modulyje.
+## Projektų kortelės
 
-Šablone kintamieji rašomi tarp dvigubų laužtinių skliaustų:
+Administratoriui projektų kortelėje gali būti rodomi papildomi veiksmai:
 
-```text
-{{kintamojo_pavadinimas}}
-```
+- projekto trynimas;
+- įrašų koregavimas;
+- papildomi diagnostiniai arba administraciniai mygtukai, jei tokie įjungti.
 
-Pavyzdžiai:
+Paprastam naudotojui projekto trynimo mygtukas neturi būti rodomas.
 
-```text
-{{siandienos_data}}
-{{technologo_vardas}}
-{{requested_HNV}}
-{{MIDI_komplektacija_SIR_kaina}}
-```
+## Lentelės
 
-Sistema sugeneruotus duomenis įrašo į šias vietas. Jei į DOCX šabloną pridedamas naujas kintamasis, jo reikšmė ir užpildymo logika turi atsispindėti DI agento instrukcijose.
+`Nestandartiniai` ir `Standartiniai` lentelėse administratorius gali naudoti įrašo lygio veiksmus, įskaitant pasirinkimą ir trynimą, jeigu konkreti lentelė tai palaiko.
 
-## Žaliavų administravimas
+Paprastam naudotojui šiose lentelėse neturi būti:
 
-Puslapis `Žaliavos` turi kelias administracines dalis.
+- eilučių pasirinkimo administraciniams veiksmams;
+- trynimo veiksmų;
+- masinių veiksmų, kurie keičia kitų naudotojų ar bendrus duomenis.
 
-### Kainų lentelė
+## Žaliavos
 
-Čia administruojamos medžiagos ir jų kainų istorija. Galima:
+Puslapio `Žaliavos` administracinės teisės apima:
 
-- importuoti Excel failą;
-- pridėti naują medžiagą;
-- pridėti naują kainą;
-- redaguoti arba trinti kainų įrašus.
+- kainų lentelės įrašų pridėjimą;
+- kainų įrašų redagavimą;
+- kainų įrašų trynimą;
+- kainų importą, jei sąsaja jį rodo;
+- medžiagų šablonų kūrimą;
+- medžiagų šablonų redagavimą;
+- medžiagų šablonų trynimą;
+- analizės generavimo veiksmus.
 
-Šie duomenys naudojami grafose ir kainos įvertinimo funkcijoje projekto kortelėje.
+Paprastam naudotojui kainų lentelė ir šablonai turi būti tik peržiūrai. Mygtukas `Naujas šablonas` paprastam naudotojui neturi būti rodomas.
 
-### Medžiagų šablonai
+## Derva
 
-Medžiagų šablonai yra tekstiniai medžiagų sąrašai, naudojami nestandartinių projektų kortelėje. Šablonai naudojami ne kaip struktūrizuota n8n išvestis, o kaip žali tekstiniai duomenys.
+Puslapyje `Derva` administratorius gali:
 
-Svarbu, kad talpos pavadinimai ir tūriai būtų rašomi nuosekliai, nes naudotojai filtruoja šablonus pagal talpą.
+- įkelti failus;
+- trinti failus;
+- paleisti paruošimo veiksmus, jei tokie rodomi;
+- peržiūrėti būsenas ir klaidas.
 
-### Grafa
+Paprastam naudotojui ši dalis turi būti tik peržiūrai: be įkėlimo, trynimo ir paruošimo veiksmų.
 
-`Grafa` rodo medžiagų kainų istoriją ir numatymus:
+## Dokumentų analizė
 
-- matematinį numatymą pagal kainų istoriją;
-- DI numatymą pagal kainų analizės rezultatą.
+Puslapyje `Analizė` administratorius gali atlikti veiksmus, kurie keičia analizės eigą arba sukuria naują rezultatą:
 
-Ši informacija naudojama `Matematinė` ir `Su DI` kainos įvertinimo režimuose projekto kortelėje.
+- įkelti dokumentą;
+- pasirinkti dokumento paruošimo lygį;
+- paleisti dokumento paruošimą;
+- įrašyti analizės instrukcijas;
+- pasirinkti analizės apimtį;
+- pasirinkti rezultato schemos režimą;
+- redaguoti rankinius laukus;
+- įvesti JSON schemą;
+- keisti papildomus analizės parametrus;
+- paleisti analizavimą;
+- peržiūrėti rezultatą skirtingais formatais.
 
-### Analizė
+Paprastam naudotojui mygtukai `Analizuoti` arba `Generuoti` neturi būti rodomi, jeigu analizės generavimas leidžiamas tik administratoriams.
 
-`Analizė` poskyryje yra trijų dalių kainų analizės eiga:
+### Analizės apimtis
 
-1. `Naftos analizė`;
-2. `Geopolitika`;
-3. `Kainų prognozė`.
+Analizės apimtis nusako, kuriai dokumento daliai taikomas klausimas:
 
-Jei atnaujinama pirma arba antra analizė, reikia atnaujinti ir trečiąją `Kainų prognozė` analizę. Trečios analizės rezultatas naudojamas DI kainų prognozėms ir `Su DI` kainos įvertinimui.
+- `Dokumentas` - vienas atsakymas visam dokumentui;
+- `Puslapiai` - atsakymas pagal puslapius;
+- `Lentelės eilutės` - atsakymas pagal lentelės tipo struktūras.
 
-## Kainos įvertinimo režimai
+Apimtis turi atitikti klausimo pobūdį. Jei klausiama bendros santraukos, dažniausiai tinka visas dokumentas. Jei reikia eilučių ar pasikartojančių objektų, geriau rinktis siauresnę apimtį.
 
-Nestandartinio projekto kortelėje yra trys kainos įvertinimo režimai:
+### Rezultato schema
 
-- `Dabartinė` - siunčia paskutines turimas medžiagų kainas.
-- `Matematinė` - siunčia vieną kainą kiekvienai medžiagai; jei paskutinė kaina senesnė nei 3 mėnesiai, ji pakeičiama matematiniu numatymu.
-- `Su DI` - siunčia DI numatytas kainas, kurios naudojamos grafoje.
+Rezultato schema nusako, kokia forma turi būti grąžintas atsakymas:
 
-Kiekvienas režimas turi atskirą atsakymo būseną, kad naudotojas galėtų matyti skirtingus įvertinimus ir suprasti, kokiu pagrindu jie sugeneruoti.
+- `Automatiškai` - sistema pati parenka laukus pagal instrukcijas;
+- `Įvesti` - administratorius rankomis nurodo laukus, tipus ir aprašymus;
+- `JSON` - administratorius įveda pilną schemą.
 
-## Dervos failai
+Rankiniai laukai tinka tada, kai rezultatas turi būti stabilus ir lengvai palyginamas. JSON režimas skirtas sudėtingesnėms schemoms, bet jame lengviausia padaryti sintaksės klaidą, todėl po pakeitimo būtina testuoti.
 
-Puslapis `Derva` skirtas dervų rekomendacijų failams valdyti.
+### Papildomi parametrai
 
-Administratorius gali:
+Papildomuose parametruose administratorius gali valdyti:
 
-- įkelti dervų dokumentus;
-- peržiūrėti failus;
-- paleisti vektorizavimą;
-- matyti vektorizavimo būseną;
-- trinti failus.
+- tikslumo režimą;
+- puslapių ribas;
+- maksimalų puslapių kiekį;
+- citatų grąžinimą;
+- patikimumo reikšmes;
+- papildomas sistemos instrukcijas;
+- schemos peržiūrą.
 
-Tik vektorizuoti failai naudojami dervos rekomendacijai projekto kortelėje. Įkeltas, bet nevektorizuotas failas rekomendacijos logikoje nedalyvauja.
-
-## Webhook valdymas
-
-Webhook adresai saugomi Directus `webhooks` kolekcijoje. Programa juos kviečia pagal `webhook_key`.
-
-Svarbūs webhook raktai:
-
-- `n8n_get_products`;
-- `n8n_get_prices`;
-- `n8n_get_multiplier`;
-- `n8n_similar_tanks`;
-- `n8n_update_talpos_description`;
-- `n8n_price_estimation`;
-- `n8n_derva_select`;
-- `ndk_manual_upload`.
-
-Jei webhook neaktyvus arba jo nėra kolekcijoje, atitinkama funkcija programoje neveiks. Keičiant webhook adresą reikia įsitikinti, kad n8n eiga priima tokį patį užklausos formatą, kokį siunčia programa.
-
-## Nustatymai ir DI modelis
-
-Programos naudojamas Claude modelis valdomas `Nustatymai` lange. Reikšmė saugoma `instruction_variables` kolekcijoje su raktu `app_claude_model`.
-
-Numatytoji reikšmė:
-
-```text
-claude-sonnet-4-20250514
-```
-
-Šį modelį naudoja SDK agentas ir kainų analizės srautai. Keičiant modelį reikia naudoti tik validų Anthropic API modelio pavadinimą.
+Šie parametrai turi būti keičiami tik tada, kai yra aišku, kokio rezultato reikia. Jei atsakymai tampa nestabilūs, pirmiausia reikia supaprastinti instrukciją arba schemą.
 
 ## Programos žurnalai
 
-`Nustatymai` lange galima peržiūrėti programos žurnalus. Žurnalai saugomi `application_logs` kolekcijoje.
+Programos žurnalai skirti administratoriui. Paprastam naudotojui žurnalų prieiga neturi būti rodoma.
 
-Žurnalai naudingi kai reikia tirti:
+Žurnalai padeda tikrinti:
 
-- prisijungimo klaidas;
-- DI agento klaidas;
-- dokumentų generavimo klaidas;
-- webhook klaidas;
-- Directus užklausų klaidas;
-- naudotojų valdymo veiksmus.
+- prisijungimo ir teisių klaidas;
+- naudotojų valdymo veiksmus;
+- duomenų įrašymo klaidas;
+- analizės klaidas;
+- lentelių ir failų veiksmų klaidas.
 
-## LlamaParse ir dokumentų analizė
+Žurnalų įrašai turėtų būti naudojami problemos priežasčiai nustatyti, o ne kaip nuolatinė naudotojo sąsajos dalis.
 
-Dokumentų analizės funkcija naudoja Directus, LlamaCloud LlamaParse ir LlamaCloud Extract. Naudotojo sąsajoje ši dalis vadinama `Dokumentų analizė`.
+## Directus API
 
-Pagrindinės kolekcijos:
+Directus API yra dinaminė: kolekcijos ir jų laukai apibrėžia, kokie endpointai ir kokie duomenų laukai yra prieinami.
 
-- `llamaparse_files` - įkelti dokumentai, jų parse būsena ir rezultatai.
-- `llamaparse_extractions` - struktūrizuoto ištraukimo rezultatai.
+Bendras principas:
 
-Svarbūs principai:
+- kolekcija tampa endpointu formatu `/items/{kolekcijos_pavadinimas}`;
+- įrašo skaitymas, kūrimas, keitimas ir trynimas priklauso nuo rolės teisių;
+- laukai, kuriuos sukuriate kolekcijoje, tampa užklausos ir atsakymo dalimi;
+- jei laukas neegzistuoja arba rolei neleidžiamas, jo negalima patikimai naudoti programoje.
 
-- Dokumentas pirmiausia įkeliamas į Directus failų saugyklą.
-- `llamaparse_files.original_file` saugo nuorodą į originalų Directus failą. Programos tipuose taip pat naudojamas `original_file_id`, kad peržiūra veiktų ir tada, kai Directus grąžina tik ID.
-- Tada failas siunčiamas į LlamaCloud per programos proxy.
-- Parse rezultatas saugomas atgal į `llamaparse_files`: Markdown, tekstas, JSON, puslapių skaičius, vaizdų metaduomenys, parse lygis ir naudotojo instrukcija.
-- Extract rezultatai saugomi `llamaparse_extractions`: job ID, būsena, konfigūracija, rezultatas, metaduomenys ir klaidos tekstas.
+Dažniausi metodai:
 
-Jei LlamaCloud grąžina timeout arba pending būseną, tai nebūtinai reiškia klaidą. Dideli dokumentai gali būti apdorojami ilgiau.
+- `GET /items/kolekcija` - gauti sąrašą;
+- `GET /items/kolekcija/id` - gauti vieną įrašą;
+- `POST /items/kolekcija` - sukurti įrašą;
+- `PATCH /items/kolekcija/id` - pakeisti įrašą;
+- `DELETE /items/kolekcija/id` - ištrinti įrašą.
 
-### Analizė puslapio UI ir nustatymai
+Naudingi užklausų parametrai:
 
-Kairėje pusėje istorija kraunama automatiškai pagal prisijungusį naudotoją. Atskiro istorijos mygtuko nėra. Paieška filtruoja jau įkeltus dokumentus. Aktyvus įrašas pažymimas kairiu mėlynu akcentu.
+- `fields` - kokius laukus grąžinti;
+- `filter` - kaip filtruoti sąrašą;
+- `sort` - kaip rikiuoti;
+- `limit` - kiek įrašų grąžinti;
+- `page` - kurį puslapį grąžinti.
 
-`Įkelti naują` yra kompaktiškas įkėlimo veiksmas. Po failo pasirinkimo programa:
+Failams dažniausiai naudojami atskiri failų ir failų peržiūros endpointai. Jei sąsaja turi rodyti failą, turi būti aišku, kuriame įrašo lauke saugomas failo ID ir ar naudotojo rolė turi teisę tą failą skaityti.
 
-1. įkelia originalų failą į Directus;
-2. sukuria `llamaparse_files` įrašą;
-3. įsimena pasirinktą dokumentą ir originalaus failo ID naršyklės `localStorage`;
-4. parodo failo peržiūrą ir paruošimo būseną.
+## Naujo API ryšio paruošimas
 
-Apdorojimo lygiai:
+Bandant prijungti naują sąsajos dalį prie Directus API, administratorius turėtų eiti tokia tvarka:
 
-- `Ekonomiškas` - `cost_effective`.
-- `Agentinis` - `agentic`.
-- `Agentinis+` - `agentic_plus`.
-- `Greitas` - `fast`.
+1. Sukurti arba patikrinti kolekciją.
+2. Sukurti laukus su aiškiais tipais.
+3. Patikrinti rolės teises skaitymui ir rašymui.
+4. Su minimaliu `GET` patikrinti, ar endpointas pasiekiamas.
+5. Su minimaliu `POST` arba `PATCH` patikrinti, ar rašymas veikia.
+6. Tik tada jungti lauką į sąsają.
+7. Po pakeitimo patikrinti žurnalus ir realų puslapio veikimą.
 
-Extract konfigūracija:
+Jei gaunama `403` klaida, pirmiausia tikrinamas endpointas, kolekcijos pavadinimas, įrašo ID, lauko teisės ir rolės leidimai. Raktas ar prisijungimas ne visada yra priežastis.
 
-- `Tikslus` - `agentic`.
-- `Ekonomiškas` - `cost_effective`.
-- `Visas dokumentas` - `per_doc`.
-- `Kiekvienas puslapis` - `per_page`.
-- `Lentelės eilutės` - `per_table_row`.
+## Saugus administravimas
 
-Rezultato struktūros režimai:
+Prieš keičiant administracinius duomenis verta laikytis kelių taisyklių:
 
-- `Automatiškai` sukuria schemą pagal naudotojo klausimą.
-- `Įvesti` leidžia nurodyti laukų pavadinimus, tipus ir aprašymus.
-- `JSON` leidžia įvesti pilną JSON schema objektą.
+- nekeisti kelių schemų vienu metu;
+- netrinti laukų, kol nežinoma, kur jie naudojami;
+- prieš pervadinant lauką patikrinti, ar sąsaja nenaudoja seno pavadinimo;
+- sudėtingas JSON schemas pirmiausia validuoti;
+- po kiekvieno reikšmingo pakeitimo atlikti realų veiksmą sąsajoje;
+- klaidos atveju tikrinti ne tik tekstą ekrane, bet ir žurnalus.
 
-Papildomi nustatymai perduodami į LlamaCloud Extract konfigūraciją: citatos, patikimumo balai, puslapių rėžiai, maksimalus puslapių skaičius, Extract versija, parse config ID ir papildomas system prompt.
-
-### Peržiūros veikimo principas
-
-Dokumento peržiūra remiasi originaliu Directus failu, o ne LlamaCloud rezultatu. Programa pirmiausia ieško `original_file_id`, tada `original_file.id`, tada naršyklėje įsiminto failo ID. Tai padaryta tam, kad peržiūra išliktų veikianti grįžus iš istorijos, po Extract rezultato arba po puslapio perkrovimo.
-
-PDF ir biuro dokumentai peržiūrai siunčiami į įterptą Google Docs Viewer URL, o vaizdai ir tekstiniai failai rodomi tiesiogiai iš Directus asset URL. Jei peržiūra neveikia, pirmiausia reikia tikrinti:
-
-- ar `original_file` yra užpildytas Directus įraše;
-- ar Directus failas pasiekiamas su naudojamu access token;
-- ar failo MIME tipas arba plėtinys patenka į palaikomus tipus;
-- ar naršyklė neužblokavo išorinio įterpto viewer.
-
-### Diff skaitytojui: ką reiškia pagrindiniai kodo segmentai
-
-`src/types/index.ts`:
-
-- `ParsedDocument.original_file_id` pridėtas tam, kad UI turėtų stabilų failo ID net tada, kai Directus relacija negrąžinama kaip pilnas objektas.
-
-`src/lib/analizeService.ts`:
-
-- `normalizeFile` suvienodina Directus atsakymą ir ištraukia originalaus failo ID.
-- `toFileInsert` ir `toFileUpdate` mapina UI laukus į Directus laukus, pavyzdžiui `parse_tier`, `parse_job_id`, `parse_user_prompt`.
-- `fetchParsedDocuments` ir `getParsedDocument` parsiunčia dokumentus su originalaus failo metaduomenimis.
-
-`src/components/AnalizeInterface.tsx`:
-
-- parse žingsniai (`PARSE_STEPS`) valdo kairėje rodomą dokumento paruošimo būseną.
-- `PREVIEW_FILE_CACHE_KEY` ir `SELECTED_DOCUMENT_CACHE_KEY` saugo peržiūros failą ir paskutinį pasirinktą dokumentą naršyklėje.
-- `getOriginalFileId`, `rememberPreviewFileId` ir `getRememberedPreviewFileId` sudaro peržiūros atsarginį kelią.
-- `handleFileSelect` iš karto įkelia failą į Directus, sukuria istorijos įrašą ir paruošia peržiūrą.
-- `handleRunExtract` sudaro Extract konfigūraciją iš UI pasirinkimų ir paleidžia LlamaCloud Extract.
-- `resultToPlainText` naudojamas `Markdown` rezultatų skaitomai versijai.
-- `resultToRawText` naudojamas `Tekstas` rezultatų versijai: jis pradeda nuo JSON atsakymo, pašalina JSON ir Markdown ženklus ir rodo likusį tekstą.
-- rezultato formatų juosta (`Markdown`, `Tekstas`, `JSON`, `Vaizdai`) naudoja paprastą pabraukimą aktyviam formatui, be kapsulinių kortelių.
-
-## Directus administravimas
-
-Directus yra pagrindinis sistemos duomenų sluoksnis. Jis pasiekiamas adresu `https://sql.traidenis.org`.
-
-Directus galima:
-
-- peržiūrėti ir koreguoti įrašus;
-- valdyti failus;
-- keisti kolekcijų laukus;
-- valdyti webhook adresus;
-- tikrinti LlamaParse, dervų, instrukcijų ir dokumentų duomenis.
-
-Tiesioginis kolekcijų struktūros keitimas yra rizikingas. Pakeitus laukų pavadinimus, tipus arba pašalinus laukus, programa gali pradėti rodyti klaidas arba visiškai neveikti.
-
-## n8n eigos
-
-n8n naudojamas automatizavimui ir išorinėms DI eigoms. Programoje n8n dažniausiai kviečiamas per webhook.
-
-Tipinės n8n atsakomybės:
-
-- nestandartinių paklausimų analizė;
-- rankinio projekto įkėlimo apdorojimas;
-- panašių talpų paieška;
-- dervos parinkimas;
-- talpos aprašymo atnaujinimas;
-- kainos įvertinimas;
-- SDK įrankių užklausos į vidinius duomenis.
-
-Keičiant n8n eigą reikia tikrinti ne tik pačią eigą, bet ir programos siunčiamą payload formatą bei laukus, kuriuos programa tikisi gauti atgal.
-
-## Rekomenduojama administravimo praktika
-
-- Prieš keičiant instrukcijas, sukurkite versiją arba įsitikinkite, kad naujausia versija išsaugota.
-- Nekeiskite `chat_template` neįsitikinę, kad visi reikalingi `chat_*` kintamieji yra šablone.
-- Po kainų analizės pakeitimų patikrinkite `Grafa` ir projekto kortelės `Su DI` kainos režimą.
-- Po dervų failų įkėlimo visada patikrinkite vektorizavimo būseną.
-- Po webhook pakeitimų atlikite realų funkcijos testą programoje.
-- Directus struktūros nekeiskite be aiškaus plano ir atsarginio atkūrimo kelio.
-- Jei keičiate Claude modelį, patikrinkite SDK pokalbį ir kainų analizę.
+Administratoriaus darbas yra ne tik turėti daugiau mygtukų, bet ir užtikrinti, kad kiti naudotojai matytų tik jiems saugius bei suprantamus veiksmus.

@@ -51,6 +51,15 @@ export interface RunExtractInput {
   onStatus?: (status: string) => void;
 }
 
+export class RetryableExtractPollError extends Error {
+  readonly retryable = true;
+
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'RetryableExtractPollError';
+  }
+}
+
 function requestHeaders(): Record<string, string> {
   return { Accept: 'application/json' };
 }
@@ -61,6 +70,39 @@ async function readError(res: Response): Promise<string> {
 
 function normalizeExtractStatus(status?: string): string {
   return String(status || '').trim().toUpperCase();
+}
+
+export function isRetryableExtractPollError(error: unknown): error is RetryableExtractPollError {
+  return Boolean(error && typeof error === 'object' && (error as { retryable?: unknown }).retryable === true);
+}
+
+function isTransientPollError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  const lower = message.toLowerCase();
+  const statusMatch = message.match(/\((\d{3})\)/);
+  const status = statusMatch ? Number(statusMatch[1]) : 0;
+
+  return (
+    status === 408
+    || status === 409
+    || status === 425
+    || status === 429
+    || status >= 500
+    || lower.includes('failed to fetch')
+    || lower.includes('network')
+    || lower.includes('timeout')
+    || lower.includes('temporarily')
+    || lower.includes('load failed')
+  );
+}
+
+function buildExpandQuery(expand: string[]): string {
+  const uniqueExpands = [...new Set(expand.map(item => item.trim()).filter(Boolean))];
+  if (uniqueExpands.length === 0) return '';
+
+  const params = new URLSearchParams();
+  params.set('expand', uniqueExpands.join(','));
+  return params.toString();
 }
 
 export async function uploadExtractText(content: string, fileName = 'document.md'): Promise<string> {
@@ -108,11 +150,9 @@ export async function createExtractJob(fileInput: string, configuration: Extract
 }
 
 export async function getExtractJob(jobId: string): Promise<ExtractJob> {
-  const params = new URLSearchParams();
-  params.append('expand', 'configuration');
-  params.append('expand', 'extract_metadata');
+  const query = buildExpandQuery(['configuration', 'extract_metadata']);
 
-  const res = await fetch(`${API_BASE}/api/v2/extract/${jobId}?${params.toString()}`, {
+  const res = await fetch(`${API_BASE}/api/v2/extract/${jobId}${query ? `?${query}` : ''}`, {
     method: 'GET',
     headers: requestHeaders(),
   });
@@ -126,14 +166,31 @@ export async function getExtractJob(jobId: string): Promise<ExtractJob> {
 
 export async function pollExtractJob(
   jobId: string,
-  onStatus?: (status: string) => void,
+  onStatus?: (status: string, job: ExtractJob) => void | Promise<void>,
   intervalMs = 2500,
   maxAttempts = 120
 ): Promise<ExtractJob> {
+  let transientFailures = 0;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const job = await getExtractJob(jobId);
+    let job: ExtractJob;
+    try {
+      job = await getExtractJob(jobId);
+      transientFailures = 0;
+    } catch (err) {
+      if (!isTransientPollError(err)) throw err;
+
+      transientFailures += 1;
+      if (transientFailures >= 8) {
+        throw new RetryableExtractPollError('Nepavyko patikrinti analizės būsenos dėl laikino ryšio sutrikimo. Darbas išsaugotas ir bus galima tikrinti dar kartą.', err);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs * transientFailures, 15000)));
+      continue;
+    }
+
     const status = normalizeExtractStatus(job.status);
-    onStatus?.(status || job.status);
+    await onStatus?.(status || job.status, job);
 
     if (['COMPLETED', 'SUCCESS', 'SUCCEEDED', 'PARTIAL_SUCCESS'].includes(status)) {
       return { ...job, status };
@@ -144,7 +201,7 @@ export async function pollExtractJob(
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
 
-  throw new Error('Duomenų ištraukimas vis dar vyksta. Bandykite dar kartą po kelių akimirkų.');
+  throw new RetryableExtractPollError('Duomenų analizė vis dar vyksta. Darbas išsaugotas, pabandykite dar kartą po kelių akimirkų.');
 }
 
 export async function runExtract(input: RunExtractInput): Promise<ExtractJob> {
