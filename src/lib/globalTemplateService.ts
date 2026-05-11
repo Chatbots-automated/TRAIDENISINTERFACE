@@ -296,8 +296,11 @@ export function getDirectusFileUrl(fileId: string): string {
  * Generate a .docx Blob by filling the uploaded template with variables.
  * Standalone — no DOM/component dependency.
  */
-export async function buildDocxBlob(variables: Record<string, string>): Promise<Blob> {
-  const fileId = await getDocxTemplateFileId();
+export async function buildDocxBlob(
+  variables: Record<string, string>,
+  templateFileId?: string | null
+): Promise<Blob> {
+  const fileId = templateFileId || await getDocxTemplateFileId();
   if (!fileId) throw new Error('DOCX šablonas neįkeltas. Įkelkite .docx šabloną per šablono redaktorių.');
   const response = await fetch(getDocxTemplateUrl(fileId));
   if (!response.ok) throw new Error('Nepavyko užkrauti DOCX šablono iš serverio');
