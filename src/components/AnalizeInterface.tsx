@@ -115,6 +115,12 @@ const DEFAULT_PARSE_STEPS = PARSE_STEPS.map(step => ({
   detail: '',
 }));
 
+const DIRECTUS_PARSE_TEXT_LIMIT = 180_000;
+const DIRECTUS_PARSE_TEXT_FALLBACK_LIMIT = 35_000;
+const DIRECTUS_STATUS_RESPONSE_LIMIT = 8_000;
+const DIRECTUS_PARSE_JSON_LIMIT = 60_000;
+const DIRECTUS_IMAGE_METADATA_LIMIT = 40;
+
 interface AnalizeInterfaceProps {
   user: AppUser;
   projectId: string;
@@ -327,6 +333,130 @@ function getParseResultStatus(result?: ParseResult | null): string {
   return result?.status || result?.job?.status || result?.metadata?.status || '';
 }
 
+function jsonCharLength(value: unknown): number {
+  try {
+    return JSON.stringify(value)?.length || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function truncateTextForDirectus(value: string | undefined | null, maxChars: number): string {
+  const text = value || '';
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[Turinys sutrumpintas saugojimui Directus. Pilnas failas lieka pasiekiamas per LlamaParse failo ID.]`;
+}
+
+function compactJsonForDirectus(value: unknown, maxChars = DIRECTUS_PARSE_JSON_LIMIT): unknown {
+  if (value == null) return null;
+  const length = jsonCharLength(value);
+  if (length <= maxChars) return value;
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      total_items: value.length,
+      stored_items: value.slice(0, 5),
+      omitted_for_directus_payload: true,
+      original_json_chars: length,
+    };
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return {
+      type: 'object',
+      keys: Object.keys(record).slice(0, 50),
+      omitted_for_directus_payload: true,
+      original_json_chars: length,
+    };
+  }
+  return {
+    value: String(value).slice(0, maxChars),
+    omitted_for_directus_payload: true,
+    original_json_chars: length,
+  };
+}
+
+function compactImagesMetadataForDirectus(value: unknown): unknown {
+  if (!Array.isArray(value)) return value ?? null;
+  return value.slice(0, DIRECTUS_IMAGE_METADATA_LIMIT).map(item => {
+    if (!item || typeof item !== 'object') return item;
+    const record = item as Record<string, unknown>;
+    return {
+      filename: record.filename,
+      page_number: record.page_number,
+      url: record.url,
+      presigned_url: record.presigned_url,
+    };
+  });
+}
+
+function compactParseResultSnapshot(result?: ParseResult | ParseJobResponse | null): Record<string, unknown> | null {
+  if (!result) return null;
+  const record = result as Record<string, any>;
+  const markdown = typeof record.result_content_markdown === 'string' ? record.result_content_markdown : '';
+  const text = typeof record.result_content_text === 'string' ? record.result_content_text : '';
+  const json = record.result_content_json ?? record.items ?? null;
+  const images = Array.isArray(record.images_content_metadata) ? record.images_content_metadata : [];
+
+  return {
+    id: record.id || record.job?.id || null,
+    status: record.status || record.job?.status || null,
+    file_id: record.file_id || null,
+    job: record.job
+      ? {
+        id: record.job.id || null,
+        status: record.job.status || null,
+        error_message: record.job.error_message || null,
+      }
+      : undefined,
+    error_message: record.error_message || record.job?.error_message || null,
+    content_summary: {
+      markdown_chars: markdown.length,
+      text_chars: text.length,
+      json_chars: jsonCharLength(json),
+      image_count: images.length,
+      has_markdown: Boolean(markdown),
+      has_text: Boolean(text),
+      has_json: json != null,
+    },
+  };
+}
+
+function compactStatusResponse(response?: unknown): unknown {
+  if (!response || typeof response !== 'object') return response;
+
+  const record = response as Record<string, any>;
+  if (
+    'result_content_markdown' in record
+    || 'result_content_text' in record
+    || 'result_content_json' in record
+    || 'file_id' in record
+    || 'job' in record
+  ) {
+    return compactParseResultSnapshot(record as ParseResult);
+  }
+
+  if ('file_input' in record || 'extract_result' in record || 'extract_metadata' in record) {
+    return {
+      id: record.id || null,
+      status: record.status || null,
+      file_input: record.file_input || null,
+      error_message: record.error_message || null,
+      has_result: record.extract_result != null,
+      result_json_chars: jsonCharLength(record.extract_result),
+      metadata_json_chars: jsonCharLength(record.extract_metadata ?? record.metadata),
+    };
+  }
+
+  const length = jsonCharLength(response);
+  if (length <= DIRECTUS_STATUS_RESPONSE_LIMIT) return response;
+  return {
+    omitted_large_response: true,
+    json_chars: length,
+    keys: Object.keys(record).slice(0, 30),
+  };
+}
+
 function appendParseStatusHistory(
   history: Array<Record<string, unknown>>,
   status: string,
@@ -341,9 +471,39 @@ function appendParseStatusHistory(
     {
       status,
       at: new Date().toISOString(),
-      ...(response ? { response } : {}),
+      ...(response ? { response: compactStatusResponse(response) } : {}),
     },
   ];
+}
+
+function isDirectusPayloadTooLarge(error: unknown): boolean {
+  const text = JSON.stringify(error || {}).toLowerCase();
+  return (
+    text.includes('request entity too large')
+    || text.includes('payload too large')
+    || text.includes('entity too large')
+  );
+}
+
+function buildParsedDocumentUpdatePayload(
+  result: Pick<ParseResult, 'id' | 'file_id' | 'result_content_markdown' | 'result_content_text' | 'result_content_json' | 'images_content_metadata'>,
+  textLimit: number,
+  includeRichJson: boolean
+): Parameters<typeof updateParsedDocument>[1] {
+  const markdown = result.result_content_markdown || '';
+  const text = result.result_content_text || '';
+  const contentForPageCount = markdown || text;
+
+  return {
+    status: 'SUCCESS',
+    llama_file_id: result.file_id || null,
+    job_id: result.id || '',
+    parsed_markdown: truncateTextForDirectus(markdown, textLimit),
+    parsed_text: truncateTextForDirectus(text, textLimit),
+    parsed_json: includeRichJson ? compactJsonForDirectus(result.result_content_json || null) : null,
+    images_metadata: includeRichJson ? compactImagesMetadataForDirectus(result.images_content_metadata || null) : null,
+    page_count: contentForPageCount ? contentForPageCount.split(/\n\n---\n\n|\n---\n/).length : 0,
+  };
 }
 
 function buildParseJobRequestSnapshot(
@@ -547,7 +707,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         extract_result: job?.extract_result ?? run.extract_result ?? null,
         extract_metadata: job?.extract_metadata ?? job?.metadata ?? run.extract_metadata ?? null,
         error_message: job?.error_message || null,
-        response_json: job || null,
+        response_json: compactStatusResponse(job || null),
         status_history_json: statusHistory,
       });
       if (updatedRun) upsertExtractionRun(updatedRun);
@@ -609,19 +769,35 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       images_content_metadata?: unknown;
     }
   ) => {
-    const markdown = result.result_content_markdown || '';
-    const text = result.result_content_text || '';
-    const contentForPageCount = markdown || text;
-    await updateParsedDocument(documentId, {
-      status: 'SUCCESS',
-      llama_file_id: result.file_id || null,
-      job_id: result.id || '',
-      parsed_markdown: markdown,
-      parsed_text: text,
-      parsed_json: result.result_content_json || null,
-      images_metadata: result.images_content_metadata || null,
-      page_count: contentForPageCount ? contentForPageCount.split(/\n\n---\n\n|\n---\n/).length : 0,
-    });
+    const attempts = [
+      buildParsedDocumentUpdatePayload(result, DIRECTUS_PARSE_TEXT_LIMIT, true),
+      buildParsedDocumentUpdatePayload(result, DIRECTUS_PARSE_TEXT_FALLBACK_LIMIT, false),
+      {
+        status: 'SUCCESS' as const,
+        llama_file_id: result.file_id || null,
+        job_id: result.id || '',
+        parsed_markdown: '',
+        parsed_text: '',
+        parsed_json: null,
+        images_metadata: null,
+        page_count: 0,
+      },
+    ];
+
+    let lastError: unknown = null;
+    for (const payload of attempts) {
+      try {
+        await updateParsedDocument(documentId, payload);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (!isDirectusPayloadTooLarge(error)) throw error;
+        console.warn('Parsed document result was too large for Directus, retrying with a smaller payload:', error);
+      }
+    }
+
+    if (lastError) throw lastError;
 
 	    const fullDoc = await getParsedDocument(documentId);
 	    const fileId = getOriginalFileId(fullDoc);
@@ -678,18 +854,14 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         resumeStatusHistory = appendParseStatusHistory(resumeStatusHistory, status, statusResult);
         void updateParseJobAttemptByParseJobId(doc.job_id, {
           status,
-          response_json: statusResult,
+          response_json: compactParseResultSnapshot(statusResult),
           status_history_json: resumeStatusHistory,
         });
       });
       resumeStatusHistory = appendParseStatusHistory(resumeStatusHistory, result.status || 'SUCCESS', result);
       await updateParseJobAttemptByParseJobId(doc.job_id, {
         status: result.status || 'SUCCESS',
-        response_json: result,
-        parsed_markdown: result.result_content_markdown || '',
-        parsed_text: result.result_content_text || '',
-        parsed_json: result.result_content_json || null,
-        images_metadata: result.images_content_metadata || null,
+        response_json: compactParseResultSnapshot(result),
         status_history_json: resumeStatusHistory,
         completed_at: new Date().toISOString(),
       });
@@ -901,7 +1073,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       parseStatusHistory = appendParseStatusHistory(parseStatusHistory, status, response);
       await updateParseJobAttempt(parseJobRecordId, {
         status,
-        response_json: response || null,
+        response_json: compactParseResultSnapshot(response || null),
         status_history_json: parseStatusHistory,
       });
     };
@@ -991,7 +1163,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                   userPrompt: effectiveUserPrompt,
                   source: 'browser_file',
                 }),
-                response_json: job,
+                response_json: compactParseResultSnapshot(job),
                 status: initialStatus,
                 status_history_json: parseStatusHistory,
               });
@@ -1037,7 +1209,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                   userPrompt: effectiveUserPrompt,
                   source: 'directus_file',
                 }),
-                response_json: job,
+                response_json: compactParseResultSnapshot(job),
                 status: initialStatus,
                 status_history_json: parseStatusHistory,
               });
@@ -1058,11 +1230,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       await recordParseStatus(result.status || 'SUCCESS', result);
       await updateParseJobAttempt(parseJobRecordId, {
         status: result.status || 'SUCCESS',
-        response_json: result,
-        parsed_markdown: result.result_content_markdown || '',
-        parsed_text: result.result_content_text || '',
-        parsed_json: result.result_content_json || null,
-        images_metadata: result.images_content_metadata || null,
+        response_json: compactParseResultSnapshot(result),
         status_history_json: parseStatusHistory,
         completed_at: new Date().toISOString(),
       });
@@ -1132,7 +1300,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       parseStatusHistory = appendParseStatusHistory(parseStatusHistory, status, response);
       await updateParseJobAttempt(parseJobRecordId, {
         status,
-        response_json: response || null,
+        response_json: compactParseResultSnapshot(response || null),
         status_history_json: parseStatusHistory,
       });
     };
@@ -1177,7 +1345,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                 userPrompt: storedUserPrompt,
                 source: 'directus_file',
               }),
-              response_json: job,
+              response_json: compactParseResultSnapshot(job),
               status: initialStatus,
               status_history_json: parseStatusHistory,
             });
@@ -1198,11 +1366,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
       await recordParseStatus(result.status || 'SUCCESS', result);
       await updateParseJobAttempt(parseJobRecordId, {
         status: result.status || 'SUCCESS',
-        response_json: result,
-        parsed_markdown: result.result_content_markdown || '',
-        parsed_text: result.result_content_text || '',
-        parsed_json: result.result_content_json || null,
-        images_metadata: result.images_content_metadata || null,
+        response_json: compactParseResultSnapshot(result),
         status_history_json: parseStatusHistory,
         completed_at: new Date().toISOString(),
       });
@@ -1387,7 +1551,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           fallback_used: fallbackUsed,
           fallback_file_name: fallbackFileName,
         },
-        response_json: initialJob,
+        response_json: compactStatusResponse(initialJob),
         status_history_json: statusHistory,
       });
       upsertExtractionRun(savedRun);
@@ -1402,7 +1566,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           extract_result: statusJob.extract_result ?? null,
           extract_metadata: statusJob.extract_metadata ?? statusJob.metadata ?? null,
           error_message: statusJob.error_message || null,
-          response_json: statusJob,
+          response_json: compactStatusResponse(statusJob),
           status_history_json: statusHistory,
         });
         if (updatedRun) upsertExtractionRun(updatedRun);
@@ -1417,7 +1581,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         extract_result: job.extract_result ?? null,
         extract_metadata: job.extract_metadata ?? job.metadata ?? null,
         error_message: job.error_message || null,
-        response_json: job,
+        response_json: compactStatusResponse(job),
         status_history_json: statusHistory,
       });
 
