@@ -2800,7 +2800,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       setSavedDocxFileId(newFileId);
       setLinkedTemplateFileId(globalDocxFileId);
-      addNotification('success', 'Atnaujinti šabloną', 'Esamas YAML sėkmingai perrenderintas su naujausiu Word šablonu.');
+      addNotification('success', 'Atnaujinti šabloną', 'Dokumentas sėkmingai perrenderintas su naujausiu Word šablonu.');
     } catch (err) {
       console.error('Error refreshing DOCX with latest template:', err);
       addNotification('error', 'Klaida', formatToastMessage('Nepavyko atnaujinti dokumento pagal naują šabloną', err));
@@ -2818,7 +2818,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
     const conversation = currentConversation;
     const artifact = conversation.artifact;
-    const displayText = 'Pergeneruoti komercinio pasiūlymo YAML pagal naujausias instrukcijas.';
+    const displayText = 'Atnaujinti komercinio pasiūlymo duomenis pagal naujausias instrukcijas.';
     const timestamp = new Date().toISOString();
 
     const dismissedMessages = conversation.messages.map(msg => {
@@ -2903,7 +2903,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
       await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, visibleMessages);
     } catch (err: any) {
-      console.error('Error regenerating commercial offer YAML:', err);
+      console.error('Error regenerating commercial offer data:', err);
       await appLogger.logError({
         action: 'sdk_regenerate_commercial_offer_yaml_failed',
         error: err,
@@ -2914,7 +2914,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           artifact_id: artifact.id,
         }
       });
-      addErrorNotification('Klaida', err, 'Nepavyko pergeneruoti YAML');
+      addErrorNotification('Klaida', err, 'Nepavyko atnaujinti pasiūlymo duomenų');
       await saveAssistantFailureMessage(conversation, visibleMessages, err);
       setConversationStreamingContent(conversation.id, '');
     } finally {
@@ -3835,100 +3835,107 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       {((currentConversation?.artifact && showArtifact) || isStreamingArtifact) && (
         <div className="flex-1 min-w-0" style={{ width: 'clamp(320px, 44vw, 760px)', maxWidth: '100%' }}>
           <div className="sdk-artifact-panel w-full flex flex-col h-screen">
-            {/* Header — compact single row */}
-            <div className="sdk-artifact-header flex items-center justify-between flex-shrink-0">
-              <div className="flex items-center gap-3">
-                {/* Tab switcher (Peržiūra first) */}
-                {currentConversation?.artifact && !isStreamingArtifact ? (
-                  <div className="app-tab-switch">
-                    <button
-                      onClick={handlePreviewTabRequest}
-                      data-active={artifactTab === 'preview'}
-                    >
-                      Peržiūra
-                    </button>
-                    <button
-                      onClick={() => setArtifactTab('data')}
-                      data-active={artifactTab === 'data'}
-                    >
-                      Duomenys
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-xs font-medium text-base-content">
-                    Komercinis pasiūlymas
-                    {isStreamingArtifact && (
-                      <span className="ml-2 text-primary">Generuojama...</span>
-                    )}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-1">
-                {!isStreamingArtifact && currentConversation?.artifact && (
-                  <>
-                    {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(currentConversation.artifact!.content); addNotification('info', 'Nukopijuota', 'YAML turinys nukopijuotas į iškarpinę.'); }}
-                      className="app-icon-btn"
-                      title="Kopijuoti YAML"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={handleSaveToStandartiniai}
-                      disabled={isSavingToStandartiniai || isRefreshingTemplate}
-                      className="app-text-btn app-text-btn-primary ml-1"
-                      title="Išsaugoti DOCX į Directus šiam komerciniam projektui"
-                    >
-                      {isSavingToStandartiniai
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <Save className="w-3.5 h-3.5" />}
-                      Išsaugoti failą
-                    </button>
-                    <button
-                      onClick={handleRefreshTemplateFromCurrentYaml}
-                      disabled={!savedDocxFileId || isSavingToStandartiniai || isRefreshingTemplate}
-                      className="app-text-btn ml-1"
-                      title={!savedDocxFileId
-                        ? 'Pirmiausia išsaugokite failą'
-                        : 'Pergeneruoti esamą YAML su naujausiu Word šablonu'}
-                    >
-                      {isRefreshingTemplate
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <RotateCcw className="w-3.5 h-3.5" />}
-                      Atnaujinti šabloną
-                    </button>
-                    <button
-                      onClick={handleRegenerateCommercialOfferYaml}
-                      disabled={loading || isSavingToStandartiniai || isRefreshingTemplate || isRegeneratingYaml}
-                      className="app-text-btn ml-1"
-                      title="Pergeneruoti YAML pagal naujausias agento instrukcijas, nekeičiant šablono automatiškai"
-                    >
-                      {isRegeneratingYaml
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : <RotateCcw className="w-3.5 h-3.5" />}
-                      Pergeneruoti YAML
-                    </button>
-                    {savedDocxFileId && (
-                      <a
-                        href={getDirectusFileUrl(savedDocxFileId)}
-                        download
-                        className="app-text-btn ml-1"
-                        title="Atsisiųsti DOCX iš Directus"
+            {/* Header — navigation above, document actions below */}
+            <div className="sdk-artifact-header flex-shrink-0">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  {/* Tab switcher (Peržiūra first) */}
+                  {currentConversation?.artifact && !isStreamingArtifact ? (
+                    <div className="app-tab-switch">
+                      <button
+                        onClick={handlePreviewTabRequest}
+                        data-active={artifactTab === 'preview'}
                       >
-                        <Download className="w-3.5 h-3.5" />
-                        Atsisiųsti
-                      </a>
-                    )}
-                  </>
-                )}
+                        Peržiūra
+                      </button>
+                      <button
+                        onClick={() => setArtifactTab('data')}
+                        data-active={artifactTab === 'data'}
+                      >
+                        Duomenys
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs font-medium text-base-content">
+                      Komercinis pasiūlymas
+                      {isStreamingArtifact && (
+                        <span className="ml-2 text-primary">Generuojama...</span>
+                      )}
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={() => setShowArtifact(false)}
-                  className="app-icon-btn"
+                  className="app-icon-btn flex-shrink-0"
+                  title="Uždaryti"
+                  aria-label="Uždaryti pasiūlymo skydelį"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+
+              {!isStreamingArtifact && currentConversation?.artifact && (
+                <div className="sdk-artifact-actions">
+                  {/* Doc edit mode removed — preview is now Google Docs Viewer (read-only) */}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(currentConversation.artifact!.content);
+                      addNotification('info', 'Nukopijuota', 'Pasiūlymo duomenys nukopijuoti į iškarpinę.');
+                    }}
+                    className="app-text-btn sdk-artifact-action-btn"
+                    title="Kopijuoti pasiūlymo duomenis"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Kopijuoti
+                  </button>
+                  <button
+                    onClick={handleSaveToStandartiniai}
+                    disabled={isSavingToStandartiniai || isRefreshingTemplate}
+                    className="app-text-btn app-text-btn-primary sdk-artifact-action-btn"
+                    title="Išsaugoti DOCX į Directus šiam komerciniam projektui"
+                  >
+                    {isSavingToStandartiniai
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Save className="w-3.5 h-3.5" />}
+                    Išsaugoti
+                  </button>
+                  <button
+                    onClick={handleRefreshTemplateFromCurrentYaml}
+                    disabled={!savedDocxFileId || isSavingToStandartiniai || isRefreshingTemplate}
+                    className="app-text-btn sdk-artifact-action-btn"
+                    title={!savedDocxFileId
+                      ? 'Pirmiausia išsaugokite failą'
+                      : 'Pritaikyti naujausią Word šabloną esamiems duomenims'}
+                  >
+                    {isRefreshingTemplate
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <RotateCcw className="w-3.5 h-3.5" />}
+                    Pritaikyti šabloną
+                  </button>
+                  <button
+                    onClick={handleRegenerateCommercialOfferYaml}
+                    disabled={loading || isSavingToStandartiniai || isRefreshingTemplate || isRegeneratingYaml}
+                    className="app-text-btn sdk-artifact-action-btn"
+                    title="Atnaujinti pasiūlymo duomenis pagal naujausias agento instrukcijas. Šablonas automatiškai nekeičiamas."
+                  >
+                    {isRegeneratingYaml
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <RotateCcw className="w-3.5 h-3.5" />}
+                    Atnaujinti duomenis
+                  </button>
+                  {savedDocxFileId && (
+                    <a
+                      href={getDirectusFileUrl(savedDocxFileId)}
+                      download
+                      className="app-text-btn sdk-artifact-action-btn"
+                      title="Atsisiųsti DOCX iš Directus"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Atsisiųsti
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Content area — Preview (always mounted for iframe persistence) + Data */}
