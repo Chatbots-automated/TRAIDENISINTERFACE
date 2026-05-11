@@ -1557,6 +1557,11 @@ function TabTalpos({
                       )}
                     </div>
                   </div>
+                  {currentTalposId && (
+                    <p className="mt-2 truncate text-xs text-base-content/35 select-none" title={currentTalposId}>
+                      Talpos UUID: {currentTalposId}
+                    </p>
+                  )}
                 </div>
 
                 {/* Right column: similar tanks */}
@@ -4731,6 +4736,9 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
             )}
             {/* Delete record – pushed to bottom */}
             <div className="mt-auto pt-3">
+              <p className="mb-2 truncate text-xs text-base-content/35 select-none" title={String(record.id)}>
+                Projekto ID: {record.id}
+              </p>
               {canDelete && !isLocked && (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}

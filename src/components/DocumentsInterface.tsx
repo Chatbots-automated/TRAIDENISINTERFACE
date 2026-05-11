@@ -152,6 +152,50 @@ function getTalposIdsFromRecord(row: NestandartiniaiRecord): string[] {
     .filter(Boolean);
 }
 
+function parseQuantityValue(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? value : null;
+  if (typeof value !== 'string') return null;
+
+  const match = value.trim().replace(',', '.').match(/-?\d+(?:\.\d+)?/);
+  if (!match) return null;
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function getQuantityFromRecord(record: Record<string, any> | null | undefined): number | null {
+  if (!record) return null;
+
+  for (const key of ['quantity', 'kiekis', 'Kiekis', 'vnt', 'Vnt', 'qty', 'Qty']) {
+    const parsed = parseQuantityValue(record[key]);
+    if (parsed !== null) return parsed;
+  }
+
+  return null;
+}
+
+function formatTalpuKiekis(value: number | null): string {
+  if (value === null) return '—';
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toLocaleString('lt-LT', { maximumFractionDigits: 2 });
+}
+
+function getNestandartiniaiTalpuKiekis(row: NestandartiniaiRecord, talposById: Map<string, any>): number | null {
+  const ids = getTalposIdsFromRecord(row);
+  if (ids.length > 0) {
+    return ids.reduce((sum, id) => {
+      const talpa = talposById.get(id);
+      return sum + (getQuantityFromRecord(talpa) ?? 1);
+    }, 0);
+  }
+
+  const products = parseAllProducts(row.metadata);
+  if (products.length === 0) return null;
+
+  return products.reduce((sum, product) => sum + (getQuantityFromRecord(product) ?? 1), 0);
+}
+
 function getDirectusUserDisplay(row: any, key: string): string | null {
   const mapped = row?.[DIRECTUS_USER_NAMES_KEY]?.[key];
   if (typeof mapped === 'string' && mapped.trim()) return mapped.trim();
@@ -841,6 +885,9 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
         bVal = formatDervaOrg(b.metadata);
         if (aVal === '—') aVal = null;
         if (bVal === '—') bVal = null;
+      } else if (isNestandartiniai && sortConfig.column === 'talpu_kiekis') {
+        aVal = getNestandartiniaiTalpuKiekis(a as NestandartiniaiRecord, talposById);
+        bVal = getNestandartiniaiTalpuKiekis(b as NestandartiniaiRecord, talposById);
       } else {
         aVal = getCellDisplayValue(a, sortConfig.column, a[sortConfig.column]);
         bVal = getCellDisplayValue(b, sortConfig.column, b[sortConfig.column]);
@@ -854,7 +901,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
       if (aStr > bStr) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [filteredData, sortConfig]);
+  }, [filteredData, isNestandartiniai, sortConfig, talposById]);
 
   // Reset to page 1 when filters, search, sort, or table change
   useEffect(() => { setCurrentPage(1); }, [searchQuery, metadataFilters, sortConfig, selectedTable]);
@@ -1270,9 +1317,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                   const metaTalpos: any[] = Array.isArray(_meta?.talpos) ? _meta.talpos : [];
                   const talpaValues = metaTalpos.map((t: any) => t?.Talpa_m3 ?? t?.talpa_m3 ?? t?.talpa).filter((v: any) => v != null && v !== '');
                   const talpaM3 = talpaValues.length > 0 ? talpaValues.join(', ') : '—';
-                  // Talpų Kiekis: use UUID field count, fall back to metadata array length
-                  const uuidIds = (row.talpos || '').split(',').map((s: string) => s.trim()).filter(Boolean);
-                  const talpaKiekis = uuidIds.length > 0 ? String(uuidIds.length) : (metaTalpos.length > 0 ? String(metaTalpos.length) : '—');
+                  const talpaKiekis = formatTalpuKiekis(getNestandartiniaiTalpuKiekis(row as NestandartiniaiRecord, talposById));
                     const isSelected = isAdmin && selectedIds.has(row.id as number);
 	                  return (
 	                    <tr
