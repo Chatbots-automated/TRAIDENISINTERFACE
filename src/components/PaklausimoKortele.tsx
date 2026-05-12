@@ -3210,12 +3210,8 @@ function TabMedziagos({
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [templateCapacityFilter, setTemplateCapacityFilter] = useState('');
   const [isSlateEditing, setIsSlateEditing] = useState(false);
-  const [slateDraftEntries, setSlateDraftEntries] = useState<Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }>>([]);
-  const [newSlateKey, setNewSlateKey] = useState('');
-  const [newSlateValue, setNewSlateValue] = useState('');
+  const [slateRawTextDraft, setSlateRawTextDraft] = useState('');
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
-  const slateDraftOriginalPathsRef = useRef<string[]>([]);
-  const internalSlateKeys = useMemo(() => new Set(['_template_id', '_template_name', '_manual']), []);
 
   const sanitizeCapacityFilter = useCallback((value: string) => {
     const cleaned = value.replace(/[^\d.,]/g, '');
@@ -3275,6 +3271,8 @@ function TabMedziagos({
       setSelectedTemplateId(null);
       setMode(prev => prev === 'manual' ? prev : 'prompt');
     }
+    setIsSlateEditing(false);
+    setSlateRawTextDraft('');
   }, [currentTalposRow?.material_slate, idx]);
 
   const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
@@ -3338,7 +3336,7 @@ function TabMedziagos({
       setMode('prompt');
       setSelectedTemplateId(null);
       setIsSlateEditing(false);
-      slateDraftOriginalPathsRef.current = [];
+      setSlateRawTextDraft('');
     } catch (err) {
       console.error('Error clearing slate:', err);
     } finally {
@@ -3349,98 +3347,28 @@ function TabMedziagos({
   const openSlateEditor = () => {
     if (!localSlate) return;
     setSlateEditError(null);
-    const formatLabel = (path: string) => path
-      .split('.')
-      .map(part => part.replace(/_/g, ' '))
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' → ');
-    const entries: Array<{ path: string; label: string; value: string; kind: 'string' | 'number' | 'boolean' | 'null' | 'array' }> = [];
-    const flatten = (obj: Record<string, any>, prefix = '') => {
-      for (const [k, v] of Object.entries(obj)) {
-        if (!prefix && internalSlateKeys.has(k)) continue;
-        const p = prefix ? `${prefix}.${k}` : k;
-        if (v === null) {
-          entries.push({ path: p, label: formatLabel(p), value: '', kind: 'null' });
-        } else if (typeof v === 'string') {
-          entries.push({ path: p, label: formatLabel(p), value: v, kind: 'string' });
-        } else if (typeof v === 'number') {
-          entries.push({ path: p, label: formatLabel(p), value: String(v), kind: 'number' });
-        } else if (typeof v === 'boolean') {
-          entries.push({ path: p, label: formatLabel(p), value: v ? 'taip' : 'ne', kind: 'boolean' });
-        } else if (Array.isArray(v)) {
-          if (v.every(x => ['string', 'number', 'boolean'].includes(typeof x) || x === null)) {
-            entries.push({ path: p, label: formatLabel(p), value: v.map(x => x ?? '').join(', '), kind: 'array' });
-          }
-        } else if (typeof v === 'object') {
-          flatten(v as Record<string, any>, p);
-        }
-      }
-    };
-    flatten(localSlate);
-    setSlateDraftEntries(entries);
-    slateDraftOriginalPathsRef.current = entries.map(entry => entry.path);
-    setNewSlateKey('');
-    setNewSlateValue('');
+    setSlateRawTextDraft(
+      typeof localSlate.raw_text === 'string'
+        ? localSlate.raw_text
+        : JSON.stringify(localSlate, null, 2)
+    );
     setIsSlateEditing(true);
   };
 
   const saveSlateEdits = async () => {
-    if (!currentTalposId) return;
+    if (!currentTalposId || !localSlate) return;
     try {
-      const toTypedValue = (raw: string, kind: 'string' | 'number' | 'boolean' | 'null' | 'array'): any => {
-        const t = raw.trim();
-        if (kind === 'number') {
-          if (t === '') return null;
-          const parsed = Number(t.replace(',', '.'));
-          if (Number.isNaN(parsed)) throw new Error(`Neteisingas skaičius: ${raw}`);
-          return parsed;
-        }
-        if (kind === 'boolean') return ['taip', 'true', '1'].includes(t.toLowerCase());
-        if (kind === 'null') return t === '' ? null : t;
-        if (kind === 'array') return t.split(',').map(s => s.trim()).filter(Boolean);
-        return raw;
+      const parsed: Record<string, any> = {
+        ...localSlate,
+        raw_text: slateRawTextDraft,
       };
-      const setByPath = (target: Record<string, any>, path: string, value: any) => {
-        const parts = path.split('.');
-        let obj: any = target;
-        for (let i = 0; i < parts.length - 1; i++) {
-          obj[parts[i]] = obj[parts[i]] && typeof obj[parts[i]] === 'object' ? obj[parts[i]] : {};
-          obj = obj[parts[i]];
-        }
-        obj[parts[parts.length - 1]] = value;
-      };
-      const deleteByPath = (target: Record<string, any>, path: string) => {
-        const parts = path.split('.');
-        let obj: any = target;
-        for (let i = 0; i < parts.length - 1; i++) {
-          obj = obj?.[parts[i]];
-          if (!obj || typeof obj !== 'object') return;
-        }
-        delete obj[parts[parts.length - 1]];
-      };
-
-      const parsed: Record<string, any> = JSON.parse(JSON.stringify(localSlate || {}));
-      for (const path of slateDraftOriginalPathsRef.current) {
-        deleteByPath(parsed, path);
-      }
-      for (const row of slateDraftEntries) {
-        if (!row.path.trim()) continue;
-        if (internalSlateKeys.has(row.path.trim())) continue;
-        setByPath(parsed, row.path, toTypedValue(row.value, row.kind));
-      }
-      if (newSlateKey.trim()) {
-        if (internalSlateKeys.has(newSlateKey.trim())) {
-          throw new Error('Vidiniai šablono laukai negali būti redaguojami');
-        }
-        setByPath(parsed, newSlateKey.trim(), newSlateValue);
-      }
       setSavingSlate(true);
       await updateTalposField(currentTalposId, 'material_slate', parsed);
       setLocalSlate(parsed);
       onTalposRowUpdated?.(currentTalposId, 'material_slate', parsed);
       setMode('template');
       setIsSlateEditing(false);
-      slateDraftOriginalPathsRef.current = [];
+      setSlateRawTextDraft('');
     } catch (err) {
       console.error('Error saving slate edits:', err);
       setSlateEditError(err instanceof Error ? err.message : 'Nepavyko išsaugoti pakeitimų.');
@@ -3677,47 +3605,21 @@ function TabMedziagos({
                   </button>
                 </div>
               </div>
-              <div className="rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3 overflow-y-auto" style={{ maxHeight: '400px' }}>
+              <div
+                className="rounded-xl border border-base-content/8 bg-base-content/[0.01] p-3 overflow-y-auto"
+                style={{ height: isSlateEditing ? '520px' : '400px', maxHeight: isSlateEditing ? '520px' : '400px' }}
+              >
                 {!isSlateEditing && renderSlateData(localSlate)}
                 {isSlateEditing && (
-                  <div className="space-y-2">
-                    {slateDraftEntries.map((row, i) => (
-                      <div key={`${row.path}-${i}`} className="grid grid-cols-[180px_1fr_28px] gap-1.5 items-center">
-                        <span className="text-[11px] text-base-content/65">{row.label}</span>
-                        <input
-                          value={row.value}
-                          onChange={e => setSlateDraftEntries(prev => prev.map((r, j) => j === i ? { ...r, value: e.target.value } : r))}
-                          className="text-xs px-2 py-1.5 rounded-lg border border-base-content/12 bg-base-100 font-mono"
-                        />
-                        <button onClick={() => setSlateDraftEntries(prev => prev.filter((_, j) => j !== i))} className="p-1 rounded-md hover:bg-error/10" title="Pašalinti lauką iš šios talpos šablono">
-                          <X className="w-3 h-3 text-base-content/35" />
-                        </button>
-                      </div>
-                    ))}
-
-                    <div className="grid grid-cols-[180px_1fr_auto] gap-1.5 pt-1">
-                      <input value={newSlateKey} onChange={e => setNewSlateKey(e.target.value)} placeholder="Naujas laukas" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
-                      <input value={newSlateValue} onChange={e => setNewSlateValue(e.target.value)} placeholder="Reikšmė" className="text-xs px-2 py-1.5 rounded-lg border border-dashed border-base-content/20 bg-base-100" />
-                      <button
-                        onClick={() => {
-                          if (!newSlateKey.trim()) return;
-                          setSlateDraftEntries(prev => [...prev, {
-                            path: newSlateKey.trim(),
-                            label: newSlateKey.trim(),
-                            value: newSlateValue,
-                            kind: 'string',
-                          }]);
-                          setNewSlateKey('');
-                          setNewSlateValue('');
-                        }}
-                        className="text-xs px-2.5 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]"
-                      >
-                        Naujas laukas
-                      </button>
-                    </div>
-
+                  <div className="flex h-full min-h-0 flex-col gap-2">
+                    <textarea
+                      value={slateRawTextDraft}
+                      onChange={e => setSlateRawTextDraft(e.target.value)}
+                      spellCheck={false}
+                      className="h-[440px] min-h-[440px] max-h-[440px] w-full resize-none overflow-y-auto rounded-xl border border-base-content/12 bg-base-100 px-3 py-3 font-mono text-[12px] leading-relaxed text-base-content outline-none transition-colors placeholder:text-base-content/30 focus:border-primary/35"
+                    />
                     {slateEditError && <p className="text-xs text-error">{slateEditError}</p>}
-                    <div className="flex items-center justify-end gap-2 pt-1">
+                    <div className="mt-auto flex items-center justify-end gap-2 pt-1">
                       <button onClick={() => setIsSlateEditing(false)} className="text-xs px-3 py-1.5 rounded-xl border border-base-content/15 bg-base-100 hover:bg-base-content/[0.03]">Atšaukti</button>
                       <button onClick={saveSlateEdits} disabled={savingSlate} className="app-text-btn app-text-btn-primary h-8 min-h-0 disabled:opacity-60">
                         {savingSlate ? 'Saugoma...' : 'Išsaugoti'}
