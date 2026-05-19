@@ -30,6 +30,49 @@ export interface SharedConversationDetails {
   is_owner: boolean;
 }
 
+type SharedConversationRow = {
+  id: string;
+  conversation_id: string;
+  shared_with_user_id: string;
+  shared_by_user_id: string;
+  shared_at: string;
+  is_read: boolean;
+};
+
+const asArray = <T,>(value: T[] | T | null | undefined): T[] => {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
+};
+
+const cleanupSharedConversationRows = async (
+  shareIds: string[],
+  metadata: Record<string, unknown> = {}
+): Promise<void> => {
+  const uniqueIds = Array.from(new Set(shareIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return;
+
+  const results = await Promise.all(uniqueIds.map(shareId =>
+    dbAdmin
+      .from('shared_conversations')
+      .delete()
+      .eq('id', shareId)
+  ));
+
+  const failed = results.find(result => result.error);
+  if (failed?.error) {
+    throw failed.error;
+  }
+
+  await appLogger.logDocument({
+    action: 'orphaned_shared_conversations_deleted',
+    metadata: {
+      deleted_share_count: uniqueIds.length,
+      deleted_share_ids: uniqueIds,
+      ...metadata
+    }
+  });
+};
+
 /**
  * Share a conversation with multiple users
  */
@@ -108,21 +151,59 @@ export const getSharedConversations = async (
 
     // Step 2: Fetch related conversations and users
     const transformedData: SharedConversation[] = [];
+    const shareRows = asArray(shares as SharedConversationRow[] | SharedConversationRow);
+    const conversationIds = Array.from(new Set(shareRows.map(share => share.conversation_id).filter(Boolean)));
 
-    for (const share of shares) {
-      // Get the conversation
-      const { data: conversation } = await dbAdmin
+    const { data: conversations, error: conversationsError } = conversationIds.length > 0
+      ? await dbAdmin
         .from('sdk_conversations')
         .select('*')
-        .eq('id', share.conversation_id)
-        .single();
+        .in('id', conversationIds)
+      : { data: [], error: null };
 
-      // Get the sharing user info
-      const { data: sharedByUser } = await dbAdmin
+    if (conversationsError) throw conversationsError;
+
+    const conversationsById = new Map(
+      asArray(conversations as SDKConversation[] | SDKConversation).map(conversation => [conversation.id, conversation])
+    );
+    const orphanShares = shareRows.filter(share => !conversationsById.has(share.conversation_id));
+
+    if (orphanShares.length > 0) {
+      await cleanupSharedConversationRows(
+        orphanShares.map(share => share.id),
+        {
+          user_id: userId,
+          orphaned_conversation_ids: orphanShares.map(share => share.conversation_id)
+        }
+      );
+    }
+
+    const sharedByUserIds = Array.from(new Set(
+      shareRows
+        .filter(share => conversationsById.has(share.conversation_id))
+        .map(share => share.shared_by_user_id)
+        .filter(Boolean)
+    ));
+
+    const { data: sharedByUsers, error: usersError } = sharedByUserIds.length > 0
+      ? await dbAdmin
         .from('app_users')
-        .select('email, display_name')
-        .eq('id', share.shared_by_user_id)
-        .single();
+        .select('id, email, display_name')
+        .in('id', sharedByUserIds)
+      : { data: [], error: null };
+
+    if (usersError) throw usersError;
+
+    const sharedByUsersById = new Map(
+      asArray(sharedByUsers as Array<{ id: string; email: string; display_name: string }> | { id: string; email: string; display_name: string })
+        .map(sharedByUser => [sharedByUser.id, sharedByUser])
+    );
+
+    for (const share of shareRows) {
+      const conversation = conversationsById.get(share.conversation_id);
+      if (!conversation) continue;
+
+      const sharedByUser = sharedByUsersById.get(share.shared_by_user_id);
 
       transformedData.push({
         id: share.id,
@@ -131,7 +212,7 @@ export const getSharedConversations = async (
         shared_by_user_id: share.shared_by_user_id,
         shared_at: share.shared_at,
         is_read: share.is_read,
-        conversation: conversation || undefined,
+        conversation,
         shared_by_email: sharedByUser?.email,
         shared_by_name: sharedByUser?.display_name
       });
@@ -299,6 +380,40 @@ export const unshareConversation = async (
 };
 
 /**
+ * Remove a specific shared conversation row, usually when it points to a
+ * conversation that no longer exists.
+ */
+export const removeSharedConversationRecord = async (
+  shareId: string,
+  userId: string
+): Promise<{ data: boolean; error: any }> => {
+  try {
+    const { error } = await dbAdmin
+      .from('shared_conversations')
+      .delete()
+      .eq('id', shareId)
+      .eq('shared_with_user_id', userId);
+
+    if (error) throw error;
+
+    await appLogger.logDocument({
+      action: 'shared_conversation_record_removed',
+      metadata: { share_id: shareId, shared_with_user_id: userId }
+    });
+
+    return { data: true, error: null };
+  } catch (error) {
+    console.error('Error in removeSharedConversationRecord:', error);
+    await appLogger.logError({
+      action: 'shared_conversation_record_remove_failed',
+      error: error as any,
+      metadata: { share_id: shareId, shared_with_user_id: userId }
+    });
+    return { data: false, error };
+  }
+};
+
+/**
  * Check if user has access to a conversation (owner or shared)
  */
 export const checkConversationAccess = async (
@@ -312,6 +427,10 @@ export const checkConversationAccess = async (
       .select('author_id')
       .eq('id', conversationId)
       .single();
+
+    if (!conversation) {
+      return { hasAccess: false, isOwner: false, isShared: false };
+    }
 
     if (conversation?.author_id === userId) {
       return { hasAccess: true, isOwner: true, isShared: false };
@@ -349,16 +468,48 @@ export const getUnreadSharedCount = async (
 ): Promise<{ data: number; error: any }> => {
   try {
     // Directus doesn't support head-only count queries the same way,
-    // so we fetch IDs only and count client-side
+    // so we fetch IDs only and count client-side. Only resolvable
+    // conversations should count; orphan rows are cleaned up.
     const { data, error } = await dbAdmin
       .from('shared_conversations')
-      .select('id')
+      .select('id, conversation_id')
       .eq('shared_with_user_id', userId)
       .eq('is_read', false);
 
     if (error) throw error;
 
-    const count = Array.isArray(data) ? data.length : 0;
+    const unreadShares = asArray(data as SharedConversationRow[] | SharedConversationRow);
+    if (unreadShares.length === 0) {
+      return { data: 0, error: null };
+    }
+
+    const conversationIds = Array.from(new Set(unreadShares.map(share => share.conversation_id).filter(Boolean)));
+    const { data: conversations, error: conversationsError } = conversationIds.length > 0
+      ? await dbAdmin
+        .from('sdk_conversations')
+        .select('id')
+        .in('id', conversationIds)
+      : { data: [], error: null };
+
+    if (conversationsError) throw conversationsError;
+
+    const existingConversationIds = new Set(
+      asArray(conversations as Array<{ id: string }> | { id: string }).map(conversation => conversation.id)
+    );
+    const orphanShares = unreadShares.filter(share => !existingConversationIds.has(share.conversation_id));
+
+    if (orphanShares.length > 0) {
+      await cleanupSharedConversationRows(
+        orphanShares.map(share => share.id),
+        {
+          user_id: userId,
+          orphaned_conversation_ids: orphanShares.map(share => share.conversation_id),
+          source: 'unread_count'
+        }
+      );
+    }
+
+    const count = unreadShares.filter(share => existingConversationIds.has(share.conversation_id)).length;
     return { data: count, error: null };
   } catch (error) {
     console.error('Error in getUnreadSharedCount:', error);

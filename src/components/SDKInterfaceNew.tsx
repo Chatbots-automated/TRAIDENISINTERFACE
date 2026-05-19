@@ -66,6 +66,7 @@ import {
   getSharedConversationDetails,
   markSharedAsRead,
   getUnreadSharedCount,
+  removeSharedConversationRecord,
   type SharedConversation,
   type SharedConversationDetails
 } from '../lib/sharedConversationService';
@@ -826,6 +827,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const { data, error: fetchError } = await getSDKConversation(sharedConv.conversation_id);
       if (fetchError || !data) {
         console.error('Error fetching shared conversation:', fetchError);
+        await removeSharedConversationRecord(sharedConv.id, user.id);
+        setSharedConversations(prev => prev.filter(item => item.id !== sharedConv.id));
+        setUnreadSharedCount(prev => Math.max(0, prev - (sharedConv.is_read ? 0 : 1)));
+        addNotification('info', 'Bendras pokalbis pašalintas', 'Pokalbis nebepasiekiamas, todėl pranešimas pašalintas.');
+        loadSharedConversations();
         return;
       }
 

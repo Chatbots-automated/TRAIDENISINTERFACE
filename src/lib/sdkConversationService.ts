@@ -363,6 +363,13 @@ export const deleteSDKConversation = async (
   userEmail: string
 ): Promise<{ data: boolean; error: any }> => {
   try {
+    const { error: sharesDeleteError } = await dbAdmin
+      .from('shared_conversations')
+      .delete()
+      .eq('conversation_id', conversationId);
+
+    if (sharesDeleteError) throw sharesDeleteError;
+
     const { error } = await dbAdmin
       .from('sdk_conversations')
       .delete()
