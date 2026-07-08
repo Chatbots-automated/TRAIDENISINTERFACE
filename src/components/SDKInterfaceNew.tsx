@@ -30,7 +30,7 @@ import {
   Save,
   Upload
 } from 'lucide-react';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
 import RoboticArmLoader from './RoboticArmLoader';
@@ -86,6 +86,7 @@ import { useConversationStreaming } from './sdk/useConversationStreaming';
 import { useTeamSelection } from './sdk/useTeamSelection';
 import { useOfferParameters } from './sdk/useOfferParameters';
 import { prepareAnthropicHistory } from './sdk/anthropicHistory';
+import { anthropicProxy } from '../lib/anthropicProxyClient';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -240,7 +241,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   useEffect(() => {
     loadSystemPrompt();
@@ -1038,12 +1038,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setConversationStreamingContent(conversation.id, '');
 
     try {
-      if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
-
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
 
       // Build messages array with the silent message
       const messagesWithSilentMessage = [...conversation.messages, silentUserMessage];
@@ -1115,7 +1110,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    * Process AI response with tool use support (recursive)
    */
   const processAIResponse = async (
-    anthropic: Anthropic,
+    anthropic: typeof anthropicProxy,
     messages: Anthropic.MessageParam[],
     systemPrompt: string,
     conversation: SDKConversation,
@@ -1762,12 +1757,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setConversationStreamingContent(conversation.id, '');
 
     try {
-      if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
-
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
 
       const { messages: anthropicMessages, stats } = prepareAnthropicHistory(updatedMessages);
       const skippedTotal = stats.skippedNonString + stats.skippedMalformed + stats.skippedDuplicateRole;
@@ -2817,11 +2807,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   const handleRegenerateCommercialOfferYaml = async () => {
     if (!currentConversation?.artifact || loading) return;
-    if (!anthropicApiKey) {
-      addNotification('error', 'Klaida', 'Nerastas Anthropic API raktas.');
-      return;
-    }
-
     const conversation = currentConversation;
     const artifact = conversation.artifact;
     const displayText = 'Atnaujinti komercinio pasiūlymo duomenis pagal naujausias instrukcijas.';
@@ -2892,10 +2877,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setConversationStreamingContent(conversation.id, '');
 
     try {
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
       const { fullPrompt } = await fetchLatestPromptBundle();
       const contextualSystemPrompt = `${fullPrompt}\n\n---\n\n**CURRENT ARTIFACT CONTEXT:**\nAn active commercial offer artifact exists in this conversation with ID: \`${artifact.id}\`.\n\nWhen updating the commercial offer, reuse this exact wrapper:\n\`\`\`xml\n<commercial_offer artifact_id="${artifact.id}">\n[updated content]\n</commercial_offer>\n\`\`\`\n\nDo not create a new artifact.`;
       const { messages: anthropicMessages, stats } = prepareAnthropicHistory([...dismissedMessages, apiUserMessage]);
@@ -3199,18 +3181,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     techDescRequestInFlightRef.current = true;
     setTechDescLoading(true);
     try {
-      if (!anthropicApiKey) throw new Error('API key not found');
-
       const promptVar = await getInstructionVariable('chat_tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
         console.warn('[AutoTechDesc] No chat_tech_description_prompt found in DB, skipping.');
         return null;
       }
 
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
 
       const claudeModel = await getClaudeModel();
 

@@ -7,6 +7,12 @@
   to = "/.netlify/functions/llamacloud-proxy/:splat"
   status = 200
 
+
+[[redirects]]
+  from = "/api/anthropic/messages"
+  to = "/.netlify/functions/anthropic-messages"
+  status = 200
+
 [[redirects]]
   from = "/api/google-sheet-read"
   to = "/.netlify/functions/google-sheet-read"
