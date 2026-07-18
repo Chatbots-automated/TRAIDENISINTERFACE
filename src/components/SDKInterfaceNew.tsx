@@ -1612,10 +1612,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     const userMessage: SDKMessage = {
       role: 'user',
       content: messageText,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      sendStatus: 'pending'
     };
 
-    await addMessageToConversation(conversation.id, userMessage);
     const updatedMessages = [...dismissedMessages, userMessage];
     const userMessageConversation: SDKConversation = {
       ...conversation,
@@ -1624,6 +1624,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       last_message_at: userMessage.timestamp,
       updated_at: new Date().toISOString()
     };
+
+    // Render the user's message before any network call so Enter/Send feels instant
+    // and a second press cannot create confusion while the first request is pending.
     setCurrentConversation(userMessageConversation);
     setConversations(prev => prev.map(conv =>
       conv.id === conversation.id
@@ -1638,6 +1641,34 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setInputValue('');
     setLoading(true);
     setConversationStreamingContent(conversation.id, '');
+
+    const markUserMessage = (status: NonNullable<SDKMessage['sendStatus']>, sendError?: string) => {
+      setCurrentConversation(prev => {
+        if (!prev || prev.id !== conversation.id) return prev;
+        return {
+          ...prev,
+          messages: prev.messages.map(msg => (
+            msg.timestamp === userMessage.timestamp
+              ? { ...msg, sendStatus: status, sendError }
+              : msg
+          ))
+        };
+      });
+    };
+
+    const persistedUserMessage: SDKMessage = { ...userMessage, sendStatus: 'sent' };
+    const saveResult = await addMessageToConversation(conversation.id, persistedUserMessage);
+    if (saveResult.error) {
+      const reason = saveResult.error instanceof Error && saveResult.error.message
+        ? saveResult.error.message
+        : 'Nepavyko susisiekti su duomenų baze.';
+      markUserMessage('failed', reason);
+      addErrorNotification('Klaida', saveResult.error, 'Nepavyko išsaugoti žinutės');
+      setLoading(false);
+      setConversationStreamingContent(conversation.id, '');
+      return;
+    }
+    markUserMessage('sent');
 
     try {
       const anthropic = anthropicProxy;
@@ -1661,7 +1692,9 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (bounded.trimmed) {
         addNotification('info', 'Kontekstas sutrumpintas', `Siunčiama ${bounded.messages.length}/${bounded.originalCount} paskutinių žinučių, kad neviršytume SDK limito.`);
       }
-      await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, updatedMessages);
+      await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, updatedMessages.map(msg => (
+        msg.timestamp === userMessage.timestamp ? { ...msg, sendStatus: 'sent' } : msg
+      )));
     } catch (err: any) {
       await appLogger.logError({
         action: 'sdk_send_message_failed',
@@ -3530,6 +3563,14 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                           <div className="text-sm leading-relaxed whitespace-pre-wrap">
                             {renderUserMessageWithVariables(contentString)}
                           </div>
+                          {message.sendStatus === 'pending' && (
+                            <div className="mt-1 text-[11px] opacity-60 text-right">Siunčiama…</div>
+                          )}
+                          {message.sendStatus === 'failed' && (
+                            <div className="mt-1 text-[11px] text-error text-right" title={message.sendError || undefined}>
+                              Nepavyko išsiųsti
+                            </div>
+                          )}
                         </div>
                       </div>
                     ) : (

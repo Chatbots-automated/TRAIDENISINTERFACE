@@ -30,6 +30,8 @@ export interface SDKMessage {
   buttonsMessage?: string; // Message to display with buttons
   selectedButtonId?: string; // ID of the button that was selected by the user
   isSilent?: boolean; // Flag for silent messages (button clicks that shouldn't be displayed)
+  sendStatus?: 'pending' | 'sent' | 'failed'; // Local delivery state for optimistic chat rendering
+  sendError?: string; // User-visible delivery failure details
 }
 
 export interface VariableCitation {
