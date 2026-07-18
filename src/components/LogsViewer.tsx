@@ -29,7 +29,7 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
   const [selectedLevel, setSelectedLevel] = useState<string>('all');
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
 
-  const categories = ['all', 'auth', 'chat', 'document', 'user_management', 'system', 'api', 'error'];
+  const categories = ['all', 'security', 'auth', 'chat', 'document', 'user_management', 'system', 'api', 'error'];
   const levels = ['all', 'debug', 'info', 'warn', 'error', 'critical'];
 
   useEffect(() => {
