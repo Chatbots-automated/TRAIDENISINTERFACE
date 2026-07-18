@@ -25,6 +25,30 @@ function sanitizeRequest(request) {
   return sanitized;
 }
 
+
+function synthesizeStreamEvents(message) {
+  const events = [];
+  const content = Array.isArray(message && message.content) ? message.content : [];
+  content.forEach((contentBlock, index) => {
+    events.push({ type: 'content_block_start', index, content_block: contentBlock });
+    if (contentBlock.type === 'text' && contentBlock.text) {
+      events.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: contentBlock.text } });
+    } else if (contentBlock.type === 'thinking' && contentBlock.thinking) {
+      events.push({ type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: contentBlock.thinking } });
+    } else if (contentBlock.type === 'tool_use' && contentBlock.input) {
+      events.push({ type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(contentBlock.input) } });
+    }
+    events.push({ type: 'content_block_stop', index });
+  });
+  events.push({
+    type: 'message_delta',
+    delta: { stop_reason: message && message.stop_reason, stop_sequence: message && message.stop_sequence },
+    usage: message && message.usage ? message.usage : {},
+  });
+  events.push({ type: 'message_stop' });
+  return events;
+}
+
 function normalizeAnthropicError(err) {
   const status = err && (err.status || err.statusCode) ? Number(err.status || err.statusCode) : 500;
   return {
@@ -73,33 +97,24 @@ exports.handler = async (event) => {
   }
 
   if (mode === 'stream') {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const messageStream = client.messages.stream(request);
-          for await (const streamEvent of messageStream) {
-            controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'event', event: streamEvent })}\n`));
-          }
-          const finalMessage = await messageStream.finalMessage();
-          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'final', message: finalMessage })}\n`));
-          controller.close();
-        } catch (err) {
-          const normalized = normalizeAnthropicError(err);
-          controller.enqueue(encoder.encode(`${JSON.stringify({ type: 'error', ...normalized })}\n`));
-          controller.close();
-        }
-      }
-    });
-
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/x-ndjson; charset=utf-8',
-        'Cache-Control': 'no-store, no-transform',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    });
+    try {
+      const finalMessage = await client.messages.create(request);
+      const lines = synthesizeStreamEvents(finalMessage)
+        .map((streamEvent) => JSON.stringify({ type: 'event', event: streamEvent }))
+        .concat(JSON.stringify({ type: 'final', message: finalMessage }));
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-store, no-transform',
+          'X-Content-Type-Options': 'nosniff',
+        },
+        body: `${lines.join('\n')}\n`,
+      };
+    } catch (err) {
+      const normalized = normalizeAnthropicError(err);
+      return jsonResponse(normalized.statusCode, normalized);
+    }
   }
 
   return jsonResponse(400, { message: 'Unsupported Anthropic proxy mode.' });

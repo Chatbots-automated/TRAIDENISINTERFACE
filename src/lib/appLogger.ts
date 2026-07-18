@@ -2,7 +2,7 @@
 import { dbAdmin } from './database';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
-export type LogCategory = 'auth' | 'chat' | 'document' | 'user_management' | 'system' | 'api' | 'error' | 'security';
+export type LogCategory = 'auth' | 'chat' | 'document' | 'user_management' | 'system' | 'api' | 'error';
 
 export interface ClientAuditContext {
   userAgent?: string;
@@ -261,7 +261,7 @@ class AppLogger {
   }): Promise<void> {
     await this.log({
       level: params.level || 'info',
-      category: 'security',
+      category: 'system',
       action: params.action,
       message: params.message || `Security event: ${params.action}`,
       userId: params.userId,

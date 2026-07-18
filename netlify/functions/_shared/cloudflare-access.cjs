@@ -87,7 +87,21 @@ function getAccessIdentity(payload) {
   };
 }
 
+function shouldEnforceCloudflareAccess() {
+  const explicit = getEnv('CLOUDFLARE_ACCESS_ENFORCE').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(explicit)) return true;
+  if (['0', 'false', 'no', 'off'].includes(explicit)) return false;
+
+  const context = getEnv('CONTEXT').trim().toLowerCase();
+  if (context && context !== 'production') return false;
+
+  return Boolean(getEnv('CLOUDFLARE_ACCESS_TEAM_DOMAIN') && getEnv('CLOUDFLARE_ACCESS_AUD'));
+}
+
 async function requireCloudflareAccess(event) {
+  if (!shouldEnforceCloudflareAccess()) {
+    return { ok: true, identity: null, skipped: true };
+  }
   const teamDomain = getEnv('CLOUDFLARE_ACCESS_TEAM_DOMAIN').replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const aud = getEnv('CLOUDFLARE_ACCESS_AUD');
   if (!teamDomain || !aud) {
@@ -129,4 +143,4 @@ async function requireCloudflareAccess(event) {
   }
 }
 
-module.exports = { requireCloudflareAccess };
+module.exports = { requireCloudflareAccess, shouldEnforceCloudflareAccess };
