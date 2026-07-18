@@ -2,8 +2,7 @@
 import { db } from './database';
 import { appLogger } from './appLogger';
 
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_URL = '/api/directus';
 const DIRECTUS_USER_FIELDS = 'id,first_name,last_name,email';
 export const TALPOS_TABLE_FIELDS = [
   'id',
@@ -77,7 +76,7 @@ async function fetchDirectusUsersByIds(ids: string[]): Promise<DirectusUserNameM
 
   try {
     const response = await fetch(`${DIRECTUS_URL}/users?${params.toString()}`, {
-      headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+      headers: { Accept: 'application/json' },
     });
 
     if (!response.ok) {
@@ -321,7 +320,7 @@ export const deleteStandartinisProjektas = async (
     try {
       await fetch(`${DIRECTUS_URL}/files/${record.document}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        headers: { Accept: 'application/json' },
       });
     } catch (err) {
       console.warn(`Failed to delete Directus file ${record.document}:`, err);
@@ -544,7 +543,7 @@ export const deleteNestandartiniaiRecord = async (
       try {
         await fetch(`${DIRECTUS_URL}/files/${fileId}`, {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+          headers: { Accept: 'application/json' },
         });
       } catch (err) {
         console.warn(`Failed to delete Directus file ${fileId}:`, err);
@@ -560,7 +559,7 @@ export const deleteNestandartiniaiRecord = async (
       try {
         const res = await fetch(`${DIRECTUS_URL}/items/talpos`, {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${DIRECTUS_TOKEN}`, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify(talposIds),
         });
         if (!res.ok) console.warn('Error deleting talpos rows:', await res.text());

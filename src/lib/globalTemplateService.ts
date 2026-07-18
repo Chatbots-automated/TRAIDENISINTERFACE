@@ -11,10 +11,7 @@ import PizZip from 'pizzip';
 import { buildDirectusAssetUrl, buildDirectusDownloadUrl } from './filePreviewUrls';
 
 // Directus instance credentials
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
-const DIRECTUS_ADMIN_TOKEN = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
-const DIRECTUS_EFFECTIVE_TOKEN = (DIRECTUS_ADMIN_TOKEN || DIRECTUS_TOKEN).trim();
+const DIRECTUS_URL = '/api/directus-admin';
 const ENV_DOCX_TEMPLATE_FILE_ID = (import.meta.env.VITE_SDK_TEMPLATE_FILE_ID || '').trim() || null;
 const DOCX_TEMPLATE_TITLE = '__docx_global_template__';
 const SDK_TEMPLATE_COLLECTION = 'sdk_template';
@@ -30,7 +27,7 @@ let _docxCacheLoaded = false;
 let _cachedTemplateVars: { fileId: string; vars: string[] } | null = null;
 
 function getAuthHeaders(): HeadersInit {
-  return { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` };
+  return { Accept: 'application/json' };
 }
 
 function cacheTemplateId(fileId: string | null) {
@@ -267,7 +264,7 @@ export async function uploadDocxBlobToDirectus(
   form.append('file', blob, filename);
   const resp = await fetch(`${DIRECTUS_URL}/files`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
+    headers: { Accept: 'application/json' },
     body: form,
   });
   if (!resp.ok) throw new Error(`DOCX failo įkėlimas nepavyko: ${resp.status}`);
@@ -278,7 +275,7 @@ export async function uploadDocxBlobToDirectus(
   if (previousFileId) {
     fetch(`${DIRECTUS_URL}/files/${previousFileId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
+      headers: { Accept: 'application/json' },
     }).catch(() => {});
   }
 

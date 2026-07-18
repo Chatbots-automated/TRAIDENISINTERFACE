@@ -21,7 +21,7 @@ import {
 import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
-import { getWebhookUrl } from '../lib/webhooksService';
+import { callWebhook } from '../lib/webhooksService';
 import { fetchMaterialPricesForEstimatePayload } from '../lib/kainosService';
 import type { MaterialEstimatePriceMode, MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
 import { fetchSablonai } from '../lib/sablonaiService';
@@ -938,16 +938,10 @@ function TabTalpos({
     setSimilarSearching(prev => ({ ...prev, [idx]: true }));
     setSimilarError(prev => ({ ...prev, [idx]: null }));
     try {
-      const webhookUrl = await getWebhookUrl('n8n_similar_tanks');
       const payload = Object.fromEntries(
         Object.entries(currentTalposRow).filter(([k]) => k !== 'embedding')
       );
-      const res = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await callWebhook('n8n_similar_tanks', payload);
       // Webhook returns 200 OK — results are written by n8n to talpos.similar_talpos.
       // Re-fetch the row from Directus to get the updated column.
       const updated = await fetchTalposByIds([currentTalposId]);
@@ -1005,9 +999,6 @@ function TabTalpos({
     setDescriptionRefreshing(prev => ({ ...prev, [idx]: true }));
     setDescriptionRefreshError(prev => ({ ...prev, [idx]: null }));
     try {
-      const webhookUrl = await getWebhookUrl('n8n_update_talpos_description');
-      if (!webhookUrl) throw new Error('Webhook "n8n_update_talpos_description" nesukonfigūruotas');
-
       const talposJson = tryParseJsonObject(currentTalposRow.json) ?? currentTalposRow.json ?? null;
       const metadata = parseMetadata(record.metadata);
       const payload = {
@@ -1042,17 +1033,7 @@ function TabTalpos({
         },
       };
 
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      const responseText = await response.text().catch(() => '');
-      if (!response.ok) throw new Error(`HTTP ${response.status}${responseText ? `: ${responseText.slice(0, 160)}` : ''}`);
-
-      let parsed: any = responseText;
-      try { parsed = JSON.parse(responseText); } catch { /* plain text is fine */ }
+      const parsed = await callWebhook('n8n_update_talpos_description', payload);
       const nextDescription = extractDescription(parsed);
       if (!nextDescription) throw new Error('Webhook negrąžino aprašymo');
 
@@ -1074,8 +1055,6 @@ function TabTalpos({
     setPriceEstimating(prev => ({ ...prev, [idx]: true }));
     setPriceEstimateError(prev => ({ ...prev, [idx]: null }));
     try {
-      const webhookUrl = await getWebhookUrl('n8n_price_estimation');
-      if (!webhookUrl) throw new Error('Webhook "n8n_price_estimation" nesukonfigūruotas');
       const currentTankSpecs = {
         id: currentTalposId,
         json: currentTalposRow?.json ?? null,
@@ -1154,27 +1133,19 @@ function TabTalpos({
       }, { ai: 0, math: 0, none: 0, total: 0 });
       setPriceSourceBreakdown(prev => ({ ...prev, [idx]: sourceSummary }));
 
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          record_id: record.id,
-          project_name: record.project_name,
-          description: record.description,
-          klientas: record.klientas,
-          talpos_id: currentTalposId,
-          estimation_mode: predictionMode,
-          current_tank_specs: currentTankSpecs,
-          similar_tanks: similarTanksPayload,
-          material_prices: materialPrices,
-          material_price_source: predictionMode === 'ai' ? 'Su DI' : predictionMode === 'math' ? 'Matematinė' : 'Dabartinė',
-        }),
+      const respData = await callWebhook('n8n_price_estimation', {
+        record_id: record.id,
+        project_name: record.project_name,
+        description: record.description,
+        klientas: record.klientas,
+        talpos_id: currentTalposId,
+        estimation_mode: predictionMode,
+        current_tank_specs: currentTankSpecs,
+        similar_tanks: similarTanksPayload,
+        material_prices: materialPrices,
+        material_price_source: predictionMode === 'ai' ? 'Su DI' : predictionMode === 'math' ? 'Matematinė' : 'Dabartinė',
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      // Read as text first — the webhook may return a plain string (price + reasoning)
-      const respText = await resp.text().catch(() => '');
-      let respData: any = null;
-      try { respData = JSON.parse(respText); } catch { /* plain string response */ }
+      const respText = typeof respData === 'string' ? respData : JSON.stringify(respData);
 
       // Full response text for display/storage: prefer known text fields, fall back to raw body
       const fullResponseText: string | null = (() => {
@@ -2552,8 +2523,7 @@ function TabUzduotys({ record, readOnly }: { record: NestandartiniaiRecord; read
 // Tab: Failai
 // ---------------------------------------------------------------------------
 
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_URL = '/api/directus';
 
 interface AttachedFile {
   directus_file_id: string;
@@ -2622,7 +2592,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
     Promise.all(
       ids.map(fileId =>
         fetch(`${DIRECTUS_URL}/files/${fileId}`, {
-          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+          headers: { Accept: 'application/json' },
         })
           .then(r => r.ok ? r.json() : Promise.reject())
           .then(json => {
@@ -2655,7 +2625,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
       // 1. Delete binary from Directus storage
       const resp = await fetch(`${DIRECTUS_URL}/files/${file.directus_file_id}`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        headers: { Accept: 'application/json' },
       });
       if (!resp.ok && resp.status !== 404) {
         throw new Error(`Nepavyko ištrinti failo iš saugyklos (${resp.status})`);
@@ -3908,12 +3878,6 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
     setProcessing(record.id, 'derva', true);
 
     try {
-      const webhookUrl = await getWebhookUrl('n8n_derva_select');
-      if (!webhookUrl) {
-        setDervaError('Webhook "n8n_derva_select" nesukonfigūruotas. Nustatykite jį Webhooks nustatymuose.');
-        return;
-      }
-
       // Build tank data — prefer actual talpos row over legacy metadata
       let tankData: Record<string, any>;
       if (talposRow) {
@@ -3937,28 +3901,19 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
       const currentDervaMusuValue = dervaMusu || 'neparinkta';
 
       // Send tank data with the specific tank ID
-      const resp = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          record_id: record.id,
-          talpos_id: currentTalposId || null,
-          product_index: idx,
-          product_count: products.length,
-          product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
-          product_metadata: tankData,
-          derva_org: formatDervaOrg(tankMeta),
-          derva_musu: currentDervaMusuValue,
-          project_name: record.project_name,
-          description: record.description,
-          klientas: record.klientas,
-        }),
+      await callWebhook('n8n_derva_select', {
+        record_id: record.id,
+        talpos_id: currentTalposId || null,
+        product_index: idx,
+        product_count: products.length,
+        product_name: getProductTitle(tankMeta) || `Talpa ${idx + 1}`,
+        product_metadata: tankData,
+        derva_org: formatDervaOrg(tankMeta),
+        derva_musu: currentDervaMusuValue,
+        project_name: record.project_name,
+        description: record.description,
+        klientas: record.klientas,
       });
-
-      if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        throw new Error(`Serverio klaida (${resp.status})${errText ? `: ${errText}` : ''}`);
-      }
 
       // Poll talpos row first: n8n may write derva_ai asynchronously after webhook returns 200.
       let polledTalposResult: string | null = null;
@@ -4468,7 +4423,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
           form.append('file', pf.file);
           const resp = await fetch(`${DIRECTUS_URL}/files`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+            headers: { Accept: 'application/json' },
             body: form,
           });
           if (!resp.ok) throw new Error(`Failo įkėlimas nepavyko: ${resp.status}`);

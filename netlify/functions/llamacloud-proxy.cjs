@@ -14,12 +14,11 @@ const DIRECTUS_UPLOAD_MAX_BYTES = 45 * 1024 * 1024;
 
 exports.handler = async function handler(event) {
   const apiKey = process.env.LLAMA_CLOUD_API_KEY
-    || process.env.LLAMAPARSE_API_KEY
-    || process.env.VITE_LLAMAPARSE_API_KEY;
+    || process.env.LLAMAPARSE_API_KEY;
 
   if (!apiKey) {
     return jsonResponse(500, {
-        message: 'LLAMA_CLOUD_API_KEY, LLAMAPARSE_API_KEY, or VITE_LLAMAPARSE_API_KEY is not configured in Netlify.',
+        message: 'LLAMA_CLOUD_API_KEY or LLAMAPARSE_API_KEY is not configured in Netlify.',
     });
   }
 
@@ -82,10 +81,10 @@ async function uploadDirectusFileToLlamaCloud(event, apiKey) {
     return jsonResponse(405, { message: 'Method not allowed.' });
   }
 
-  const directusUrl = (process.env.DIRECTUS_URL || process.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-  const directusToken = (process.env.DIRECTUS_TOKEN || process.env.VITE_DIRECTUS_TOKEN || '').trim();
+  const directusUrl = (process.env.DIRECTUS_URL || 'https://sql.traidenis.org').trim();
+  const directusToken = (process.env.DIRECTUS_TOKEN || '').trim();
   if (!directusToken) {
-    return jsonResponse(500, { message: 'DIRECTUS_TOKEN or VITE_DIRECTUS_TOKEN is not configured in Netlify.' });
+    return jsonResponse(500, { message: 'DIRECTUS_TOKEN is not configured in Netlify.' });
   }
 
   let payload;

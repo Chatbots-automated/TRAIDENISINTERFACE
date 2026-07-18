@@ -10,7 +10,7 @@
  * ./directus.ts. Every service file in this project imports from here.
  *
  * Directus instance URL: https://sql.traidenis.org
- * Auth method: Static Bearer token (VITE_DIRECTUS_TOKEN)
+ * Auth method: server-side bearer token injected by Netlify Functions
  *
  * See ./directus.ts for the full client implementation and API details.
  * ============================================================================
@@ -20,26 +20,14 @@ import { createClient } from './directus';
 import { appLogger } from './appLogger';
 import type { AppUser } from '../types';
 
-const directusUrl = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const directusToken = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
-const directusAdminToken = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
+const directusUrl = '/api/directus';
+const directusAdminUrl = '/api/directus-admin';
 
-if (!directusUrl) {
-  throw new Error('Missing VITE_DIRECTUS_URL environment variable');
-}
+// Main client: browser talks only to the local proxy.
+export const db = createClient(directusUrl, '');
 
-if (!directusToken) {
-  console.warn('[Directus] No VITE_DIRECTUS_TOKEN found - API requests may fail. Set it in Netlify environment variables.');
-}
-
-// Main client
-export const db = createClient(directusUrl, directusToken);
-
-// Admin client (optional dedicated token; falls back to main token if unset)
-if (!directusAdminToken) {
-  console.warn('[Directus] No VITE_DIRECTUS_ADMIN_TOKEN found - dbAdmin will use the default token.');
-}
-export const dbAdmin = createClient(directusUrl, directusAdminToken || directusToken);
+// Admin client: browser talks only to the local admin proxy.
+export const dbAdmin = createClient(directusAdminUrl, '');
 
 const CURRENT_USER_STORAGE_KEY = 'currentUser';
 

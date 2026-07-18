@@ -1,13 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X, AlertTriangle, Check, Paperclip } from 'lucide-react';
 import { appLogger } from '../lib/appLogger';
-import { getWebhookUrl } from '../lib/webhooksService';
+import { callWebhook } from '../lib/webhooksService';
 import type { AppUser } from '../types';
 import NotificationContainer, { Notification } from './NotificationContainer';
 import { formatErrorForToast, formatToastMessage } from '../lib/notificationUtils';
 
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_URL = '/api/directus';
 
 interface NestandardiniaiInterfaceProps {
   user: AppUser;
@@ -118,14 +117,6 @@ export default function NestandardiniaiInterface({ user, projectId, embedded = f
         },
       });
 
-      const webhookUrl = await getWebhookUrl('ndk_manual_upload');
-
-      if (!webhookUrl) {
-        throw new Error(
-          'Webhook "ndk_manual_upload" nerastas arba neaktyvus. Prašome sukonfigūruoti webhook Webhooks nustatymuose.'
-        );
-      }
-
       // Upload files to Directus first (same pattern as PaklausimoKortele)
       const uploadedFileIds: string[] = [];
       for (const file of attachments) {
@@ -133,7 +124,7 @@ export default function NestandardiniaiInterface({ user, projectId, embedded = f
         form.append('file', file);
         const resp = await fetch(`${DIRECTUS_URL}/files`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+          headers: { Accept: 'application/json' },
           body: form,
         });
         if (!resp.ok) throw new Error(`Failo įkėlimas nepavyko: ${resp.status}`);
@@ -142,25 +133,17 @@ export default function NestandardiniaiInterface({ user, projectId, embedded = f
       }
 
       // Send webhook as JSON (matching all working webhooks in the app)
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          text,
-          userId: user.id,
-          userEmail: user.email,
-          projectId,
-          timestamp: new Date().toISOString(),
-          uploaded_file_ids: uploadedFileIds,
-          attachment_count: attachments.length,
-          attachment_names: attachments.map(f => f.name),
-        }),
+      await callWebhook('ndk_manual_upload', {
+        name,
+        text,
+        userId: user.id,
+        userEmail: user.email,
+        projectId,
+        timestamp: new Date().toISOString(),
+        uploaded_file_ids: uploadedFileIds,
+        attachment_count: attachments.length,
+        attachment_names: attachments.map(f => f.name),
       });
-
-      if (!response.ok) {
-        throw new Error(`Webhook užklausa nepavyko: ${response.statusText}`);
-      }
 
       await appLogger.logDocument({
         action: 'ndk_manual_upload_success',

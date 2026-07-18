@@ -1,5 +1,5 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
-import { db, dbAdmin } from './database';
+import { dbAdmin } from './database';
 import { appLogger } from './appLogger';
 
 export interface Webhook {
@@ -16,85 +16,24 @@ export interface Webhook {
   updated_at: string;
 }
 
-// Cache for webhook URLs to avoid repeated database calls
-const webhookCache: Map<string, { url: string; timestamp: number }> = new Map();
-const CACHE_TTL = 60000; // 1 minute cache
+export async function callWebhook<T = unknown>(webhookKey: string, payload: unknown): Promise<T> {
+  const response = await fetch(`/api/webhooks/${encodeURIComponent(webhookKey)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json,text/plain,*/*' },
+    body: JSON.stringify(payload),
+  });
 
-/**
- * Get all webhooks (uses admin client to bypass RLS - UI already restricts to admins)
- */
-export async function getWebhooks(): Promise<Webhook[]> {
-  const { data, error } = await dbAdmin
-    .from('webhooks')
-    .select('*')
-    .order('webhook_name', { ascending: true });
-
-  if (error) {
-    console.error('Error fetching webhooks:', error);
-    await appLogger.logError({
-      action: 'webhooks_fetch_failed',
-      error
-    });
-    throw error;
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`Webhook "${webhookKey}" failed (${response.status}): ${errorText}`);
   }
 
-  return data || [];
-}
-
-/**
- * Get a webhook URL by key (with caching)
- */
-export async function getWebhookUrl(webhookKey: string): Promise<string | null> {
-  // Check cache first
-  const cached = webhookCache.get(webhookKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.url;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json() as Promise<T>;
   }
 
-  const { data, error } = await dbAdmin
-    .from('webhooks')
-    .select('url, is_active')
-    .eq('webhook_key', webhookKey)
-    .limit(1);
-
-  if (error) {
-    console.error(`[getWebhookUrl] DB error for "${webhookKey}":`, error);
-    await appLogger.logError({
-      action: 'webhook_url_fetch_failed',
-      error,
-      metadata: { webhook_key: webhookKey }
-    });
-    return null;
-  }
-
-  const row = data?.[0];
-
-  if (!row) {
-    console.warn(`[getWebhookUrl] No row found for key "${webhookKey}" — insert it into the webhooks table`);
-    await appLogger.logSystem({
-      action: 'webhook_url_missing',
-      level: 'warn',
-      message: `Webhook row not found for key: ${webhookKey}`,
-      metadata: { webhook_key: webhookKey }
-    });
-    return null;
-  }
-
-  if (!row.is_active) {
-    console.warn(`[getWebhookUrl] Webhook "${webhookKey}" exists but is_active=false`);
-    await appLogger.logSystem({
-      action: 'webhook_inactive',
-      level: 'warn',
-      message: `Webhook inactive for key: ${webhookKey}`,
-      metadata: { webhook_key: webhookKey }
-    });
-    return null;
-  }
-
-  // Update cache
-  webhookCache.set(webhookKey, { url: row.url, timestamp: Date.now() });
-
-  return row.url;
+  return response.text() as Promise<T>;
 }
 
 /**
@@ -116,9 +55,6 @@ export async function updateWebhook(
     if (error) {
       throw error;
     }
-
-    // Clear cache for this webhook
-    webhookCache.delete(webhookKey);
 
     await appLogger.logAPI({
       action: 'webhook_updated',
@@ -194,9 +130,6 @@ export async function toggleWebhookActive(
       throw error;
     }
 
-    // Clear cache for this webhook
-    webhookCache.delete(webhookKey);
-
     await appLogger.logAPI({
       action: 'webhook_toggled',
       endpoint: webhookKey,
@@ -232,12 +165,10 @@ export async function testWebhook(
       message: 'Test request from Traidenis admin panel'
     };
 
-    const response = await fetch(url, {
+    const response = await fetch('/api/webhooks/test', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(testPayload)
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json,text/plain,*/*' },
+      body: JSON.stringify({ url, payload: testPayload })
     });
 
     // Update last test info in database
@@ -285,11 +216,4 @@ export async function testWebhook(
       error: error.message || 'Network error'
     };
   }
-}
-
-/**
- * Clear webhook cache (useful when webhooks are updated)
- */
-export function clearWebhookCache(): void {
-  webhookCache.clear();
 }

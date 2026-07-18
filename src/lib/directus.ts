@@ -25,7 +25,7 @@
  *   DELETE /items/<collection>/<id>     → delete single item
  *   DELETE /items/<collection>          → delete multiple items (with filter)
  *
- * Authentication: Authorization: Bearer <static_token>
+ * Authentication: handled server-side by Netlify Functions.
  *
  * Query params (Directus-specific):
  *   fields=field1,field2              → select fields
@@ -35,14 +35,12 @@
  *   offset=N                          → skip results
  *   search=term                       → full-text search
  *
- * Environment variables:
- *   VITE_DIRECTUS_URL   → Directus instance URL
- *   VITE_DIRECTUS_TOKEN → Static Bearer token for authentication
+ * Browser requests use same-origin /api/directus endpoints; server-side
+ * Netlify Functions attach the Directus bearer token.
  * ============================================================================
  */
 
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_PROXY_URL = '/api/directus';
 
 // Response types - keep the same interface for backward compatibility
 interface DirectusError {
@@ -759,9 +757,7 @@ function buildHeaders(token: string): Record<string, string> {
     'Accept': 'application/json'
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  void token;
 
   return headers;
 }
@@ -787,7 +783,7 @@ async function parseDirectusError(response: Response): Promise<DirectusError> {
 // Exports
 // ============================================================================
 
-export const directus = new DirectusClient(DIRECTUS_URL, DIRECTUS_TOKEN);
+export const directus = new DirectusClient(DIRECTUS_PROXY_URL, '');
 
 export const createClient = (url: string, token: string) => {
   return new DirectusClient(url, token);

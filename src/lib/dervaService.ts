@@ -1,13 +1,10 @@
 // Database: Directus API (see ./directus.ts). NOT Supabase.
 import { db } from './database';
-import { getWebhookUrl } from './webhooksService';
+import { callWebhook } from './webhooksService';
 import { buildDirectusAssetUrl, buildDirectusDownloadUrl } from './filePreviewUrls';
 
-// Directus instance credentials (same as ./directus.ts)
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
-const DIRECTUS_ADMIN_TOKEN = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
-const DIRECTUS_EFFECTIVE_TOKEN = (DIRECTUS_ADMIN_TOKEN || DIRECTUS_TOKEN).trim();
+// Directus file operations go through the local Netlify proxy.
+const DIRECTUS_URL = '/api/directus-admin';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,7 +39,7 @@ export const uploadFileToDirectus = async (file: File): Promise<string> => {
 
   const resp = await fetch(`${DIRECTUS_URL}/files`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
+    headers: { Accept: 'application/json' },
     body: form,
   });
 
@@ -107,7 +104,7 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
   if (directusFileId) {
     const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${DIRECTUS_EFFECTIVE_TOKEN}` },
+      headers: { Accept: 'application/json' },
     });
     if (!resp.ok && resp.status !== 404) {
       console.error('Directus file delete failed:', resp.status, resp.statusText);
@@ -188,22 +185,12 @@ export const triggerVectorization = async (
   fileName: string,
   dervaFileId: number,
 ): Promise<boolean> => {
-  const webhookUrl = await getWebhookUrl('n8n_derva_vectorize');
-  if (!webhookUrl) {
-    throw new Error('Webhook n8n_derva_vectorize nėra sukonfigūruotas. Patikrinkite Webhooks nustatymus.');
-  }
-
-  const resp = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      directus_file_id: directusFileId,
-      file_name: fileName,
-      derva_file_id: dervaFileId,
-    }),
+  await callWebhook('n8n_derva_vectorize', {
+    directus_file_id: directusFileId,
+    file_name: fileName,
+    derva_file_id: dervaFileId,
   });
-
-  return resp.ok;
+  return true;
 };
 
 // ---------------------------------------------------------------------------
