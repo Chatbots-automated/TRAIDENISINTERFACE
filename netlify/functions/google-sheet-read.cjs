@@ -1,7 +1,14 @@
+const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
 exports.handler = async function handler(event) {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 204, headers: { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }, body: '' };
+  }
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { success: false, error: 'Method not allowed' });
   }
+
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return access.response;
 
   let body;
   try {

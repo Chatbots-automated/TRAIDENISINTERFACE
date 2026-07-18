@@ -7,6 +7,7 @@ const {
   jsonResponse,
   noContent,
 } = require('./_shared/http.cjs');
+const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
 
 const ALLOWED_PREFIXES = ['/items/', '/files', '/files/', '/assets/', '/users', '/users/'];
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'DELETE', 'HEAD']);
@@ -45,6 +46,9 @@ exports.handler = async function handler(event) {
   const method = (event.httpMethod || 'GET').toUpperCase();
   if (method === 'OPTIONS') return noContent();
   if (!ALLOWED_METHODS.has(method)) return jsonResponse(405, { message: 'Method not allowed.' });
+
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return access.response;
 
   const eventPath = event.path || '';
   const isAdmin = isAdminRequest(eventPath);

@@ -7,6 +7,7 @@ const {
   noContent,
   parseJsonBody,
 } = require('./_shared/http.cjs');
+const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
 
 const ALLOWED_WEBHOOK_KEYS = new Set([
   'n8n_get_products',
@@ -69,6 +70,9 @@ exports.handler = async function handler(event) {
   const method = (event.httpMethod || 'GET').toUpperCase();
   if (method === 'OPTIONS') return noContent();
   if (method !== 'POST') return jsonResponse(405, { message: 'Method not allowed.' });
+
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return access.response;
 
   let payload;
   try {

@@ -8,6 +8,7 @@ const {
   noContent,
   parseJsonBody,
 } = require('./_shared/http.cjs');
+const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
 
 const LLAMA_BASE_URL = 'https://api.cloud.llamaindex.ai';
 const DIRECTUS_UPLOAD_MAX_BYTES = 45 * 1024 * 1024;
@@ -39,6 +40,9 @@ exports.handler = async function handler(event) {
   const method = (event.httpMethod || 'GET').toUpperCase();
   if (method === 'OPTIONS') return noContent();
   if (!ALLOWED_METHODS.has(method)) return jsonResponse(405, { message: 'Method not allowed.' });
+
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return access.response;
 
   const apiKey = getLlamaApiKey();
   if (!apiKey) {

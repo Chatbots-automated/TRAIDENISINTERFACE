@@ -2,6 +2,7 @@ const AnthropicModule = require('@anthropic-ai/sdk');
 const Anthropic = AnthropicModule.default || AnthropicModule;
 
 const { getEnv, jsonResponse, noContent, parseJsonBody } = require('./_shared/http.cjs');
+const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
@@ -37,6 +38,9 @@ exports.handler = async (event) => {
   const method = (event.httpMethod || 'GET').toUpperCase();
   if (method === 'OPTIONS') return noContent();
   if (method !== 'POST') return jsonResponse(405, { message: 'Method not allowed.' });
+
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return access.response;
 
   const apiKey = getApiKey();
   if (!apiKey) return jsonResponse(500, { message: 'ANTHROPIC_API_KEY is not configured in Netlify.' });
