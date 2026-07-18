@@ -1,5 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getInstructionVariable } from './instructionsService';
+import { anthropicProxy } from './anthropicProxyClient';
 
 export type AnalyticsStepKey = 'nafta' | 'geo' | 'analysis';
 
@@ -94,13 +95,12 @@ export async function fetchKainosToolSchemas(): Promise<Anthropic.Tool[]> {
 }
 
 export async function runSdkRequest(
-  client: Anthropic,
   model: string,
   prompt: string,
   maxTokens: number,
   tools?: Anthropic.Tool[]
 ): Promise<SdkStepResult> {
-  const response = await client.messages.create({
+  const response = await anthropicProxy.messages.create({
     model,
     max_tokens: maxTokens,
     messages: [{ role: 'user', content: prompt }],

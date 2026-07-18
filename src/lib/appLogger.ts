@@ -2,7 +2,17 @@
 import { dbAdmin } from './database';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'critical';
-export type LogCategory = 'auth' | 'chat' | 'document' | 'user_management' | 'system' | 'api' | 'error';
+export type LogCategory = 'auth' | 'chat' | 'document' | 'user_management' | 'system' | 'api' | 'error' | 'security';
+
+export interface ClientAuditContext {
+  userAgent?: string;
+  language?: string;
+  platform?: string;
+  screen?: string;
+  timezone?: string;
+  url?: string;
+  referrer?: string;
+}
 
 interface LogEntry {
   level: LogLevel;
@@ -17,6 +27,23 @@ interface LogEntry {
 
 class AppLogger {
   private sessionId: string;
+
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
+  getClientContext(): ClientAuditContext {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return {};
+    return {
+      userAgent: navigator.userAgent,
+      language: navigator.language,
+      platform: navigator.platform,
+      screen: typeof screen !== 'undefined' ? `${screen.width}x${screen.height}` : undefined,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      url: window.location.href,
+      referrer: document.referrer || undefined,
+    };
+  }
 
   constructor() {
     this.sessionId = this.generateSessionId();
@@ -41,15 +68,18 @@ class AppLogger {
           session_id: entry.sessionId || this.sessionId,
           user_id: entry.userId || null,
           user_email: entry.userEmail || null,
-          metadata: entry.metadata || {},
+          metadata: {
+            client: this.getClientContext(),
+            ...(entry.metadata || {}),
+          },
           timestamp: new Date().toISOString(),
         });
 
-      if (error) {
-        console.error('Failed to write log:', error);
-      }
+      // Never write audit-log failures to the browser console; failed logging
+      // must not leak sensitive payloads or interrupt the user workflow.
+      void error;
     } catch (err) {
-      console.error('Error writing log:', err);
+      void err;
     }
   }
 
@@ -215,6 +245,30 @@ class AppLogger {
         ...params.metadata,
         error_message: errorMessage,
         stack_trace: stackTrace,
+      },
+    });
+  }
+
+
+
+  async logSecurity(params: {
+    action: string;
+    userId?: string;
+    userEmail?: string;
+    level?: LogLevel;
+    message?: string;
+    metadata?: Record<string, any>;
+  }): Promise<void> {
+    await this.log({
+      level: params.level || 'info',
+      category: 'security',
+      action: params.action,
+      message: params.message || `Security event: ${params.action}`,
+      userId: params.userId,
+      userEmail: params.userEmail,
+      metadata: {
+        session_id: this.sessionId,
+        ...params.metadata,
       },
     });
   }

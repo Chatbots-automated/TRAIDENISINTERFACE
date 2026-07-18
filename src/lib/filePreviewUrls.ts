@@ -1,25 +1,24 @@
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
-const DIRECTUS_ADMIN_TOKEN = (import.meta.env.VITE_DIRECTUS_ADMIN_TOKEN || '').trim();
-const DIRECTUS_EFFECTIVE_TOKEN = (DIRECTUS_ADMIN_TOKEN || DIRECTUS_TOKEN).trim();
-
 interface DirectusAssetUrlOptions {
   cacheKey?: string | number;
   download?: boolean;
 }
 
+function buildSameOriginUrl(path: string): URL {
+  const origin = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'http://localhost';
+  return new URL(path, origin);
+}
+
 export function buildDirectusAssetUrl(fileId: string, options: DirectusAssetUrlOptions = {}): string {
-  const url = new URL(`/assets/${fileId}`, DIRECTUS_URL);
-  if (DIRECTUS_EFFECTIVE_TOKEN) {
-    url.searchParams.set('access_token', DIRECTUS_EFFECTIVE_TOKEN);
-  }
+  const url = buildSameOriginUrl(`/api/directus-assets/${encodeURIComponent(fileId)}`);
   if (options.cacheKey !== undefined) {
     url.searchParams.set('_preview', String(options.cacheKey));
   }
   if (options.download) {
     url.searchParams.set('download', '');
   }
-  return url.toString();
+  return typeof window !== 'undefined' ? url.toString() : `${url.pathname}${url.search}`;
 }
 
 export function buildDirectusDownloadUrl(fileId: string): string {

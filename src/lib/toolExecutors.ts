@@ -13,7 +13,7 @@
  * NOTE: The database layer uses Directus API, NOT Supabase. See ./directus.ts.
  */
 
-import { getWebhookUrl } from './webhooksService';
+import { callWebhook } from './webhooksService';
 import { fetchLatestMaterialPrices, fetchGeneralAnalysis } from './kainosService';
 
 // Map tool names to webhook keys in the database
@@ -23,74 +23,15 @@ const TOOL_WEBHOOK_KEYS: Record<string, string> = {
   get_multiplier: 'n8n_get_multiplier'
 };
 
-async function buildWebhookErrorMessage(response: Response): Promise<string> {
-  const responseText = await response.text();
-  const trimmedResponseText = responseText.trim();
-
-  if (!trimmedResponseText) {
-    return `Webhook returned ${response.status}: ${response.statusText || 'No status text returned'}`;
-  }
-
-  let parsedBody: unknown;
-
-  try {
-    parsedBody = JSON.parse(trimmedResponseText);
-  } catch {
-    parsedBody = null;
-  }
-
-  if (parsedBody && typeof parsedBody === 'object' && 'error' in parsedBody) {
-    const parsedError = (parsedBody as { error?: unknown }).error;
-    if (typeof parsedError === 'string' && parsedError.trim().length > 0) {
-      return `Webhook returned ${response.status}: ${parsedError}`;
-    }
-  }
-
-  return `Webhook returned ${response.status}: ${trimmedResponseText}`;
-}
-
 /**
  * Execute get_products tool (via n8n webhook)
  */
 export async function executeGetProductsTool(input: { product_code: string }): Promise<string> {
   try {
-    const webhookUrl = await getWebhookUrl(TOOL_WEBHOOK_KEYS.get_products);
-    if (!webhookUrl) {
-      return JSON.stringify({ success: false, error: 'Webhook "n8n_get_products" not found or inactive' });
-    }
 
-    console.log('[Tool: get_products] Searching for product code:', input.product_code);
-    console.log('[Tool: get_products] Calling webhook:', webhookUrl);
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        product_code: input.product_code
-      })
+    const data = await callWebhook(TOOL_WEBHOOK_KEYS.get_products, {
+      product_code: input.product_code
     });
-
-    console.log('[Tool: get_products] Response status:', response.status);
-
-    if (!response.ok) {
-      const errorMessage = await buildWebhookErrorMessage(response);
-      console.error('[Tool: get_products] Request failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        product_code: input.product_code,
-        errorMessage
-      });
-
-      return JSON.stringify({
-        success: false,
-        error: errorMessage
-      });
-    }
-
-    const data = await response.json();
-    console.log('[Tool: get_products] Response data:', data);
 
     // Return the webhook response as-is wrapped in success
     return JSON.stringify({
@@ -98,7 +39,6 @@ export async function executeGetProductsTool(input: { product_code: string }): P
       data: data
     }, null, 2);
   } catch (error: any) {
-    console.error('[Tool: get_products] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error'
@@ -111,13 +51,6 @@ export async function executeGetProductsTool(input: { product_code: string }): P
  */
 export async function executeGetPricesTool(input: { id: number }): Promise<string> {
   try {
-    const webhookUrl = await getWebhookUrl(TOOL_WEBHOOK_KEYS.get_prices);
-    if (!webhookUrl) {
-      return JSON.stringify({ success: false, error: 'Webhook "n8n_get_prices" not found or inactive' });
-    }
-
-    console.log('[Tool: get_prices] Fetching price for product ID:', input.id);
-    console.log('[Tool: get_prices] Calling webhook:', webhookUrl);
 
     // Fetch latest material prices and analytics summary to enrich the request.
     // n8n can use this data alongside tank specs for more accurate price estimates.
@@ -126,42 +59,16 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
       fetchGeneralAnalysis(),
     ]);
 
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        id: input.id,
-        material_prices: materialPrices.status === 'fulfilled' ? materialPrices.value : [],
-        price_analytics_summary: latestAnalysis.status === 'fulfilled' && latestAnalysis.value
-          ? latestAnalysis.value.content
-          : null,
-        geo_events_summary: latestAnalysis.status === 'fulfilled' && latestAnalysis.value
-          ? latestAnalysis.value.geoevents
-          : null,
-      })
+    const data = await callWebhook(TOOL_WEBHOOK_KEYS.get_prices, {
+      id: input.id,
+      material_prices: materialPrices.status === 'fulfilled' ? materialPrices.value : [],
+      price_analytics_summary: latestAnalysis.status === 'fulfilled' && latestAnalysis.value
+        ? latestAnalysis.value.content
+        : null,
+      geo_events_summary: latestAnalysis.status === 'fulfilled' && latestAnalysis.value
+        ? latestAnalysis.value.geoevents
+        : null,
     });
-
-    console.log('[Tool: get_prices] Response status:', response.status);
-
-    if (!response.ok) {
-      const errorMessage = await buildWebhookErrorMessage(response);
-      console.error('[Tool: get_prices] Request failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        id: input.id,
-        errorMessage
-      });
-
-      return JSON.stringify({
-        success: false,
-        error: errorMessage
-      });
-    }
-
-    const data = await response.json();
-    console.log('[Tool: get_prices] Response data:', data);
 
     // Return the webhook response as-is wrapped in success
     return JSON.stringify({
@@ -169,7 +76,6 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
       data: data
     }, null, 2);
   } catch (error: any) {
-    console.error('[Tool: get_prices] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error'
@@ -182,40 +88,8 @@ export async function executeGetPricesTool(input: { id: number }): Promise<strin
  */
 export async function executeGetMultiplierTool(): Promise<string> {
   try {
-    const webhookUrl = await getWebhookUrl(TOOL_WEBHOOK_KEYS.get_multiplier);
-    if (!webhookUrl) {
-      return JSON.stringify({ success: false, error: 'Webhook "n8n_get_multiplier" not found or inactive' });
-    }
 
-    console.log('[Tool: get_multiplier] Fetching latest price multiplier');
-    console.log('[Tool: get_multiplier] Calling webhook:', webhookUrl);
-
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({})
-    });
-
-    console.log('[Tool: get_multiplier] Response status:', response.status);
-
-    if (!response.ok) {
-      const errorMessage = await buildWebhookErrorMessage(response);
-      console.error('[Tool: get_multiplier] Request failed:', {
-        status: response.status,
-        statusText: response.statusText,
-        errorMessage
-      });
-
-      return JSON.stringify({
-        success: false,
-        error: errorMessage
-      });
-    }
-
-    const data = await response.json();
-    console.log('[Tool: get_multiplier] Response data:', data);
+    const data = await callWebhook(TOOL_WEBHOOK_KEYS.get_multiplier, {});
 
     // Return the webhook response as-is wrapped in success
     return JSON.stringify({
@@ -223,7 +97,6 @@ export async function executeGetMultiplierTool(): Promise<string> {
       data: data
     }, null, 2);
   } catch (error: any) {
-    console.error('[Tool: get_multiplier] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error'
@@ -236,8 +109,6 @@ export async function executeGetMultiplierTool(): Promise<string> {
  * Returns special marker that UI will detect to pause conversation and display buttons
  */
 export async function executeDisplayButtonsTool(input: { message?: string; buttons: Array<{id: string, label: string, value: string}> }): Promise<string> {
-  console.log('[Tool: display_buttons] Displaying buttons in UI');
-  console.log('[Tool: display_buttons] Buttons:', input.buttons);
 
   // Return special JSON marker that indicates buttons should be displayed
   // The UI will detect this and handle it specially
@@ -304,7 +175,6 @@ export async function executeReadGoogleSheetTool(input: {
 
     return JSON.stringify(payload, null, 2);
   } catch (error: any) {
-    console.error('[Tool: read_google_sheet] Error:', error);
     return JSON.stringify({
       success: false,
       error: error.message || 'Unknown error reading Google Sheet'
@@ -316,7 +186,6 @@ export async function executeReadGoogleSheetTool(input: {
  * Main tool executor - routes tool calls to appropriate executor
  */
 export async function executeTool(toolName: string, toolInput: any): Promise<string> {
-  console.log(`[executeTool] Executing: ${toolName}`);
 
   switch (toolName) {
     case 'get_products':

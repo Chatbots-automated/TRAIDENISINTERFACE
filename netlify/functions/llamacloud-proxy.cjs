@@ -1,79 +1,77 @@
+const {
+  binaryProxyResponse,
+  bodyBuffer,
+  forwardableHeaders,
+  getDirectusUrl,
+  getEnv,
+  jsonResponse,
+  noContent,
+  parseJsonBody,
+} = require('./_shared/http.cjs');
+const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
+
 const LLAMA_BASE_URL = 'https://api.cloud.llamaindex.ai';
-
-const HOP_BY_HOP_HEADERS = new Set([
-  'connection',
-  'content-length',
-  'host',
-  'transfer-encoding',
-  'x-forwarded-for',
-  'x-forwarded-host',
-  'x-forwarded-proto',
-]);
-
 const DIRECTUS_UPLOAD_MAX_BYTES = 45 * 1024 * 1024;
+const ALLOWED_METHODS = new Set(['GET', 'POST', 'DELETE']);
+const ALLOWED_PATH_PREFIXES = [
+  'api/v1/beta/files',
+  'api/v2/parse',
+  'api/v2/extract',
+];
+
+function getLlamaApiKey() {
+  return getEnv('LLAMA_CLOUD_API_KEY') || getEnv('LLAMAPARSE_API_KEY');
+}
+
+function resolveLlamaPath(eventPath) {
+  return String(eventPath || '')
+    .replace(/^\/api\/llamacloud\/?/, '')
+    .replace(/^\/\.netlify\/functions\/llamacloud-proxy\/?/, '')
+    .replace(/^\/+/, '');
+}
+
+function isAllowedLlamaPath(path) {
+  if (!path || path.includes('..') || path.includes('://') || path.includes('\\')) return false;
+  if (path === 'directus-file-upload') return true;
+  return ALLOWED_PATH_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
 
 exports.handler = async function handler(event) {
-  const apiKey = process.env.LLAMA_CLOUD_API_KEY
-    || process.env.LLAMAPARSE_API_KEY
-    || process.env.VITE_LLAMAPARSE_API_KEY;
+  const method = (event.httpMethod || 'GET').toUpperCase();
+  if (method === 'OPTIONS') return noContent();
+  if (!ALLOWED_METHODS.has(method)) return jsonResponse(405, { message: 'Method not allowed.' });
 
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return access.response;
+
+  const apiKey = getLlamaApiKey();
   if (!apiKey) {
-    return jsonResponse(500, {
-        message: 'LLAMA_CLOUD_API_KEY, LLAMAPARSE_API_KEY, or VITE_LLAMAPARSE_API_KEY is not configured in Netlify.',
-    });
+    return jsonResponse(500, { message: 'LLAMA_CLOUD_API_KEY or LLAMAPARSE_API_KEY is not configured in Netlify.' });
   }
 
-  const path = event.path
-    .replace(/^\/api\/llamacloud\/?/, '')
-    .replace(/^\/\.netlify\/functions\/llamacloud-proxy\/?/, '');
-  if (!path || path.includes('..')) {
-    return jsonResponse(400, { message: 'Invalid LlamaCloud path.' });
-  }
-
-  if (path === 'directus-file-upload') {
-    return uploadDirectusFileToLlamaCloud(event, apiKey);
-  }
+  const path = resolveLlamaPath(event.path);
+  if (!isAllowedLlamaPath(path)) return jsonResponse(400, { message: 'Invalid or unsupported LlamaCloud path.' });
+  if (path === 'directus-file-upload') return uploadDirectusFileToLlamaCloud(event, apiKey);
 
   const query = event.rawQuery ? `?${event.rawQuery}` : '';
   const targetUrl = `${LLAMA_BASE_URL}/${path}${query}`;
-  const method = event.httpMethod || 'GET';
-
-  const headers = {};
-  for (const [key, value] of Object.entries(event.headers || {})) {
-    const normalized = key.toLowerCase();
-    if (!HOP_BY_HOP_HEADERS.has(normalized) && value) {
-      headers[normalized] = value;
-    }
-  }
+  const headers = forwardableHeaders(event.headers, { dropAuthorization: true });
   headers.authorization = `Bearer ${apiKey}`;
   headers.accept = headers.accept || 'application/json';
 
   const init = { method, headers };
-  if (!['GET', 'HEAD'].includes(method.toUpperCase()) && event.body) {
-    init.body = event.isBase64Encoded
-      ? Buffer.from(event.body, 'base64')
-      : Buffer.from(event.body);
+  if (!['GET', 'HEAD'].includes(method) && event.body) {
+    try {
+      init.body = bodyBuffer(event, DIRECTUS_UPLOAD_MAX_BYTES);
+    } catch (err) {
+      return jsonResponse(err.statusCode || 400, { message: err.message || 'Invalid request body.' });
+    }
   }
 
   try {
-    const response = await fetch(targetUrl, init);
-    const contentType = response.headers.get('content-type') || 'application/json';
-    const arrayBuffer = await response.arrayBuffer();
-    const body = Buffer.from(arrayBuffer);
-
-    return {
-      statusCode: response.status,
-      headers: {
-        'content-type': contentType,
-        'cache-control': 'no-store',
-      },
-      body: body.toString('base64'),
-      isBase64Encoded: true,
-    };
+    return await binaryProxyResponse(await fetch(targetUrl, init));
   } catch (error) {
-    return jsonResponse(502, {
-      message: error instanceof Error ? error.message : 'LlamaCloud proxy request failed.',
-    });
+    return jsonResponse(502, { message: error instanceof Error ? error.message : 'LlamaCloud proxy request failed.' });
   }
 };
 
@@ -82,20 +80,15 @@ async function uploadDirectusFileToLlamaCloud(event, apiKey) {
     return jsonResponse(405, { message: 'Method not allowed.' });
   }
 
-  const directusUrl = (process.env.DIRECTUS_URL || process.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim();
-  const directusToken = (process.env.DIRECTUS_TOKEN || process.env.VITE_DIRECTUS_TOKEN || '').trim();
-  if (!directusToken) {
-    return jsonResponse(500, { message: 'DIRECTUS_TOKEN or VITE_DIRECTUS_TOKEN is not configured in Netlify.' });
-  }
+  const directusUrl = getDirectusUrl();
+  const directusToken = getEnv('DIRECTUS_TOKEN');
+  if (!directusToken) return jsonResponse(500, { message: 'DIRECTUS_TOKEN is not configured in Netlify.' });
 
   let payload;
   try {
-    const body = event.isBase64Encoded
-      ? Buffer.from(event.body || '', 'base64').toString('utf8')
-      : (event.body || '{}');
-    payload = JSON.parse(body);
-  } catch {
-    return jsonResponse(400, { message: 'Invalid JSON body.' });
+    payload = parseJsonBody(event, 1024 * 1024);
+  } catch (err) {
+    return jsonResponse(err.statusCode || 400, { message: err.statusCode === 413 ? err.message : 'Invalid JSON body.' });
   }
 
   const fileId = String(payload.directus_file_id || '').trim();
@@ -104,7 +97,7 @@ async function uploadDirectusFileToLlamaCloud(event, apiKey) {
   }
 
   try {
-    const metaRes = await fetch(`${directusUrl.replace(/\/$/, '')}/files/${encodeURIComponent(fileId)}`, {
+    const metaRes = await fetch(`${directusUrl}/files/${encodeURIComponent(fileId)}`, {
       headers: { authorization: `Bearer ${directusToken}`, accept: 'application/json' },
     });
     if (!metaRes.ok) {
@@ -125,7 +118,7 @@ async function uploadDirectusFileToLlamaCloud(event, apiKey) {
       });
     }
 
-    const assetRes = await fetch(`${directusUrl.replace(/\/$/, '')}/assets/${encodeURIComponent(fileId)}?download`, {
+    const assetRes = await fetch(`${directusUrl}/assets/${encodeURIComponent(fileId)}?download`, {
       headers: { authorization: `Bearer ${directusToken}` },
     });
     if (!assetRes.ok) {
@@ -162,29 +155,15 @@ async function uploadDirectusFileToLlamaCloud(event, apiKey) {
       body,
     });
 
-    const responseContentType = uploadRes.headers.get('content-type') || 'application/json';
-    const responseBytes = Buffer.from(await uploadRes.arrayBuffer());
-    return {
-      statusCode: uploadRes.status,
-      headers: {
-        'content-type': responseContentType,
-        'cache-control': 'no-store',
-      },
-      body: responseBytes.toString('base64'),
-      isBase64Encoded: true,
-    };
+    return await binaryProxyResponse(uploadRes);
   } catch (error) {
-    return jsonResponse(502, {
-      message: error instanceof Error ? error.message : 'Directus to LlamaCloud upload failed.',
-    });
+    return jsonResponse(502, { message: error instanceof Error ? error.message : 'Directus to LlamaCloud upload failed.' });
   }
 }
 
 function buildMultipartUploadBody({ fieldName, fileName, mimeType, bytes, fields = {} }) {
   const boundary = `----traidenis-llamacloud-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  const safeFileName = String(fileName || 'document')
-    .replace(/[\r\n"]/g, '_')
-    .slice(0, 180);
+  const safeFileName = String(fileName || 'document').replace(/[\r\n"]/g, '_').slice(0, 180);
   const safeMimeType = String(mimeType || 'application/octet-stream').replace(/[\r\n]/g, '');
 
   const fieldParts = Object.entries(fields).map(([name, value]) => (
@@ -201,25 +180,10 @@ function buildMultipartUploadBody({ fieldName, fileName, mimeType, bytes, fields
     'utf8'
   );
   const suffix = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
-
-  return {
-    body: Buffer.concat([prefix, bytes, suffix]),
-    contentType: `multipart/form-data; boundary=${boundary}`,
-  };
+  return { body: Buffer.concat([prefix, bytes, suffix]), contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 function formatBytes(value) {
   if (!Number.isFinite(value) || value <= 0) return '0 MB';
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function jsonResponse(statusCode, payload) {
-  return {
-    statusCode,
-    headers: {
-      'content-type': 'application/json',
-      'cache-control': 'no-store',
-    },
-    body: JSON.stringify(payload),
-  };
 }

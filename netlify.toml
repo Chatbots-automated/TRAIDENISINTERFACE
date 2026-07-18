@@ -2,9 +2,37 @@
   publish = "dist"
   command = "npm run build"
 
+
+[[redirects]]
+  from = "/api/directus-admin/*"
+  to = "/.netlify/functions/directus-proxy/directus-admin/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/directus-assets/*"
+  to = "/.netlify/functions/directus-proxy/assets/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/directus/*"
+  to = "/.netlify/functions/directus-proxy/:splat"
+  status = 200
+
+
+[[redirects]]
+  from = "/api/webhooks/*"
+  to = "/.netlify/functions/webhook-proxy/:splat"
+  status = 200
+
 [[redirects]]
   from = "/api/llamacloud/*"
   to = "/.netlify/functions/llamacloud-proxy/:splat"
+  status = 200
+
+
+[[redirects]]
+  from = "/api/anthropic/messages"
+  to = "/.netlify/functions/anthropic-messages"
   status = 200
 
 [[redirects]]

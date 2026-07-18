@@ -30,7 +30,7 @@ import {
   Save,
   Upload
 } from 'lucide-react';
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { getSystemPrompt, getPromptTemplate } from '../lib/instructionVariablesService';
 import MessageContent from './MessageContent';
 import RoboticArmLoader from './RoboticArmLoader';
@@ -86,6 +86,14 @@ import { useConversationStreaming } from './sdk/useConversationStreaming';
 import { useTeamSelection } from './sdk/useTeamSelection';
 import { useOfferParameters } from './sdk/useOfferParameters';
 import { prepareAnthropicHistory } from './sdk/anthropicHistory';
+import { anthropicProxy } from '../lib/anthropicProxyClient';
+import {
+  MAX_SDK_TOOL_ROUNDS,
+  buildToolTraceXml,
+  getNonEmptyAnthropicContent,
+  summarizeAnthropicMessages,
+  validateAnthropicToolAdjacency,
+} from '../lib/sdkChatUtils';
 
 interface SDKInterfaceNewProps {
   user: AppUser;
@@ -240,7 +248,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const anthropicApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
 
   useEffect(() => {
     loadSystemPrompt();
@@ -272,7 +279,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         if (!Array.isArray(parsed)) throw new Error('Schema config must be an array');
         setActiveSdkTools(parsed as Anthropic.Tool[]);
       } catch (error) {
-        console.error('[SDK Tools] Failed to load schema from Directus.', error);
         setActiveSdkTools([]);
         addNotification('error', 'SDK schema', 'Nepavyko užkrauti SDK schemos iš Directus. Patikrinkite JSON formatą.');
       }
@@ -398,9 +404,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       const economistsList = await getEconomists();
       setEconomists(economistsList);
-      console.log('[Economists] Loaded', economistsList.length, 'economists');
     } catch (error) {
-      console.error('[Economists] Error loading:', error);
+      void error;
     }
   };
 
@@ -408,9 +413,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     try {
       const managersList = await getManagers();
       setManagers(managersList);
-      console.log('[Managers] Loaded', managersList.length, 'managers');
     } catch (error) {
-      console.error('[Managers] Error loading:', error);
+      void error;
     }
   };
 
@@ -464,10 +468,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setSystemPrompt(fullPrompt);
       setPromptTemplate(template);
       setTemplateFromDB(template);
-      console.log('System prompt loaded, length:', fullPrompt.length);
-      console.log('Template loaded, length:', template.length);
     } catch (err) {
-      console.error('Error loading system prompt:', err);
       addErrorNotification('Klaida', err, 'Nepavyko užkrauti sistemos instrukcijų');
     } finally {
       setLoadingPrompt(false);
@@ -510,16 +511,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
   };
 
   const fetchLatestPromptBundle = async (): Promise<{ fullPrompt: string; template: string }> => {
-    try {
-      const [fullPrompt, template] = await Promise.all([getSystemPrompt(), getPromptTemplate()]);
-      setSystemPrompt(fullPrompt);
-      setPromptTemplate(template);
-      setTemplateFromDB(template);
-      return { fullPrompt, template };
-    } catch (error) {
-      console.error('[fetchLatestPromptBundle] Error:', error);
-      throw error;
-    }
+    const [fullPrompt, template] = await Promise.all([getSystemPrompt(), getPromptTemplate()]);
+    setSystemPrompt(fullPrompt);
+    setPromptTemplate(template);
+    setTemplateFromDB(template);
+    return { fullPrompt, template };
   };
 
   const saveTemplateVariable = async (content: string): Promise<{ success: boolean; error?: any }> => {
@@ -537,14 +533,11 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         .eq('variable_key', 'chat_template');
 
       if (error) {
-        console.error('[saveTemplateVariable] Error:', error);
         return { success: false, error };
       }
 
-      console.log('[saveTemplateVariable] Template saved successfully');
       return { success: true };
     } catch (error) {
-      console.error('[saveTemplateVariable] Exception:', error);
       return { success: false, error };
     }
   };
@@ -577,7 +570,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         handleSelectConversation(urlConversationId);
       }
     } catch (err) {
-      console.error('Error loading conversations:', err);
+      void err;
     } finally {
       setLoadingConversations(false);
     }
@@ -593,7 +586,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const { data: count } = await getUnreadSharedCount(user.id);
       setUnreadSharedCount(count);
     } catch (err) {
-      console.error('Error loading shared conversations:', err);
+      void err;
     }
   };
 
@@ -602,7 +595,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const users = await getShareableUsers(user.id);
       setShareableUsers(users);
     } catch (err) {
-      console.error('Error loading shareable users:', err);
+      void err;
     }
   };
 
@@ -622,7 +615,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setConversations(prev => [newConversation!, ...prev]);
       addNotification('success', 'Sukurta', 'Naujas pokalbis sukurtas.');
     } catch (err) {
-      console.error('Error creating conversation:', err);
       addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
     } finally {
       setCreatingConversation(false);
@@ -638,7 +630,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (data && data.messages) {
         data.messages = data.messages.map(msg => {
           if (typeof msg.content !== 'string') {
-            console.warn('[Migration] Converting non-string message content to string', msg);
             const newContent = Array.isArray(msg.content)
               ? msg.content.map((block: any) =>
                   block.type === 'text' ? block.text : ''
@@ -671,31 +662,28 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             setLinkedTemplateFileId(extractDirectusFileId(spRecord.template_file_id));
           }
         } catch (spErr) {
-          console.warn('[Standartiniai] Failed to load linked record:', spErr);
-        } finally {
+      void spErr;
+    } finally {
           setStandartiniaiLinkLoading(false);
         }
       } else {
         setStandartiniaiLinkLoading(false);
       }
     } catch (err) {
-      console.error('Error selecting conversation:', err);
+      void err;
     }
   };
 
   const handleDeleteConversation = async (conversationId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      console.log('[Delete] Attempting to delete conversation:', conversationId);
       const { data, error: deleteError } = await deleteSDKConversation(conversationId, user.id, user.email);
 
       if (deleteError || !data) {
-        console.error('[Delete] Error:', deleteError);
         addNotification('error', 'Klaida', formatErrorForToast(deleteError, 'Nepavyko ištrinti pokalbio'));
         return;
       }
 
-      console.log('[Delete] Successfully deleted conversation');
       // Optimistically remove from list to avoid flicker
       setConversations(prev => prev.filter(conv => conv.id !== conversationId));
       if (currentConversation?.id === conversationId) {
@@ -705,7 +693,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
       addNotification('info', 'Pokalbis ištrintas', 'Pokalbis sėkmingai pašalintas.');
     } catch (err: any) {
-      console.error('[Delete] Exception:', err);
       addNotification('error', 'Klaida', formatToastMessage('Nepavyko ištrinti pokalbio', err, 'nežinoma klaida'));
     }
   };
@@ -727,7 +714,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
       addNotification('success', 'Atnaujinta', 'Pokalbio pavadinimas atnaujintas.');
     } catch (err) {
-      console.error('Error renaming conversation:', err);
       addErrorNotification('Klaida', err, 'Nepavyko atnaujinti pokalbio pavadinimo');
     }
     setRenamingConvId(null);
@@ -787,7 +773,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Reload conversation details to show updated share list
       loadConversationDetails(currentConversation.id);
     } catch (err) {
-      console.error('Error sharing conversation:', err);
       addErrorNotification('Klaida', err, 'Nepavyko pasidalinti pokalbiu');
     } finally {
       setSharingConversation(false);
@@ -814,7 +799,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       if (error) throw error;
       setConversationDetails(data);
     } catch (err) {
-      console.error('Error loading conversation details:', err);
+      void err;
     }
   };
 
@@ -826,7 +811,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Fetch fresh conversation data (consistent with handleSelectConversation)
       const { data, error: fetchError } = await getSDKConversation(sharedConv.conversation_id);
       if (fetchError || !data) {
-        console.error('Error fetching shared conversation:', fetchError);
         await removeSharedConversationRecord(sharedConv.id, user.id);
         setSharedConversations(prev => prev.filter(item => item.id !== sharedConv.id));
         setUnreadSharedCount(prev => Math.max(0, prev - (sharedConv.is_read ? 0 : 1)));
@@ -890,7 +874,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Reload shared conversations to update unread count
       loadSharedConversations();
     } catch (err) {
-      console.error('Error selecting shared conversation:', err);
+      void err;
     }
   };
 
@@ -944,7 +928,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           : conv
       )));
     } catch (saveError) {
-      console.error('[SDK] Failed to save assistant failure marker:', saveError);
+      void saveError;
     }
   };
 
@@ -952,7 +936,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    * Handle button click from display_buttons tool - sends silently to API
    */
   const handleButtonClick = async (buttonId: string, value: string, messageIndex: number) => {
-    console.log('[Buttons] User clicked button:', buttonId, 'with value:', value);
 
     // Get current conversation or create one
     let conversation = currentConversation;
@@ -966,7 +949,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           'Naujas pokalbis'
         );
         if (createError || !conversationId) {
-          console.error('Error creating conversation:', createError);
           addErrorNotification('Klaida', createError, 'Nepavyko sukurti pokalbio');
           return;
         }
@@ -981,7 +963,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setCurrentConversation(newConversation);
         setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
-        console.error('Error creating conversation:', err);
         addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
         return;
       } finally {
@@ -1038,12 +1019,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setConversationStreamingContent(conversation.id, '');
 
     try {
-      if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
-
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
 
       // Build messages array with the silent message
       const messagesWithSilentMessage = [...conversation.messages, silentUserMessage];
@@ -1052,7 +1028,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
       for (const msg of messagesWithSilentMessage) {
         if (typeof msg.content !== 'string') {
-          console.warn('[Silent Button] Skipping non-string message');
           continue;
         }
 
@@ -1067,7 +1042,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const { fullPrompt } = await fetchLatestPromptBundle();
       const contextualSystemPrompt = fullPrompt;
 
-      console.log('[Silent Button] Sending button value to API silently');
       const bounded = limitAnthropicContext(anthropicMessages);
       await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, messagesWithSilentMessage);
 
@@ -1075,7 +1049,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setLoading(false);
 
     } catch (err: any) {
-      console.error('[Silent Button] Error:', err);
       await appLogger.logAPI({
         action: 'sdk_anthropic_request_failed',
         userId: user.id,
@@ -1115,99 +1088,45 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
    * Process AI response with tool use support (recursive)
    */
   const processAIResponse = async (
-    anthropic: Anthropic,
+    anthropic: typeof anthropicProxy,
     messages: Anthropic.MessageParam[],
     systemPrompt: string,
     conversation: SDKConversation,
     currentMessages: SDKMessage[],
-    accumulatedToolXml: string = ''
+    accumulatedToolXml: string = '',
+    toolRound: number = 0
   ): Promise<void> => {
     let claudeModel = '';
     try {
-      // CRITICAL: Validate messages before API call
-      console.log('───────────────────────────────────────────────────');
-      console.log('[processAIResponse] ENTRY POINT - Validating messages');
-      console.log('[processAIResponse] Total messages:', messages.length);
+      const validation = validateAnthropicToolAdjacency(messages);
+      if (!validation.valid) {
+        await appLogger.logSecurity({
+          action: 'sdk_chat_message_validation_failed',
+          userId: user.id,
+          userEmail: user.email,
+          level: 'error',
+          metadata: {
+            conversation_id: conversation.id,
+            message_count: messages.length,
+            errors: validation.errors,
+            message_summary: summarizeAnthropicMessages(messages),
+          },
+        });
+        throw new Error(`Message structure validation failed: ${validation.errors.join('; ')}`);
+      }
 
-      const toolUseIds: string[] = [];
-      const toolResultIds: string[] = [];
-
-      messages.forEach((msg, idx) => {
-        const contentInfo = Array.isArray(msg.content)
-          ? `[${msg.content.map((c: any) => {
-              if (c.type === 'tool_use') {
-                toolUseIds.push(c.id);
-                return `tool_use(${c.name}, id:${c.id.substring(0, 12)}...)`;
-              }
-              if (c.type === 'tool_result') {
-                toolResultIds.push(c.tool_use_id);
-                return `tool_result(for:${c.tool_use_id.substring(0, 12)}...)`;
-              }
-              if (c.type === 'text') return `text(${c.text?.length || 0} chars)`;
-              return c.type || 'unknown';
-            }).join(', ')}]`
-          : `"${typeof msg.content === 'string' ? msg.content.substring(0, 60) + '...' : msg.content}"`;
-
-        console.log(`  [${idx}] ${msg.role}: ${contentInfo}`);
+      await appLogger.logSecurity({
+        action: 'sdk_chat_message_validation_passed',
+        userId: user.id,
+        userEmail: user.email,
+        metadata: {
+          conversation_id: conversation.id,
+          message_count: messages.length,
+          tool_use_count: validation.toolUses.length,
+          tool_result_count: validation.toolResultIds.length,
+          message_summary: summarizeAnthropicMessages(messages),
+        },
       });
-
-      // CRITICAL: Validate tool_use/tool_result ADJACENCY (not just ID matching)
-      // Anthropic API requires: if message N has tool_use, message N+1 MUST have tool_result
-      const validationErrors: string[] = [];
-
-      for (let i = 0; i < messages.length; i++) {
-        const msg = messages[i];
-        if (!Array.isArray(msg.content)) continue;
-
-        const hasToolUse = msg.content.some((block: any) => block.type === 'tool_use');
-        if (hasToolUse && msg.role === 'assistant') {
-          // This message has tool_use blocks, next message MUST be user with tool_results
-          const toolUseIdsInMsg = msg.content
-            .filter((block: any) => block.type === 'tool_use')
-            .map((block: any) => block.id);
-
-          if (i + 1 >= messages.length) {
-            validationErrors.push(`Message ${i} has tool_use but no following message`);
-            continue;
-          }
-
-          const nextMsg = messages[i + 1];
-          if (nextMsg.role !== 'user') {
-            validationErrors.push(`Message ${i} has tool_use but next message ${i + 1} is not user (role=${nextMsg.role})`);
-            continue;
-          }
-
-          if (!Array.isArray(nextMsg.content)) {
-            validationErrors.push(`Message ${i} has tool_use but next message ${i + 1} has non-array content`);
-            continue;
-          }
-
-          const toolResultIdsInNextMsg = nextMsg.content
-            .filter((block: any) => block.type === 'tool_result')
-            .map((block: any) => block.tool_use_id);
-
-          const missingInNext = toolUseIdsInMsg.filter(id => !toolResultIdsInNextMsg.includes(id));
-          if (missingInNext.length > 0) {
-            validationErrors.push(`Message ${i} tool_use IDs [${missingInNext.join(', ')}] not found in next message ${i + 1}`);
-          }
-        }
-      }
-
-      if (validationErrors.length > 0) {
-        console.error('❌❌❌ [processAIResponse] STRUCTURAL VALIDATION FAILED:');
-        validationErrors.forEach(err => console.error(`  ❌ ${err}`));
-        console.error('❌❌❌ This WILL cause a 400 error from Anthropic API!');
-        throw new Error(`Message structure validation failed: ${validationErrors.join('; ')}`);
-      } else if (toolUseIds.length > 0) {
-        console.log('✅ [processAIResponse] All tool_use blocks properly paired with adjacent tool_results');
-      }
-      console.log('───────────────────────────────────────────────────');
-
-      // FINAL: Log exact message structure being sent to API
-      console.log('[API CALL] Sending to Anthropic API:');
-      console.log('[API CALL] Total messages:', messages.length);
-      console.log('[API CALL] Serialized messages:', JSON.stringify(messages, null, 2));
-      console.log('───────────────────────────────────────────────────');
 
       claudeModel = await getClaudeModel();
       const apiStartedAt = Date.now();
@@ -1223,6 +1142,17 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           model: claudeModel
         }
       });
+
+      if (toolRound > MAX_SDK_TOOL_ROUNDS) {
+        await appLogger.logSecurity({
+          action: 'sdk_chat_tool_round_limit_exceeded',
+          userId: user.id,
+          userEmail: user.email,
+          level: 'error',
+          metadata: { conversation_id: conversation.id, tool_round: toolRound, limit: MAX_SDK_TOOL_ROUNDS },
+        });
+        throw new Error(`Tool execution stopped after ${MAX_SDK_TOOL_ROUNDS} rounds to prevent an infinite loop.`);
+      }
 
       const stream = await anthropic.messages.stream({
         model: claudeModel,
@@ -1266,7 +1196,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             // Check if we're entering or inside a commercial_offer artifact
             if (fullResponseText.includes('<commercial_offer')) {
               if (!artifactDetected) {
-                console.log('[Artifact Streaming] Detected <commercial_offer> tag');
                 artifactDetected = true;
                 setIsStreamingArtifact(true);
                 setShowArtifact(true); // Show artifact panel immediately
@@ -1309,7 +1238,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
                 input: JSON.parse(currentToolUse.input)
               });
             } catch (e) {
-              console.error('[Tool] Failed to parse tool input:', currentToolUse.input);
+              await appLogger.logSecurity({
+                action: 'sdk_chat_tool_input_parse_failed',
+                userId: user.id,
+                userEmail: user.email,
+                level: 'warn',
+                metadata: { conversation_id: conversation.id, tool_name: currentToolUse.name },
+              });
             }
             currentToolUse = null;
           }
@@ -1372,9 +1307,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             : conv
         ));
       }
-      console.log('[Stream] Final message role:', finalMessage.role);
-      console.log('[Stream] Final message content blocks:', finalMessage.content.length);
-      console.log('[Stream] Final message stop_reason:', finalMessage.stop_reason);
 
       // Re-extract tool uses from final message (more authoritative than manual reconstruction)
       const authoritative_toolUses: Array<{ id: string; name: string; input: any }> = [];
@@ -1385,73 +1317,65 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             name: block.name,
             input: block.input
           });
-          console.log(`[Stream] Authoritative tool_use: ${block.name} (ID: ${block.id})`);
         }
       }
 
-      // Compare with manually reconstructed toolUses
       if (toolUses.length !== authoritative_toolUses.length) {
-        console.warn(`[Stream] ⚠️  Tool count mismatch! Manual: ${toolUses.length}, Authoritative: ${authoritative_toolUses.length}`);
-        console.warn('[Stream] Using authoritative tool uses from finalMessage');
+        await appLogger.logSecurity({
+          action: 'sdk_chat_tool_count_mismatch',
+          userId: user.id,
+          userEmail: user.email,
+          level: 'warn',
+          metadata: {
+            conversation_id: conversation.id,
+            reconstructed_count: toolUses.length,
+            authoritative_count: authoritative_toolUses.length,
+          },
+        });
       }
 
       // Use authoritative tool uses
       const finalToolUses = authoritative_toolUses;
 
-      // Filter out empty thinking blocks early (declare before any usage to avoid TDZ error)
-      const filteredContent = finalMessage.content.filter((block: any) => {
-        if (block.type === 'thinking') {
-          const hasContent = block.thinking && block.thinking.trim().length > 0;
-          if (!hasContent) {
-            console.log('[Content Filter] Filtering out empty thinking block');
-            return false;
-          }
-        }
-        return true;
-      });
-      console.log(`[Content Filter] Filtered blocks: ${finalMessage.content.length} -> ${filteredContent.length}`);
-
-      // Build tool call XML from this round for persistence in chat history
-      // Includes results and filters out display_buttons (internal UI mechanism)
-      const buildToolXml = (tools: Array<{ id: string; name: string; input: any }>, results?: Array<{ tool_use_id: string; content: string }>): string => {
-        const filtered = tools.filter(t => t.name !== 'display_buttons');
-        if (filtered.length === 0) return '';
-        const invokeBlocks = filtered.map(tu => {
-          const paramStr = typeof tu.input === 'string' ? tu.input : JSON.stringify(tu.input);
-          const safeParam = paramStr.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-          let block = '  <invoke name="' + tu.name + '">\n    <parameter name="input">' + safeParam + '</parameter' + '>';
-          if (results) {
-            const toolResult = results.find(r => r.tool_use_id === tu.id);
-            if (toolResult) {
-              const safeResult = toolResult.content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              block += '\n    <result>' + safeResult + '</result>';
-            }
-          }
-          block += '\n  </invoke' + '>';
-          return block;
-        });
-        return '\n\n<function_calls' + '>\n' + invokeBlocks.join('\n') + '\n</function_calls' + '>\n';
-      };
+      const filteredContent = getNonEmptyAnthropicContent(finalMessage.content);
 
       // If there are tool uses, execute them and continue (don't save intermediate message)
       if (finalToolUses.length > 0) {
         // Safe to reset streaming state — the recursive call will set it again if needed
         setIsStreamingArtifact(false);
-        console.log(`[Tool Loop] Executing ${finalToolUses.length} tools...`);
 
         // Execute all tools with error handling
         const toolResults = await Promise.all(
           finalToolUses.map(async (toolUse) => {
             try {
               const result = await executeTool(toolUse.name, toolUse.input);
-              console.log(`[Tool Loop] Tool ${toolUse.name} completed. Result length:`, result.length);
+              await appLogger.logSecurity({
+                action: 'sdk_chat_tool_executed',
+                userId: user.id,
+                userEmail: user.email,
+                metadata: {
+                  conversation_id: conversation.id,
+                  tool_name: toolUse.name,
+                  result_length: result.length,
+                },
+              });
               return {
                 type: 'tool_result' as const,
                 tool_use_id: toolUse.id,
                 content: result
               };
             } catch (error: any) {
-              console.error(`[Tool Loop] Tool ${toolUse.name} threw exception:`, error);
+              await appLogger.logSecurity({
+                action: 'sdk_chat_tool_failed',
+                userId: user.id,
+                userEmail: user.email,
+                level: 'warn',
+                metadata: {
+                  conversation_id: conversation.id,
+                  tool_name: toolUse.name,
+                  error_message: error?.message || 'Unknown error executing tool',
+                },
+              });
               // Return error as tool_result so the conversation can continue
               return {
                 type: 'tool_result' as const,
@@ -1467,7 +1391,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         );
 
         // Build XML with results now that we have them (filters out display_buttons)
-        const roundToolXml = buildToolXml(finalToolUses, toolResults);
+        const roundToolXml = buildToolTraceXml(finalToolUses, toolResults);
         const newAccumulatedToolXml = accumulatedToolXml + (responseContent ? responseContent : '') + roundToolXml;
 
         // Update streaming content immediately so tool tree shows live during gap
@@ -1484,14 +1408,7 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         });
 
         if (buttonResult) {
-          console.log('[Tool Loop] Detected display_buttons - pausing conversation');
           const parsed = JSON.parse(buttonResult.content);
-
-          // Extract text content from filteredContent array
-          const textContent = filteredContent
-            .filter((block: any) => block.type === 'text')
-            .map((block: any) => block.text)
-            .join('\n\n');
 
           // Create assistant message with buttons (ensure content is string)
           // Prepend accumulated tool call XML so tool usage persists in chat history
@@ -1537,8 +1454,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         // This ensures the tool_use blocks match exactly what Claude sent us.
         // BUT: Filter out empty thinking blocks (API rejects them in recursive calls)
 
-        console.log(`[Tool Loop] Using ${messages.length} messages from previous API call as conversation history`);
-        console.log(`[Tool Loop] Using filteredContent with ${filteredContent.length} blocks (already filtered above)`);
 
         const anthropicMessagesWithToolResults: Anthropic.MessageParam[] = [
           ...messages, // Keep ALL messages from previous API call - they're part of conversation history
@@ -1552,55 +1467,22 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           }
         ];
 
-        // CRITICAL VALIDATION: Verify the messages array structure
-        console.log('═══════════════════════════════════════════════════');
-        console.log('[CRITICAL] Tool Loop - Constructed messages array:');
-        console.log('[CRITICAL] Total messages:', anthropicMessagesWithToolResults.length);
-
-        anthropicMessagesWithToolResults.forEach((msg, idx) => {
-          const contentInfo = Array.isArray(msg.content)
-            ? `[${msg.content.map((c: any) => {
-                if (c.type === 'tool_use') return `tool_use(id:${c.id.substring(0, 12)}...)`;
-                if (c.type === 'tool_result') return `tool_result(for:${c.tool_use_id.substring(0, 12)}...)`;
-                if (c.type === 'text') return 'text';
-                return c.type || 'unknown';
-              }).join(', ')}]`
-            : `"${typeof msg.content === 'string' ? msg.content.substring(0, 50) : msg.content}"`;
-
-          console.log(`[CRITICAL] [${idx}] ${msg.role}: ${contentInfo}`);
-        });
-
-        // Validate that every tool_use has a matching tool_result
-        const allToolUseIds: string[] = [];
-        const allToolResultIds: string[] = [];
-
-        anthropicMessagesWithToolResults.forEach((msg) => {
-          if (Array.isArray(msg.content)) {
-            msg.content.forEach((block: any) => {
-              if (block.type === 'tool_use') allToolUseIds.push(block.id);
-              if (block.type === 'tool_result') allToolResultIds.push(block.tool_use_id);
-            });
-          }
-        });
-
-        console.log('[CRITICAL] Tool use IDs:', allToolUseIds);
-        console.log('[CRITICAL] Tool result IDs:', allToolResultIds);
-
-        const missingResults = allToolUseIds.filter(id => !allToolResultIds.includes(id));
-        if (missingResults.length > 0) {
-          console.error('[CRITICAL] ❌ MISSING TOOL RESULTS FOR:', missingResults);
-          console.error('');
-          console.error('🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨');
-          console.error('FATAL: About to send malformed messages to API!');
-          console.error('Missing tool_result blocks for tool_use IDs:', missingResults);
-          console.error('This WILL cause a 400 error. ABORTING recursive call.');
-          console.error('🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨');
-          console.error('');
-          throw new Error(`Internal error: Constructed message array has tool_use without tool_result. Tool use IDs missing results: ${missingResults.join(', ')}`);
-        } else {
-          console.log('[CRITICAL] ✅ All tool_use blocks have matching tool_result blocks');
+        const recursiveValidation = validateAnthropicToolAdjacency(anthropicMessagesWithToolResults);
+        if (!recursiveValidation.valid) {
+          await appLogger.logSecurity({
+            action: 'sdk_chat_recursive_message_validation_failed',
+            userId: user.id,
+            userEmail: user.email,
+            level: 'error',
+            metadata: {
+              conversation_id: conversation.id,
+              tool_round: toolRound,
+              errors: recursiveValidation.errors,
+              message_summary: summarizeAnthropicMessages(anthropicMessagesWithToolResults),
+            },
+          });
+          throw new Error(`Internal error: constructed recursive message array is invalid: ${recursiveValidation.errors.join('; ')}`);
         }
-        console.log('═══════════════════════════════════════════════════');
 
         // Recursively process next response with tool results (don't save intermediate messages)
         await processAIResponse(
@@ -1609,7 +1491,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           systemPrompt,
           conversation,
           currentMessages, // Keep same currentMessages, not adding anything yet
-          newAccumulatedToolXml
+          newAccumulatedToolXml,
+          toolRound + 1
         );
       } else {
         // No more tool uses, save final assistant message
@@ -1644,7 +1527,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
         // CRITICAL: Check for artifacts in final response
         if (responseContent.includes('<commercial_offer')) {
-          console.log('[Artifact] Detected commercial_offer in final response');
           await handleArtifactGeneration(
             responseContent,
             updatedConversation,
@@ -1658,7 +1540,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         setIsStreamingArtifact(false);
       }
     } catch (err: any) {
-      console.error('[processAIResponse] Error:', err);
       await appLogger.logAPI({
         action: 'sdk_anthropic_request_failed',
         userId: user.id,
@@ -1693,7 +1574,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           'Naujas pokalbis'
         );
         if (createError) {
-          console.error('Error creating conversation:', createError);
           throw createError;
         }
         if (!conversationId) {
@@ -1702,7 +1582,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
         const { data: newConversation, error: fetchError } = await getSDKConversation(conversationId);
         if (fetchError) {
-          console.error('Error fetching new conversation:', fetchError);
           throw fetchError;
         }
         if (!newConversation) {
@@ -1714,7 +1593,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         // Optimistically add to conversations list to avoid flicker
         setConversations(prev => [newConversation, ...prev]);
       } catch (err: any) {
-        console.error('Error creating conversation:', err);
         addErrorNotification('Klaida', err, 'Nepavyko sukurti pokalbio');
         return;
       } finally {
@@ -1762,18 +1640,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setConversationStreamingContent(conversation.id, '');
 
     try {
-      if (!anthropicApiKey) throw new Error('VITE_ANTHROPIC_API_KEY not found');
-
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
 
       const { messages: anthropicMessages, stats } = prepareAnthropicHistory(updatedMessages);
       const skippedTotal = stats.skippedNonString + stats.skippedMalformed + stats.skippedDuplicateRole;
       if (skippedTotal > 0) {
-        console.warn('[SDK] Prepared Anthropic history with skipped display/malformed messages.', stats);
-      }
+          // Intentionally ignored after console logging removal.
+        }
 
       const { fullPrompt } = await fetchLatestPromptBundle();
 
@@ -1790,7 +1663,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       }
       await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, updatedMessages);
     } catch (err: any) {
-      console.error('Error sending message:', err);
       await appLogger.logError({
         action: 'sdk_send_message_failed',
         error: err,
@@ -1939,8 +1811,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       const currentArtifact = conversation.artifact;
       let newArtifact: CommercialOfferArtifact;
 
-      console.log('[Artifact] Detected artifact_id from AI:', artifactIdFromAI);
-      console.log('[Artifact] Current artifact exists:', !!currentArtifact);
 
       // Determine if this is a new artifact or an update
       const isNewArtifact = artifactIdFromAI === 'new' || !currentArtifact;
@@ -1972,16 +1842,13 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         for (const key of Object.keys(citations)) {
           if (!(key in newYamlVars)) delete citations[key];
         }
-        console.log('[Citations] Variables cited:', Object.keys(citations).length, 'of', Object.keys(newYamlVars).length);
       } catch (citationErr) {
-        console.warn('[Citations] Failed to build citations (non-fatal):', citationErr);
         citations = currentArtifact?.variable_citations || {};
       }
 
       if (isNewArtifact) {
         // Create new artifact
         const generatedId = `offer_${crypto.randomUUID().split('-')[0]}`;
-        console.log('[Artifact] Creating NEW artifact with ID:', generatedId);
 
         newArtifact = {
           id: generatedId,
@@ -1996,11 +1863,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         };
       } else {
         // Update existing artifact
-        console.log('[Artifact] UPDATING existing artifact:', currentArtifact.id);
 
         // Validate artifact_id matches (if provided and not "new")
         if (artifactIdFromAI && artifactIdFromAI !== currentArtifact.id) {
-          console.warn(`[Artifact] Warning: AI provided artifact_id "${artifactIdFromAI}" doesn't match current "${currentArtifact.id}". Using current.`);
+          // Intentionally ignored after console logging removal.
         }
 
         const diff = calculateDiff(currentArtifact.content, trimmedContent);
@@ -2018,7 +1884,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         };
       }
 
-      console.log('[Artifact] Saving artifact to database...');
       await updateConversationArtifact(conversation.id, newArtifact);
 
       // Auto-rename conversation with composite code when artifact is first created
@@ -2040,7 +1905,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       // Keep the currently linked DOCX ID. YAML save flow below will replace the
       // existing Directus file (no orphan file clutter).
       localStorage.removeItem('doc_edit_' + conversation.id);
-      console.log('[Artifact] Successfully saved. Version:', newArtifact.version);
       addNotification('success', 'Pasiūlymas sugeneruotas', `Komercinis pasiūlymas v${newArtifact.version} išsaugotas.`);
 
       // Auto-generate technological description from the new artifact's components_bulletlist
@@ -2073,7 +1937,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           }, { userId: user.id, userEmail: user.email });
           linkedStandartiniaiId = created.id;
           setStandartiniaiRecordId(created.id);
-          console.log('[Standartiniai] Auto-created record:', created.id);
         } else if (linkedStandartiniaiId) {
           await updateStandartinisProjektas(linkedStandartiniaiId, {
             yaml_content: trimmedContent,
@@ -2081,7 +1944,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
             hnv: hnv,
             template_file_id: renderTemplateFileId || null,
           }, { userId: user.id, userEmail: user.email });
-          console.log('[Standartiniai] Updated record after AI edit:', linkedStandartiniaiId);
         }
 
         if (linkedStandartiniaiId && renderTemplateFileId) {
@@ -2097,7 +1959,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           lastAutoSyncedArtifactSignatureRef.current = `${conversation.id}::${trimmedContent}`;
         }
       } catch (spErr) {
-        console.warn('[Standartiniai] Failed to sync record (non-fatal):', spErr);
         await appLogger.logError({
           action: 'sdk_standartiniai_sync_failed',
           error: spErr as any,
@@ -2107,7 +1968,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
         });
       }
     } catch (err) {
-      console.error('Error handling artifact:', err);
       await appLogger.logError({
         action: 'sdk_artifact_generation_failed',
         error: err as any,
@@ -2229,8 +2089,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     }
 
     if (!found) {
-      console.warn(`[replaceYAMLValue] Key "${targetKey}" not found in YAML content`);
-    }
+          // Intentionally ignored after console logging removal.
+        }
 
     return result.join('\n');
   };
@@ -2461,7 +2321,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           lastAutoSyncedArtifactSignatureRef.current = signature;
         }
       } catch (err) {
-        console.error('Auto-save DOCX error:', err);
         await appLogger.logError({
           action: 'sdk_docx_autosave_failed',
           error: err as any,
@@ -2575,8 +2434,8 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           lastTechDescDocxSyncSignatureRef.current = signature;
         }
       } catch (err) {
-        console.error('[TechDesc] Failed to sync DOCX preview:', err);
-      }
+      void err;
+    }
     })();
 
     return () => { cancelled = true; };
@@ -2736,7 +2595,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setSavedDocxFileId(newFileId);
       addNotification('success', 'Išsaugota', 'DOCX dokumentas išsaugotas Directus serveryje.');
     } catch (err) {
-      console.error('Error saving to standartiniai_projektai:', err);
       addNotification('error', 'Klaida', formatToastMessage('Nepavyko išsaugoti dokumento', err));
     } finally {
       setIsSavingToStandartiniai(false);
@@ -2808,7 +2666,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
       setLinkedTemplateFileId(globalDocxFileId);
       addNotification('success', 'Atnaujinti šabloną', 'Dokumentas sėkmingai perrenderintas su naujausiu Word šablonu.');
     } catch (err) {
-      console.error('Error refreshing DOCX with latest template:', err);
       addNotification('error', 'Klaida', formatToastMessage('Nepavyko atnaujinti dokumento pagal naują šabloną', err));
     } finally {
       setIsRefreshingTemplate(false);
@@ -2817,11 +2674,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
   const handleRegenerateCommercialOfferYaml = async () => {
     if (!currentConversation?.artifact || loading) return;
-    if (!anthropicApiKey) {
-      addNotification('error', 'Klaida', 'Nerastas Anthropic API raktas.');
-      return;
-    }
-
     const conversation = currentConversation;
     const artifact = conversation.artifact;
     const displayText = 'Atnaujinti komercinio pasiūlymo duomenis pagal naujausias instrukcijas.';
@@ -2892,24 +2744,20 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     setConversationStreamingContent(conversation.id, '');
 
     try {
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
       const { fullPrompt } = await fetchLatestPromptBundle();
       const contextualSystemPrompt = `${fullPrompt}\n\n---\n\n**CURRENT ARTIFACT CONTEXT:**\nAn active commercial offer artifact exists in this conversation with ID: \`${artifact.id}\`.\n\nWhen updating the commercial offer, reuse this exact wrapper:\n\`\`\`xml\n<commercial_offer artifact_id="${artifact.id}">\n[updated content]\n</commercial_offer>\n\`\`\`\n\nDo not create a new artifact.`;
       const { messages: anthropicMessages, stats } = prepareAnthropicHistory([...dismissedMessages, apiUserMessage]);
       const skippedTotal = stats.skippedNonString + stats.skippedMalformed + stats.skippedDuplicateRole;
       if (skippedTotal > 0) {
-        console.warn('[SDK] Prepared regeneration history with skipped display/malformed messages.', stats);
-      }
+          // Intentionally ignored after console logging removal.
+        }
       const bounded = limitAnthropicContext(anthropicMessages);
       if (bounded.trimmed) {
         addNotification('info', 'Kontekstas sutrumpintas', `Siunčiama ${bounded.messages.length}/${bounded.originalCount} paskutinių žinučių, kad neviršytume SDK limito.`);
       }
       await processAIResponse(anthropic, bounded.messages, contextualSystemPrompt, conversation, visibleMessages);
     } catch (err: any) {
-      console.error('Error regenerating commercial offer data:', err);
       await appLogger.logError({
         action: 'sdk_regenerate_commercial_offer_yaml_failed',
         error: err,
@@ -3172,7 +3020,6 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
 
           addNotification('success', 'Kintamasis atnaujintas', `„${key}" reikšmė pakeista.`);
         } catch (err) {
-          console.error('[Surgical Edit] Error:', err);
           addNotification('error', 'Klaida', 'Nepavyko atnaujinti kintamojo.');
         }
       }
@@ -3199,18 +3046,12 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
     techDescRequestInFlightRef.current = true;
     setTechDescLoading(true);
     try {
-      if (!anthropicApiKey) throw new Error('API key not found');
-
       const promptVar = await getInstructionVariable('chat_tech_description_prompt');
       if (!promptVar || !promptVar.content.trim()) {
-        console.warn('[AutoTechDesc] No chat_tech_description_prompt found in DB, skipping.');
         return null;
       }
 
-      const anthropic = new Anthropic({
-        apiKey: anthropicApiKey,
-        dangerouslyAllowBrowser: true
-      });
+      const anthropic = anthropicProxy;
 
       const claudeModel = await getClaudeModel();
 
@@ -3236,12 +3077,10 @@ export default function SDKInterfaceNew({ user, projectId, mainSidebarCollapsed,
           await handleVariableSave('technological_description', text);
         }
         addNotification('success', 'Technologinis aprašymas', 'Automatiškai sugeneruotas ir išsaugotas.');
-        console.log('[AutoTechDesc] Generated and saved successfully.');
         return text;
       }
       return null;
     } catch (err: any) {
-      console.error('[AutoTechDesc] Failed:', err);
       addNotification('error', 'Technologinis aprašymas', 'Nepavyko automatiškai sugeneruoti.');
       return null;
     } finally {

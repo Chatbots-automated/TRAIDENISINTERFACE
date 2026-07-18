@@ -17,8 +17,7 @@ const EXTRACTIONS_COLLECTION = 'llamaparse_extractions';
 const EXTRACT_CONFIGS_COLLECTION = 'llamaparse_extract_configs';
 const API_EVENTS_COLLECTION = 'llamaparse_api_events';
 
-const DIRECTUS_URL = (import.meta.env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim().replace(/\/$/, '');
-const DIRECTUS_TOKEN = (import.meta.env.VITE_DIRECTUS_TOKEN || '').trim();
+const DIRECTUS_URL = '/api/directus';
 
 interface DirectusFileMeta {
   id: string;
@@ -328,12 +327,12 @@ async function updateSingleWithFieldFallback<T>(
 }
 
 async function fetchDirectusFileMeta(fileId: string): Promise<DirectusFileMeta | null> {
-  if (!fileId || !DIRECTUS_TOKEN) return null;
+  if (!fileId) return null;
   if (!directusFileMetaCache.has(fileId)) {
     directusFileMetaCache.set(fileId, (async () => {
       try {
         const response = await fetch(`${DIRECTUS_URL}/files/${encodeURIComponent(fileId)}`, {
-          headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}`, Accept: 'application/json' },
+          headers: { Accept: 'application/json' },
         });
         if (!response.ok) return null;
         const json = await response.json();
@@ -372,7 +371,7 @@ export async function uploadOriginalDocument(file: File): Promise<DirectusFileMe
 
   const response = await fetch(`${DIRECTUS_URL}/files`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    headers: { Accept: 'application/json' },
     body: form,
   });
 

@@ -1,4 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
+import { anthropicProxy } from './anthropicProxyClient';
 import { db } from './database';
 import { getInstructionVariable } from './instructionsService';
 import { getClaudeModel } from './modelSettingsService';
@@ -365,20 +366,7 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
     const toolSchemaContent = toolsVar?.content ?? '';
     const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
     const tools = await getDynamicTools(promptContent, toolSchemaContent);
-    const apiKey = String(import.meta.env.VITE_ANTHROPIC_API_KEY || '').trim();
-    if (!apiKey) {
-      throw new InternetAnalysisConfigError({
-        reason: 'Nerastas ANTHROPIC API raktas. Netlify aplinkoje nustatykite VITE_ANTHROPIC_API_KEY.',
-        promptContent,
-        toolSchemaContent,
-        resolvedPrompt: prompt,
-      });
-    }
-
-    const client = new Anthropic({
-      apiKey,
-      dangerouslyAllowBrowser: true,
-    });
+    const client = anthropicProxy;
 
     const model = await getClaudeModel();
 
@@ -418,14 +406,15 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
 
     if (error) throw error;
   } catch (err: unknown) {
-    if (err instanceof Anthropic.APIError) {
+    if (err && typeof err === 'object' && 'status' in err) {
+      const apiErr = err as { status?: number | string; name?: string; headers?: unknown; message?: string };
       console.error('Anthropic APIError', {
-        status: err.status,
-        name: err.name,
-        headers: err.headers,
-        message: err.message,
+        status: apiErr.status,
+        name: apiErr.name,
+        headers: apiErr.headers,
+        message: apiErr.message,
       });
-      throw new Error(`Anthropic API klaida (${err.status ?? 'unknown'}): ${err.message || 'Neteisinga užklausa.'}`);
+      throw new Error(`Anthropic API klaida (${apiErr.status ?? 'unknown'}): ${apiErr.message || 'Neteisinga užklausa.'}`);
     }
     throw err;
   } finally {

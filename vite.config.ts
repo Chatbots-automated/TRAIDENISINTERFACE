@@ -27,9 +27,9 @@ function sendJson(res: import('http').ServerResponse, status: number, payload: u
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const llamaParseKey = env.LLAMA_CLOUD_API_KEY || env.LLAMAPARSE_API_KEY || env.VITE_LLAMAPARSE_API_KEY || '';
-  const directusUrl = (env.DIRECTUS_URL || env.VITE_DIRECTUS_URL || 'https://sql.traidenis.org').trim().replace(/\/$/, '');
-  const directusToken = (env.DIRECTUS_TOKEN || env.VITE_DIRECTUS_TOKEN || '').trim();
+  const llamaParseKey = env.LLAMA_CLOUD_API_KEY || env.LLAMAPARSE_API_KEY || '';
+  const directusUrl = (env.DIRECTUS_URL || 'https://sql.traidenis.org').trim().replace(/\/$/, '');
+  const directusToken = (env.DIRECTUS_TOKEN || '').trim();
 
   return {
     plugins: [
@@ -135,7 +135,6 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             react: ['react', 'react-dom', 'react-router-dom'],
-            ai: ['@anthropic-ai/sdk'],
             charts: ['recharts'],
             docs: ['docxtemplater', 'pizzip', 'xlsx', 'file-saver'],
             icons: ['lucide-react']
