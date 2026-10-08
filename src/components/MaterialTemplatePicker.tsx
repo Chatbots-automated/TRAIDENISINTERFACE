@@ -267,7 +267,6 @@ export function MaterialTemplatePicker({ templates, tank, currentTemplateId, onA
                         <FitBadge score={item.score} />
                       </span>
                     </div>
-                    <Chips facts={item.facts} />
                   </button>
                 </React.Fragment>
               );
@@ -284,6 +283,7 @@ export function MaterialTemplatePicker({ templates, tank, currentTemplateId, onA
                     <h4 className="min-w-0 truncate text-[15px] font-semibold text-base-content">{active.template.name}</h4>
                     <FitBadge score={active.score} />
                   </div>
+                  <Chips facts={active.facts} />
 
                   <table className="mt-3 w-full text-xs">
                     <thead>
