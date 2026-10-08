@@ -1,3 +1,4 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect } from 'react';
 import { X, RefreshCw, Filter, ChevronDown, ChevronRight, Activity, AlertCircle } from 'lucide-react';
 import { dbAdmin } from '../lib/database';
@@ -126,7 +127,7 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
           </div>
 
           {/* Category Filter */}
-          <select
+          <AppSelect
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="app-form-field py-2 px-3 text-xs"
@@ -136,10 +137,10 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
                 {cat === 'all' ? 'Visos kategorijos' : cat.replace('_', ' ')}
               </option>
             ))}
-          </select>
+          </AppSelect>
 
           {/* Level Filter */}
-          <select
+          <AppSelect
             value={selectedLevel}
             onChange={(e) => setSelectedLevel(e.target.value)}
             className="app-form-field py-2 px-3 text-xs"
@@ -149,7 +150,7 @@ export default function LogsViewer({ isOpen, onClose, user: _user }: LogsViewerP
                 {level === 'all' ? 'Visi lygiai' : level.toUpperCase()}
               </option>
             ))}
-          </select>
+          </AppSelect>
 
           <button
             onClick={loadLogs}

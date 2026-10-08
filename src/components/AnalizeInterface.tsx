@@ -1,3 +1,4 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Plus, FileText, Search, Trash2, X, PanelLeft, PanelLeftClose,
@@ -1899,7 +1900,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
           {/* Reading settings: remembered, used automatically for the next upload */}
           <div className="mt-2 flex items-center gap-2">
-            <select
+            <AppSelect
               value={parseTier}
               onChange={e => setParseTier(e.target.value as ParseTier)}
               title="Kaip kruopščiai skaityti dokumentą"
@@ -1907,7 +1908,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
               style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
             >
               {TIERS.map(t => <option key={t.value} value={t.value}>{t.label} – {t.desc.charAt(0).toLowerCase() + t.desc.slice(1)}</option>)}
-            </select>
+            </AppSelect>
             <input
               value={parseTargetPages}
               onChange={e => setParseTargetPages(e.target.value.replace(/[^\d,\- ]/g, ''))}
@@ -2650,7 +2651,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                     className="h-8 min-w-0 rounded-md px-2 text-[13px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   />
-                                  <select
+                                  <AppSelect
                                     value={field.type}
                                     onChange={e => {
                                       const value = e.target.value as ExtractFieldType;
@@ -2664,7 +2665,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                     <option value="boolean">Taip / ne</option>
                                     <option value="array">Sąrašas</option>
                                     <option value="object">Objektas</option>
-                                  </select>
+                                  </AppSelect>
                                   <input
                                     value={field.description}
                                     onChange={e => {

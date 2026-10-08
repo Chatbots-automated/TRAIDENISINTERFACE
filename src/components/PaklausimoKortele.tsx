@@ -1,3 +1,4 @@
+import { AppSelect } from './AppSelect';
 import { OfficePreview } from './OfficePreview';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
@@ -1551,7 +1552,7 @@ function TabTalpos({
                 <ChevronLeft className="w-4 h-4 text-base-content/40" />
               </button>
             )}
-            <select
+            <AppSelect
               value={idx}
               onChange={e => { setCurrentIdx(Number(e.target.value)); }}
               className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
@@ -1561,7 +1562,7 @@ function TabTalpos({
               ) : Array.from({ length: navCount }, (_, i) => (
                 <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
               ))}
-            </select>
+            </AppSelect>
             {navCount > 1 && (
               <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
                 <ChevronRight className="w-4 h-4 text-base-content/40" />
@@ -2515,7 +2516,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
               <ChevronLeft className="w-4 h-4 text-base-content/40" />
             </button>
           )}
-          <select
+          <AppSelect
             value={groupIdx}
             onChange={e => { setEditing(false); setCurrentIdx(Number(e.target.value)); }}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
@@ -2526,7 +2527,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
                 {g.quantity > 1 ? ` (×${g.quantity})` : ''}
               </option>
             ))}
-          </select>
+          </AppSelect>
           {hasMultiple && (
             <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
               <ChevronRight className="w-4 h-4 text-base-content/40" />
@@ -4815,7 +4816,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
           <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
             <ChevronLeft className="w-4 h-4 text-base-content/40" />
           </button>
-          <select
+          <AppSelect
             value={idx}
             onChange={e => setCurrentIdx(Number(e.target.value))}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
@@ -4828,7 +4829,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
                 </option>
               );
             })}
-          </select>
+          </AppSelect>
           <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
             <ChevronRight className="w-4 h-4 text-base-content/40" />
           </button>

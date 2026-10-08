@@ -1,3 +1,4 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, Plus, Download } from 'lucide-react';
 import type { AppUser } from '../types';
@@ -1212,7 +1213,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
               <div className="flex flex-wrap items-center gap-2">
                 <div className="app-filter-field min-w-[220px] flex-1 px-2 flex items-center gap-1.5">
                   <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
-                  <select
+                  <AppSelect
                     value={paramSearchKey}
                     onChange={(e) => {
                       setParamSearchKey(e.target.value);
@@ -1224,10 +1225,10 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                     {paramSearchOptions.map(option => (
                       <option key={option.key} value={option.key}>{option.key}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </div>
                 <div className="app-filter-field min-w-[220px] flex-1 px-2 flex items-center gap-1.5">
-                  <select
+                  <AppSelect
                     value={paramSearchValue}
                     onChange={(e) => setParamSearchValue(e.target.value)}
                     disabled={!paramSearchKey}
@@ -1237,7 +1238,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                     {paramSearchValues.map(value => (
                       <option key={value} value={value}>{value}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                   {(paramSearchKey || paramSearchValue) && (
                     <button
                       type="button"
