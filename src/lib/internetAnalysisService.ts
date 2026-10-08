@@ -370,7 +370,7 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
 
     const model = await getClaudeModel();
 
-    const maxTokens = analysisId === 'kainos' ? 6000 : 4000; // room for the JSON reports after 8 searches
+    const maxTokens = 8000; // the limit also covers the model's reasoning; at 4000 the events report was cut off mid-JSON
 
     const response = await client.messages.create({
       model,
