@@ -177,9 +177,32 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     return () => window.clearInterval(interval);
   }, [loadInternetAnalysisState]);
 
+  // The price forecast is built from the oil and market-events analyses plus the entered prices.
+  // It may be generated only when those two are from the same day, and only if something it reads has changed.
+  const forecastBlockReason = useMemo<string | null>(() => {
+    const day = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('sv-SE') : null);
+    const oil = internetAnalyses.nafta?.date_updated;
+    const events = internetAnalyses.politika?.date_updated;
+    const forecast = internetAnalyses.kainos?.date_updated;
+    if (!oil || !events) return 'Pirma sugeneruokite „Nafta ir stirenas“ ir „Rinkos įvykiai“.';
+    if (day(oil) !== day(events)) {
+      return `„Nafta ir stirenas“ (${day(oil)}) ir „Rinkos įvykiai“ (${day(events)}) turi būti tos pačios dienos. Atnaujinkite senesnę.`;
+    }
+    if (!forecast) return null;
+    const forecastTime = new Date(forecast).getTime();
+    const inputsChanged = new Date(oil).getTime() > forecastTime
+      || new Date(events).getTime() > forecastTime
+      || istorija.some(e => e.sukurta_at && new Date(e.sukurta_at).getTime() > forecastTime);
+    return inputsChanged ? null : 'Prognozė jau sugeneruota iš šių duomenų. Pirma atnaujinkite „Nafta ir stirenas“ ir „Rinkos įvykiai“.';
+  }, [internetAnalyses, istorija]);
+
   const generateSingleAnalysis = useCallback(async (section: 'nafta' | 'geo' | 'analysis') => {
     if (!isAdmin) return;
     if (genLoading || runningSections[section]) return;
+    if (section === 'analysis' && forecastBlockReason) {
+      addNotif('error', 'Prognozės generuoti negalima', forecastBlockReason);
+      return;
+    }
     setGenLoading(true);
     setGenStep(section);
     setRunningSections((prev) => ({ ...prev, [section]: true }));
@@ -203,7 +226,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       setGenStep('idle');
       setRunningSections((prev) => ({ ...prev, [section]: false }));
     }
-  }, [genLoading, isAdmin, loadInternetAnalysisState, runningSections]);
+  }, [genLoading, isAdmin, loadInternetAnalysisState, runningSections, forecastBlockReason]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
@@ -736,14 +759,20 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     </div>
                   </div>
                   {isAdmin && (
+                    <div className="flex items-center gap-3 min-w-0">
+                    {analysisFocus === 'analysis' && forecastBlockReason && (
+                      <span className="text-[11px] text-right leading-snug max-w-md" style={{ color: '#b45309' }}>{forecastBlockReason}</span>
+                    )}
                     <button
                       onClick={() => generateSingleAnalysis(analysisFocus)}
-                      disabled={isGenerationBlocked}
-                      className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs disabled:opacity-50"
+                      disabled={isGenerationBlocked || (analysisFocus === 'analysis' && !!forecastBlockReason)}
+                      title={analysisFocus === 'analysis' && forecastBlockReason ? forecastBlockReason : undefined}
+                      className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isGenerationBlocked && genStep === analysisFocus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                       Generuoti
                     </button>
+                    </div>
                   )}
                 </div>
                 <div className="px-5 py-4 overflow-y-auto" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
