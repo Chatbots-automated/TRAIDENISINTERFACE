@@ -600,12 +600,6 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     localStorage.setItem(PARSE_TIER_STORAGE_KEY, parseTier);
   }, [parseTier]);
   const [parseTargetPages, setParseTargetPages] = useState('');
-  // the "done" notice is a passing confirmation, not a permanent banner
-  useEffect(() => {
-    if (parseStatus !== 'done') return;
-    const timer = window.setTimeout(() => setParseStatus(current => (current === 'done' ? 'idle' : current)), 5000);
-    return () => window.clearTimeout(timer);
-  }, [parseStatus]);
   const [showTemplates, setShowTemplates] = useState(false);
   const [showExtractOptions, setShowExtractOptions] = useState(false);
   // set when something should start by itself once the state it needs has settled
@@ -614,6 +608,12 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   const [userPrompt, setUserPrompt] = useState('');
   const [showPrompt, setShowPrompt] = useState(false);
   const [parseStatus, setParseStatus] = useState<'idle' | 'uploading' | 'parsing' | 'done' | 'error'>('idle');
+  // the "done" notice is a passing confirmation, not a permanent banner
+  useEffect(() => {
+    if (parseStatus !== 'done') return;
+    const timer = window.setTimeout(() => setParseStatus(current => (current === 'done' ? 'idle' : current)), 5000);
+    return () => window.clearTimeout(timer);
+  }, [parseStatus]);
   const [parseStatusText, setParseStatusText] = useState('');
   const [parseError, setParseError] = useState('');
   const [parseSteps, setParseSteps] = useState(DEFAULT_PARSE_STEPS);
