@@ -87,7 +87,7 @@ export function MarketOverview({ medziagas, istorija, content, dateUpdated }: {
   ];
 
   return (
-    <div className="mb-5">
+    <div className="min-w-0">
       {(outdated || (ageDays !== null && ageDays > STALE_DAYS)) && (
         <div className="mb-3 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'rgba(217,119,6,0.08)', color: '#b45309' }}>
           Analizė sugeneruota {dateUpdated ? dateUpdated.slice(0, 10) : 'seniai'}{ageDays !== null ? ` (prieš ${ageDays} d.)` : ''}

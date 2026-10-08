@@ -746,7 +746,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     </button>
                   )}
                 </div>
-                <div className="px-5 py-4 h-[520px] overflow-y-auto">
+                <div className="px-5 py-4 overflow-y-auto" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
                   {genLoading && genStep === analysisFocus ? (
                     <div className="h-full min-h-[220px] flex flex-col items-center justify-center gap-2">
                       <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#2563eb' }} />
@@ -767,14 +767,16 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                         if (analysisFocus !== 'analysis') return <div className="max-w-4xl">{renderMd(currentText)}</div>;
                         const narrative = analysisNarrative(currentText);
                         return (
-                          <div className="max-w-5xl">
+                          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-x-8 gap-y-4 items-start">
                             <MarketOverview medziagas={medziagas} istorija={istorija} content={currentText} dateUpdated={internetAnalyses.kainos?.date_updated} />
-                            {narrative ? (
-                              <>
-                                <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: '#8a857f' }}>Kas lemia kainas</p>
-                                {renderMd(narrative)}
-                              </>
-                            ) : renderMd(replaceForecastJsonBlock(currentText))}
+                            <div className="min-w-0">
+                              {narrative ? (
+                                <>
+                                  <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: '#8a857f' }}>Kas lemia kainas</p>
+                                  {renderMd(narrative)}
+                                </>
+                              ) : renderMd(replaceForecastJsonBlock(currentText))}
+                            </div>
                           </div>
                         );
                       })()}
