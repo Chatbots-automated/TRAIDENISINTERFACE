@@ -57,8 +57,8 @@ const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
 
 const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices', 'materialList']);
 const inFlightAnalyses = new Set<InternetAnalysisId>();
-const WEB_SEARCH_MAX_USES_DEFAULT = 3;
-const WEB_SEARCH_MAX_USES_LIMIT = 3;
+const WEB_SEARCH_MAX_USES_DEFAULT = 8;
+const WEB_SEARCH_MAX_USES_LIMIT = 8;
 
 interface PriceHistoryRowLite {
   artikulas: string;
@@ -370,7 +370,7 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
 
     const model = await getClaudeModel();
 
-    const maxTokens = analysisId === 'kainos' ? 6000 : 2500;
+    const maxTokens = analysisId === 'kainos' ? 6000 : 4000; // room for the JSON reports after 8 searches
 
     const response = await client.messages.create({
       model,
