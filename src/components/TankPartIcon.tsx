@@ -15,10 +15,8 @@ export function TankPartIcon({ part, vertical = false }: { part: TankPart; verti
   const clipId = useId();
   // the tank body: lying down, or standing when the card describes a vertical tank
   const body = vertical
-    ? { x: 14.5, y: 6, width: 15, height: 24, rx: 6, ry: 4.5 }
-    : { x: 5.5, y: 11, width: 33, height: 15, rx: 7.5, ry: 7.5 };
-  // the manhole on top: a short neck with its lid, part of the tank itself
-  const neck = { x: body.x + body.width / 2 - (vertical ? 2.5 : 3.5), width: vertical ? 5 : 7, top: body.y - 3.2 };
+    ? { x: 14.5, y: 3, width: 15, height: 26, rx: 6, ry: 4.5 }
+    : { x: 5.5, y: 8.5, width: 33, height: 15, rx: 7.5, ry: 7.5 };
   const bottom = body.y + body.height;
   const level = body.y + body.height * 0.45;
   const wave = `M ${body.x} ${level} q ${body.width / 8} -2.2 ${body.width / 4} 0 t ${body.width / 4} 0 t ${body.width / 4} 0 t ${body.width / 4} 0 V ${bottom} H ${body.x} Z`;
@@ -44,11 +42,6 @@ export function TankPartIcon({ part, vertical = false }: { part: TankPart; verti
       )}
 
       <rect {...body} fill="none" stroke={part === 'derva' ? AMBER : part === 'kaina' ? '#8a857f' : LINE} strokeWidth={1.5} />
-
-      <g stroke={part === 'derva' ? AMBER : part === 'kaina' ? '#8a857f' : LINE} strokeWidth={1.5} strokeLinecap="round" fill="none">
-        <path d={`M ${neck.x} ${body.y + 0.4} V ${neck.top} M ${neck.x + neck.width} ${body.y + 0.4} V ${neck.top}`} />
-        <line x1={neck.x - 1.3} y1={neck.top} x2={neck.x + neck.width + 1.3} y2={neck.top} />
-      </g>
 
       {part === 'kaina' && (
         <text x={body.x + body.width / 2} y={body.y + body.height / 2 + 4.2} textAnchor="middle" fontSize="11" fontWeight={700} fill={BLUE}>€</text>
