@@ -681,7 +681,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <SablonaiTab canEdit={isAdmin} />
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
-          <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
+          <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} analysisDate={internetAnalyses.kainos?.date_updated} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="sdk-data-card overflow-hidden">
