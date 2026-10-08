@@ -21,13 +21,14 @@ export interface DervaFile {
   content: string | null;
   embedding: string | null;
   vectorization_status: string | null;
+  vectorization_started_at: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Fields
 // ---------------------------------------------------------------------------
 
-const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at,content,embedding,vectorization_status';
+const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at,content,embedding,vectorization_status,vectorization_started_at';
 
 // ---------------------------------------------------------------------------
 // Upload file to Directus file storage → returns UUID
@@ -128,15 +129,26 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
 // Vectorization status — atomic claim to prevent duplicate work
 // ---------------------------------------------------------------------------
 
+// A run that has not finished in this long is taken to have died (browser closed, connection lost, server
+// restarted). Reading one file takes a minute or two.
+export const VECTORIZATION_STALE_MS = 10 * 60 * 1000;
+
+/** True while a started run can still be expected to finish. */
+export const isVectorizationRunning = (file: Pick<DervaFile, 'vectorization_status' | 'vectorization_started_at'>): boolean => {
+  if (file.vectorization_status !== 'processing') return false;
+  if (!file.vectorization_started_at) return false; // marked before start times were recorded: nothing to wait for
+  return Date.now() - new Date(file.vectorization_started_at).getTime() < VECTORIZATION_STALE_MS;
+};
+
 /**
- * Claim a file for vectorization. Only succeeds if the file is NOT
- * already in 'processing' state. Returns true if the claim was acquired.
+ * Claim a file for vectorization. Fails only while another run is still
+ * within its time; a stale "processing" mark is taken over. Returns true if the claim was acquired.
  */
 export const claimFileForVectorization = async (id: number): Promise<boolean> => {
   // 1. Read current status
   const { data: file, error: readError } = await db
     .from('derva_files')
-    .select('id,vectorization_status')
+    .select('id,vectorization_status,vectorization_started_at')
     .eq('id', id)
     .single();
 
@@ -146,12 +158,12 @@ export const claimFileForVectorization = async (id: number): Promise<boolean> =>
   }
 
   // 2. Reject if already processing
-  if (file.vectorization_status === 'processing') return false;
+  if (isVectorizationRunning(file)) return false;
 
   // 3. Set to processing
   const { error: updateError } = await db
     .from('derva_files')
-    .update({ vectorization_status: 'processing' })
+    .update({ vectorization_status: 'processing', vectorization_started_at: new Date().toISOString() })
     .eq('id', id);
 
   if (updateError) {

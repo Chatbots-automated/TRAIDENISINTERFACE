@@ -22,6 +22,7 @@ import {
   claimFileForVectorization,
   updateVectorizationStatus,
   uploadFileToDirectus,
+  isVectorizationRunning,
   getFileViewUrl,
   getFileDownloadUrl,
   DervaFile,
@@ -244,7 +245,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         for (const id of prev) {
           const file = loaded.find(f => f.id === id);
           // Remove if: file deleted, embedding exists, or DB no longer says processing
-          if (!file || file.embedding || file.vectorization_status !== 'processing') next.delete(id);
+          if (!file || file.embedding || !isVectorizationRunning(file)) next.delete(id);
         }
         return next.size === prev.size ? prev : next;
       });
@@ -407,7 +408,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
     } catch (err: any) {
       // The error may be a connection drop while n8n was still processing.
       // The webhook was already sent; only the response was lost.
-      addNotification('error', 'Klaida', err.message || 'Nepavyko paleisti vektorizavimo');
+      addNotification('error', 'Ryšys nutrūko', `${err.message || 'Nepavyko gauti atsakymo.'} Jei failas nebus nuskaitytas per 10 min., jį bus galima paleisti iš naujo.`);
     } finally {
       setVectorizingIds(prev => {
         const next = new Set(prev);
@@ -609,8 +610,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                   <tr><td colSpan={FILES_COLUMNS.length + 4} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file, idx) => {
                   const isVectorized = !!file.embedding;
-                  const isProcessing = vectorizingIds.has(file.id) || file.vectorization_status === 'processing';
-                  const isFailed = file.vectorization_status === 'failed';
+                  const isProcessing = vectorizingIds.has(file.id) || isVectorizationRunning(file);
+                  // a run that never reported back counts as failed, so it can be started again
+                  const isFailed = file.vectorization_status === 'failed' || (file.vectorization_status === 'processing' && !isProcessing);
                   return (
                     <tr
                       key={file.id}
