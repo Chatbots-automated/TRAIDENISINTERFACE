@@ -2890,7 +2890,10 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
   const messagesKey = JSON.stringify(messages.map(m => [m.role, m.text]));
   const needsContextUpdate = ctxAppliedKey !== messagesKey;
   const [ctxError, setCtxError] = useState<string | null>(null);
-  const [ctxResult, setCtxResult] = useState<{ changes: { laukas: string; sena: string; nauja: string }[]; note: string } | null>(null);
+  const [ctxResult, setCtxResult] = useState<{
+    changes: { laukas: string; sena: string; nauja: string }[]; note: string; files: string[];
+    others: { pavadinimas: string | null; pakeitimai: { laukas: string; sena: string; nauja: string }[] }[];
+  } | null>(null);
   const updateContext = async () => {
     if (!currentTalposId || ctxUpdating) return;
     setCtxUpdating(true);
@@ -2901,7 +2904,12 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
       const sentKey = messagesKey;
       await onSaveAll?.();
       const res: any = await callWebhook('tank_context_update', { talpa_id: currentTalposId, messages: toSend });
-      setCtxResult({ changes: Array.isArray(res?.pakeitimai) ? res.pakeitimai : [], note: typeof res?.komentaras === 'string' ? res.komentaras : '' });
+      setCtxResult({
+        changes: Array.isArray(res?.pakeitimai) ? res.pakeitimai : [],
+        note: typeof res?.komentaras === 'string' ? res.komentaras : '',
+        files: Array.isArray(res?.nauji_priedai) ? res.nauji_priedai : [],
+        others: Array.isArray(res?.kitos_talpos) ? res.kitos_talpos : [],
+      });
       setCtxAppliedKey(sentKey);
     } catch (e: any) {
       setCtxError(e?.message || 'Nepavyko atnaujinti konteksto');
@@ -2940,9 +2948,9 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
     <div>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mb-4">
         <span className="text-sm font-semibold text-base-content/85">{tankLabel || (messages.length > 0 ? 'Pokalbis' : 'Nėra žinučių')}</span>
-        {!readOnly && currentTalposId && messages.length > 0 && (
+        {!readOnly && currentTalposId && (
           <>
-            {needsContextUpdate && (
+            {needsContextUpdate && messages.length > 0 && (
               <span className="inline-flex items-center gap-1.5 text-[11px] text-base-content/45">
                 <span className="relative flex h-2 w-2" aria-hidden="true">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
@@ -2981,8 +2989,14 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
               </ul>
             </>
           ) : (
-            <p>Pokalbyje nerasta nieko, ką reikėtų pakeisti talpos duomenyse.</p>
+            <p>Nerasta nieko, ką reikėtų pakeisti šios talpos duomenyse.</p>
           )}
+          {ctxResult.files.length > 0 && <p className="mt-1 text-base-content/50">Perskaityti nauji priedai: {ctxResult.files.join(', ')}</p>}
+          {ctxResult.others.map((other, i) => (
+            <p key={i} className="mt-1 text-base-content/60">
+              Taip pat atnaujinta „{other.pavadinimas || 'kita talpa'}“: {other.pakeitimai.map(c => `${talpaLabel(c.laukas)} ${c.sena || 'nenurodyta'} → ${c.nauja}`).join('; ')}
+            </p>
+          ))}
           {ctxResult.note && <p className="mt-1 text-base-content/50">{ctxResult.note}</p>}
         </div>
       )}
