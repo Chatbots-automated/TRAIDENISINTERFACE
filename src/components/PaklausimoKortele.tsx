@@ -1,3 +1,4 @@
+import { OfficePreview } from './OfficePreview';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams, useSearchParams } from 'react-router-dom';
@@ -3573,11 +3574,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                   </div>
                 );
                 if (isOffice) return (
-                  <iframe
-                    src={buildGoogleDocsViewerUrl(viewUrl)}
-                    className="w-full h-full border-0"
-                    title={previewFile.file_name}
-                  />
+                  <OfficePreview url={viewUrl} fileName={previewFile.file_name} />
                 );
                 if (isText) return <iframe src={viewUrl} className="w-full h-full border-0" title={previewFile.file_name} style={{ background: '#fff' }} />;
 
