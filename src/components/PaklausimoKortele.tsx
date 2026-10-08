@@ -899,17 +899,19 @@ function TabTalpos({
   // Intake checks: each one points at a row of the tank (`laukas`) and remembers the value seen at intake (`reiksme`).
   // A check is resolved when the user ticks it off or changes that value (filling a gap counts).
   // sprendimas: 'gerai' = the value is right as it stands; 'klausti' = ask the client (stays on the question list)
-  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; siulymas: string; klausimas: string; sprendimas: 'gerai' | 'klausti' | null; changed: boolean };
+  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; siulymas: string; klausimas: string; sena: string; sprendimas: 'gerai' | 'klausti' | null; changed: boolean };
   const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
   const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
   const intakeIssues: IntakeIssue[] = useMemo(() => (Array.isArray(jsonRoot.tikrinti) ? jsonRoot.tikrinti : [])
     .map((raw: any, index: number) => ({
       index, laukas: typeof raw?.laukas === 'string' ? raw.laukas : null, tipas: String(raw?.tipas || ''), tekstas: String(raw?.tekstas || ''),
-      reiksme: String(raw?.reiksme ?? ''), siulymas: String(raw?.siulymas ?? ''), klausimas: String(raw?.klausimas ?? ''),
+      reiksme: String(raw?.reiksme ?? ''), siulymas: String(raw?.siulymas ?? ''), klausimas: String(raw?.klausimas ?? ''), sena: String(raw?.sena ?? ''),
       sprendimas: raw?.sprendimas === 'klausti' ? 'klausti' : (raw?.sprendimas === 'gerai' || raw?.isspresta) ? 'gerai' : null,
       changed: typeof raw?.laukas === 'string' && String(talpaObj[raw.laukas] ?? '').trim() !== String(raw?.reiksme ?? '').trim(),
     }))
     .filter((issue: IntakeIssue) => issue.tekstas), [jsonRoot, talpaObj]);
+  // "pakeista" entries are changes already applied from the conversation: a record, not something to check
+  const checkIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => issue.tipas !== 'pakeista'), [intakeIssues]);
   const openIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && !issue.sprendimas), [intakeIssues]);
   const askIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && issue.sprendimas === 'klausti'), [intakeIssues]);
   // rows that carry a marker: still open, or waiting for the client's answer
@@ -1010,8 +1012,8 @@ function TabTalpos({
   const missingText: string = typeof talpaObj['Trūksta_duomenų'] === 'string' ? talpaObj['Trūksta_duomenų'] : '';
   const riskText: string = typeof talpaObj['Prieštaravimai_ir_rizikos'] === 'string' ? talpaObj['Prieštaravimai_ir_rizikos'] : '';
   const reviewed: { by?: string | null; at?: string } | null = jsonRoot.patikrinta && typeof jsonRoot.patikrinta === 'object' ? jsonRoot.patikrinta : null;
-  const showIntakeCheck = !!currentTalposRow && (jsonRoot.intake === 'direct' || !!missingText || !!riskText || intakeIssues.length > 0);
-  const hasStructuredIssues = intakeIssues.length > 0;
+  const showIntakeCheck = !!currentTalposRow && (jsonRoot.intake === 'direct' || !!missingText || !!riskText || checkIssues.length > 0);
+  const hasStructuredIssues = checkIssues.length > 0;
   const [reviewSaving, setReviewSaving] = useState(false);
   const setReviewed = async (on: boolean) => {
     if (!currentTalposId) return;
@@ -1470,7 +1472,9 @@ function TabTalpos({
               <ul className="mt-2 space-y-2">
                 {intakeIssues.map(issue => {
                   const current = issue.laukas ? String(talpaObj[issue.laukas] ?? '').trim() : '';
-                  const state = issue.changed
+                  const state = issue.tipas === 'pakeista' && !issue.changed
+                    ? { label: 'pakeista pagal pokalbį', tone: 'text-sky-700 bg-sky-500/10' }
+                    : issue.changed
                     ? { label: current ? `pakeista į „${current.length > 24 ? `${current.slice(0, 24)}…` : current}“` : 'reikšmė pašalinta', tone: 'text-emerald-700 bg-emerald-500/10' }
                     : issue.sprendimas === 'klausti' ? { label: 'klausiama kliento', tone: 'text-sky-700 bg-sky-500/10' }
                     : issue.sprendimas === 'gerai' ? { label: 'palikta kaip yra', tone: 'text-emerald-700 bg-emerald-500/10' }
@@ -1482,8 +1486,8 @@ function TabTalpos({
                         <span className={`shrink-0 rounded-md px-1.5 py-px text-[10px] ${state.tone}`}>{state.label}</span>
                       </div>
                       <p className="mt-0.5 text-base-content/65">
-                        <span className="text-base-content/45">{issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: '}</span>
-                        {issue.tekstas}{issue.reiksme ? ` (nuskaityta: „${issue.reiksme.length > 40 ? `${issue.reiksme.slice(0, 40)}…` : issue.reiksme}“)` : ''}
+                        <span className="text-base-content/45">{issue.tipas === 'pakeista' ? 'Pokalbis: ' : issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: '}</span>
+                        {issue.tekstas}{issue.tipas === 'pakeista' ? ` (buvo: „${issue.sena || 'nenurodyta'}“)` : issue.reiksme ? ` (nuskaityta: „${issue.reiksme.length > 40 ? `${issue.reiksme.slice(0, 40)}…` : issue.reiksme}“)` : ''}
                       </p>
                     </li>
                   );
@@ -1636,7 +1640,7 @@ function TabTalpos({
                   Patikrinkite, ką sistema nuskaitė iš laiško
                   {hasStructuredIssues && (
                     <span className="font-normal text-base-content/40">
-                      · {openIssues.length > 0 ? `liko ${openIssues.length} iš ${intakeIssues.length}` : askIssues.length > 0 ? `${askIssues.length} laukia kliento atsakymo` : 'viskas peržiūrėta'}
+                      · {openIssues.length > 0 ? `liko ${openIssues.length} iš ${checkIssues.length}` : askIssues.length > 0 ? `${askIssues.length} laukia kliento atsakymo` : 'viskas peržiūrėta'}
                     </span>
                   )}
                 </p>
@@ -1664,7 +1668,7 @@ function TabTalpos({
               {hasStructuredIssues && (
                 <div className="mt-1.5">
                   <div className="flex flex-wrap gap-1">
-                    {intakeIssues.map(issue => {
+                    {checkIssues.map(issue => {
                       const open = openIssues.some(o => o.index === issue.index);
                       const asking = askIssues.some(o => o.index === issue.index);
                       const label = issue.laukas ? talpaLabel(issue.laukas) : 'Kita';
@@ -1899,11 +1903,13 @@ function TabTalpos({
                                         >
                                           <div className="flex items-start gap-2">
                                           <p className="flex-1 min-w-0 text-xs leading-snug text-base-content/85">
-                                            <span className="font-semibold">{done ? (issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: ') : asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
+                                            <span className="font-semibold">{issue.tipas === 'pakeista' ? 'Pakeista pagal pokalbį: ' : done ? (issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: ') : asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
                                             {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
                                             {done && (
                                               <span className="block mt-1 text-[11px] text-base-content/45">
-                                                {issue.changed ? `Pakeista (nuskaityta: „${issue.reiksme || 'nenurodyta'}“)` : 'Palikta kaip yra'}
+                                                {issue.tipas === 'pakeista'
+                                                  ? (issue.changed ? 'Vėliau reikšmė pakeista dar kartą' : `Buvo „${issue.sena || 'nenurodyta'}“`)
+                                                  : issue.changed ? `Pakeista (nuskaityta: „${issue.reiksme || 'nenurodyta'}“)` : 'Palikta kaip yra'}
                                               </span>
                                             )}
                                             {!readOnly && !issue.changed && (
@@ -1922,7 +1928,11 @@ function TabTalpos({
                                           </div>
                                           {!readOnly && bubbleMenu && (
                                             <div role="menu" className={`absolute right-2 ${bubblePos.above ? 'bottom-full mb-1' : 'top-full mt-1'} z-[10012] w-max min-w-[8.5rem] max-w-[15rem] overflow-hidden rounded-xl border border-base-content/10 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]`}>
-                                              {done ? (
+                                              {done && issue.tipas === 'pakeista' ? (
+                                                <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.sena, entry.obj, true); }} className={`${action} text-base-content/70`}>
+                                                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Grąžinti „{issue.sena.length > 18 ? `${issue.sena.slice(0, 18)}…` : (issue.sena || 'tuščią')}“
+                                                </button>
+                                              ) : done ? (
                                                 <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} text-base-content/70`}>
                                                   <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Grąžinti į neperžiūrėtus
                                                 </button>
@@ -2841,7 +2851,9 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel }: {
+function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel, onSaveAll }: {
+  /** Saves pending messages / files and reloads the record, before the conversation is applied to the tank */
+  onSaveAll?: () => Promise<void>;
   record: NestandartiniaiRecord;
   readOnly?: boolean;
   pendingMessages?: AtsakymasMessage[];
@@ -2872,6 +2884,32 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
     onMessagesChange?.(updated);
   };
 
+  // Apply what the conversation says to the tank's fields
+  const [ctxUpdating, setCtxUpdating] = useState(false);
+  const [ctxAppliedKey, setCtxAppliedKey] = useState<string | null>(null);
+  const messagesKey = JSON.stringify(messages.map(m => [m.role, m.text]));
+  const needsContextUpdate = ctxAppliedKey !== messagesKey;
+  const [ctxError, setCtxError] = useState<string | null>(null);
+  const [ctxResult, setCtxResult] = useState<{ changes: { laukas: string; sena: string; nauja: string }[]; note: string } | null>(null);
+  const updateContext = async () => {
+    if (!currentTalposId || ctxUpdating) return;
+    setCtxUpdating(true);
+    setCtxError(null);
+    setCtxResult(null);
+    try {
+      const toSend = messages;
+      const sentKey = messagesKey;
+      await onSaveAll?.();
+      const res: any = await callWebhook('tank_context_update', { talpa_id: currentTalposId, messages: toSend });
+      setCtxResult({ changes: Array.isArray(res?.pakeitimai) ? res.pakeitimai : [], note: typeof res?.komentaras === 'string' ? res.komentaras : '' });
+      setCtxAppliedKey(sentKey);
+    } catch (e: any) {
+      setCtxError(e?.message || 'Nepavyko atnaujinti konteksto');
+    } finally {
+      setCtxUpdating(false);
+    }
+  };
+
   const handleAdd = (text: string, side: 'left' | 'right') => {
     const msg: AtsakymasMessage = {
       text,
@@ -2900,12 +2938,54 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-base-content/40">
-          {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
-          {tankLabel ? <span className="ml-2 text-base-content/30">· {tankLabel}</span> : null}
-        </p>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mb-4">
+        <span className="text-sm font-semibold text-base-content/85">{tankLabel || (messages.length > 0 ? 'Pokalbis' : 'Nėra žinučių')}</span>
+        {!readOnly && currentTalposId && messages.length > 0 && (
+          <>
+            {needsContextUpdate && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-base-content/45">
+                <span className="relative flex h-2 w-2" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                </span>
+                Kontekstą reikalinga atnaujinti norint įgalinti pokyčius
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={updateContext}
+              disabled={ctxUpdating}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg text-base-content/60 hover:text-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {ctxUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {ctxUpdating ? 'Atnaujinama...' : 'Atnaujinti'}
+            </button>
+          </>
+        )}
       </div>
+      {ctxError && (
+        <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-3">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{ctxError}</span>
+        </div>
+      )}
+      {ctxResult && (
+        <div className="mb-3 rounded-lg border border-base-content/8 bg-white/60 px-3 py-2 text-[11px] text-base-content/70">
+          {ctxResult.changes.length > 0 ? (
+            <>
+              <p className="font-medium text-emerald-700 inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Talpos duomenys atnaujinti</p>
+              <ul className="mt-1 space-y-0.5">
+                {ctxResult.changes.map((change, i) => (
+                  <li key={i}><span className="text-base-content/45">{talpaLabel(change.laukas)}: </span>{change.sena || 'nenurodyta'} → <span className="font-medium text-base-content/85">{change.nauja}</span></li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>Pokalbyje nerasta nieko, ką reikėtų pakeisti talpos duomenyse.</p>
+          )}
+          {ctxResult.note && <p className="mt-1 text-base-content/50">{ctxResult.note}</p>}
+        </div>
+      )}
 
       {messages.map((msg, i) => {
         const side = msg.role === 'team' ? 'right' as const : 'left' as const;
@@ -5208,6 +5288,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                 currentTankIndex={talposIdx}
                 talposCount={modalTalposIds.length}
                 tankLabel={currentModalTankLabel}
+                onSaveAll={async () => { await executeSaveAndProcess(); await refreshRecord(); }}
               />
             )}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
