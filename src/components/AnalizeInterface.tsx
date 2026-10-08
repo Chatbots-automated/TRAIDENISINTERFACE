@@ -601,6 +601,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   }, [parseTier]);
   const [parseTargetPages, setParseTargetPages] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showExtractOptions, setShowExtractOptions] = useState(false);
   // set when something should start by itself once the state it needs has settled
   const autoParseRef = useRef(false);
   const autoExtractRef = useRef(false);
@@ -1885,7 +1886,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                 <p className="text-[13px] font-medium" style={{ color: '#3d3935' }}>
                   Įkelti naują
                 </p>
-                <p className="text-[13px]" style={{ color: '#8a857f' }}>arba nutempkite failą bet kur</p>
+                
               </div>
             </div>
           </div>
@@ -2220,9 +2221,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                  <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ background: '#fbfaf8' }}>
 	                      {(canExtract || extractResult) && (
 	                        <div className="space-y-3">
-	                          <div className="flex items-start justify-between gap-3">
-	                            <div>
-		                              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Nustatymai</h3>
+	                          <div className="flex items-start justify-between gap-3" style={{ display: 'none' }}>
+		                            <div>
+			                              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Nustatymai</h3>
 		                              <p className="mt-0.5 text-[13px]" style={{ color: '#6b7280' }}>Pasirinkite, ką ir kaip ištraukti.</p>
 	                            </div>
 	                            <div className="relative shrink-0">
@@ -2261,9 +2262,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                                color: extractPanelTab === 'config' ? '#1f2937' : '#6b655f',
 	                                boxShadow: extractPanelTab === 'config' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
 	                              }}
-	                            >
-		                              Nustatymai
-	                            </button>
+		                            >
+			                              Klausimas
+		                            </button>
 	                            <button
 	                              onClick={() => extractResult && setExtractPanelTab('results')}
 	                              disabled={!extractResult}
@@ -2483,36 +2484,34 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                       )}
 
 	                      <div
-	                        className="rounded-xl bg-white p-4 shadow-sm space-y-3"
+	                        className="rounded-2xl bg-white p-5 space-y-3.5"
 	                        style={{
-	                          border: '0.5px solid rgba(0,0,0,0.08)',
+	                          border: '1px solid rgba(0,122,255,0.22)',
+	                          boxShadow: '0 6px 24px rgba(0,122,255,0.08)',
 	                          display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
 	                        }}
 	                      >
 	                        <div>
-	                          <div className="flex items-center gap-2">
-	                            <Sparkles className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-		                            <span className="text-[13px] font-semibold" style={{ color: '#111827' }}>Instrukcijos</span>
-	                          </div>
-		                          <p className="mt-1 text-[13px]" style={{ color: '#6b7280' }}>Parašykite savais žodžiais, ką rasti dokumente, arba pasirinkite šabloną. Ctrl+Enter – pradėti.</p>
-	                        </div>
+		                          <h3 className="text-[18px] font-semibold leading-tight" style={{ color: '#111827' }}>Ką norite sužinoti iš dokumento?</h3>
+		                          <p className="mt-1 text-[13px]" style={{ color: '#6b7280' }}>Parašykite savais žodžiais – atsakymas bus surinktas iš dokumento.</p>
+		                        </div>
 	                        <textarea
                           value={extractGoal}
                           onChange={e => setExtractGoal(e.target.value)}
-	                          className="w-full resize-none rounded-lg p-3 text-[13px] outline-none transition-all"
+	                          className="w-full resize-none rounded-xl p-3.5 text-[15px] leading-6 outline-none transition-all"
 	                          style={{
-	                            minHeight: '82px',
+	                            minHeight: '132px',
 	                            background: '#fff',
-	                            border: '1px solid rgba(0,0,0,0.1)',
+	                            border: '1px solid rgba(0,122,255,0.28)',
 	                            color: '#3d3935',
 	                            boxShadow: 'none',
                           }}
                           onFocus={e => {
-                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.42)';
-                            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.7)';
+                            e.currentTarget.style.boxShadow = '0 0 0 4px rgba(0,122,255,0.10)';
                           }}
                           onBlur={e => {
-                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.16)';
+                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.28)';
                             e.currentTarget.style.boxShadow = 'none';
                           }}
                           placeholder="Pvz.: kokia talpos terpė ir temperatūra? Kokie pristatymo terminai?"
@@ -2523,13 +2522,52 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             }
                           }}
                         />
+                        <div className="flex flex-wrap items-center gap-2">
+                          {EXTRACT_TEMPLATES.map(template => (
+                            <button
+                              key={template.key}
+                              onClick={() => runTemplate(template)}
+                              disabled={!canStartExtract}
+                              title={template.hint}
+                              className="h-8 rounded-full px-3 text-[12px] font-medium transition-colors hover:bg-[rgba(0,122,255,0.12)] disabled:opacity-50"
+                              style={{ background: 'rgba(0,122,255,0.06)', color: '#0a5fc2', border: '0.5px solid rgba(0,122,255,0.18)' }}
+                            >
+                              {template.label}
+                            </button>
+                          ))}
+                          {isAdmin && (
+                            <button
+                              onClick={handleRunExtract}
+                              disabled={!canStartExtract}
+                              className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold text-white transition-all disabled:opacity-50"
+                              style={{ background: '#007AFF', boxShadow: '0 2px 8px rgba(0,122,255,0.3)' }}
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              Analizuoti
+                            </button>
+                          )}
+                        </div>
                       </div>
 
+                      <button
+                        onClick={() => setShowExtractOptions(open => !open)}
+                        className="flex items-center gap-1.5 px-1 text-[12px] font-medium"
+                        style={{
+                          color: '#8a857f',
+                          display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                        }}
+                      >
+                        <Settings2 className="w-3.5 h-3.5" />
+                        Papildomi nustatymai
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showExtractOptions ? 'rotate-180' : ''}`} />
+                      </button>
+
                       <div
-                        className="rounded-xl bg-white p-4 shadow-sm space-y-4"
+                        className="rounded-xl p-4 space-y-4"
                         style={{
                           border: '0.5px solid rgba(0,0,0,0.08)',
-                          display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                          background: '#faf9f7',
+                          display: showExtractOptions && !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
                         <div>
@@ -2676,10 +2714,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                       </div>
 
                       <div
-                        className="rounded-xl bg-white p-4 shadow-sm space-y-3"
+                        className="rounded-xl p-4 space-y-3"
                         style={{
                           border: '0.5px solid rgba(0,0,0,0.08)',
-                          display: extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                          background: '#faf9f7',
+		                          display: showExtractOptions && !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
                         <div className="flex items-center gap-2">
@@ -2713,7 +2752,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           style={{ color: '#8a857f' }}
                         >
                           <Settings2 className="w-3 h-3" />
-                          Papildomi nustatymai
+                          Išplėstiniai
                           <ChevronDown className={`w-3 h-3 transition-transform ${showExtractAdvanced ? 'rotate-180' : ''}`} />
                         </button>
 
@@ -2803,7 +2842,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           </div>
                         )}
 
-                        {isAdmin && (
+                        {false && (
                           <button
                             onClick={handleRunExtract}
                             disabled={!canStartExtract}
