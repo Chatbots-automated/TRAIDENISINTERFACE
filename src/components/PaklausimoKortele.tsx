@@ -1,3 +1,4 @@
+import { TankPartIcon } from './TankPartIcon';
 import { AppSelect } from './AppSelect';
 import { OfficePreview } from './OfficePreview';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -1611,25 +1612,37 @@ function TabTalpos({
       {!loadingTalpos && currentTalposRow && (
         <div className="shrink-0 mb-3">
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
-            <div className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Talpa</p>
-              <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Talpa_m3'] ? `${talpaObj['Talpa_m3']} m³` : '—'}</p>
-              <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Diametras_mm'] ? `DN${talpaObj['Diametras_mm']}` : null, summaryLength ? `${talpaObj['Aukštis_mm'] ? 'H' : 'L'}${summaryLength}` : null, currentTalposRow?.quantity ? `${currentTalposRow.quantity} vnt.` : null].filter(Boolean).join(' · ') || '\u00a0'}</p>
+            <div className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Talpa</p>
+                <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Talpa_m3'] ? `${talpaObj['Talpa_m3']} m³` : '—'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Diametras_mm'] ? `DN${talpaObj['Diametras_mm']}` : null, summaryLength ? `${talpaObj['Aukštis_mm'] ? 'H' : 'L'}${summaryLength}` : null, currentTalposRow?.quantity ? `${currentTalposRow.quantity} vnt.` : null].filter(Boolean).join(' · ') || '\u00a0'}</p>
+              </div>
+              <TankPartIcon part="talpa" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </div>
-            <div className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Terpė</p>
-              <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Cheminė_aplinka_Terpė'] || '—'}</p>
-              <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Vieta'], talpaObj['Įgilinimas_m'] ? `įg. ${talpaObj['Įgilinimas_m']} m` : null].filter(Boolean).join(', ') || '\u00a0'}</p>
+            <div className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Terpė</p>
+                <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Cheminė_aplinka_Terpė'] || '—'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Vieta'], talpaObj['Įgilinimas_m'] ? `įg. ${talpaObj['Įgilinimas_m']} m` : null].filter(Boolean).join(', ') || '\u00a0'}</p>
+              </div>
+              <TankPartIcon part="terpe" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </div>
-            <button type="button" onClick={() => setSubTab('derva')} className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 hover:border-primary/25 transition-colors">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Derva (mūsų)</p>
-              <p className="text-sm font-semibold text-base-content truncate">{currentTalposRow?.derva_musu || 'Nenustatyta'}</p>
-              <p className="text-[11px] text-base-content/45 truncate">{summaryDervaAi ? `DI: ${summaryDervaAi}` : 'DI rekomendacijos dar nėra'}</p>
+            <button type="button" onClick={() => setSubTab('derva')} className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2 hover:border-primary/25 transition-colors">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Derva (mūsų)</p>
+                <p className="text-sm font-semibold text-base-content truncate">{currentTalposRow?.derva_musu || 'Nenustatyta'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryDervaAi ? `DI: ${summaryDervaAi}` : 'DI rekomendacijos dar nėra'}</p>
+              </div>
+              <TankPartIcon part="derva" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </button>
-            <button type="button" onClick={() => setSubTab('medziagos')} className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 hover:border-primary/25 transition-colors">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Kaina, 1 vnt.</p>
-              <p className="text-sm font-semibold text-base-content truncate">{currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nenustatyta'}</p>
-              <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi ? `DI: ${summaryPriceAi}` : 'DI įvertinimo dar nėra'}</p>
+            <button type="button" onClick={() => setSubTab('medziagos')} className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2 hover:border-primary/25 transition-colors">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Kaina, 1 vnt.</p>
+                <p className="text-sm font-semibold text-base-content truncate">{currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nenustatyta'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi ? `DI: ${summaryPriceAi}` : 'DI įvertinimo dar nėra'}</p>
+              </div>
+              <TankPartIcon part="kaina" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </button>
           </div>
 
