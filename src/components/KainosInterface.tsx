@@ -793,7 +793,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     </div>
                   )}
                 </div>
-                <div className="px-5 py-4 overflow-y-auto" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
+                <div className="px-5 py-4 flex flex-col" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                   {genLoading && genStep === analysisFocus ? (
                     <GenerationProgress section={analysisFocus} live={liveAnalysis} />
                   ) : (
@@ -832,6 +833,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                       })()}
                     </>
                   )}
+                  </div>
                   {(() => {
                     const tokenData = analysisFocus === 'nafta'
                       ? parseTokenUsage(internetAnalyses.nafta?.tokens || null)
@@ -840,7 +842,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                         : parseTokenUsage(internetAnalyses.kainos?.tokens || null);
                     if (!tokenData) return null;
                     return (
-                      <div className="mt-3 pt-2 border-t border-slate-200 text-[11px]" style={{ color: '#64748b' }}>
+                      <div className="shrink-0 mt-3 pt-2 border-t border-slate-200 text-[11px]" style={{ color: '#64748b' }}>
                         Input: {tokenData.input.toLocaleString('lt-LT')} · Output: {tokenData.output.toLocaleString('lt-LT')} · Total: {tokenData.total.toLocaleString('lt-LT')}
                       </div>
                     );
