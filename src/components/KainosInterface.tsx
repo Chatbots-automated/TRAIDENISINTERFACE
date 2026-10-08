@@ -38,6 +38,7 @@ import {
   type InternetAnalysisId,
   type InternetAnalysisRecord,
 } from '../lib/internetAnalysisService';
+import type { AnalysisLive } from '../lib/internetAnalysisService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
@@ -192,6 +193,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
 
   // The price forecast is built from the oil and market-events analyses plus the entered prices.
   // It may be generated only when those two are from the same day, and only if something it reads has changed.
+  const [liveAnalysis, setLiveAnalysis] = useState<AnalysisLive | null>(null);
   const forecastBlockReason = useMemo<string | null>(() => {
     const day = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('sv-SE') : null);
     const oil = internetAnalyses.nafta?.date_updated;
@@ -223,7 +225,8 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     setRunningSections((prev) => ({ ...prev, [section]: true }));
     try {
       const targetId: InternetAnalysisId = section === 'nafta' ? 'nafta' : section === 'geo' ? 'politika' : 'kainos';
-      await runInternetAnalysis(targetId);
+      setLiveAnalysis(null);
+      await runInternetAnalysis(targetId, setLiveAnalysis);
       await loadInternetAnalysisState(true);
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
@@ -792,7 +795,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </div>
                 <div className="px-5 py-4 overflow-y-auto" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
                   {genLoading && genStep === analysisFocus ? (
-                    <GenerationProgress section={analysisFocus} />
+                    <GenerationProgress section={analysisFocus} live={liveAnalysis} />
                   ) : (
                     <>
                       {(() => {

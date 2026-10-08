@@ -49,6 +49,87 @@ function synthesizeStreamEvents(message) {
   return events;
 }
 
+/** Rebuilds the complete message from raw stream events, so the caller gets the same object a plain request returns. */
+function createMessageAccumulator() {
+  let message = null;
+  const partialJson = {};
+  return {
+    add(event) {
+      if (event.type === 'message_start') {
+        message = { ...event.message, content: [] };
+      } else if (!message) {
+        return;
+      } else if (event.type === 'content_block_start') {
+        message.content[event.index] = { ...event.content_block };
+      } else if (event.type === 'content_block_delta') {
+        const block = message.content[event.index];
+        const delta = event.delta || {};
+        if (!block) return;
+        if (delta.type === 'text_delta') block.text = (block.text || '') + delta.text;
+        else if (delta.type === 'thinking_delta') block.thinking = (block.thinking || '') + delta.thinking;
+        else if (delta.type === 'signature_delta') block.signature = delta.signature;
+        else if (delta.type === 'citations_delta') block.citations = [...(block.citations || []), delta.citation];
+        else if (delta.type === 'input_json_delta') partialJson[event.index] = (partialJson[event.index] || '') + delta.partial_json;
+      } else if (event.type === 'content_block_stop') {
+        const block = message.content[event.index];
+        if (block && partialJson[event.index]) {
+          try { block.input = JSON.parse(partialJson[event.index]); } catch { /* keep the input from block start */ }
+        }
+      } else if (event.type === 'message_delta') {
+        Object.assign(message, event.delta || {});
+        message.usage = { ...(message.usage || {}), ...(event.usage || {}) };
+      }
+    },
+    result() { return message; },
+  };
+}
+
+/**
+ * Real streaming, for hosts that can write the response as it is produced (the dev gateway does; a plain Netlify
+ * handler cannot, so `handler` below still sends everything at once). Returns { response } when the request is refused
+ * before any model output, otherwise { lines }: an async generator of NDJSON lines in the same shape the buffered
+ * mode sends — {type:'event'} per raw event, then {type:'final'} with the whole message, or {type:'error'}.
+ */
+async function openStream(event) {
+  const access = await requireCloudflareAccess(event);
+  if (!access.ok) return { response: access.response };
+  const apiKey = getApiKey();
+  if (!apiKey) return { response: jsonResponse(500, { message: 'ANTHROPIC_API_KEY is not configured.' }) };
+
+  let request;
+  try {
+    const payload = parseJsonBody(event, MAX_BODY_BYTES);
+    if (!payload || payload.mode !== 'stream') return { response: jsonResponse(400, { message: 'openStream handles stream mode only.' }) };
+    request = sanitizeRequest(payload.request);
+  } catch (err) {
+    return { response: jsonResponse(err.statusCode || 400, { message: err.message || 'Invalid request.' }) };
+  }
+
+  const client = new Anthropic({ apiKey });
+  let upstream;
+  try {
+    upstream = await client.messages.create({ ...request, stream: true });
+  } catch (err) {
+    const normalized = normalizeAnthropicError(err);
+    return { response: jsonResponse(normalized.statusCode, normalized) };
+  }
+
+  async function* lines() {
+    const accumulator = createMessageAccumulator();
+    try {
+      for await (const streamEvent of upstream) {
+        accumulator.add(streamEvent);
+        yield JSON.stringify({ type: 'event', event: streamEvent });
+      }
+      yield JSON.stringify({ type: 'final', message: accumulator.result() });
+    } catch (err) {
+      const normalized = normalizeAnthropicError(err);
+      yield JSON.stringify({ type: 'error', message: normalized.message, status: normalized.statusCode });
+    }
+  }
+  return { lines: lines() };
+}
+
 function normalizeAnthropicError(err) {
   const status = err && (err.status || err.statusCode) ? Number(err.status || err.statusCode) : 500;
   return {
@@ -119,3 +200,6 @@ exports.handler = async (event) => {
 
   return jsonResponse(400, { message: 'Unsupported Anthropic proxy mode.' });
 };
+
+exports.openStream = openStream;
+exports.createMessageAccumulator = createMessageAccumulator;

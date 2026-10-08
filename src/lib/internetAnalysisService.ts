@@ -353,7 +353,62 @@ function getToolResultErrors(content: unknown): string[] {
     .filter(Boolean);
 }
 
-export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promise<void> {
+/** What the model is doing right now, read from the live stream of its answer. */
+export interface AnalysisLive {
+  searches: string[]; // web search queries, in the order they were made
+  sources: string[];  // sites the searches returned
+  text: string;       // the answer written so far
+}
+
+function hostOf(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return null; }
+}
+
+/** Follows the stream, reporting searches, sources and the growing answer; resolves with the complete message. */
+async function followStream(stream: Anthropic.MessageStream, onLive?: (live: AnalysisLive) => void): Promise<Anthropic.Message> {
+  const live: AnalysisLive = { searches: [], sources: [], text: '' };
+  const toolInput: Record<number, string> = {};
+  let lastEmit = 0;
+  const emit = (force = false) => {
+    if (!onLive) return;
+    const now = Date.now();
+    if (!force && now - lastEmit < 120) return;
+    lastEmit = now;
+    onLive({ searches: [...live.searches], sources: [...live.sources], text: live.text });
+  };
+  const addUnique = (list: string[], value: string | null) => {
+    if (value && !list.includes(value)) list.push(value);
+  };
+
+  for await (const raw of stream as unknown as AsyncIterable<any>) {
+    if (raw.type === 'content_block_start') {
+      const block = raw.content_block || {};
+      if (block.type === 'server_tool_use') {
+        toolInput[raw.index] = '';
+        if (typeof block.input?.query === 'string') addUnique(live.searches, block.input.query.trim());
+      } else if (block.type === 'web_search_tool_result' && Array.isArray(block.content)) {
+        for (const result of block.content) addUnique(live.sources, hostOf(result?.url));
+      }
+      emit(true);
+    } else if (raw.type === 'content_block_delta') {
+      const delta = raw.delta || {};
+      if (delta.type === 'text_delta') live.text += delta.text || '';
+      else if (delta.type === 'input_json_delta' && raw.index in toolInput) toolInput[raw.index] += delta.partial_json || '';
+      emit();
+    } else if (raw.type === 'content_block_stop' && toolInput[raw.index]) {
+      const json = toolInput[raw.index];
+      delete toolInput[raw.index];
+      // a search made directly carries {query}; searches made from the model's own code carry it inside that code
+      for (const match of json.matchAll(/query\\?["']?\s*[:=]\s*\\?["']([^"'\\]{3,200})/g)) addUnique(live.searches, match[1].trim());
+      emit(true);
+    }
+  }
+  emit(true);
+  return stream.finalMessage();
+}
+
+export async function runInternetAnalysis(analysisId: InternetAnalysisId, onLive?: (live: AnalysisLive) => void): Promise<void> {
   if (inFlightAnalyses.has(analysisId)) {
     throw new Error('Ši analizė jau vykdoma. Palaukite kol baigsis.');
   }
@@ -376,12 +431,12 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
 
     const maxTokens = 8000; // the limit also covers the model's reasoning; at 4000 the events report was cut off mid-JSON
 
-    const response = await client.messages.create({
+    const response = await followStream(client.messages.stream({
       model,
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
       ...(tools.length > 0 ? { tools } : {}),
-    });
+    }), onLive);
 
     const toolErrors = getToolResultErrors(response.content);
     if (toolErrors.length > 0) {
