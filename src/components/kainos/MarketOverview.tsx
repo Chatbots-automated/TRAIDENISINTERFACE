@@ -18,6 +18,7 @@ interface Row {
   forecast: number | null;
   forecastDate: string | null;
   changePct: number | null;
+  reasoning: string;
 }
 
 const fmt = (v: number) => v.toLocaleString('lt-LT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -28,12 +29,13 @@ const tone = (pct: number | null) => (pct === null || Math.abs(pct) < FLAT_PCT ?
 export function analysisNarrative(content: string): string {
   const raw = (content || '').trim();
   if (!raw) return '';
-  if (raw.startsWith('{')) {
-    try {
-      const payload = JSON.parse(raw) as { analysis_markdown?: unknown };
-      return typeof payload.analysis_markdown === 'string' ? payload.analysis_markdown.trim() : '';
-    } catch { /* not pure JSON: treat as text */ }
-  }
+  try {
+    const payload = extractJsonPayload(raw) as { analysis_markdown?: unknown } | null;
+    if (payload && typeof payload === 'object' && typeof payload.analysis_markdown === 'string' && payload.analysis_markdown.trim()) {
+      return payload.analysis_markdown.trim();
+    }
+  } catch { /* no JSON in the text */ }
+  if (raw.startsWith('{')) return '';
   return raw.replace(/```(?:json)?\s*[\s\S]*?"forecasts"[\s\S]*?```/gi, '').trim();
 }
 
@@ -62,6 +64,7 @@ export function MarketOverview({ medziagas, istorija, content, dateUpdated }: {
         forecast: point?.kaina ?? null,
         forecastDate: point?.data ?? null,
         changePct: last && point ? ((point.kaina - last) / last) * 100 : null,
+        reasoning: (point?.reasoning || '').trim(),
       };
     });
   }, [medziagas, istorija, content]);
@@ -126,6 +129,7 @@ export function MarketOverview({ medziagas, istorija, content, dateUpdated }: {
                   <td className="px-3 py-2">
                     <span style={{ color: '#3d3935' }}>{row.material.pavadinimas}</span>
                     <span className="ml-1.5 text-[10px]" style={{ color: '#b0aba4' }}>{row.material.artikulas} · {row.material.vienetas}</span>
+                    {row.reasoning && <span className="block text-[11px] leading-snug mt-0.5" style={{ color: '#8a857f' }}>{row.reasoning}</span>}
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <span className="font-mono" style={{ color: '#3d3935' }}>{row.last !== null ? fmt(row.last) : '—'}</span>
