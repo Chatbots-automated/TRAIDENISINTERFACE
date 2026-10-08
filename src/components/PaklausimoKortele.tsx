@@ -117,14 +117,14 @@ function useProcessing(recordId: number, key: ProcessKey) {
 type PriceEstimateModeMap = Partial<Record<MaterialEstimatePriceMode, string>>;
 
 const PRICE_ESTIMATE_MODE_LABELS: Record<MaterialEstimatePriceMode, string> = {
-  current: 'Dabartinė',
-  math: 'Matematinė',
+  current: 'Be DI',
+  math: 'Be DI', // no longer offered: it gave the same prices as 'current'
   ai: 'Su DI',
 };
 
 const PRICE_ESTIMATE_RESPONSE_LABELS: Record<MaterialEstimatePriceMode, string> = {
   current: 'Įvertinimas pagal paskutinias turimas kainas',
-  math: 'Įvertinimas pagal matematinį kainų numatymą',
+  math: 'Įvertinimas pagal paskutinias turimas kainas',
   ai: 'Įvertinimas pagal DI kainų numatymą',
 };
 
@@ -1374,7 +1374,7 @@ function TabTalpos({
         current_tank_specs: currentTankSpecs,
         similar_tanks: similarTanksPayload,
         material_prices: materialPrices,
-        material_price_source: predictionMode === 'ai' ? 'Su DI' : predictionMode === 'math' ? 'Matematinė' : 'Dabartinė',
+        material_price_source: predictionMode === 'ai' ? 'Su DI' : 'Be DI',
       });
       const respText = typeof respData === 'string' ? respData : JSON.stringify(respData);
 
@@ -4074,12 +4074,14 @@ function TabMedziagos({
     () => parsePriceEstimateModeMap(currentTalposRow?.kaina_ai),
     [currentTalposRow?.kaina_ai],
   );
-  const activeEstimateText = localKainaAiText?.[predictionMode] ?? persistedEstimateMap[predictionMode] ?? null;
+  // estimates saved earlier under the removed 'Matematinė' mode are shown under 'Be DI'
+  const activeEstimateText = localKainaAiText?.[predictionMode] ?? persistedEstimateMap[predictionMode]
+    ?? (predictionMode === 'current' ? persistedEstimateMap.math ?? null : null);
   const legacyJsonEstimate = (() => {
     const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text;
     return typeof v === 'string' && v.trim() ? v.trim() : null;
   })();
-  const aiText: unknown = activeEstimateText ?? (predictionMode === 'math' ? legacyJsonEstimate : null);
+  const aiText: unknown = activeEstimateText ?? (predictionMode === 'current' ? legacyJsonEstimate : null);
 
   /** Render material slate data. New template selections keep the raw template text. */
   const renderSlateData = (data: Record<string, any>) => {
@@ -4400,14 +4402,14 @@ function TabMedziagos({
           {/* Price source mode toggle */}
           <div className="flex items-center gap-1 mb-2 shrink-0">
             <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
-              {(['current', 'math', 'ai'] as const).map(m => (
+              {(['current', 'ai'] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setPredictionMode(m)}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${predictionMode === m ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
                   style={predictionMode === m ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
                 >
-                  {m === 'current' ? 'Dabartinė' : m === 'math' ? 'Matematinė' : 'Su DI'}
+                  {m === 'current' ? 'Be DI' : 'Su DI'}
                 </button>
               ))}
             </div>
