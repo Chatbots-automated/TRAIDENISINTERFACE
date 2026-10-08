@@ -444,7 +444,21 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
                   const end = [...points].reverse().find(p => p.predicted !== undefined);
                   return end && end.label !== prediction.paskutine_data ? (
                     <ReferenceArea x1={prediction.paskutine_data} x2={end.label} y1={prediction.nuo} y2={prediction.iki}
-                      fill="#007AFF" fillOpacity={0.08} stroke="none" ifOverflow="extendDomain" />
+                      ifOverflow="extendDomain"
+                      shape={({ x, y, width, height }: any) => {
+                        // a cone: no uncertainty at the last known price, widening to the full range at the forecast date
+                        const mid = y + height / 2;
+                        return (
+                          <g>
+                            <path d={`M ${x},${mid} L ${x + width},${y} L ${x + width},${y + height} Z`} fill="#007AFF" fillOpacity={0.10} />
+                            <path d={`M ${x},${mid} L ${x + width},${y} M ${x},${mid} L ${x + width},${y + height}`}
+                              fill="none" stroke="#007AFF" strokeOpacity={0.35} strokeWidth={1} />
+                            <line x1={x + width - 4} x2={x + width + 4} y1={y} y2={y} stroke="#007AFF" strokeOpacity={0.6} strokeWidth={1.5} />
+                            <line x1={x + width - 4} x2={x + width + 4} y1={y + height} y2={y + height} stroke="#007AFF" strokeOpacity={0.6} strokeWidth={1.5} />
+                            <circle cx={x + width} cy={mid} r={4.5} fill="#007AFF" stroke="white" strokeWidth={2} />
+                          </g>
+                        );
+                      }} />
                   ) : null;
                 })()}
                 {/* Actual price line */}
@@ -462,7 +476,8 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
                   <Line
                     type="monotone"
                     dataKey="predicted"
-                    stroke="url(#predGradient)"
+                    stroke="#007AFF"
+                    strokeOpacity={0.8}
                     strokeWidth={2}
                     strokeDasharray="6 3"
                     dot={false}
@@ -503,15 +518,6 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
                     </feMerge>
                   </filter>
                 </defs>
-                {/* Prediction endpoint — pulsing glow dot */}
-                {prediction && projectionsVisible && points.length > 0 && (() => {
-                  const predPoint = [...points].reverse().find(p => p.predicted !== undefined);
-                  return predPoint ? (
-                    <ReferenceDot x={predPoint.label} y={predPoint.predicted!} r={0} fill="transparent" stroke="transparent">
-                      <circle r={5} fill="#007AFF" stroke="white" strokeWidth={2} filter="url(#predGlow)" className="prediction-dot" />
-                    </ReferenceDot>
-                  ) : null;
-                })()}
                 {/* AI prediction endpoint — purple dot */}
                 {aiPredSeries.length > 0 && projectionsVisible && (() => {
                   const aiPoint = [...points].reverse().find(p => p.aiPredicted !== undefined && p.kaina === null);
