@@ -184,16 +184,18 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     const oil = internetAnalyses.nafta?.date_updated;
     const events = internetAnalyses.politika?.date_updated;
     const forecast = internetAnalyses.kainos?.date_updated;
-    if (!oil || !events) return 'Pirma sugeneruokite „Nafta ir stirenas“ ir „Rinkos įvykiai“.';
+    if (!oil && !events) return 'Pirma atnaujinkite „Nafta ir stirenas“ ir „Rinkos įvykiai“.';
+    if (!oil) return 'Pirma atnaujinkite „Nafta ir stirenas“.';
+    if (!events) return 'Pirma atnaujinkite „Rinkos įvykiai“.';
     if (day(oil) !== day(events)) {
-      return `„Nafta ir stirenas“ (${day(oil)}) ir „Rinkos įvykiai“ (${day(events)}) turi būti tos pačios dienos. Atnaujinkite senesnę.`;
+      return `Pirma atnaujinkite „${new Date(oil).getTime() < new Date(events).getTime() ? 'Nafta ir stirenas' : 'Rinkos įvykiai'}“.`;
     }
     if (!forecast) return null;
     const forecastTime = new Date(forecast).getTime();
     const inputsChanged = new Date(oil).getTime() > forecastTime
       || new Date(events).getTime() > forecastTime
       || istorija.some(e => e.sukurta_at && new Date(e.sukurta_at).getTime() > forecastTime);
-    return inputsChanged ? null : 'Prognozė jau sugeneruota iš šių duomenų. Pirma atnaujinkite „Nafta ir stirenas“ ir „Rinkos įvykiai“.';
+    return inputsChanged ? null : 'Prognozė jau nauja. Pirma atnaujinkite kitas dvi analizes.';
   }, [internetAnalyses, istorija]);
 
   const generateSingleAnalysis = useCallback(async (section: 'nafta' | 'geo' | 'analysis') => {
