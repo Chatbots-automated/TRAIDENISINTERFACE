@@ -9,6 +9,7 @@ import type { AiPrediction, ChartPoint } from './forecastParsing';
 
 const AI_STALE_DAYS = 30;
 const PRICE_STALE_DAYS = 90;
+const FEW_ENTRIES = 6; // below this the chart says little and the forecast is a guess
 
 export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analysisContent: string; analysisDate?: string | null; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
@@ -360,6 +361,14 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
               <span className="text-[10px] ml-1.5" style={{ color: '#b0aba4' }}>{material.artikulas} · {material.vienetas}</span>
             </div>
             <div className="flex items-center gap-3">
+              {entries.length < FEW_ENTRIES && (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-medium" style={{ color: '#b45309' }}
+                  title="Kuo daugiau kainų įvesta, tuo tikslesnė prognozė. Naujas kainas įveskite skiltyje „Kainų lentelė“.">
+                  <span className="inline-flex items-center justify-center rounded-full font-bold"
+                    style={{ width: 15, height: 15, background: '#f59e0b', color: 'white', fontSize: 10, lineHeight: 1 }}>!</span>
+                  Mažai kainų – įveskite daugiau
+                </span>
+              )}
               <span className="text-[10px]" style={{ color: '#8a857f' }}>
                 {entries.length} įraš{entries.length === 1 ? 'as' : 'ai'}
               </span>
