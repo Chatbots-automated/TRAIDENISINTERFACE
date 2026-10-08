@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiKainaByIds,
@@ -22,6 +22,7 @@ import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { callWebhook } from '../lib/webhooksService';
+import { getCurrentUser } from '../lib/database';
 import { fetchMaterialPricesForEstimatePayload } from '../lib/kainosService';
 import type { MaterialEstimatePriceMode, MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
 import { fetchSablonai } from '../lib/sablonaiService';
@@ -704,6 +705,14 @@ function TabTalpos({
   const [similarSearching, setSimilarSearching] = useState<Record<number, boolean>>({});
   const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
   const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
+  // Similar-tank verdicts ("panaši" / "nepanaši") — collected to evaluate and tune the search
+  const [similarVoteSaving, setSimilarVoteSaving] = useState<Record<string, boolean>>({});
+  const [similarVoter, setSimilarVoter] = useState<{ id: string; name: string | null; email: string | null } | null>(null);
+  useEffect(() => {
+    getCurrentUser().then(({ user }: any) => {
+      if (user?.id) setSimilarVoter({ id: String(user.id), name: user.full_name || user.display_name || null, email: user.email || null });
+    }).catch(() => {});
+  }, []);
 
   // Price estimation state (per-idx)
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
@@ -930,6 +939,33 @@ function TabTalpos({
       console.error('Error adding talpos field:', e);
     } finally {
       setAddingKv(false);
+    }
+  };
+
+  const rateSimilar = async (candidateId: string, verdict: 'panasi' | 'nepanasi') => {
+    if (!currentTalposId || !candidateId || !displayedSimilar) return;
+    const previous = displayedSimilar;
+    const current = previous.find((r: any) => String(r.id) === String(candidateId))?.vertinimas ?? null;
+    const next = current === verdict ? null : verdict; // clicking the active button removes the verdict
+    const apply = (list: any[]) => {
+      setLocalSimilarResults(prev => ({ ...prev, [idx]: list }));
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, similar_talpos: list } : r)));
+    };
+    apply(previous.map((r: any) => (String(r.id) === String(candidateId) ? { ...r, vertinimas: next } : r)));
+    setSimilarVoteSaving(prev => ({ ...prev, [candidateId]: true }));
+    try {
+      const saved: any = await callWebhook('similar_tanks_feedback', {
+        talpa_id: currentTalposId,
+        candidate_id: candidateId,
+        vertinimas: next,
+        user: similarVoter,
+      });
+      if (Array.isArray(saved?.similar_talpos) && saved.similar_talpos.length) apply(saved.similar_talpos);
+    } catch (e: any) {
+      apply(previous);
+      setSimilarError(prev => ({ ...prev, [idx]: 'Nepavyko išsaugoti vertinimo' }));
+    } finally {
+      setSimilarVoteSaving(prev => ({ ...prev, [candidateId]: false }));
     }
   };
 
@@ -1611,6 +1647,30 @@ function TabTalpos({
                           const projectId = item.project || item.project_id || null;
                           const talposUuid = item.id || null;
                           const kaina = item.kaina != null ? Number(item.kaina) : null;
+                          const verdict: string | null = item.vertinimas ?? null;
+                          const whyText: string = item.comment || (Array.isArray(item.reasons) ? item.reasons.join('; ') : '');
+                          const voteButton = (value: 'panasi' | 'nepanasi') => {
+                            const active = verdict === value;
+                            const Icon = value === 'panasi' ? ThumbsUp : ThumbsDown;
+                            const activeClass = value === 'panasi'
+                              ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30'
+                              : 'bg-rose-500/15 text-rose-600 border-rose-500/30';
+                            return (
+                              <button
+                                type="button"
+                                title={value === 'panasi' ? 'Panaši talpa' : 'Nepanaši talpa'}
+                                aria-label={value === 'panasi' ? 'Panaši talpa' : 'Nepanaši talpa'}
+                                aria-pressed={active}
+                                disabled={!talposUuid || !!similarVoteSaving[talposUuid]}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (talposUuid) rateSimilar(talposUuid, value); }}
+                                className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-md border transition-colors disabled:opacity-40 ${
+                                  active ? activeClass : 'border-base-content/10 text-base-content/30 hover:text-base-content/70 hover:border-base-content/25'
+                                }`}
+                              >
+                                <Icon className="w-3 h-3" />
+                              </button>
+                            );
+                          };
                           const href = projectId && talposUuid
                             ? `/paklausimas/${projectId}?talpa=${talposUuid}`
                             : projectId ? `/paklausimas/${projectId}` : null;
@@ -1621,12 +1681,18 @@ function TabTalpos({
                                   {Math.round(Number(score) * 100)}%
                                 </span>
                               )}
-                              <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0">
+                              <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0" title={whyText || undefined}>
                                 {displayName || `Talpa ${i + 1}`}
                               </p>
                               {kaina !== null && !isNaN(kaina) && (
                                 <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
                                   <Euro className="w-2.5 h-2.5" />{kaina.toLocaleString('lt-LT')}
+                                </span>
+                              )}
+                              {talposUuid && (
+                                <span className="shrink-0 inline-flex items-center gap-1">
+                                  {voteButton('panasi')}
+                                  {voteButton('nepanasi')}
                                 </span>
                               )}
                               {href && <ExternalLink className="w-3 h-3 shrink-0 text-base-content/25" />}

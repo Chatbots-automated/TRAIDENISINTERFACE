@@ -21,6 +21,7 @@ const ALLOWED_WEBHOOK_KEYS = new Set([
   'n8n_get_multiplier',
   'n8n_derva_vectorize',
   'n8n_similar_tanks',
+  'similar_tanks_feedback',
   'n8n_update_talpos_description',
   'n8n_price_estimation',
   'n8n_derva_select',
