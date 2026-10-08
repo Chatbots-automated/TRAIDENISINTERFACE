@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown, MailCheck,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown, MailCheck, HelpCircle, Copy,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiKainaByIds,
@@ -897,19 +897,24 @@ function TabTalpos({
 
   // Intake checks: each one points at a row of the tank (`laukas`) and remembers the value seen at intake (`reiksme`).
   // A check is resolved when the user ticks it off or changes that value (filling a gap counts).
-  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; isspresta?: boolean };
+  // sprendimas: 'gerai' = the value is right as it stands; 'klausti' = ask the client (stays on the question list)
+  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; siulymas: string; klausimas: string; sprendimas: 'gerai' | 'klausti' | null; changed: boolean };
   const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
   const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
   const intakeIssues: IntakeIssue[] = useMemo(() => (Array.isArray(jsonRoot.tikrinti) ? jsonRoot.tikrinti : [])
     .map((raw: any, index: number) => ({
       index, laukas: typeof raw?.laukas === 'string' ? raw.laukas : null, tipas: String(raw?.tipas || ''), tekstas: String(raw?.tekstas || ''),
-      reiksme: String(raw?.reiksme ?? ''), isspresta: !!raw?.isspresta,
+      reiksme: String(raw?.reiksme ?? ''), siulymas: String(raw?.siulymas ?? ''), klausimas: String(raw?.klausimas ?? ''),
+      sprendimas: raw?.sprendimas === 'klausti' ? 'klausti' : (raw?.sprendimas === 'gerai' || raw?.isspresta) ? 'gerai' : null,
+      changed: typeof raw?.laukas === 'string' && String(talpaObj[raw.laukas] ?? '').trim() !== String(raw?.reiksme ?? '').trim(),
     }))
-    .filter((issue: IntakeIssue) => issue.tekstas), [jsonRoot]);
-  const openIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue =>
-    !issue.isspresta && !(issue.laukas && String(talpaObj[issue.laukas] ?? '').trim() !== issue.reiksme.trim())
-  ), [intakeIssues, talpaObj]);
-  const flaggedKeys = useMemo(() => new Set(openIssues.map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues]);
+    .filter((issue: IntakeIssue) => issue.tekstas), [jsonRoot, talpaObj]);
+  const openIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && !issue.sprendimas), [intakeIssues]);
+  const askIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && issue.sprendimas === 'klausti'), [intakeIssues]);
+  // rows that carry a marker: still open, or waiting for the client's answer
+  const flaggedKeys = useMemo(() => new Set([...openIssues, ...askIssues].map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues, askIssues]);
+  const [openBubble, setOpenBubble] = useState<number | null>(null);
+  const [questionsCopied, setQuestionsCopied] = useState(false);
 
   // What the list shows: project-level keys hidden, the tank object split into groups, empty rows hidden by default
   const [showEmptyKv, setShowEmptyKv] = useState(false);
@@ -938,12 +943,17 @@ function TabTalpos({
   }, [kvEntries, showEmptyKv, editingKvKey, flaggedKeys]);
 
   // Tank summary + intake check
-  const resolveIssue = async (issueIndex: number, on: boolean) => {
+  const resolveIssue = async (issueIndex: number, sprendimas: 'gerai' | 'klausti' | null) => {
     if (!currentTalposId || !Array.isArray(jsonRoot.tikrinti)) return;
     const newJsonObj: Record<string, any> = {
       ...jsonRoot,
-      tikrinti: jsonRoot.tikrinti.map((raw: any, i: number) => (i === issueIndex ? { ...raw, isspresta: on } : raw)),
+      tikrinti: jsonRoot.tikrinti.map((raw: any, i: number) => {
+        if (i !== issueIndex) return raw;
+        const { isspresta: _old, ...rest } = raw || {};
+        return { ...rest, sprendimas };
+      }),
     };
+    setOpenBubble(null);
     try {
       await updateTalposField(currentTalposId, 'json', newJsonObj);
       setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r)));
@@ -951,10 +961,14 @@ function TabTalpos({
       console.error('Error resolving intake check:', e);
     }
   };
+  const copyQuestions = async () => {
+    const text = askIssues.map((issue, i) => `${i + 1}. ${issue.klausimas || issue.tekstas}`).join('\n');
+    try { await navigator.clipboard.writeText(text); setQuestionsCopied(true); setTimeout(() => setQuestionsCopied(false), 2500); } catch { /* clipboard unavailable */ }
+  };
   const goToIssue = (issue: IntakeIssue) => {
     if (!issue.laukas) return;
     setSubTab('parametrai');
-    if (!readOnly) { setEditingKvKey(`talpa::${issue.laukas}`); setEditingKvValue(String(talpaObj[issue.laukas] ?? '')); }
+    setOpenBubble(issue.index);
     setTimeout(() => document.getElementById(`kv-talpa-${issue.laukas}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
   };
   const missingText: string = typeof talpaObj['Trūksta_duomenų'] === 'string' ? talpaObj['Trūksta_duomenų'] : '';
@@ -1515,15 +1529,18 @@ function TabTalpos({
                 <div className="mt-1.5">
                   <p className="text-[11px] text-base-content/55">
                     {openIssues.length > 0
-                      ? `Liko patikrinti: ${openIssues.length} iš ${intakeIssues.length}. Paryškinti laukai parametrų sąraše – spustelėkite, kad pataisytumėte, arba pažymėkite „Gerai“.`
-                      : `Visi ${intakeIssues.length} pažymėti laukai patikrinti.`}
+                      ? `Liko patikrinti: ${openIssues.length} iš ${intakeIssues.length}. Laukai pažymėti oranžiniu ženklu – spustelėkite jį ir pasirinkite, ką daryti.`
+                      : askIssues.length > 0
+                        ? `Visi laukai peržiūrėti; ${askIssues.length} laukia kliento atsakymo.`
+                        : `Visi ${intakeIssues.length} pažymėti laukai patikrinti.`}
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {intakeIssues.map(issue => {
                       const open = openIssues.some(o => o.index === issue.index);
+                      const asking = askIssues.some(o => o.index === issue.index);
                       const label = issue.laukas ? talpaLabel(issue.laukas) : 'Kita';
                       return (
-                        <span key={issue.index} className={`inline-flex items-center gap-1 rounded-lg border text-[11px] ${open ? 'border-amber-500/40 bg-white text-amber-900' : 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700'}`}>
+                        <span key={issue.index} className={`inline-flex items-center gap-1 rounded-lg border text-[11px] ${open ? 'border-amber-500/40 bg-white text-amber-900' : asking ? 'border-sky-500/30 bg-sky-500/5 text-sky-700' : 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700'}`}>
                           <button
                             type="button"
                             onClick={() => goToIssue(issue)}
@@ -1531,17 +1548,30 @@ function TabTalpos({
                             title={issue.tekstas}
                             className={`pl-2 py-0.5 font-medium ${issue.laukas ? 'hover:underline' : 'cursor-default'}`}
                           >
-                            {open ? '' : '✓ '}{label}{issue.laukas ? '' : `: ${issue.tekstas}`}
+                            {open ? '' : asking ? '? ' : '✓ '}{label}{issue.laukas ? '' : `: ${issue.tekstas}`}
                           </button>
-                          {!readOnly && (issue.isspresta || !issue.laukas) ? (
-                            <button type="button" onClick={() => resolveIssue(issue.index, !issue.isspresta)} className="pr-1.5 pl-0.5 text-base-content/40 hover:text-base-content/80" title={issue.isspresta ? 'Grąžinti' : 'Pažymėti kaip patikrintą'}>
-                              {issue.isspresta ? <X className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+                          {!readOnly && (issue.sprendimas || !issue.laukas) && !issue.changed ? (
+                            <button type="button" onClick={() => resolveIssue(issue.index, issue.sprendimas ? null : 'gerai')} className="pr-1.5 pl-0.5 text-base-content/40 hover:text-base-content/80" title={issue.sprendimas ? 'Grąžinti' : 'Pažymėti kaip patikrintą'}>
+                              {issue.sprendimas ? <X className="w-3 h-3" /> : <Check className="w-3 h-3" />}
                             </button>
                           ) : <span className="pr-2" />}
                         </span>
                       );
                     })}
                   </div>
+                  {askIssues.length > 0 && (
+                    <div className="mt-2 rounded-lg border border-sky-500/20 bg-white/70 px-2.5 py-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                        <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
+                          {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
+                        </button>
+                      </div>
+                      <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                        {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                      </ol>
+                    </div>
+                  )}
                 </div>
               )}
               {!hasStructuredIssues && missingText && (
@@ -1655,7 +1685,8 @@ function TabTalpos({
                               {/* Group rows */}
                               {(entry.keys ? entry.keys.map(k => [k, entry.obj[k]] as [string, any]) : Object.entries(entry.obj)).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
-                                const rowIssues = entry.key === 'talpa' ? openIssues.filter(issue => issue.laukas === ck) : [];
+                                const rowIssues = entry.key === 'talpa' ? [...openIssues, ...askIssues].filter(issue => issue.laukas === ck) : [];
+                                const rowAsking = rowIssues.length > 0 && rowIssues.every(issue => issue.sprendimas === 'klausti');
                                 const normalizedCv = normalizeDisplayData(cv);
                                 const displayVal = normalizedCv.kind === 'scalar'
                                   ? normalizedCv.value
@@ -1663,8 +1694,8 @@ function TabTalpos({
                                     ? normalizedCv.text
                                     : '';
                                 return (
-                                  <div key={editKey} id={entry.key === 'talpa' ? `kv-talpa-${ck}` : undefined} className={`group grid grid-cols-[92px_minmax(0,1fr)] gap-2 rounded-lg px-2.5 py-2 transition-colors ${rowIssues.length ? 'bg-amber-500/10 ring-1 ring-amber-500/40' : 'hover:bg-black/[0.025]'}`}>
-                                    <span className={`text-[11px] shrink-0 font-medium pt-px ${rowIssues.length ? 'text-amber-700' : 'text-base-content/45'}`} title={entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}>
+                                  <div key={editKey} id={entry.key === 'talpa' ? `kv-talpa-${ck}` : undefined} className={`group grid ${rowIssues.length ? 'grid-cols-[92px_minmax(0,1fr)_20px]' : 'grid-cols-[92px_minmax(0,1fr)]'} gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-black/[0.025]`}>
+                                    <span className="text-[11px] shrink-0 font-medium pt-px text-base-content/45" title={entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}>
                                       {entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
@@ -1696,7 +1727,7 @@ function TabTalpos({
                                             title={displayVal || undefined}
                                           >
                                             {displayVal || (rowIssues.length
-                                              ? <span className="text-amber-700/80 font-normal italic">{readOnly ? 'nenurodyta' : 'Įveskite reikšmę'}</span>
+                                              ? <span className="text-base-content/35 font-normal italic">nenurodyta</span>
                                               : <span className="text-base-content/25">—</span>)}
                                           </span>
                                         ) : (
@@ -1704,23 +1735,62 @@ function TabTalpos({
                                         )}
                                       </div>
                                     )}
-                                    {rowIssues.map(issue => (
-                                      <div key={issue.index} className="col-span-2 flex items-start justify-between gap-2 -mt-0.5">
-                                        <p className="text-[11px] leading-snug text-amber-800/90">
-                                          <span className="font-semibold">{issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>{issue.tekstas}
-                                        </p>
-                                        {!readOnly && (
-                                          <button
-                                            type="button"
-                                            onClick={() => resolveIssue(issue.index, true)}
-                                            title="Reikšmė teisinga – pažymėti kaip patikrintą"
-                                            className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md border border-amber-600/30 bg-white text-amber-800 hover:bg-amber-500/10"
-                                          >
-                                            <Check className="w-3 h-3" /> Gerai
-                                          </button>
-                                        )}
-                                      </div>
-                                    ))}
+                                    {rowIssues.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setOpenBubble(openBubble === rowIssues[0].index ? null : rowIssues[0].index)}
+                                        title={rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        aria-label={rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        aria-expanded={rowIssues.some(issue => issue.index === openBubble)}
+                                        className={`self-start justify-self-end rounded-full transition-colors ${rowAsking ? 'text-sky-500 hover:text-sky-600' : 'text-amber-500 hover:text-amber-600'}`}
+                                      >
+                                        {rowAsking ? <HelpCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                      </button>
+                                    )}
+                                    {rowIssues.filter(issue => issue.index === openBubble || rowIssues[0].index === openBubble).map(issue => {
+                                      const asking = issue.sprendimas === 'klausti';
+                                      const empty = !String(cv ?? '').trim();
+                                      const action = 'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg border bg-white transition-colors';
+                                      return (
+                                        <div key={issue.index} className={`col-span-3 relative rounded-2xl rounded-tr-sm border px-3 py-2 ${asking ? 'border-sky-500/30 bg-sky-500/5' : 'border-amber-500/40 bg-amber-500/10'}`}>
+                                          <p className="text-[11px] leading-snug text-base-content/80">
+                                            <span className="font-semibold">{asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
+                                            {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
+                                          </p>
+                                          {!readOnly && (
+                                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                              {issue.siulymas && issue.siulymas !== String(cv ?? '') && (
+                                                <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.siulymas, entry.obj, true); }} className={`${action} border-amber-600/30 text-amber-900 hover:bg-amber-500/10`}>
+                                                  Pakeisti į „{issue.siulymas}“
+                                                </button>
+                                              )}
+                                              <button type="button" onClick={() => { setOpenBubble(null); setEditingKvKey(editKey); setEditingKvValue(displayVal); }} className={`${action} border-base-content/15 text-base-content/70 hover:text-primary hover:border-primary/30`}>
+                                                <Pencil className="w-3 h-3" /> {empty ? 'Įvesti reikšmę' : 'Įvesti kitą'}
+                                              </button>
+                                              {!empty && !asking && (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10`}>
+                                                  <Check className="w-3 h-3" /> Palikti „{displayVal.length > 18 ? `${displayVal.slice(0, 18)}…` : displayVal}“
+                                                </button>
+                                              )}
+                                              {!asking ? (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'klausti')} className={`${action} border-sky-500/30 text-sky-700 hover:bg-sky-500/10`}>
+                                                  <HelpCircle className="w-3 h-3" /> Klausti kliento
+                                                </button>
+                                              ) : (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} border-base-content/15 text-base-content/50 hover:text-base-content/80`}>
+                                                  Nebeklausti
+                                                </button>
+                                              )}
+                                              {empty && !asking && (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} border-base-content/15 text-base-content/50 hover:text-base-content/80`}>
+                                                  Nereikia
+                                                </button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 );
                               })}
