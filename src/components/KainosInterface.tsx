@@ -65,13 +65,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'lentele' | 'sablonai' | 'grafa' | 'analize'>(() => {
-    const hash = window.location.hash.replace('#', '') as 'lentele' | 'sablonai' | 'grafa' | 'analize';
-    return ['lentele', 'sablonai', 'grafa', 'analize'].includes(hash) ? hash : 'lentele';
+    // the URL hash wins (a shared link opens its tab); the remembered tab covers a refresh that lost the hash
+    const tabs = ['lentele', 'sablonai', 'grafa', 'analize'];
+    const hash = window.location.hash.replace('#', '');
+    const saved = localStorage.getItem('traidenis_kainos_tab') || '';
+    return (tabs.includes(hash) ? hash : tabs.includes(saved) ? saved : 'lentele') as 'lentele' | 'sablonai' | 'grafa' | 'analize';
   });
 
-  // Persist active tab in URL hash
+  // Persist active tab in URL hash and for the next visit
   useEffect(() => {
     window.location.hash = activeTab;
+    localStorage.setItem('traidenis_kainos_tab', activeTab);
   }, [activeTab]);
 
   // ---- Excel import state ----
@@ -120,7 +124,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     missingForecastCodes: [],
     error: null,
   });
-  const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
+  const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>(() => {
+    const saved = localStorage.getItem('traidenis_kainos_analysis_section');
+    return saved === 'nafta' || saved === 'geo' || saved === 'analysis' ? saved : 'analysis';
+  });
+  useEffect(() => {
+    localStorage.setItem('traidenis_kainos_analysis_section', analysisFocus);
+  }, [analysisFocus]);
   const analysisFetchVersionRef = useRef(0);
   const [configWarning, setConfigWarning] = useState<{
     reason: string;
