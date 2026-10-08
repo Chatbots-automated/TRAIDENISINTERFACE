@@ -15,8 +15,12 @@ export function TankPartIcon({ part, vertical = false }: { part: TankPart; verti
   const clipId = useId();
   // the tank body: lying down, or standing when the card describes a vertical tank
   const body = vertical
-    ? { x: 13, y: 3, width: 18, height: 26, rx: 7, ry: 5 }
-    : { x: 3, y: 7, width: 38, height: 18, rx: 9, ry: 9 };
+    ? { x: 10, y: 3, width: 15, height: 26, rx: 6, ry: 4.5 }
+    : { x: 2, y: 9, width: 33, height: 15, rx: 7.5, ry: 7.5 };
+  // a service ladder beside the tank, from the ground to the top
+  const ladder = vertical ? { x: 29, top: 5, bottom: 29 } : { x: 39, top: 7.5, bottom: 24 };
+  const rungs: number[] = [];
+  for (let y = ladder.top + 2.2; y < ladder.bottom - 0.5; y += 3.4) rungs.push(y);
   const bottom = body.y + body.height;
   const level = body.y + body.height * 0.45;
   const wave = `M ${body.x} ${level} q ${body.width / 8} -2.2 ${body.width / 4} 0 t ${body.width / 4} 0 t ${body.width / 4} 0 t ${body.width / 4} 0 V ${bottom} H ${body.x} Z`;
@@ -42,6 +46,12 @@ export function TankPartIcon({ part, vertical = false }: { part: TankPart; verti
       )}
 
       <rect {...body} fill="none" stroke={part === 'derva' ? AMBER : part === 'kaina' ? '#8a857f' : LINE} strokeWidth={1.5} />
+
+      <g stroke={LINE} strokeWidth={1} strokeLinecap="round">
+        <line x1={ladder.x} y1={ladder.top} x2={ladder.x} y2={ladder.bottom} />
+        <line x1={ladder.x + 4} y1={ladder.top} x2={ladder.x + 4} y2={ladder.bottom} />
+        {rungs.map(y => <line key={y} x1={ladder.x} y1={y} x2={ladder.x + 4} y2={y} />)}
+      </g>
 
       {part === 'kaina' && (
         <text x={body.x + body.width / 2} y={body.y + body.height / 2 + 4.2} textAnchor="middle" fontSize="11" fontWeight={700} fill={BLUE}>€</text>
