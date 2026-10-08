@@ -19,6 +19,7 @@ import { sanitizeHtml } from '../lib/sanitizeHtml';
 import { AddMaterialModal, PriceModal } from './kainos/KainosModals';
 import { SablonaiTab } from './kainos/SablonaiTab';
 import { GrafaTab } from './kainos/GrafaTab';
+import { MarketOverview, analysisNarrative } from './kainos/MarketOverview';
 import {
   extractUrlCitationsFromText,
   getAnalysisMarkdownForDisplay,
@@ -688,10 +689,12 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
             <div className="px-5 pt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {([
-                  { key: 'nafta', label: 'Naftos analizė', sub: 'Žaliavos ir dervos ryšys', icon: BarChart2, confidence: 100 },
-                  { key: 'geo', label: 'Geopolitika', sub: 'Rinkos ir tiekimo sąlygos', icon: Globe, confidence: 100 },
-                  { key: 'analysis', label: 'Kainų prognozė', sub: 'Apibendrinta prognozė', icon: TrendingUp, confidence: 100 },
+                  { key: 'analysis', label: 'Kainų prognozė', sub: 'Kiek keisis medžiagų kainos', icon: TrendingUp, updated: internetAnalyses.kainos?.date_updated },
+                  { key: 'nafta', label: 'Nafta ir stirenas', sub: 'Žaliavos, nuo kurių priklauso dervos', icon: BarChart2, updated: internetAnalyses.nafta?.date_updated },
+                  { key: 'geo', label: 'Rinkos įvykiai', sub: 'Geopolitika ir tiekimas', icon: Globe, updated: internetAnalyses.politika?.date_updated },
                 ] as const).map((item) => {
+                  const ageDays = item.updated ? Math.floor((Date.now() - new Date(item.updated).getTime()) / 86400000) : null;
+                  const old = ageDays === null || ageDays > 30;
                   const active = analysisFocus === item.key;
                   const Icon = item.icon;
                   return (
@@ -708,8 +711,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           <p className="text-xs font-semibold truncate text-base-content">{item.label}</p>
                           <p className="text-[10px] text-base-content/45">{item.sub}</p>
                         </div>
-                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-base-content/[0.04] text-base-content/55">
-                          ~{Math.round(item.confidence)}%
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap"
+                          style={{ background: old ? 'rgba(217,119,6,0.10)' : 'rgba(22,163,74,0.10)', color: old ? '#b45309' : '#15803d' }}>
+                          {item.updated ? item.updated.slice(0, 10) : 'nėra'}
                         </span>
                       </div>
                     </button>
@@ -760,8 +764,19 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                             </div>
                           );
                         }
-                        const displayText = analysisFocus === 'analysis' ? replaceForecastJsonBlock(currentText) : currentText;
-                        return <div className="max-w-4xl">{renderMd(displayText)}</div>;
+                        if (analysisFocus !== 'analysis') return <div className="max-w-4xl">{renderMd(currentText)}</div>;
+                        const narrative = analysisNarrative(currentText);
+                        return (
+                          <div className="max-w-5xl">
+                            <MarketOverview medziagas={medziagas} istorija={istorija} content={currentText} dateUpdated={internetAnalyses.kainos?.date_updated} />
+                            {narrative ? (
+                              <>
+                                <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: '#8a857f' }}>Kas lemia kainas</p>
+                                {renderMd(narrative)}
+                              </>
+                            ) : renderMd(replaceForecastJsonBlock(currentText))}
+                          </div>
+                        );
                       })()}
                     </>
                   )}
