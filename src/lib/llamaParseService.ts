@@ -72,6 +72,8 @@ export interface ImageMetadata {
 export interface ParseOptions {
   tier: ParseTier;
   userPrompt?: string;
+  /** Pages to read, 1-based, e.g. "1-3,7"; empty = the whole document */
+  targetPages?: string;
   onJobStarted?: (job: ParseJobResponse) => void | Promise<void>;
   onJobProgress?: (result: ParseResult) => void | Promise<void>;
 }
@@ -311,7 +313,8 @@ export async function uploadDirectusFile(input: DirectusUploadInput): Promise<Up
 export async function startParse(
   fileId: string,
   tier: ParseTier = 'agentic',
-  userPrompt?: string
+  userPrompt?: string,
+  extra: { targetPages?: string; fileName?: string } = {}
 ): Promise<ParseJobResponse> {
   const body: Record<string, any> = {
     file_id: fileId,
@@ -321,6 +324,23 @@ export async function startParse(
 
   if (supportsParseInstructions(tier) && userPrompt?.trim()) {
     body.agentic_options = { custom_prompt: userPrompt.trim() };
+  }
+
+  const targetPages = (extra.targetPages || '').replace(/\s+/g, '');
+  if (/^\d+(-\d+)?(,\d+(-\d+)?)*$/.test(targetPages)) {
+    body.page_ranges = { target_pages: targetPages };
+  }
+
+  // Defaults chosen for the documents this page sees; none of them needs a decision from the user.
+  if (tier !== 'fast') {
+    // Lithuanian letters (ą č ę ė į š ų ū ž) in scans are misread without the language hint
+    body.processing_options = { ocr_parameters: { languages: ['lt', 'en', 'ru', 'de'] } };
+    // tables as markdown (the API default is HTML, which the text view cannot show), joined when they continue on the next page
+    body.output_options = { markdown: { tables: { output_tables_as_markdown: true, merge_continued_tables: true } } };
+    // a photo of a paper page: straighten and clean it before reading
+    if (/\.(jpe?g|png)$/i.test(extra.fileName || '')) {
+      body.input_options = { image: { camera_photo_correction: true } };
+    }
   }
 
   const res = await fetch(`${API_BASE}/api/v2/parse`, {
@@ -494,7 +514,7 @@ export async function parseDocument(
 
   // Step 2: Start parsing
   onStatus?.('Pradedamas apdorojimas...');
-  const job = await startParse(uploaded.id, options.tier, options.userPrompt);
+  const job = await startParse(uploaded.id, options.tier, options.userPrompt, { targetPages: options.targetPages, fileName: file.name });
   await options.onJobStarted?.(job);
 
   const jobId = job.id;
@@ -517,7 +537,7 @@ export async function parseDirectusDocument(
   const uploaded = await uploadDirectusFile(input);
 
   onStatus?.('Pradedamas apdorojimas...');
-  const job = await startParse(uploaded.id, options.tier, options.userPrompt);
+  const job = await startParse(uploaded.id, options.tier, options.userPrompt, { targetPages: options.targetPages, fileName: input.fileName });
   await options.onJobStarted?.(job);
 
   const result = await pollUntilDone(job.id, (status, statusResult) => {
