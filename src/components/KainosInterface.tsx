@@ -21,6 +21,7 @@ import { SablonaiTab } from './kainos/SablonaiTab';
 import { GrafaTab } from './kainos/GrafaTab';
 import { MarketOverview, analysisNarrative } from './kainos/MarketOverview';
 import { OilReport } from './kainos/OilReport';
+import { EventsReport } from './kainos/EventsReport';
 import {
   extractUrlCitationsFromText,
   getAnalysisMarkdownForDisplay,
@@ -45,6 +46,11 @@ interface KainosInterfaceProps { user: AppUser; }
 
 function OilReportOrText({ content, fallback }: { content: string; fallback: React.ReactNode }) {
   const report = OilReport({ content });
+  return <>{report ?? fallback}</>;
+}
+
+function EventsReportOrText({ content, fallback }: { content: string; fallback: React.ReactNode }) {
+  const report = EventsReport({ content });
   return <>{report ?? fallback}</>;
 }
 
@@ -805,7 +811,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           // structured report when the text can be read as one; otherwise the text as written
                           return <OilReportOrText content={currentText} fallback={<div className="max-w-4xl">{renderMd(currentText)}</div>} />;
                         }
-                        if (analysisFocus !== 'analysis') return <div className="max-w-4xl">{renderMd(currentText)}</div>;
+                        if (analysisFocus === 'geo') {
+                          return <EventsReportOrText content={currentText} fallback={<div className="max-w-4xl">{renderMd(currentText)}</div>} />;
+                        }
                         const narrative = analysisNarrative(currentText);
                         return (
                           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-x-8 gap-y-4 items-start">
