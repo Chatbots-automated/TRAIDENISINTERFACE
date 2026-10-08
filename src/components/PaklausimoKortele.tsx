@@ -1530,20 +1530,25 @@ function TabTalpos({
               )}
             </div>
           ) : (
-            <div className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+            <div className="mt-2 rounded-xl border border-base-content/8 bg-white/50 px-3 py-1.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-xs font-medium text-base-content/80 inline-flex items-center gap-1.5">
-                  <MailCheck className="w-3.5 h-3.5 text-amber-600" />
+                <p className="text-[11px] font-medium text-base-content/55 inline-flex items-center gap-1.5">
+                  <MailCheck className="w-3.5 h-3.5 text-amber-500/80" />
                   Patikrinkite, ką sistema nuskaitė iš laiško
+                  {hasStructuredIssues && (
+                    <span className="font-normal text-base-content/40">
+                      · {openIssues.length > 0 ? `liko ${openIssues.length} iš ${intakeIssues.length}` : askIssues.length > 0 ? `${askIssues.length} laukia kliento atsakymo` : 'viskas peržiūrėta'}
+                    </span>
+                  )}
                 </p>
                 <div className="flex items-center gap-1.5">
                   {onOpenFiles && (
-                    <button type="button" onClick={onOpenFiles} className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-base-content/10 bg-white text-base-content/60 hover:text-primary hover:border-primary/20">
+                    <button type="button" onClick={onOpenFiles} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg text-base-content/45 hover:text-primary hover:bg-primary/5">
                       <Paperclip className="w-3 h-3" /> Šaltiniai
                     </button>
                   )}
                   {!readOnly && (
-                    <button type="button" onClick={() => setReviewed(true)} disabled={reviewSaving} className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-white text-emerald-700 hover:bg-emerald-500/10 disabled:opacity-40">
+                    <button type="button" onClick={() => setReviewed(true)} disabled={reviewSaving} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg border border-base-content/10 bg-white text-base-content/60 hover:text-emerald-700 hover:border-emerald-500/30 disabled:opacity-40">
                       {reviewSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Duomenys teisingi
                     </button>
                   )}
@@ -1551,28 +1556,21 @@ function TabTalpos({
               </div>
               {hasStructuredIssues && (
                 <div className="mt-1.5">
-                  <p className="text-[11px] text-base-content/55">
-                    {openIssues.length > 0
-                      ? `Liko patikrinti: ${openIssues.length} iš ${intakeIssues.length}. Laukai pažymėti oranžiniu ženklu – spustelėkite jį ir pasirinkite, ką daryti.`
-                      : askIssues.length > 0
-                        ? `Visi laukai peržiūrėti; ${askIssues.length} laukia kliento atsakymo.`
-                        : `Visi ${intakeIssues.length} pažymėti laukai patikrinti.`}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {intakeIssues.map(issue => {
                       const open = openIssues.some(o => o.index === issue.index);
                       const asking = askIssues.some(o => o.index === issue.index);
                       const label = issue.laukas ? talpaLabel(issue.laukas) : 'Kita';
                       return (
-                        <span key={issue.index} className={`inline-flex items-center gap-1 rounded-lg border text-[11px] ${open ? 'border-amber-500/40 bg-white text-amber-900' : asking ? 'border-sky-500/30 bg-sky-500/5 text-sky-700' : 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700'}`}>
+                        <span key={issue.index} className={`inline-flex items-center gap-1 rounded-lg border text-[11px] ${open ? 'border-base-content/10 bg-white text-base-content/65' : asking ? 'border-sky-500/20 bg-white text-sky-700/80' : 'border-transparent text-base-content/35'}`}>
                           <button
                             type="button"
                             onClick={() => goToIssue(issue)}
                             disabled={!issue.laukas}
                             title={issue.tekstas}
-                            className={`pl-2 py-0.5 font-medium ${issue.laukas ? 'hover:underline' : 'cursor-default'}`}
+                            className={`pl-2 py-px ${issue.laukas ? 'hover:underline' : 'cursor-default'}`}
                           >
-                            {open ? '' : asking ? '? ' : '✓ '}{label}{issue.laukas ? '' : `: ${issue.tekstas}`}
+                            {open ? <span className="mr-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500 align-middle" /> : asking ? '? ' : '✓ '}{label}{issue.laukas ? '' : `: ${issue.tekstas}`}
                           </button>
                           {!readOnly && (issue.sprendimas || !issue.laukas) && !issue.changed ? (
                             <button type="button" onClick={() => resolveIssue(issue.index, issue.sprendimas ? null : 'gerai')} className="pr-1.5 pl-0.5 text-base-content/40 hover:text-base-content/80" title={issue.sprendimas ? 'Grąžinti' : 'Pažymėti kaip patikrintą'}>
