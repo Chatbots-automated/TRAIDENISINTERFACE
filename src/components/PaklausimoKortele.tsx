@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
@@ -914,6 +915,24 @@ function TabTalpos({
   // rows that carry a marker: still open, or waiting for the client's answer
   const flaggedKeys = useMemo(() => new Set([...openIssues, ...askIssues].map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues, askIssues]);
   const [openBubble, setOpenBubble] = useState<number | null>(null);
+  const [bubblePos, setBubblePos] = useState<{ top: number; left: number; above: boolean }>({ top: 0, left: 0, above: false });
+  const BUBBLE_WIDTH = 300;
+  const placeBubble = (anchor: Element | null) => {
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const above = rect.bottom > window.innerHeight - 220;
+    setBubblePos({
+      top: above ? rect.top - 8 : rect.bottom + 8,
+      left: Math.min(Math.max(8, rect.right - BUBBLE_WIDTH), window.innerWidth - BUBBLE_WIDTH - 8),
+      above,
+    });
+  };
+  useEffect(() => {
+    if (openBubble === null) return;
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenBubble(null); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [openBubble]);
   const [questionsCopied, setQuestionsCopied] = useState(false);
 
   // What the list shows: project-level keys hidden, the tank object split into groups, empty rows hidden by default
@@ -968,8 +987,11 @@ function TabTalpos({
   const goToIssue = (issue: IntakeIssue) => {
     if (!issue.laukas) return;
     setSubTab('parametrai');
-    setOpenBubble(issue.index);
-    setTimeout(() => document.getElementById(`kv-talpa-${issue.laukas}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+    setTimeout(() => {
+      document.getElementById(`kv-talpa-${issue.laukas}`)?.scrollIntoView({ block: 'center' });
+      placeBubble(document.getElementById(`kv-mark-${issue.laukas}`));
+      setOpenBubble(issue.index);
+    }, 50);
   };
   const missingText: string = typeof talpaObj['Trūksta_duomenų'] === 'string' ? talpaObj['Trūksta_duomenų'] : '';
   const riskText: string = typeof talpaObj['Prieštaravimai_ir_rizikos'] === 'string' ? talpaObj['Prieštaravimai_ir_rizikos'] : '';
@@ -1738,7 +1760,12 @@ function TabTalpos({
                                     {rowIssues.length > 0 && (
                                       <button
                                         type="button"
-                                        onClick={() => setOpenBubble(openBubble === rowIssues[0].index ? null : rowIssues[0].index)}
+                                        id={`kv-mark-${ck}`}
+                                        onClick={(e) => {
+                                          if (rowIssues.some(issue => issue.index === openBubble)) { setOpenBubble(null); return; }
+                                          placeBubble(e.currentTarget);
+                                          setOpenBubble(rowIssues[0].index);
+                                        }}
                                         title={rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
                                         aria-label={rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
                                         aria-expanded={rowIssues.some(issue => issue.index === openBubble)}
@@ -1751,14 +1778,20 @@ function TabTalpos({
                                       const asking = issue.sprendimas === 'klausti';
                                       const empty = !String(cv ?? '').trim();
                                       const action = 'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg border bg-white transition-colors';
-                                      return (
-                                        <div key={issue.index} className={`col-span-3 relative rounded-2xl rounded-tr-sm border px-3 py-2 ${asking ? 'border-sky-500/30 bg-sky-500/5' : 'border-amber-500/40 bg-amber-500/10'}`}>
-                                          <p className="text-[11px] leading-snug text-base-content/80">
+                                      return createPortal(
+                                        <div key={issue.index}>
+                                        <div className="fixed inset-0 z-[10010]" onClick={() => setOpenBubble(null)} />
+                                        <div
+                                          role="dialog"
+                                          style={{ position: 'fixed', top: bubblePos.top, left: bubblePos.left, width: BUBBLE_WIDTH, transform: bubblePos.above ? 'translateY(-100%)' : undefined }}
+                                          className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${asking ? 'border-sky-500/40' : 'border-amber-500/50'}`}
+                                        >
+                                          <p className="text-xs leading-snug text-base-content/85">
                                             <span className="font-semibold">{asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
                                             {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
                                           </p>
                                           {!readOnly && (
-                                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
                                               {issue.siulymas && issue.siulymas !== String(cv ?? '') && (
                                                 <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.siulymas, entry.obj, true); }} className={`${action} border-amber-600/30 text-amber-900 hover:bg-amber-500/10`}>
                                                   Pakeisti į „{issue.siulymas}“
@@ -1788,7 +1821,12 @@ function TabTalpos({
                                               )}
                                             </div>
                                           )}
+                                          {readOnly && (
+                                            <p className="mt-1.5 text-[10px] text-base-content/40">Peržiūros režimas. Taisyti galima prisijungus ir atidarius kortelę iš paklausimų sąrašo.</p>
+                                          )}
                                         </div>
+                                        </div>,
+                                        document.body,
                                       );
                                     })}
                                   </div>
