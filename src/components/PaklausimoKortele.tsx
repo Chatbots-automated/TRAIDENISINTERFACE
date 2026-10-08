@@ -4400,7 +4400,7 @@ function TabMedziagos({
           </div>
 
           {/* Price source mode toggle */}
-          <div className="flex items-center gap-1 mb-2 shrink-0">
+          <div className="flex items-center justify-center gap-1 mb-2 shrink-0">
             <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
               {(['current', 'ai'] as const).map(m => (
                 <button
