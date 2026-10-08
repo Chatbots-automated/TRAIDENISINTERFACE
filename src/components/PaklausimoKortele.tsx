@@ -916,6 +916,8 @@ function TabTalpos({
   const flaggedKeys = useMemo(() => new Set([...openIssues, ...askIssues].map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues, askIssues]);
   const [openBubble, setOpenBubble] = useState<number | null>(null);
   const [bubblePos, setBubblePos] = useState<{ top: number; left: number; above: boolean }>({ top: 0, left: 0, above: false });
+  const [bubbleMenu, setBubbleMenu] = useState(false);
+  useEffect(() => { setBubbleMenu(false); }, [openBubble]);
   const BUBBLE_WIDTH = 300;
   const placeBubble = (anchor: Element | null) => {
     if (!anchor) return;
@@ -1777,7 +1779,7 @@ function TabTalpos({
                                     {rowIssues.filter(issue => issue.index === openBubble || rowIssues[0].index === openBubble).map(issue => {
                                       const asking = issue.sprendimas === 'klausti';
                                       const empty = !String(cv ?? '').trim();
-                                      const action = 'inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg border bg-white transition-colors';
+                                      const action = 'flex items-center gap-2 w-full text-left text-xs px-3 py-1.5 transition-colors hover:bg-base-content/5';
                                       return createPortal(
                                         <div key={issue.index}>
                                         <div className="fixed inset-0 z-[10010]" onClick={() => setOpenBubble(null)} />
@@ -1786,37 +1788,51 @@ function TabTalpos({
                                           style={{ position: 'fixed', top: bubblePos.top, left: bubblePos.left, width: BUBBLE_WIDTH, transform: bubblePos.above ? 'translateY(-100%)' : undefined }}
                                           className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${asking ? 'border-sky-500/40' : 'border-amber-500/50'}`}
                                         >
-                                          <p className="text-xs leading-snug text-base-content/85">
+                                          <div className="flex items-start gap-2">
+                                          <p className="flex-1 min-w-0 text-xs leading-snug text-base-content/85">
                                             <span className="font-semibold">{asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
                                             {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
+                                            {!readOnly && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setBubbleMenu(open => !open)}
+                                                title="Veiksmai"
+                                                aria-label="Veiksmai"
+                                                aria-expanded={bubbleMenu}
+                                                className={`inline-flex align-middle ml-1 p-0.5 rounded-md transition-colors ${bubbleMenu ? 'bg-base-content/10 text-base-content/80' : 'text-base-content/45 hover:text-base-content/80 hover:bg-base-content/5'}`}
+                                              >
+                                                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${bubbleMenu ? 'rotate-90' : ''}`} />
+                                              </button>
+                                            )}
                                           </p>
-                                          {!readOnly && (
-                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                          </div>
+                                          {!readOnly && bubbleMenu && (
+                                            <div role="menu" className={`absolute right-2 ${bubblePos.above ? 'bottom-full mb-1' : 'top-full mt-1'} z-[10012] w-60 overflow-hidden rounded-xl border border-base-content/10 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]`}>
                                               {issue.siulymas && issue.siulymas !== String(cv ?? '') && (
-                                                <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.siulymas, entry.obj, true); }} className={`${action} border-amber-600/30 text-amber-900 hover:bg-amber-500/10`}>
-                                                  Pakeisti į „{issue.siulymas}“
+                                                <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.siulymas, entry.obj, true); }} className={`${action} text-amber-900`}>
+                                                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Pakeisti į „{issue.siulymas}“
                                                 </button>
                                               )}
-                                              <button type="button" onClick={() => { setOpenBubble(null); setEditingKvKey(editKey); setEditingKvValue(displayVal); }} className={`${action} border-base-content/15 text-base-content/70 hover:text-primary hover:border-primary/30`}>
-                                                <Pencil className="w-3 h-3" /> {empty ? 'Įvesti reikšmę' : 'Įvesti kitą'}
+                                              <button type="button" onClick={() => { setOpenBubble(null); setEditingKvKey(editKey); setEditingKvValue(displayVal); }} className={`${action} text-base-content/80`}>
+                                                <Pencil className="w-3.5 h-3.5 shrink-0" /> {empty ? 'Įvesti reikšmę' : 'Įvesti kitą'}
                                               </button>
                                               {!empty && !asking && (
-                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} border-emerald-500/30 text-emerald-700 hover:bg-emerald-500/10`}>
-                                                  <Check className="w-3 h-3" /> Palikti „{displayVal.length > 18 ? `${displayVal.slice(0, 18)}…` : displayVal}“
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} text-emerald-700`}>
+                                                  <Check className="w-3.5 h-3.5 shrink-0" /> Palikti „{displayVal.length > 18 ? `${displayVal.slice(0, 18)}…` : displayVal}“
                                                 </button>
                                               )}
                                               {!asking ? (
-                                                <button type="button" onClick={() => resolveIssue(issue.index, 'klausti')} className={`${action} border-sky-500/30 text-sky-700 hover:bg-sky-500/10`}>
-                                                  <HelpCircle className="w-3 h-3" /> Klausti kliento
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'klausti')} className={`${action} text-sky-700`}>
+                                                  <HelpCircle className="w-3.5 h-3.5 shrink-0" /> Klausti kliento
                                                 </button>
                                               ) : (
-                                                <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} border-base-content/15 text-base-content/50 hover:text-base-content/80`}>
-                                                  Nebeklausti
+                                                <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} text-base-content/60`}>
+                                                  <X className="w-3.5 h-3.5 shrink-0" /> Nebeklausti
                                                 </button>
                                               )}
                                               {empty && !asking && (
-                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} border-base-content/15 text-base-content/50 hover:text-base-content/80`}>
-                                                  Nereikia
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} text-base-content/60`}>
+                                                  <X className="w-3.5 h-3.5 shrink-0" /> Nereikia
                                                 </button>
                                               )}
                                             </div>
