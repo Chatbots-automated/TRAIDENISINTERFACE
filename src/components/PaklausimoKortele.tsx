@@ -1837,18 +1837,24 @@ function TabTalpos({
                                       {entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
-                                      <div className="flex items-center gap-1 flex-1 min-w-0">
-                                        <input
+                                      <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                        <textarea
                                           autoFocus
-                                          type="text"
+                                          rows={1}
                                           value={editingKvValue}
                                           onChange={e => setEditingKvValue(e.target.value)}
+                                          onFocus={e => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+                                          ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; } }}
                                           onKeyDown={e => {
-                                            if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson);
+                                            // Enter saves; Shift+Enter starts a new line
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson); }
                                             if (e.key === 'Escape') setEditingKvKey(null);
                                           }}
-                                          className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                          className="w-full text-xs leading-snug bg-white rounded-md px-2 py-1.5 border border-primary/40 outline-none text-base-content resize-none overflow-hidden"
+                                          style={{ boxShadow: '0 0 0 3px rgba(0,122,255,0.08)' }}
                                         />
+                                        <div className="flex items-center justify-end gap-1">
+                                          <span className="mr-auto text-[10px] text-base-content/35">Enter – išsaugoti, Esc – atšaukti</span>
                                         <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                           {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
                                         </button>
@@ -1856,6 +1862,7 @@ function TabTalpos({
                                           <X className="w-3 h-3 text-base-content/40" />
                                         </button>
                                       </div>
+                                        </div>
                                     ) : (
                                       <div className="text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug">
                                         {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar' || cv === undefined || cv === null || cv === '') ? (
@@ -1991,18 +1998,24 @@ function TabTalpos({
                               {formatMetaLabel(k)}
                             </span>
                             {editingKvKey === k ? (
-                              <div className="flex items-center gap-1 flex-1 min-w-0">
-                                <input
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <textarea
                                   autoFocus
-                                  type="text"
+                                  rows={1}
                                   value={editingKvValue}
                                   onChange={e => setEditingKvValue(e.target.value)}
+                                  onFocus={e => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+                                  ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; } }}
                                   onKeyDown={e => {
-                                    if (e.key === 'Enter') saveKvField(k, editingKvValue, entry.fromJson);
+                                    // Enter saves; Shift+Enter starts a new line
+                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveKvField(k, editingKvValue, entry.fromJson); }
                                     if (e.key === 'Escape') setEditingKvKey(null);
                                   }}
-                                  className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                  className="w-full text-xs leading-snug bg-white rounded-md px-2 py-1.5 border border-primary/40 outline-none text-base-content resize-none overflow-hidden"
+                                  style={{ boxShadow: '0 0 0 3px rgba(0,122,255,0.08)' }}
                                 />
+                                <div className="flex items-center justify-end gap-1">
+                                  <span className="mr-auto text-[10px] text-base-content/35">Enter – išsaugoti, Esc – atšaukti</span>
                                 <button onClick={() => saveKvField(k, editingKvValue, entry.fromJson)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                   {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
                                 </button>
@@ -2010,6 +2023,7 @@ function TabTalpos({
                                   <X className="w-3 h-3 text-base-content/40" />
                                 </button>
                               </div>
+                                </div>
                             ) : (
                               <span
                                 onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
