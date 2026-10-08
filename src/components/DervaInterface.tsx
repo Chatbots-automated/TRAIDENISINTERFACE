@@ -611,7 +611,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       <SortArrows column="file_size" config={filesSortConfig} />
                     </div>
                   </th>
-                  <th className="px-3 py-3 text-right whitespace-nowrap">
+                  <th className="px-3 py-3 whitespace-nowrap w-28" style={{ textAlign: 'center' }}>
                     <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Veiksmai</span>
                   </th>
                 </tr>
@@ -711,8 +711,8 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </td>
 
                       {/* Actions */}
-                      <td className="px-3 py-2.5 text-right">
-                        <div className="flex items-center justify-end gap-0.5">
+                      <td className="px-3 py-2.5 w-28" style={{ textAlign: 'center' }}>
+                        <div className="flex items-center justify-center gap-0.5">
                           {file.directus_file_id && (
                             <>
                               <button
