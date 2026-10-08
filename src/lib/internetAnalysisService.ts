@@ -115,11 +115,11 @@ function extractResponseText(content: unknown): string {
   if (!Array.isArray(content)) return '';
   const textBlocks = content
     .filter((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    .map((block: any) => String(block.text).trim())
-    .filter(Boolean);
+    .map((block: any) => String(block.text));
 
-  // Deterministic join: preserve paragraph-level spacing between text blocks.
-  return textBlocks.join('\n\n').trim();
+  // With web search a sentence arrives split into several blocks (one per citation). The blocks carry their own
+  // spacing, so they are joined as they are: adding blank lines between them broke sentences and JSON apart.
+  return textBlocks.join('').trim();
 }
 
 function findTemplateVars(template: string): string[] {

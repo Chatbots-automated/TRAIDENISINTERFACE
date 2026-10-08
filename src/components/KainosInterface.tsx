@@ -20,6 +20,7 @@ import { AddMaterialModal, PriceModal } from './kainos/KainosModals';
 import { SablonaiTab } from './kainos/SablonaiTab';
 import { GrafaTab } from './kainos/GrafaTab';
 import { MarketOverview, analysisNarrative } from './kainos/MarketOverview';
+import { OilReport } from './kainos/OilReport';
 import {
   extractUrlCitationsFromText,
   getAnalysisMarkdownForDisplay,
@@ -41,6 +42,11 @@ interface KainosInterfaceProps { user: AppUser; }
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
+
+function OilReportOrText({ content, fallback }: { content: string; fallback: React.ReactNode }) {
+  const report = OilReport({ content });
+  return <>{report ?? fallback}</>;
+}
 
 export default function KainosInterface({ user }: KainosInterfaceProps) {
   const isAdmin = Boolean(user.is_admin);
@@ -794,6 +800,10 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                               <span className="text-xs" style={{ color: '#8a857f' }}>Analizė dar nesugeneruota.</span>
                             </div>
                           );
+                        }
+                        if (analysisFocus === 'nafta') {
+                          // structured report when the text can be read as one; otherwise the text as written
+                          return <OilReportOrText content={currentText} fallback={<div className="max-w-4xl">{renderMd(currentText)}</div>} />;
                         }
                         if (analysisFocus !== 'analysis') return <div className="max-w-4xl">{renderMd(currentText)}</div>;
                         const narrative = analysisNarrative(currentText);
