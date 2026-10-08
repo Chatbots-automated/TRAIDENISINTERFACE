@@ -1,3 +1,4 @@
+import { MaterialTemplatePicker, type TankFacts } from './MaterialTemplatePicker';
 import { TankPartIcon } from './TankPartIcon';
 import { AppSelect } from './AppSelect';
 import { OfficePreview } from './OfficePreview';
@@ -3937,6 +3938,36 @@ function TabMedziagos({
     setSlateRawTextDraft('');
   }, [currentTalposRow?.material_slate, idx]);
 
+  // what the template picker compares each template with
+  const templateTankFacts = useMemo<TankFacts>(() => {
+    let talpa: Record<string, any> = {};
+    try {
+      const root = typeof currentTalposRow?.json === 'string' ? JSON.parse(currentTalposRow.json) : currentTalposRow?.json;
+      const raw = root?.talpa;
+      talpa = (typeof raw === 'string' ? JSON.parse(raw) : raw) || {};
+    } catch { /* an unreadable card simply gives no facts to compare */ }
+    const num = (value: unknown): number | null => {
+      const parsed = Number(String(value ?? '').replace(/\s/g, '').replace(',', '.').replace(/[^\d.]/g, ''));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    };
+    const above = `${talpa['Aplinka_virš_talpos'] ?? ''} ${talpa['Aplinka_viršus'] ?? ''}`.toLowerCase();
+    const resin = `${currentTalposRow?.derva_musu ?? ''}`.toLowerCase();
+    const volume = num(talpa['Talpa_m3']);
+    const diameter = num(talpa['Diametras_mm']);
+    const length = num(talpa['Ilgis_mm']) ?? num(talpa['Aukštis_mm']);
+    const depth = num(talpa['Įgilinimas_m']);
+    const road = /važiuoj/.test(above) ? true : /vej|žal/.test(above) ? false : null;
+    return {
+      volume, diameter, length, depth, road,
+      chemical: resin ? /derakane|vinil|chem/.test(resin) : null,
+      label: [
+        volume ? `${volume} m³` : null, diameter ? `DN${diameter}` : null,
+        length ? `${talpa['Aukštis_mm'] ? 'H' : 'L'}${length}` : null,
+        depth ? `įg. ${depth} m` : null, road === null ? null : road ? 'važiuojama dalis' : 'žalia veja',
+      ].filter(Boolean).join(' · '),
+    };
+  }, [currentTalposRow?.json, currentTalposRow?.derva_musu]);
+
   const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
     const template = sablonai.find(s => s.id === templateId);
     if (!template || !currentTalposId) return false;
@@ -4441,7 +4472,16 @@ function TabMedziagos({
       </div>
 
       {/* Template picker overlay */}
-      {showTemplatePicker && <TemplatePicker />}
+      {showTemplatePicker && (
+        <MaterialTemplatePicker
+          templates={sablonai}
+          tank={templateTankFacts}
+          currentTemplateId={localSlate?._template_id ?? null}
+          onApply={handleSelectTemplate}
+          onClose={() => setShowTemplatePicker(false)}
+          error={templateSelectError}
+        />
+      )}
     </div>
   );
 }
