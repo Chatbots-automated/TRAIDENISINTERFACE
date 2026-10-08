@@ -362,7 +362,11 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
   try {
     const promptVar = await getInstructionVariable(PROMPT_KEYS[analysisId]);
     const toolsVar = await getInstructionVariable('kainos_ai_tool_schemas');
-    const promptContent = promptVar?.content ?? '';
+    // a failed read comes back as null; without this it was reported as "the prompt is empty"
+    if (!promptVar) {
+      throw new Error('Nepavyko nuskaityti analizės nurodymų (ryšio klaida). Pabandykite dar kartą.');
+    }
+    const promptContent = promptVar.content ?? '';
     const toolSchemaContent = toolsVar?.content ?? '';
     const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
     const tools = await getDynamicTools(promptContent, toolSchemaContent);

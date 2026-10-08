@@ -22,6 +22,7 @@ import { GrafaTab } from './kainos/GrafaTab';
 import { MarketOverview, analysisNarrative } from './kainos/MarketOverview';
 import { OilReport } from './kainos/OilReport';
 import { EventsReport } from './kainos/EventsReport';
+import { GenerationProgress } from './kainos/GenerationProgress';
 import {
   extractUrlCitationsFromText,
   getAnalysisMarkdownForDisplay,
@@ -791,10 +792,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                 </div>
                 <div className="px-5 py-4 overflow-y-auto" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
                   {genLoading && genStep === analysisFocus ? (
-                    <div className="h-full min-h-[220px] flex flex-col items-center justify-center gap-2">
-                      <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#2563eb' }} />
-                      <span className="text-xs" style={{ color: '#64748b' }}>Atnaujinamas pasirinktas etapas…</span>
-                    </div>
+                    <GenerationProgress section={analysisFocus} />
                   ) : (
                     <>
                       {(() => {
