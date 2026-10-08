@@ -241,7 +241,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
         for (const id of prev) {
           const file = loaded.find(f => f.id === id);
           // Remove if: file deleted, embedding exists, or DB no longer says processing
-          if (!file || file.embedding || !isVectorizationRunning(file)) next.delete(id);
+          if (!file || file.is_indexed || !isVectorizationRunning(file)) next.delete(id);
         }
         return next.size === prev.size ? prev : next;
       });
@@ -584,9 +584,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                       </div>
                     </th>
                   ))}
-                  <th className="px-3 py-3 text-left whitespace-nowrap">
-                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Embedding</span>
-                  </th>
+                  
                   <th
                     onClick={() => handleFilesSort('file_size')}
                     className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap w-24"
@@ -603,9 +601,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </thead>
               <tbody>
                 {sortedFiles.length === 0 ? (
-                  <tr><td colSpan={FILES_COLUMNS.length + 4} className="py-2.5">&nbsp;</td></tr>
+                  <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file, idx) => {
-                  const isVectorized = !!file.embedding;
+                  const isVectorized = file.is_indexed;
                   const isProcessing = vectorizingIds.has(file.id) || isVectorizationRunning(file);
                   // a run that never reported back counts as failed, so it can be started again
                   const isFailed = file.vectorization_status === 'failed' || (file.vectorization_status === 'processing' && !isProcessing);
@@ -673,21 +671,6 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         <span className="whitespace-nowrap" style={{ color: '#5a5550', fontSize: '13px' }}>
                           {new Date(file.uploaded_at).toLocaleDateString('lt-LT')}
                         </span>
-                      </td>
-
-                      {/* Embedding snippet */}
-                      <td className="px-3 py-2.5 max-w-[120px]">
-                        {file.embedding ? (
-                          <span
-                            className="font-mono truncate block"
-                            style={{ color: '#8a857f', fontSize: '11px' }}
-                            title={file.embedding}
-                          >
-                            {file.embedding.slice(0, 30)}...
-                          </span>
-                        ) : (
-                          <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
-                        )}
                       </td>
 
                       {/* Dydis */}

@@ -18,8 +18,8 @@ export interface DervaFile {
   directus_file_id: string | null;
   uploaded_by: string;
   uploaded_at: string;
-  content: string | null;
-  embedding: string | null;
+  /** The file has been read and can be found by the resin recommendation */
+  is_indexed: boolean;
   vectorization_status: string | null;
   vectorization_started_at: string | null;
 }
@@ -28,7 +28,7 @@ export interface DervaFile {
 // Fields
 // ---------------------------------------------------------------------------
 
-const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at,content,embedding,vectorization_status,vectorization_started_at';
+const DERVA_FILES_FIELDS = 'id,file_name,file_size,mime_type,directus_file_id,uploaded_by,uploaded_at,vectorization_status,vectorization_started_at';
 
 // ---------------------------------------------------------------------------
 // Upload file to Directus file storage → returns UUID
@@ -76,44 +76,46 @@ export const insertDervaFile = async (
     console.error('Error inserting derva_file:', error);
     throw error;
   }
-  return data;
+  return { ...data, is_indexed: false };
 };
 
 // ---------------------------------------------------------------------------
 // Fetch all files
 // ---------------------------------------------------------------------------
 
+/** Ids of the files that have a vector, asked for as a filter so the vectors themselves stay on the server. */
+const fetchIndexedIds = async (): Promise<Set<number>> => {
+  const resp = await fetch('/api/directus/items/derva_files?fields=id&filter[embedding][_nnull]=true&limit=-1', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!resp.ok) throw new Error(`Nepavyko patikrinti failų būsenos (${resp.status})`);
+  const json = await resp.json();
+  return new Set<number>((json.data || []).map((row: { id: number }) => row.id));
+};
+
 export const fetchDervaFiles = async (): Promise<DervaFile[]> => {
-  const { data, error } = await db
-    .from('derva_files')
-    .select(DERVA_FILES_FIELDS)
-    .order('uploaded_at', { ascending: false });
+  const [{ data, error }, indexed] = await Promise.all([
+    db
+      .from('derva_files')
+      .select(DERVA_FILES_FIELDS)
+      .order('uploaded_at', { ascending: false })
+      .limit(-1),
+    fetchIndexedIds(),
+  ]);
 
   if (error) {
     console.error('Error fetching derva_files:', error);
     throw error;
   }
-  return data || [];
+  return (data || []).map((row: Omit<DervaFile, 'is_indexed'>) => ({ ...row, is_indexed: indexed.has(row.id) }));
 };
 
 // ---------------------------------------------------------------------------
-// Delete file + Directus binary
+// Delete record, then its Directus binary
 // ---------------------------------------------------------------------------
 
 export const deleteDervaFile = async (id: number, directusFileId: string | null): Promise<void> => {
-  // 1. Delete the binary from Directus file storage
-  if (directusFileId) {
-    const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
-      method: 'DELETE',
-      headers: { Accept: 'application/json' },
-    });
-    if (!resp.ok && resp.status !== 404) {
-      console.error('Directus file delete failed:', resp.status, resp.statusText);
-      throw new Error(`Nepavyko ištrinti failo iš saugyklos (${resp.status})`);
-    }
-  }
-
-  // 2. Delete the DB record
+  // 1. Delete the DB record
   const { error } = await db
     .from('derva_files')
     .delete()
@@ -122,6 +124,22 @@ export const deleteDervaFile = async (id: number, directusFileId: string | null)
   if (error) {
     console.error('Error deleting derva_file:', error);
     throw error;
+  }
+
+  // 2. Delete the binary from Directus file storage. The record is already gone, so a failure here only leaves an
+  //    unused stored file behind; it is logged, not shown as a failed delete.
+  if (directusFileId) {
+    try {
+      const resp = await fetch(`${DIRECTUS_URL}/files/${directusFileId}`, {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+      });
+      if (!resp.ok && resp.status !== 404) {
+        console.error('Directus file delete failed:', resp.status, resp.statusText);
+      }
+    } catch (err) {
+      console.error('Directus file delete failed:', err);
+    }
   }
 };
 
