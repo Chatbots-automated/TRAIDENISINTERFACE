@@ -44,6 +44,20 @@ interface DervaInterfaceProps {
 const ACCEPTED_TYPES = '.pdf,.md,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.rtf,.jpg,.jpeg,.png,.gif,.webp,.svg,.html,.htm,.xml';
 const VECTORIZING_STORAGE_KEY = 'derva_vectorizing_ids';
 
+/**
+ * Decorative stand-in for the vector column. The real vectors (1,536 numbers per file) stay on the server, because
+ * downloading them made the page load 70 times heavier. The numbers are made up from the file id, so a file always
+ * shows the same ones.
+ */
+function placeholderEmbedding(id: number): string {
+  let seed = (id * 2654435761) >>> 0;
+  const next = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return (seed / 4294967296) * 0.1 - 0.05;
+  };
+  return `[${[next(), next(), next()].map(value => value.toFixed(9)).join(',')}`;
+}
+
 function formatFileSize(bytes: number | null): string {
   if (!bytes) return '—';
   if (bytes < 1024) return `${bytes} B`;
@@ -585,6 +599,9 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                     </th>
                   ))}
                   
+                  <th className="px-3 py-3 text-left whitespace-nowrap">
+                    <span className="text-xs font-semibold" style={{ color: '#8a857f' }}>Embedding</span>
+                  </th>
                   <th
                     onClick={() => handleFilesSort('file_size')}
                     className="px-3 py-3 text-left cursor-pointer select-none whitespace-nowrap w-24"
@@ -601,7 +618,7 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
               </thead>
               <tbody>
                 {sortedFiles.length === 0 ? (
-                  <tr><td colSpan={FILES_COLUMNS.length + 3} className="py-2.5">&nbsp;</td></tr>
+                  <tr><td colSpan={FILES_COLUMNS.length + 4} className="py-2.5">&nbsp;</td></tr>
                 ) : sortedFiles.map((file, idx) => {
                   const isVectorized = file.is_indexed;
                   const isProcessing = vectorizingIds.has(file.id) || isVectorizationRunning(file);
@@ -671,6 +688,21 @@ export default function DervaInterface({ user }: DervaInterfaceProps) {
                         <span className="whitespace-nowrap" style={{ color: '#5a5550', fontSize: '13px' }}>
                           {new Date(file.uploaded_at).toLocaleDateString('lt-LT')}
                         </span>
+                      </td>
+
+                      {/* Embedding: illustrative numbers, see placeholderEmbedding */}
+                      <td className="px-3 py-2.5 max-w-[120px]">
+                        {file.is_indexed ? (
+                          <span
+                            className="font-mono truncate block"
+                            style={{ color: '#8a857f', fontSize: '11px' }}
+                            title="Iliustracija. Tikrosios reikšmės saugomos serveryje."
+                          >
+                            {placeholderEmbedding(file.id).slice(0, 30)}...
+                          </span>
+                        ) : (
+                          <span style={{ color: '#c4bfb8', fontSize: '12px' }}>—</span>
+                        )}
                       </td>
 
                       {/* Dydis */}
