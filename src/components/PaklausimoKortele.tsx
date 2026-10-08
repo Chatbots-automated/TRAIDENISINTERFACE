@@ -339,7 +339,7 @@ const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_
 /** Project-level keys copied into each tank's json — shown on the project, not in the tank's parameter list */
 const HIDDEN_JSON_ROOT_KEYS = new Set([
   'projektas', 'klientas', 'uzsakovas', 'kontaktinis_asmuo', 'uzklausos_data', 'santrauka', 'quantity',
-  'atsakingas_vadybininkas', 'uzklausos_stadija', 'intake', 'patikrinta',
+  'atsakingas_vadybininkas', 'uzklausos_stadija', 'intake', 'patikrinta', 'tikrinti',
 ]);
 /** Shown in the intake check banner instead of the parameter list */
 const TALPA_BANNER_KEYS = new Set(['Trūksta_duomenų', 'Prieštaravimai_ir_rizikos']);
@@ -895,6 +895,22 @@ function TabTalpos({
     setShowAddKv(false);
   }, [idx]);
 
+  // Intake checks: each one points at a row of the tank (`laukas`) and remembers the value seen at intake (`reiksme`).
+  // A check is resolved when the user ticks it off or changes that value (filling a gap counts).
+  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; isspresta?: boolean };
+  const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
+  const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
+  const intakeIssues: IntakeIssue[] = useMemo(() => (Array.isArray(jsonRoot.tikrinti) ? jsonRoot.tikrinti : [])
+    .map((raw: any, index: number) => ({
+      index, laukas: typeof raw?.laukas === 'string' ? raw.laukas : null, tipas: String(raw?.tipas || ''), tekstas: String(raw?.tekstas || ''),
+      reiksme: String(raw?.reiksme ?? ''), isspresta: !!raw?.isspresta,
+    }))
+    .filter((issue: IntakeIssue) => issue.tekstas), [jsonRoot]);
+  const openIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue =>
+    !issue.isspresta && !(issue.laukas && String(talpaObj[issue.laukas] ?? '').trim() !== issue.reiksme.trim())
+  ), [intakeIssues, talpaObj]);
+  const flaggedKeys = useMemo(() => new Set(openIssues.map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues]);
+
   // What the list shows: project-level keys hidden, the tank object split into groups, empty rows hidden by default
   const [showEmptyKv, setShowEmptyKv] = useState(false);
   const displayEntries = useMemo((): KvEntry[] => {
@@ -907,26 +923,45 @@ function TabTalpos({
         out.push(entry);
         continue;
       }
+      if (entry.fromJson && HIDDEN_JSON_ROOT_KEYS.has(entry.key)) continue;
       if (!(entry.fromJson && entry.key === 'talpa')) { out.push(entry); continue; }
-      const visible = (k: string) => !TALPA_BANNER_KEYS.has(k) && (showEmptyKv || filled(entry.obj[k]) || editingKvKey === `talpa::${k}`);
+      const visible = (k: string) => !TALPA_BANNER_KEYS.has(k) && (showEmptyKv || filled(entry.obj[k]) || flaggedKeys.has(k) || editingKvKey === `talpa::${k}`);
       const grouped = new Set(TALPA_GROUPS.flatMap(g => g.keys));
       for (const group of TALPA_GROUPS) {
-        const keys = group.keys.filter(k => k in entry.obj && visible(k));
+        const keys = group.keys.filter(k => (k in entry.obj || flaggedKeys.has(k)) && visible(k));
         if (keys.length) out.push({ ...entry, label: group.label, keys });
       }
-      const rest = Object.keys(entry.obj).filter(k => !grouped.has(k) && visible(k));
+      const rest = [...new Set([...Object.keys(entry.obj), ...flaggedKeys])].filter(k => !grouped.has(k) && visible(k));
       if (rest.length) out.push({ ...entry, label: 'Kita', keys: rest });
     }
     return out;
-  }, [kvEntries, showEmptyKv, editingKvKey]);
+  }, [kvEntries, showEmptyKv, editingKvKey, flaggedKeys]);
 
   // Tank summary + intake check
-  const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
-  const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
+  const resolveIssue = async (issueIndex: number, on: boolean) => {
+    if (!currentTalposId || !Array.isArray(jsonRoot.tikrinti)) return;
+    const newJsonObj: Record<string, any> = {
+      ...jsonRoot,
+      tikrinti: jsonRoot.tikrinti.map((raw: any, i: number) => (i === issueIndex ? { ...raw, isspresta: on } : raw)),
+    };
+    try {
+      await updateTalposField(currentTalposId, 'json', newJsonObj);
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r)));
+    } catch (e) {
+      console.error('Error resolving intake check:', e);
+    }
+  };
+  const goToIssue = (issue: IntakeIssue) => {
+    if (!issue.laukas) return;
+    setSubTab('parametrai');
+    if (!readOnly) { setEditingKvKey(`talpa::${issue.laukas}`); setEditingKvValue(String(talpaObj[issue.laukas] ?? '')); }
+    setTimeout(() => document.getElementById(`kv-talpa-${issue.laukas}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+  };
   const missingText: string = typeof talpaObj['Trūksta_duomenų'] === 'string' ? talpaObj['Trūksta_duomenų'] : '';
   const riskText: string = typeof talpaObj['Prieštaravimai_ir_rizikos'] === 'string' ? talpaObj['Prieštaravimai_ir_rizikos'] : '';
   const reviewed: { by?: string | null; at?: string } | null = jsonRoot.patikrinta && typeof jsonRoot.patikrinta === 'object' ? jsonRoot.patikrinta : null;
-  const showIntakeCheck = !!currentTalposRow && (jsonRoot.intake === 'direct' || !!missingText || !!riskText);
+  const showIntakeCheck = !!currentTalposRow && (jsonRoot.intake === 'direct' || !!missingText || !!riskText || intakeIssues.length > 0);
+  const hasStructuredIssues = intakeIssues.length > 0;
   const [reviewSaving, setReviewSaving] = useState(false);
   const setReviewed = async (on: boolean) => {
     if (!currentTalposId) return;
@@ -1445,7 +1480,9 @@ function TabTalpos({
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">
                   Duomenys patikrinti{reviewed.by ? ` – ${reviewed.by}` : ''}{reviewed.at ? `, ${new Date(reviewed.at).toLocaleDateString('lt-LT')}` : ''}
-                  {(missingText || riskText) ? ` · liko: ${[missingText, riskText].filter(Boolean).join('; ')}` : ''}
+                  {hasStructuredIssues
+                    ? (openIssues.length ? ` · nepatikrinta laukų: ${openIssues.length}` : '')
+                    : ((missingText || riskText) ? ` · liko: ${[missingText, riskText].filter(Boolean).join('; ')}` : '')}
                 </span>
               </p>
               {!readOnly && (
@@ -1474,13 +1511,46 @@ function TabTalpos({
                   )}
                 </div>
               </div>
-              {missingText && (
+              {hasStructuredIssues && (
+                <div className="mt-1.5">
+                  <p className="text-[11px] text-base-content/55">
+                    {openIssues.length > 0
+                      ? `Liko patikrinti: ${openIssues.length} iš ${intakeIssues.length}. Paryškinti laukai parametrų sąraše – spustelėkite, kad pataisytumėte, arba pažymėkite „Gerai“.`
+                      : `Visi ${intakeIssues.length} pažymėti laukai patikrinti.`}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {intakeIssues.map(issue => {
+                      const open = openIssues.some(o => o.index === issue.index);
+                      const label = issue.laukas ? talpaLabel(issue.laukas) : 'Kita';
+                      return (
+                        <span key={issue.index} className={`inline-flex items-center gap-1 rounded-lg border text-[11px] ${open ? 'border-amber-500/40 bg-white text-amber-900' : 'border-emerald-500/25 bg-emerald-500/5 text-emerald-700'}`}>
+                          <button
+                            type="button"
+                            onClick={() => goToIssue(issue)}
+                            disabled={!issue.laukas}
+                            title={issue.tekstas}
+                            className={`pl-2 py-0.5 font-medium ${issue.laukas ? 'hover:underline' : 'cursor-default'}`}
+                          >
+                            {open ? '' : '✓ '}{label}{issue.laukas ? '' : `: ${issue.tekstas}`}
+                          </button>
+                          {!readOnly && (issue.isspresta || !issue.laukas) ? (
+                            <button type="button" onClick={() => resolveIssue(issue.index, !issue.isspresta)} className="pr-1.5 pl-0.5 text-base-content/40 hover:text-base-content/80" title={issue.isspresta ? 'Grąžinti' : 'Pažymėti kaip patikrintą'}>
+                              {issue.isspresta ? <X className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+                            </button>
+                          ) : <span className="pr-2" />}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!hasStructuredIssues && missingText && (
                 <p className="mt-1.5 text-[11px] text-base-content/70"><span className="font-semibold text-base-content/50">Trūksta: </span>{missingText}</p>
               )}
-              {riskText && (
+              {!hasStructuredIssues && riskText && (
                 <p className="mt-1 text-[11px] text-base-content/70"><span className="font-semibold text-base-content/50">Prieštaravimai ir rizikos: </span>{riskText}</p>
               )}
-              {!missingText && !riskText && (
+              {!hasStructuredIssues && !missingText && !riskText && (
                 <p className="mt-1 text-[11px] text-base-content/50">Trūkstamų duomenų ar prieštaravimų nerasta. Reikšmę pataisysite ją spustelėję parametrų sąraše.</p>
               )}
             </div>
@@ -1585,6 +1655,7 @@ function TabTalpos({
                               {/* Group rows */}
                               {(entry.keys ? entry.keys.map(k => [k, entry.obj[k]] as [string, any]) : Object.entries(entry.obj)).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
+                                const rowIssues = entry.key === 'talpa' ? openIssues.filter(issue => issue.laukas === ck) : [];
                                 const normalizedCv = normalizeDisplayData(cv);
                                 const displayVal = normalizedCv.kind === 'scalar'
                                   ? normalizedCv.value
@@ -1592,8 +1663,8 @@ function TabTalpos({
                                     ? normalizedCv.text
                                     : '';
                                 return (
-                                  <div key={editKey} className="group grid grid-cols-[92px_minmax(0,1fr)] gap-2 rounded-lg px-2.5 py-2 hover:bg-black/[0.025] transition-colors">
-                                    <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" title={entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}>
+                                  <div key={editKey} id={entry.key === 'talpa' ? `kv-talpa-${ck}` : undefined} className={`group grid grid-cols-[92px_minmax(0,1fr)] gap-2 rounded-lg px-2.5 py-2 transition-colors ${rowIssues.length ? 'bg-amber-500/10 ring-1 ring-amber-500/40' : 'hover:bg-black/[0.025]'}`}>
+                                    <span className={`text-[11px] shrink-0 font-medium pt-px ${rowIssues.length ? 'text-amber-700' : 'text-base-content/45'}`} title={entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}>
                                       {entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
@@ -1618,19 +1689,38 @@ function TabTalpos({
                                       </div>
                                     ) : (
                                       <div className="text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug">
-                                        {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar') ? (
+                                        {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar' || cv === undefined || cv === null || cv === '') ? (
                                           <span
                                             onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
                                             className={`${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
                                             title={displayVal || undefined}
                                           >
-                                            {displayVal || <span className="text-base-content/25">—</span>}
+                                            {displayVal || (rowIssues.length
+                                              ? <span className="text-amber-700/80 font-normal italic">{readOnly ? 'nenurodyta' : 'Įveskite reikšmę'}</span>
+                                              : <span className="text-base-content/25">—</span>)}
                                           </span>
                                         ) : (
                                           <NormalizedDisplayRenderer value={cv} />
                                         )}
                                       </div>
                                     )}
+                                    {rowIssues.map(issue => (
+                                      <div key={issue.index} className="col-span-2 flex items-start justify-between gap-2 -mt-0.5">
+                                        <p className="text-[11px] leading-snug text-amber-800/90">
+                                          <span className="font-semibold">{issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>{issue.tekstas}
+                                        </p>
+                                        {!readOnly && (
+                                          <button
+                                            type="button"
+                                            onClick={() => resolveIssue(issue.index, true)}
+                                            title="Reikšmė teisinga – pažymėti kaip patikrintą"
+                                            className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-md border border-amber-600/30 bg-white text-amber-800 hover:bg-amber-500/10"
+                                          >
+                                            <Check className="w-3 h-3" /> Gerai
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
                                   </div>
                                 );
                               })}
