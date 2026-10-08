@@ -1452,7 +1452,7 @@ function TabTalpos({
             className="z-[10011] overflow-y-auto rounded-2xl rounded-tr-sm border border-base-content/10 bg-white px-3.5 py-3 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]"
           >
             <p className="text-xs font-semibold text-base-content/80">Pradinės sistemos pastabos</p>
-            <p className="mt-0.5 text-[11px] text-base-content/45">Ką sistema pažymėjo nuskaičiusi laišką ir kas su tuo padaryta.</p>
+            <p className="mt-0.5 text-[11px] text-base-content/45">Ką sistema pažymėjo nuskaičiusi laišką</p>
             {reviewed && (
               <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-emerald-500/5 px-2.5 py-1.5">
                 <p className="text-[11px] text-emerald-700 inline-flex items-center gap-1.5 min-w-0">
@@ -1816,6 +1816,9 @@ function TabTalpos({
                                 const editKey = `${entry.key}::${ck}`;
                                 const rowIssues = entry.key === 'talpa' ? [...openIssues, ...askIssues].filter(issue => issue.laukas === ck) : [];
                                 const rowAsking = rowIssues.length > 0 && rowIssues.every(issue => issue.sprendimas === 'klausti');
+                                // concerns already dealt with keep a quiet grey marker, so the record stays on the row
+                                const rowDone = entry.key === 'talpa' && rowIssues.length === 0 ? intakeIssues.filter(issue => issue.laukas === ck) : [];
+                                const rowMarks = rowIssues.length ? rowIssues : rowDone;
                                 const normalizedCv = normalizeDisplayData(cv);
                                 const displayVal = normalizedCv.kind === 'scalar'
                                   ? normalizedCv.value
@@ -1823,7 +1826,7 @@ function TabTalpos({
                                     ? normalizedCv.text
                                     : '';
                                 return (
-                                  <div key={editKey} id={entry.key === 'talpa' ? `kv-talpa-${ck}` : undefined} className={`group grid ${rowIssues.length ? 'grid-cols-[92px_minmax(0,1fr)_20px]' : 'grid-cols-[92px_minmax(0,1fr)]'} gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-black/[0.025]`}>
+                                  <div key={editKey} id={entry.key === 'talpa' ? `kv-talpa-${ck}` : undefined} className={`group grid ${rowMarks.length ? 'grid-cols-[92px_minmax(0,1fr)_20px]' : 'grid-cols-[92px_minmax(0,1fr)]'} gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-black/[0.025]`}>
                                     <span className="text-[11px] shrink-0 font-medium pt-px text-base-content/45" title={entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}>
                                       {entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}
                                     </span>
@@ -1864,40 +1867,46 @@ function TabTalpos({
                                         )}
                                       </div>
                                     )}
-                                    {rowIssues.length > 0 && (
+                                    {rowMarks.length > 0 && (
                                       <button
                                         type="button"
                                         id={`kv-mark-${ck}`}
                                         onClick={(e) => {
-                                          if (rowIssues.some(issue => issue.index === openBubble)) { setOpenBubble(null); return; }
+                                          if (rowMarks.some(issue => issue.index === openBubble)) { setOpenBubble(null); return; }
                                           placeBubble(e.currentTarget);
-                                          setOpenBubble(rowIssues[0].index);
+                                          setOpenBubble(rowMarks[0].index);
                                         }}
-                                        title={rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
-                                        aria-label={rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
-                                        aria-expanded={rowIssues.some(issue => issue.index === openBubble)}
-                                        className={`self-start justify-self-end rounded-full transition-colors ${rowAsking ? 'text-sky-500 hover:text-sky-600' : 'text-amber-500 hover:text-amber-600'}`}
+                                        title={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        aria-label={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        aria-expanded={rowMarks.some(issue => issue.index === openBubble)}
+                                        className={`self-start justify-self-end rounded-full transition-colors ${rowDone.length ? 'text-base-content/25 hover:text-base-content/50' : rowAsking ? 'text-sky-500 hover:text-sky-600' : 'text-amber-500 hover:text-amber-600'}`}
                                       >
                                         {rowAsking ? <HelpCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                                       </button>
                                     )}
-                                    {rowIssues.filter(issue => issue.index === openBubble || rowIssues[0].index === openBubble).map(issue => {
+                                    {rowMarks.filter(issue => issue.index === openBubble || rowMarks[0].index === openBubble).map(issue => {
                                       const asking = issue.sprendimas === 'klausti';
+                                      const done = issue.changed || issue.sprendimas === 'gerai';
                                       const empty = !String(cv ?? '').trim();
-                                      const action = 'flex items-center gap-2 w-full text-left text-xs px-3 py-1.5 transition-colors hover:bg-base-content/5';
+                                      const action = 'flex items-center gap-2 w-full text-left text-xs pl-2.5 pr-4 py-1.5 whitespace-nowrap transition-colors hover:bg-base-content/5';
                                       return createPortal(
                                         <div key={issue.index}>
                                         <div className="fixed inset-0 z-[10010]" onClick={() => setOpenBubble(null)} />
                                         <div
                                           role="dialog"
                                           style={{ position: 'fixed', top: bubblePos.top, left: bubblePos.left, width: BUBBLE_WIDTH, transform: bubblePos.above ? 'translateY(-100%)' : undefined }}
-                                          className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${asking ? 'border-sky-500/40' : 'border-amber-500/50'}`}
+                                          className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${done ? 'border-base-content/15' : asking ? 'border-sky-500/40' : 'border-amber-500/50'}`}
                                         >
                                           <div className="flex items-start gap-2">
                                           <p className="flex-1 min-w-0 text-xs leading-snug text-base-content/85">
-                                            <span className="font-semibold">{asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
+                                            <span className="font-semibold">{done ? (issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: ') : asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
                                             {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
-                                            {!readOnly && (
+                                            {done && (
+                                              <span className="block mt-1 text-[11px] text-base-content/45">
+                                                {issue.changed ? `Pakeista (nuskaityta: „${issue.reiksme || 'nenurodyta'}“)` : 'Palikta kaip yra'}
+                                              </span>
+                                            )}
+                                            {!readOnly && !issue.changed && (
                                               <button
                                                 type="button"
                                                 onClick={() => setBubbleMenu(open => !open)}
@@ -1912,7 +1921,12 @@ function TabTalpos({
                                           </p>
                                           </div>
                                           {!readOnly && bubbleMenu && (
-                                            <div role="menu" className={`absolute right-2 ${bubblePos.above ? 'bottom-full mb-1' : 'top-full mt-1'} z-[10012] w-60 overflow-hidden rounded-xl border border-base-content/10 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]`}>
+                                            <div role="menu" className={`absolute right-2 ${bubblePos.above ? 'bottom-full mb-1' : 'top-full mt-1'} z-[10012] w-max min-w-[8.5rem] max-w-[15rem] overflow-hidden rounded-xl border border-base-content/10 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]`}>
+                                              {done ? (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} text-base-content/70`}>
+                                                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Grąžinti į neperžiūrėtus
+                                                </button>
+                                              ) : (<>
                                               {issue.siulymas && issue.siulymas !== String(cv ?? '') && (
                                                 <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.siulymas, entry.obj, true); }} className={`${action} text-amber-900`}>
                                                   <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Pakeisti į „{issue.siulymas}“
@@ -1940,6 +1954,7 @@ function TabTalpos({
                                                   <X className="w-3.5 h-3.5 shrink-0" /> Nereikia
                                                 </button>
                                               )}
+                                              </>)}
                                             </div>
                                           )}
                                           {readOnly && (
