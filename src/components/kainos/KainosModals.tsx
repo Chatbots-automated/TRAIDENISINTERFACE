@@ -1,3 +1,4 @@
+import { AppSelect } from '../AppSelect';
 import React, { useState } from 'react';
 import { Check, Loader2, X } from 'lucide-react';
 import type { KainuIrašas, Medžiaga } from '../../lib/kainosService';
@@ -169,9 +170,9 @@ export function PriceModal({ medziagas, initial, defaultArtikulas, defaultDate, 
           {!quickMode && (
             <div>
               <label className="text-xs font-medium mb-1 block" style={{ color: '#5a5550' }}>Medžiaga</label>
-              <select value={art} onChange={e => setArt(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg outline-none" style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }}>
+              <AppSelect value={art} onChange={e => setArt(e.target.value)} className="w-full px-3 py-2 text-sm rounded-lg outline-none" style={{ background: '#fdfcfb', border: '1px solid #e5e0d8', color: '#3d3935' }}>
                 {medziagas.map(m => <option key={m.artikulas} value={m.artikulas}>{m.pavadinimas} ({m.artikulas})</option>)}
-              </select>
+              </AppSelect>
             </div>
           )}
 

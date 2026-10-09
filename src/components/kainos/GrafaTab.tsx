@@ -1,13 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, LineChart as LineChartIcon, Loader2 } from 'lucide-react';
-import { CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { computePrediction } from '../../lib/kainosService';
 import type { KainuIrašas, Medžiaga } from '../../lib/kainosService';
 import type { ExtractedCitation } from '../../lib/kainosAnalyticsFramework';
 import { addDaysISO, addMonthsISO, extractJsonPayload, normalizeAnalysisForecasts, parseForecastsFromMarkdownTable, parseForecastsFromNarrativeText } from './forecastParsing';
 import type { AiPrediction, ChartPoint } from './forecastParsing';
 
-export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analysisContent: string; onError?: (msg: string) => void }) {
+const AI_STALE_DAYS = 30;
+const PRICE_STALE_DAYS = 90;
+const FEW_ENTRIES = 6; // below this the chart says little and the forecast is a guess
+
+export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analysisContent: string; analysisDate?: string | null; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
   const [aiToggle, setAiToggle] = useState(false);
@@ -144,7 +148,7 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
 
       // Add mathematical prediction points
       if (prediction) {
-        const mathTargetValue = (prediction.kaina_min + prediction.kaina_max) / 2;
+        const mathTargetValue = prediction.kaina;
         points.push({
           date: lastActualPoint.date,
           label: lastActualPoint.date,
@@ -236,13 +240,13 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
       const allValues = [
         ...entries.map(e => e.kaina_min!),
         ...entries.filter(e => e.kaina_max != null).map(e => e.kaina_max!),
-        ...(prediction ? [(prediction.kaina_min + prediction.kaina_max) / 2] : []),
+        ...(prediction ? [prediction.nuo, prediction.iki] : []),
         ...aiPredSeries.map((p) => p.kaina),
       ];
       const minY = Math.floor(Math.min(...allValues) * 0.95 * 100) / 100;
       const maxY = Math.ceil(Math.max(...allValues) * 1.05 * 100) / 100;
 
-      const mathMid = prediction ? (prediction.kaina_min + prediction.kaina_max) / 2 : null;
+      const mathMid = prediction ? prediction.kaina : null;
       const aiFinal = aiPredSeries.length > 0 ? aiPredSeries[aiPredSeries.length - 1].kaina : null;
       const diffAbs = (mathMid !== null && aiFinal !== null) ? aiFinal - mathMid : null;
       const diffPct = (diffAbs !== null && mathMid !== 0) ? (diffAbs / mathMid) * 100 : null;
@@ -316,14 +320,28 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
             <div className="absolute top-6 left-1/2 -translate-x-1/2 z-30 w-80 bg-white rounded-xl overflow-hidden"
               style={{ boxShadow: '0 8px 30px rgba(0,0,0,0.12)', border: '1px solid #f0ede8' }}>
               <div className="px-4 py-3 space-y-2 text-xs leading-relaxed" style={{ color: '#5a5550' }}>
-                <p><strong style={{ color: '#3d3935' }}>Be DI</strong> — grafikai rodo tik matematinę prognozę (svertinė tiesinė regresija pagal istorinius duomenis).</p>
+                <p><strong style={{ color: '#3d3935' }}>Be DI</strong> — prognozė yra paskutinė žinoma kaina. Patikrinus istorinius duomenis ji buvo tikslesnė už tendencijos liniją (vid. paklaida 3,9 % prieš 7,4 %). Mėlyna juosta – ribos, į kurias praeityje pateko apie 80 % atvejų; kuo senesnė paskutinė kaina, tuo juosta platesnė.</p>
+                <p><strong style={{ color: '#3d3935' }}>Tendencija</strong> (kyla / krenta / stabili) – paskutinė kaina, palyginta su kaina bent prieš 3 mėn. Ji rodoma tik kaip žyma, į prognozę neįskaičiuojama.</p>
                 <p><strong style={{ color: '#7c3aed' }}>Su DI</strong> — papildomai rodoma DI prognozė (violetinė linija), kuri atsižvelgia į naftos kainas, geopolitinius įvykius, styreno rinką ir dabartines tiekimo sąlygas iš interneto.</p>
-                <p style={{ color: '#b0aba4', fontSize: 10 }}>DI prognozei reikia sugeneruotos analizės (Analizė tab).</p>
+                <p style={{ color: '#b0aba4', fontSize: 10 }}>DI prognozė neatsinaujina pati – ji imama iš paskutinį kartą rankiniu būdu sugeneruotos analizės (skiltis „Analizė“).</p>
               </div>
             </div>
           )}
         </div>
       </div>
+      {aiToggle && aiPredictions.length > 0 && (() => {
+        const days = analysisDate ? Math.floor((Date.now() - new Date(analysisDate).getTime()) / 86400000) : null;
+        const stale = days === null || days > AI_STALE_DAYS;
+        return (
+          <div className="flex justify-center">
+            <span className="text-[11px] px-2 py-1 rounded-full"
+              style={{ background: stale ? 'rgba(217,119,6,0.10)' : 'rgba(124,58,237,0.08)', color: stale ? '#b45309' : '#7c3aed' }}>
+              {analysisDate ? `DI analizė sugeneruota ${analysisDate.slice(0, 10)}` : 'DI analizės data nežinoma'}
+              {stale && days !== null ? ` – prieš ${days} d., pasenusi. Atnaujinkite skiltyje „Analizė“.` : ''}
+            </span>
+          </div>
+        );
+      })()}
       {aiToggle && aiResponseCitations.length > 0 && (
         <div className="flex justify-center">
           <span className="text-[11px] px-2 py-1 rounded-full" style={{ background: 'rgba(37,99,235,0.08)', color: '#1d4ed8' }}>
@@ -343,14 +361,35 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
               <span className="text-[10px] ml-1.5" style={{ color: '#b0aba4' }}>{material.artikulas} · {material.vienetas}</span>
             </div>
             <div className="flex items-center gap-3">
+              {entries.length < FEW_ENTRIES && (
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-medium" style={{ color: '#b45309' }}
+                  title="Kuo daugiau kainų įvesta, tuo tikslesnė prognozė. Naujas kainas įveskite skiltyje „Kainų lentelė“.">
+                  <span className="inline-flex items-center justify-center rounded-full font-bold"
+                    style={{ width: 15, height: 15, background: '#f59e0b', color: 'white', fontSize: 10, lineHeight: 1 }}>!</span>
+                  Mažai kainų – įveskite daugiau
+                </span>
+              )}
               <span className="text-[10px]" style={{ color: '#8a857f' }}>
                 {entries.length} įraš{entries.length === 1 ? 'as' : 'ai'}
               </span>
               {prediction && projectionsVisible && (
                 <span className="prediction-badge text-[10px] px-2 py-0.5 rounded-full"
                   style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
-                  Prognozė {prediction.data}: {prediction.kaina_min.toFixed(2)}–{prediction.kaina_max.toFixed(2)}
-                  <span className="ml-1 opacity-60">({Math.round(prediction.confidence * 100)}%)</span>
+                  Prognozė {prediction.data}: {prediction.kaina.toFixed(2)}
+                  <span className="ml-1 opacity-60">(±{prediction.paklaida_proc} %: {prediction.nuo.toFixed(2)}–{prediction.iki.toFixed(2)})</span>
+                </span>
+              )}
+              {prediction && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full"
+                  title={`Paskutinė kaina, palyginta su ${prediction.pokytis_nuo} kaina`}
+                  style={{ background: 'rgba(107,114,128,0.10)', color: '#4b5563' }}>
+                  {prediction.tendencija === 'kyla' ? '↗ kyla' : prediction.tendencija === 'krenta' ? '↘ krenta' : '→ stabili'}
+                  {prediction.tendencija !== 'stabili' ? ` ${prediction.pokytis_proc > 0 ? '+' : ''}${prediction.pokytis_proc.toFixed(1).replace('.', ',')} %` : ''}
+                </span>
+              )}
+              {prediction && prediction.dienu_nuo_paskutines > PRICE_STALE_DAYS && (
+                <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(217,119,6,0.10)', color: '#b45309' }}>
+                  Paskutinė kaina {prediction.paskutine_data} (prieš {Math.round(prediction.dienu_nuo_paskutines / 30)} mėn.)
                 </span>
               )}
               {aiPredSeries.length > 0 && projectionsVisible && (
@@ -409,6 +448,28 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
                   ]}
                   labelFormatter={(label: string) => label}
                 />
+                {/* Range the price is expected to stay in */}
+                {prediction && projectionsVisible && (() => {
+                  const end = [...points].reverse().find(p => p.predicted !== undefined);
+                  return end && end.label !== prediction.paskutine_data ? (
+                    <ReferenceArea x1={prediction.paskutine_data} x2={end.label} y1={prediction.nuo} y2={prediction.iki}
+                      ifOverflow="extendDomain"
+                      shape={({ x, y, width, height }: any) => {
+                        // a cone: no uncertainty at the last known price, widening to the full range at the forecast date
+                        const mid = y + height / 2;
+                        return (
+                          <g>
+                            <path d={`M ${x},${mid} L ${x + width},${y} L ${x + width},${y + height} Z`} fill="#007AFF" fillOpacity={0.10} />
+                            <path d={`M ${x},${mid} L ${x + width},${y} M ${x},${mid} L ${x + width},${y + height}`}
+                              fill="none" stroke="#007AFF" strokeOpacity={0.35} strokeWidth={1} />
+                            <line x1={x + width - 4} x2={x + width + 4} y1={y} y2={y} stroke="#007AFF" strokeOpacity={0.6} strokeWidth={1.5} />
+                            <line x1={x + width - 4} x2={x + width + 4} y1={y + height} y2={y + height} stroke="#007AFF" strokeOpacity={0.6} strokeWidth={1.5} />
+                            <circle cx={x + width} cy={mid} r={4.5} fill="#007AFF" stroke="white" strokeWidth={2} />
+                          </g>
+                        );
+                      }} />
+                  ) : null;
+                })()}
                 {/* Actual price line */}
                 <Line
                   type="monotone"
@@ -424,7 +485,8 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
                   <Line
                     type="monotone"
                     dataKey="predicted"
-                    stroke="url(#predGradient)"
+                    stroke="#007AFF"
+                    strokeOpacity={0.8}
                     strokeWidth={2}
                     strokeDasharray="6 3"
                     dot={false}
@@ -465,15 +527,6 @@ export function GrafaTab({ medziagas, istorija, analysisContent, onError }: { me
                     </feMerge>
                   </filter>
                 </defs>
-                {/* Prediction endpoint — pulsing glow dot */}
-                {prediction && projectionsVisible && points.length > 0 && (() => {
-                  const predPoint = [...points].reverse().find(p => p.predicted !== undefined);
-                  return predPoint ? (
-                    <ReferenceDot x={predPoint.label} y={predPoint.predicted!} r={0} fill="transparent" stroke="transparent">
-                      <circle r={5} fill="#007AFF" stroke="white" strokeWidth={2} filter="url(#predGlow)" className="prediction-dot" />
-                    </ReferenceDot>
-                  ) : null;
-                })()}
                 {/* AI prediction endpoint — purple dot */}
                 {aiPredSeries.length > 0 && projectionsVisible && (() => {
                   const aiPoint = [...points].reverse().find(p => p.aiPredicted !== undefined && p.kaina === null);

@@ -1,7 +1,8 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Search, AlertCircle, RefreshCw, Filter, X, ChevronUp, ChevronDown, FileText, Eye, Trash2, Plus, Download } from 'lucide-react';
 import type { AppUser } from '../types';
-import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos } from '../lib/dokumentaiService';
+import { fetchStandartiniaiProjektai, fetchNestandartiniaiDokumentai, deleteNestandartiniaiRecord, deleteStandartinisProjektas, fetchTalpos, fetchTankSpecs } from '../lib/dokumentaiService';
 import { getDefaultTemplate } from '../lib/documentTemplateService';
 import type { NestandartiniaiRecord } from '../lib/dokumentaiService';
 import { PaklausimoModal } from './PaklausimoKortele';
@@ -21,21 +22,55 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-interface MetadataFilters {
-  orientacija: string;
-  derva: string;
-  talpa_tipas: string;
-  DN: string;
-  metadataSearch: string;
+// Filters on the cleaned tank data. A project is shown when at least one of its tanks meets all of them.
+interface TankFilters {
+  turisMin: string; turisMax: string; dnMin: string; dnMax: string;
+  terpe: string; paskirtis: string; derva: string; vieta: string; orientacija: string;
 }
 
-const EMPTY_FILTERS: MetadataFilters = {
-  orientacija: '',
-  derva: '',
-  talpa_tipas: '',
-  DN: '',
-  metadataSearch: '',
+const EMPTY_TANK_FILTERS: TankFilters = {
+  turisMin: '', turisMax: '', dnMin: '', dnMax: '', terpe: '', paskirtis: '', derva: '', vieta: '', orientacija: '',
 };
+
+/** Lower case without Lithuanian accents, so "priesgaisrine" finds "priešgaisrinė". */
+function foldText(value: unknown): string {
+  return String(value ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function parseFilterNumber(value: string): number | null {
+  const parsed = Number(value.replace(',', '.').trim());
+  return value.trim() && Number.isFinite(parsed) ? parsed : null;
+}
+
+function tankMatchesFilters(spec: Record<string, any> | undefined, filters: TankFilters): boolean {
+  if (!spec) return false;
+  const inRange = (value: unknown, min: string, max: string) => {
+    const low = parseFilterNumber(min);
+    const high = parseFilterNumber(max);
+    if (low === null && high === null) return true;
+    if (typeof value !== 'number') return false;
+    return (low === null || value >= low) && (high === null || value <= high);
+  };
+  if (!inRange(spec.turis_m3, filters.turisMin, filters.turisMax)) return false;
+  if (!inRange(spec.skersmuo_mm, filters.dnMin, filters.dnMax)) return false;
+  if (filters.terpe && spec.terpes_klase !== filters.terpe) return false;
+  if (filters.paskirtis && spec.paskirtis !== filters.paskirtis) return false;
+  if (filters.derva && spec.dervos_tipas !== filters.derva) return false;
+  if (filters.vieta && spec.vieta !== filters.vieta) return false;
+  if (filters.orientacija && spec.orientacija !== filters.orientacija) return false;
+  return true;
+}
+
+/** What a person might type to find a tank: its name, description and the cleaned values. */
+function tankSearchText(talpa: any, spec: Record<string, any> | undefined): string {
+  const parts: unknown[] = [talpa?.pavadinimas, talpa?.description];
+  if (spec) {
+    parts.push(spec.terpe, spec.terpes_klase, spec.paskirtis, spec.dervos_tipas, spec.barjero_derva, spec.vieta, spec.orientacija);
+    if (typeof spec.turis_m3 === 'number') parts.push(`${spec.turis_m3} m3`);
+    if (typeof spec.skersmuo_mm === 'number') parts.push(`DN${spec.skersmuo_mm} ${spec.skersmuo_mm}`);
+  }
+  return parts.filter(Boolean).join(' ');
+}
 
 // ---------------------------------------------------------------------------
 // Column config interface (shared by standartiniai)
@@ -438,16 +473,6 @@ function formatColumnLabel(key: string): string {
   return label.replace(/^./, c => c.toUpperCase());
 }
 
-function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string): string[] {
-  const set = new Set<string>();
-  for (const r of records) {
-    const meta = parseMetadata(r.metadata);
-    const val = getMetaValue(meta, key);
-    if (val) set.add(val);
-  }
-  return Array.from(set).sort();
-}
-
 function getMetaValueByDynamicKey(meta: Record<string, any> | null, key: string): string | undefined {
   if (!meta) return undefined;
   if (meta[key] !== undefined && meta[key] !== null && meta[key] !== '') return String(meta[key]);
@@ -569,61 +594,60 @@ function FilterDropdown({ label, value, options, onChange }: {
 }
 
 // ---------------------------------------------------------------------------
-// FilterBar
+// TankFilterBar – a few plain filters on the cleaned tank data
 // ---------------------------------------------------------------------------
 
-function FilterBar({ filters, onChange, options }: {
-  filters: MetadataFilters;
-  onChange: (f: MetadataFilters) => void;
-  options: { orientacija: string[]; derva: string[]; talpa_tipas: string[]; DN: string[] };
+function RangeFilter({ label, unit, min, max, onMin, onMax }: {
+  label: string; unit: string; min: string; max: string; onMin: (v: string) => void; onMax: (v: string) => void;
 }) {
-  const hasActive = Object.values(filters).some(v => v !== '');
-  const update = (key: keyof MetadataFilters, value: string) => onChange({ ...filters, [key]: value });
-  const activeCount = [filters.orientacija, filters.derva, filters.talpa_tipas, filters.DN, filters.metadataSearch].filter(Boolean).length;
+  const active = Boolean(min || max);
+  const inputClass = 'h-7 w-[52px] bg-transparent text-xs text-center outline-none';
+  const clean = (value: string) => value.replace(/[^\d.,]/g, '');
+  return (
+    <div className="inline-flex items-center gap-1 rounded-full pl-3 pr-2 h-8"
+      style={{
+        background: active ? 'rgba(0,122,255,0.06)' : 'rgba(0,0,0,0.04)',
+        border: `0.5px solid ${active ? 'rgba(0,122,255,0.3)' : 'rgba(0,0,0,0.08)'}`,
+      }}>
+      <span className="text-xs font-medium" style={{ color: active ? '#007AFF' : '#5a5550' }}>{label}</span>
+      <input value={min} onChange={e => onMin(clean(e.target.value))} placeholder="nuo" inputMode="decimal" className={inputClass} style={{ color: '#3d3935' }} />
+      <span className="text-xs" style={{ color: '#b0aba4' }}>–</span>
+      <input value={max} onChange={e => onMax(clean(e.target.value))} placeholder="iki" inputMode="decimal" className={inputClass} style={{ color: '#3d3935' }} />
+      <span className="text-[11px]" style={{ color: '#8a857f' }}>{unit}</span>
+    </div>
+  );
+}
 
+function TankFilterBar({ filters, onChange, options, shown, total }: {
+  filters: TankFilters;
+  onChange: (f: TankFilters) => void;
+  options: { terpe: string[]; paskirtis: string[]; derva: string[]; vieta: string[]; orientacija: string[] };
+  shown: number;
+  total: number;
+}) {
+  const update = (key: keyof TankFilters, value: string) => onChange({ ...filters, [key]: value });
+  const activeCount = Object.values(filters).filter(Boolean).length;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1.5 text-xs shrink-0 mr-1" style={{ color: '#8a857f' }}>
-        <Filter className="w-3.5 h-3.5" />
-        <span className="font-medium">Filtrai</span>
-        {activeCount > 0 && (
-          <span
-            className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold"
-            style={{ background: '#007AFF' }}
-          >
-            {activeCount}
-          </span>
-        )}
-      </div>
-
-      <FilterDropdown label="Orientacija" value={filters.orientacija} options={options.orientacija} onChange={v => update('orientacija', v)} />
+      <RangeFilter label="Tūris" unit="m³" min={filters.turisMin} max={filters.turisMax} onMin={v => update('turisMin', v)} onMax={v => update('turisMax', v)} />
+      <RangeFilter label="Skersmuo" unit="mm" min={filters.dnMin} max={filters.dnMax} onMin={v => update('dnMin', v)} onMax={v => update('dnMax', v)} />
+      <FilterDropdown label="Terpė" value={filters.terpe} options={options.terpe} onChange={v => update('terpe', v)} />
+      <FilterDropdown label="Paskirtis" value={filters.paskirtis} options={options.paskirtis} onChange={v => update('paskirtis', v)} />
       <FilterDropdown label="Derva" value={filters.derva} options={options.derva} onChange={v => update('derva', v)} />
-      <FilterDropdown label="Talpa tipas" value={filters.talpa_tipas} options={options.talpa_tipas} onChange={v => update('talpa_tipas', v)} />
-      <FilterDropdown label="DN" value={filters.DN} options={options.DN} onChange={v => update('DN', v)} />
-
-      <div className="relative">
-        <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
-        <input
-          type="text"
-          placeholder="Ieškoti metadata..."
-          value={filters.metadataSearch}
-          onChange={e => update('metadataSearch', e.target.value)}
-          className="h-7 text-xs rounded-full pl-7 pr-3 w-[170px] outline-none transition-all"
-          style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
-          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
-          onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-        />
-      </div>
-
-      {hasActive && (
+      <FilterDropdown label="Vieta" value={filters.vieta} options={options.vieta} onChange={v => update('vieta', v)} />
+      <FilterDropdown label="Orientacija" value={filters.orientacija} options={options.orientacija} onChange={v => update('orientacija', v)} />
+      {activeCount > 0 && (
         <button
-          onClick={() => onChange({ ...EMPTY_FILTERS })}
+          onClick={() => onChange({ ...EMPTY_TANK_FILTERS })}
           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium transition-all"
           style={{ color: '#FF3B30' }}
         >
           <X className="w-3 h-3" />
           Išvalyti
         </button>
+      )}
+      {shown < total && (
+        <span className="ml-auto text-xs" style={{ color: '#8a857f' }}>Rasta {shown} iš {total}</span>
       )}
     </div>
   );
@@ -647,7 +671,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const [errorTalpos, setErrorTalpos] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
-  const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
   const [showManualProjectModal, setShowManualProjectModal] = useState(false);
   const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
@@ -672,6 +695,9 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
 
   const [paramSearchKey, setParamSearchKey] = useState('');
   const [paramSearchValue, setParamSearchValue] = useState('');
+  const [tankSpecs, setTankSpecs] = useState<Map<string, Record<string, any>>>(new Map());
+  const [tankFilters, setTankFilters] = useState<TankFilters>({ ...EMPTY_TANK_FILTERS });
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
 
   // Load only the active table on mount and on every tab switch (lazy — avoids
   // pre-fetching tables the user may never visit and eliminates the double-fetch
@@ -681,6 +707,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     if (selectedTable === 'talpos') loadTalpos();
     else if (selectedTable === 'n8n_vector_store') {
       loadNestandartiniai();
+      fetchTankSpecs().then(setTankSpecs).catch(err => console.error('Error fetching tank specs:', err));
       if (talposData.length === 0) loadTalpos();
     } else if (selectedTable === 'standartiniai_projektai') loadStandartiniai();
   }, [selectedTable, talposData.length]);
@@ -705,13 +732,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const talposCols = useMemo(() => {
     return buildTalposColumns(talposData);
   }, [talposData]);
-
-  const filterOptions = useMemo(() => ({
-    orientacija: extractUniqueMetaValues(nestandartiniaiData, 'orientacija'),
-    derva: extractUniqueMetaValues(nestandartiniaiData, 'derva'),
-    talpa_tipas: extractUniqueMetaValues(nestandartiniaiData, 'talpa_tipas'),
-    DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
-  }), [nestandartiniaiData]);
 
   const talposById = useMemo(() => {
     const map = new Map<string, any>();
@@ -829,8 +849,12 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
             }
           }
 
-          const blob = parts.join(' ').toLowerCase();
-          return keywords.every(kw => blob.includes(kw));
+          for (const id of getTalposIdsFromRecord(row)) {
+            parts.push(tankSearchText(talposById.get(id), tankSpecs.get(id)));
+          }
+
+          const blob = foldText(parts.join(' '));
+          return keywords.every(kw => blob.includes(foldText(kw)));
         });
       } else {
         // Standartiniai: multi-criteria AND search across key fields
@@ -852,27 +876,26 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
       }
     }
 
-    if (!isTalpos && isNestandartiniai) {
-      const { orientacija, derva, talpa_tipas, DN, metadataSearch } = metadataFilters;
-      if (orientacija || derva || talpa_tipas || DN || metadataSearch) {
-        rows = rows.filter((row: NestandartiniaiRecord) => {
-          const meta = parseMetadata(row.metadata);
-          if (!meta) return false;
-          if (orientacija && getMetaValue(meta, 'orientacija') !== orientacija) return false;
-          if (derva && getMetaValue(meta, 'derva') !== derva) return false;
-          if (talpa_tipas && getMetaValue(meta, 'talpa_tipas') !== talpa_tipas) return false;
-          if (DN && getMetaValue(meta, 'DN') !== DN) return false;
-          if (metadataSearch) {
-            const mq = metadataSearch.toLowerCase();
-            if (!Object.entries(meta).some(([k, v]) => k.toLowerCase().includes(mq) || String(v).toLowerCase().includes(mq))) return false;
-          }
-          return true;
-        });
-      }
+    if (isNestandartiniai && Object.values(tankFilters).some(Boolean)) {
+      rows = rows.filter((row: NestandartiniaiRecord) => (
+        getTalposIdsFromRecord(row).some(id => tankMatchesFilters(tankSpecs.get(id), tankFilters))
+      ));
     }
 
     return rows;
-  }, [isTalpos, isNestandartiniai, talposData, talposById, nestandartiniaiData, standartiniaiData, searchQuery, metadataFilters, paramSearchKey, paramSearchValue]);
+  }, [isTalpos, isNestandartiniai, talposData, talposById, nestandartiniaiData, standartiniaiData, searchQuery, paramSearchKey, paramSearchValue, tankFilters, tankSpecs]);
+
+  const tankFilterOptions = useMemo(() => {
+    const collect = (key: string) => {
+      const values = new Set<string>();
+      for (const spec of tankSpecs.values()) if (typeof spec[key] === 'string' && spec[key]) values.add(spec[key]);
+      return Array.from(values).sort((a, b) => a.localeCompare(b, 'lt'));
+    };
+    return {
+      terpe: collect('terpes_klase'), paskirtis: collect('paskirtis'), derva: collect('dervos_tipas'),
+      vieta: collect('vieta'), orientacija: collect('orientacija'),
+    };
+  }, [tankSpecs]);
 
   // Sorting
   const sortedData = useMemo(() => {
@@ -904,7 +927,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   }, [filteredData, isNestandartiniai, sortConfig, talposById]);
 
   // Reset to page 1 when filters, search, sort, or table change
-  useEffect(() => { setCurrentPage(1); }, [searchQuery, metadataFilters, sortConfig, selectedTable]);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, tankFilters, paramSearchKey, paramSearchValue, sortConfig, selectedTable]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
@@ -922,7 +945,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     setSelectedTable(table);
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
-    setMetadataFilters({ ...EMPTY_FILTERS });
+    setTankFilters({ ...EMPTY_TANK_FILTERS });
     setParamSearchKey('');
     setParamSearchValue('');
     setSelectedIds(new Set());
@@ -1043,11 +1066,40 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
           </div>
 
           <div className="relative flex-1">
-            {isNestandartiniai ? (
+              <div className="app-filter-field w-full px-2 flex items-center gap-1.5">
+              <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
+              <input
+                type="text"
+                placeholder={isNestandartiniai ? 'Ieškoti: klientas, adresas, terpė, tūris… pvz. „Caverion priešgaisrinė 50“' : 'Ieškoti...'}
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="flex-1 min-w-[160px] h-8 text-sm bg-transparent outline-none text-base-content"
+              />
+            </div>
+          </div>
+
+        </div>
+
+        {/* Filters – only for nestandartiniai */}
+        {isNestandartiniai && !currentLoading && nestandartiniaiData.length > 0 && (
+          <>
+            <TankFilterBar filters={tankFilters} onChange={setTankFilters} options={tankFilterOptions} shown={filteredData.length} total={nestandartiniaiData.length} />
+            {isAdmin && (
+              <div>
+                <button
+                  onClick={() => setShowAdvancedSearch(open => !open)}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium"
+                  style={{ color: '#8a857f' }}
+                >
+                  <Filter className="w-3 h-3" />
+                  Išplėstinė paieška pagal kortelės lauką
+                  <ChevronDown className={`w-3 h-3 transition-transform ${showAdvancedSearch ? 'rotate-180' : ''}`} />
+                </button>
+                {showAdvancedSearch && <div className="mt-2">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="app-filter-field min-w-[220px] flex-1 px-2 flex items-center gap-1.5">
                   <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
-                  <select
+                  <AppSelect
                     value={paramSearchKey}
                     onChange={(e) => {
                       setParamSearchKey(e.target.value);
@@ -1059,10 +1111,10 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                     {paramSearchOptions.map(option => (
                       <option key={option.key} value={option.key}>{option.key}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                 </div>
                 <div className="app-filter-field min-w-[220px] flex-1 px-2 flex items-center gap-1.5">
-                  <select
+                  <AppSelect
                     value={paramSearchValue}
                     onChange={(e) => setParamSearchValue(e.target.value)}
                     disabled={!paramSearchKey}
@@ -1072,7 +1124,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                     {paramSearchValues.map(value => (
                       <option key={value} value={value}>{value}</option>
                     ))}
-                  </select>
+                  </AppSelect>
                   {(paramSearchKey || paramSearchValue) && (
                     <button
                       type="button"
@@ -1085,25 +1137,10 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="app-filter-field w-full px-2 flex items-center gap-1.5">
-              <Search className="w-4 h-4 shrink-0" style={{ color: '#8a857f' }} />
-              <input
-                type="text"
-                placeholder="Ieškoti..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="flex-1 min-w-[160px] h-8 text-sm bg-transparent outline-none text-base-content"
-              />
-            </div>
+                </div>}
+              </div>
             )}
-          </div>
-
-        </div>
-
-        {/* Filters – only for nestandartiniai */}
-        {isNestandartiniai && !currentLoading && nestandartiniaiData.length > 0 && (
-          <FilterBar filters={metadataFilters} onChange={setMetadataFilters} options={filterOptions} />
+          </>
         )}
       </div>
 
@@ -1125,10 +1162,10 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
           <div className="flex items-center justify-center h-64 text-center">
             <div>
               <p className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>
-                {searchQuery || paramSearchKey || paramSearchValue || Object.values(metadataFilters).some(v => v) ? 'Nieko nerasta' : 'Nėra duomenų'}
+                {searchQuery || paramSearchKey || paramSearchValue || Object.values(tankFilters).some(Boolean) ? 'Nieko nerasta' : 'Nėra duomenų'}
               </p>
               <p className="text-sm" style={{ color: '#8a857f' }}>
-                {searchQuery || paramSearchKey || paramSearchValue || Object.values(metadataFilters).some(v => v) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
+                {searchQuery || paramSearchKey || paramSearchValue || Object.values(tankFilters).some(Boolean) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
               </p>
             </div>
           </div>

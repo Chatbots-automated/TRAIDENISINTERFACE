@@ -607,6 +607,23 @@ export const fetchTalpos = async (): Promise<any[]> => {
 /**
  * Fetch specific talpos rows by their UUIDs
  */
+/**
+ * Cleaned-up description of every tank (volume, diameter, medium class, resin type, location…), kept by the
+ * similar-tank search. The documents page filters on these, because the raw card values are written many ways.
+ */
+export const fetchTankSpecs = async (): Promise<Map<string, Record<string, any>>> => {
+  const { data, error } = await db
+    .from('talpos_search')
+    .select('talpa_id,spec')
+    .limit(-1);
+  if (error) throw error;
+  const specs = new Map<string, Record<string, any>>();
+  for (const row of data || []) {
+    if (row?.talpa_id && row.spec && typeof row.spec === 'object') specs.set(String(row.talpa_id), row.spec);
+  }
+  return specs;
+};
+
 export const fetchTalposByIds = async (ids: string[]): Promise<any[]> => {
   if (ids.length === 0) return [];
   try {

@@ -1,9 +1,10 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Plus, FileText, Search, Trash2, X, PanelLeft, PanelLeftClose,
   AlertCircle, CheckCircle, Loader2, Image,
   Code, Type, FileJson, ChevronDown, Sparkles, Settings2,
-  ClipboardCopy, SlidersHorizontal
+  ClipboardCopy, SlidersHorizontal, Download, UploadCloud
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { AppUser, ParsedDocument, ParseTier } from '../types';
@@ -18,6 +19,7 @@ import {
 } from '../lib/llamaParseService';
 import {
   createExtractJob,
+  generateExtractSchema,
   isRetryableExtractPollError,
   pollExtractJob,
   uploadExtractText,
@@ -43,16 +45,41 @@ import {
   type LlamaParseExtraction,
 } from '../lib/analizeService';
 import { DirectusFilePreview } from './DirectusFilePreview';
+import { ExtractResultView } from './analize/ExtractResultView';
+import { renderMarkdown } from './analize/markdownRenderer';
+import { sanitizeHtml } from '../lib/sanitizeHtml';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const TIERS: { value: ParseTier; label: string; desc: string }[] = [
-  { value: 'cost_effective', label: 'Ekonomiškas', desc: 'Greitas, tekstiniams dokumentams' },
-  { value: 'agentic', label: 'Agentinis', desc: 'Vaizdai, diagramos, lentelės' },
-  { value: 'agentic_plus', label: 'Agentinis+', desc: 'Maksimalus tikslumas' },
-  { value: 'fast', label: 'Greitas', desc: 'Tik erdvinis tekstas' },
+  { value: 'agentic', label: 'Įprastas', desc: 'Lentelės, skenuoti dokumentai' },
+  { value: 'agentic_plus', label: 'Kruopštus', desc: 'Brėžiniai, sudėtingos lentelės, prasta kokybė' },
+  { value: 'cost_effective', label: 'Paprastas', desc: 'Aiškus spausdintas tekstas' },
+  { value: 'fast', label: 'Tik tekstas', desc: 'Greičiausias, be lentelių ir vaizdų' },
+];
+
+const PARSE_TIER_STORAGE_KEY = 'traidenis_analize_tier';
+
+// One click: fills in the request and runs it.
+const EXTRACT_TEMPLATES: { key: string; label: string; hint: string; goal: string }[] = [
+  {
+    key: 'summary', label: 'Santrauka', hint: 'Apie ką dokumentas ir kas jame svarbiausia',
+    goal: 'Trumpai paaiškink, apie ką šis dokumentas, ir išvardyk svarbiausius faktus, skaičius, datas ir reikalavimus.',
+  },
+  {
+    key: 'tank', label: 'Talpos duomenys', hint: 'Tūris, matmenys, terpė, jungtys',
+    goal: 'Ištrauk kiekvienos talpos duomenis: pavadinimą, kiekį, tūrį (m³), skersmenį (mm), ilgį arba aukštį (mm), terpę, temperatūrą, medžiagą, pastatymo vietą, visas jungtis su DN ir kiekiais, papildomus reikalavimus.',
+  },
+  {
+    key: 'tables', label: 'Lentelės', hint: 'Visos dokumento lentelės',
+    goal: 'Ištrauk visas dokumento lenteles: kiekvienai lentelei pateik pavadinimą ir visas eilutes su stulpelių reikšmėmis.',
+  },
+  {
+    key: 'terms', label: 'Datos, sumos ir šalys', hint: 'Terminai, kainos, kas su kuo susitaria',
+    goal: 'Ištrauk dokumento šalis (įmones ir asmenis), visas datas ir terminus, sumas su valiuta ir pagrindinius įsipareigojimus.',
+  },
 ];
 
 const ACCEPTED_TYPES = '.pdf,.docx,.pptx,.xlsx,.html,.htm,.jpg,.jpeg,.png,.xml,.epub,.rtf,.csv,.txt';
@@ -91,7 +118,7 @@ type ParseStepKey = 'selected' | 'directus' | 'llama_upload' | 'parse_job' | 're
 type StepStatus = 'waiting' | 'active' | 'done' | 'error';
 type ExtractSchemaMode = 'auto' | 'fields' | 'raw';
 type ExtractFieldType = 'string' | 'number' | 'boolean' | 'array' | 'object';
-type ExtractPanelTab = 'config' | 'results';
+type ExtractPanelTab = 'config' | 'results' | 'text';
 
 interface ExtractFieldDraft {
   id: string;
@@ -566,10 +593,28 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
   // --- Upload & parsing ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [parseTier, setParseTier] = useState<ParseTier>('agentic');
+  const [parseTier, setParseTier] = useState<ParseTier>(() => {
+    const saved = localStorage.getItem(PARSE_TIER_STORAGE_KEY);
+    return TIERS.some(t => t.value === saved) ? saved as ParseTier : 'agentic';
+  });
+  useEffect(() => {
+    localStorage.setItem(PARSE_TIER_STORAGE_KEY, parseTier);
+  }, [parseTier]);
+  const [parseTargetPages, setParseTargetPages] = useState('');
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [showExtractOptions, setShowExtractOptions] = useState(false);
+  // set when something should start by itself once the state it needs has settled
+  const autoParseRef = useRef(false);
+  const autoExtractRef = useRef(false);
   const [userPrompt, setUserPrompt] = useState('');
   const [showPrompt, setShowPrompt] = useState(false);
   const [parseStatus, setParseStatus] = useState<'idle' | 'uploading' | 'parsing' | 'done' | 'error'>('idle');
+  // the "done" notice is a passing confirmation, not a permanent banner
+  useEffect(() => {
+    if (parseStatus !== 'done') return;
+    const timer = window.setTimeout(() => setParseStatus(current => (current === 'done' ? 'idle' : current)), 5000);
+    return () => window.clearTimeout(timer);
+  }, [parseStatus]);
   const [parseStatusText, setParseStatusText] = useState('');
   const [parseError, setParseError] = useState('');
   const [parseSteps, setParseSteps] = useState(DEFAULT_PARSE_STEPS);
@@ -1020,7 +1065,8 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	      setPreviewFallbackFileId(originalFile.id);
 	      navigateToDocument(doc.id, true);
 	      setParseStatus('idle');
-      setParseStatusText('Failas įkeltas į saugyklą. Paleiskite analizę.');
+      setParseStatusText('Failas įkeltas.');
+      autoParseRef.current = true;
       setParseSteps(prev => prev.map(step => (
         step.key === 'directus'
           ? { ...step, status: 'done' as StepStatus, detail: originalFile.filename_download || originalFile.title || 'Failas išsaugotas' }
@@ -1144,6 +1190,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           {
             tier: parseTier,
             userPrompt: effectiveUserPrompt,
+            targetPages: parseTargetPages,
             onJobStarted: async (job) => {
               setStep('llama_upload', 'done', job.file_id ? 'Failas priimtas' : 'Failas priimtas apdorojimui');
               setParseStatusText('Skaitomas dokumentas...');
@@ -1190,6 +1237,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           {
             tier: parseTier,
             userPrompt: effectiveUserPrompt,
+            targetPages: parseTargetPages,
             onJobStarted: async (job) => {
               setStep('llama_upload', 'done', job.file_id ? 'Failas priimtas' : 'Failas priimtas apdorojimui');
               setParseStatusText('Skaitomas dokumentas...');
@@ -1326,6 +1374,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         {
           tier: storedTier,
           userPrompt: storedUserPrompt,
+          targetPages: parseTargetPages,
           onJobStarted: async (job) => {
             setStep('llama_upload', 'done', job.file_id ? 'Failas priimtas' : 'Failas priimtas apdorojimui');
             setStep('parse_job', 'active', 'Dokumentas ruošiamas');
@@ -1464,9 +1513,20 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     setExtractPanelTab('config');
 
     try {
-      const parsedSchema = extractSchemaMode === 'raw'
+      let parsedSchema = extractSchemaMode === 'raw'
         ? JSON.parse(rawExtractSchemaText)
         : activeExtractSchema;
+      if (extractSchemaMode === 'auto' && extractGoal.trim()) {
+        // the request itself decides the shape of the answer; the generic shape stays as the fallback
+        setExtractStatus('Ruošiama atsakymo struktūra...');
+        try {
+          const generated = await generateExtractSchema(extractGoal.trim());
+          if (generated) parsedSchema = generated;
+        } catch (schemaError) {
+          console.warn('Schema generation failed, using the generic schema:', schemaError);
+        }
+        setExtractStatus('Analizuojama...');
+      }
       const fieldKeys = Object.keys((parsedSchema.properties ?? {}) as Record<string, unknown>);
       if (extractSchemaMode === 'fields' && fieldKeys.length === 0) {
         throw new Error('Pridėkite bent vieną lauką arba perjunkite į automatinį režimą.');
@@ -1487,7 +1547,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         max_pages: extractMaxPages.trim() ? Number(extractMaxPages) : null,
         system_prompt: [
           extractSchemaMode === 'auto'
-            ? 'Naudok lanksčią ištraukimo struktūrą: pirmiausia atsakyk į naudotojo prašymą, tada išvardyk svarbiausius punktus ir aiškiai pažymėk, ko dokumente neradai.'
+            ? 'Užpildyk laukus pagal naudotojo prašymą. Ko dokumente nėra – palik tuščią, nespėliok.' 
             : extractSchemaMode === 'fields'
             ? 'Naudok tik naudotojo aprašytus laukus. Laukų pavadinimų nekeisk, reikšmes grąžink tik pagal dokumento turinį.'
             : 'Naudok naudotojo įvestą JSON schemą. Grąžink tik tai, kas atitinka schemą ir dokumento turinį.',
@@ -1689,6 +1749,36 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
     || selectedDocFull?.status === 'ERROR'
     || (selectedDocFull?.status === 'PENDING' && Boolean(selectedDocFull.job_id))
   );
+  useEffect(() => {
+    if (autoParseRef.current && selectedFile && canConfigureParsing && parseStatus === 'idle') {
+      autoParseRef.current = false;
+      void handleParse();
+    }
+    if (autoExtractRef.current && canStartExtract) {
+      autoExtractRef.current = false;
+      void handleRunExtract();
+    }
+  });
+
+  const runTemplate = (template: typeof EXTRACT_TEMPLATES[number]) => {
+    setShowTemplates(false);
+    setExtractSchemaMode('auto');
+    setExtractGoal(template.goal);
+    setExtractPanelTab('config');
+    autoExtractRef.current = true;
+  };
+
+  const parsedDocumentText = selectedDocFull?.parsed_markdown || selectedDocFull?.parsed_text || '';
+  const downloadParsedText = () => {
+    const name = (selectedDocFull?.file_name || 'dokumentas').replace(/\.[^.]+$/, '');
+    const url = URL.createObjectURL(new Blob([parsedDocumentText], { type: 'text/markdown;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const previewDocument = selectedDocFull || selectedDoc;
   const previewFileId = getOriginalFileId(previewDocument) || previewFallbackFileId;
   const previewFileName = previewDocument?.file_name || selectedFile?.name || 'Dokumentas';
@@ -1723,7 +1813,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
   });
 
   return (
-    <div className="h-full flex" style={{ background: '#fdfcfb' }}>
+    <div className="h-full flex" style={{ background: '#fdfcfb' }} onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={() => setDragOver(false)}>
       {historyCollapsed && (
         <button
           onClick={() => setHistoryCollapsed(false)}
@@ -1796,15 +1886,37 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
               }}
             />
             <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
+              <div className="flex h-8 w-8 items-center justify-center rounded-md" style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}>
                 <Plus className="h-3.5 w-3.5" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium" style={{ color: '#3d3935' }}>
+                <p className="text-[13px] font-medium" style={{ color: '#3d3935' }}>
                   Įkelti naują
                 </p>
+                
               </div>
             </div>
+          </div>
+
+          {/* Reading settings: remembered, used automatically for the next upload */}
+          <div className="mt-2 flex items-center gap-2">
+            <AppSelect
+              value={parseTier}
+              onChange={e => setParseTier(e.target.value as ParseTier)}
+              title="Kaip kruopščiai skaityti dokumentą"
+              className="h-8 min-w-0 flex-1 rounded-lg px-2 text-[12px] outline-none"
+              style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+            >
+              {TIERS.map(t => <option key={t.value} value={t.value}>{t.label} – {t.desc.charAt(0).toLowerCase() + t.desc.slice(1)}</option>)}
+            </AppSelect>
+            <input
+              value={parseTargetPages}
+              onChange={e => setParseTargetPages(e.target.value.replace(/[^\d,\- ]/g, ''))}
+              placeholder="Visi psl."
+              title="Kuriuos puslapius skaityti, pvz. 1-3,7. Tuščia – visus."
+              className="h-8 w-[76px] shrink-0 rounded-lg px-2 text-[12px] outline-none"
+              style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+            />
           </div>
 
           {/* Selected file info */}
@@ -1813,11 +1925,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
               <div className="mb-3 flex items-start gap-2">
                 <FileText className="mt-0.5 h-4 w-4 shrink-0" style={{ color: '#007AFF' }} />
                 <div className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-medium" style={{ color: '#3d3935' }}>{selectedFile.name}</span>
-                  <p className="mt-0.5 text-[10px]" style={{ color: '#8a857f' }}>{formatFileSize(selectedFile.size)}</p>
+                  <span className="block truncate text-[13px] font-medium" style={{ color: '#3d3935' }}>{selectedFile.name}</span>
+                  <p className="mt-0.5 text-[12px]" style={{ color: '#8a857f' }}>{formatFileSize(selectedFile.size)}</p>
                 </div>
                 <span
-                  className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  className="rounded-full px-2 py-0.5 text-[12px] font-medium"
                   style={{
                     background: parseStatus === 'error'
                       ? 'rgba(239,68,68,0.08)'
@@ -1859,9 +1971,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
               <div className="mb-3 space-y-1.5">
                 {parseSteps.map((step, index) => (
-                  <div key={step.key} className="flex items-start gap-2 text-[11px]">
+                  <div key={step.key} className="flex items-start gap-2 text-[13px]">
                     <span
-                      className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
+                      className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
                       style={{
                         background: step.status === 'done'
                           ? 'rgba(16,185,129,0.1)'
@@ -1884,7 +1996,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                     <div className="min-w-0">
                       <p style={{ color: step.status === 'waiting' ? '#8a857f' : '#3d3935' }}>{step.label}</p>
                       {step.detail && (
-                        <p className="truncate text-[10px]" style={{ color: '#8a857f' }}>{step.detail}</p>
+                        <p className="truncate text-[12px]" style={{ color: '#8a857f' }}>{step.detail}</p>
                       )}
                     </div>
                   </div>
@@ -1896,13 +2008,13 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
           {/* Parse status feedback */}
           {parseStatus === 'done' && (
-            <div className="mt-2 p-2 rounded-lg flex items-center gap-2 text-xs" style={{ background: 'rgba(16,185,129,0.08)', color: '#10b981' }}>
+            <div className="mt-2 p-2 rounded-lg flex items-center gap-2 text-[13px]" style={{ background: 'rgba(16,185,129,0.08)', color: '#10b981' }}>
               <CheckCircle className="w-3.5 h-3.5 shrink-0" />
               <span>{parseStatusText}</span>
             </div>
           )}
           {parseStatus === 'error' && (
-            <div className="mt-2 p-2 rounded-lg flex items-center gap-2 text-xs" style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444' }}>
+            <div className="mt-2 p-2 rounded-lg flex items-center gap-2 text-[13px]" style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444' }}>
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span>{parseError}</span>
             </div>
@@ -1919,7 +2031,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                 placeholder="Ieškoti istorijoje..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full h-9 text-xs rounded-lg pl-8 pr-3 outline-none transition-all"
+                className="w-full h-9 text-[13px] rounded-lg pl-8 pr-3 outline-none transition-all"
                 style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                 onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; }}
                 onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; }}
@@ -1937,12 +2049,12 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
           ) : docsError ? (
             <div className="mx-2 mt-2 p-2.5 rounded-lg flex items-start gap-2" style={{ background: 'rgba(239,68,68,0.07)', border: '0.5px solid rgba(239,68,68,0.18)' }}>
               <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#ef4444' }} />
-              <span className="text-xs" style={{ color: '#ef4444' }}>{docsError}</span>
+              <span className="text-[13px]" style={{ color: '#ef4444' }}>{docsError}</span>
             </div>
           ) : filteredDocs.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="w-8 h-8 mx-auto mb-2" style={{ color: '#d1cdc7' }} />
-              <p className="text-xs" style={{ color: '#8a857f' }}>
+              <p className="text-[13px]" style={{ color: '#8a857f' }}>
                 {searchQuery ? 'Nieko nerasta' : 'Nėra dokumentų'}
               </p>
             </div>
@@ -1964,16 +2076,16 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                   <div className="flex items-start gap-2">
                     <FileText className="w-4 h-4 mt-0.5 shrink-0" style={{ color: selectedDoc?.id === doc.id ? '#007AFF' : '#8a857f' }} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate" style={{ color: '#3d3935' }}>{doc.file_name}</p>
+                      <p className="text-[13px] font-medium truncate" style={{ color: '#3d3935' }}>{doc.file_name}</p>
                       <div className="flex items-center gap-1.5 mt-1">
                         <span
-                          className="inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full"
+                          className="inline-block text-[11px] font-medium px-1.5 py-0.5 rounded-full"
                           style={{ background: 'rgba(0,122,255,0.08)', color: '#007AFF' }}
                         >
                           {tierLabel(doc.tier)}
                         </span>
                         <span
-                          className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full ${
+                          className={`inline-block text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
                             doc.status === 'SUCCESS'
                               ? ''
                               : doc.status === 'ERROR'
@@ -1988,7 +2100,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           {doc.status === 'SUCCESS' ? 'Atlikta' : doc.status === 'ERROR' ? 'Klaida' : 'Vykdoma'}
                         </span>
                       </div>
-                      <p className="text-[10px] mt-1" style={{ color: '#8a857f' }}>{formatDate(doc.created_at)}</p>
+                      <p className="text-[12px] mt-1" style={{ color: '#8a857f' }}>{formatDate(doc.created_at)}</p>
                     </div>
                     <button
                       onClick={e => handleDeleteDoc(doc.id, e)}
@@ -2001,9 +2113,9 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                   {selectedDoc?.id === doc.id && doc.status !== 'SUCCESS' && (
                     <div className="mt-3 space-y-1.5 pl-6">
                       {(selectedFile ? parseSteps : getHistoryDocSteps(doc)).map((step, index) => (
-                        <div key={step.key} className="flex items-start gap-2 text-[11px]">
+                        <div key={step.key} className="flex items-start gap-2 text-[13px]">
                           <span
-                            className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-semibold"
+                            className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
                             style={{
                               background: step.status === 'done'
                                 ? 'rgba(16,185,129,0.1)'
@@ -2026,7 +2138,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           <div className="min-w-0">
                             <p style={{ color: step.status === 'waiting' ? '#8a857f' : '#3d3935' }}>{step.label}</p>
                             {step.detail && (
-                              <p className="truncate text-[10px]" style={{ color: '#8a857f' }}>{step.detail}</p>
+                              <p className="truncate text-[12px]" style={{ color: '#8a857f' }}>{step.detail}</p>
                             )}
                           </div>
                         </div>
@@ -2048,13 +2160,21 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
         {!selectedDoc ? (
           /* Empty state */
           <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <FileText className="w-16 h-16 mx-auto mb-4" style={{ color: '#d1cdc7' }} />
-              <h3 className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>Įkelkite dokumentą</h3>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="text-center rounded-2xl px-16 py-14 transition-all"
+              style={{
+                border: `1.5px dashed ${dragOver ? '#007AFF' : 'rgba(0,0,0,0.14)'}`,
+                background: dragOver ? 'rgba(0,122,255,0.04)' : 'transparent',
+              }}
+            >
+              <UploadCloud className="w-12 h-12 mx-auto mb-4" style={{ color: dragOver ? '#007AFF' : '#c9c4bd' }} />
+              <h3 className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>Nutempkite dokumentą čia</h3>
               <p className="text-sm" style={{ color: '#8a857f' }}>
-                Pasirinkite dokumentą iš istorijos arba įkelkite naują failą.
+                arba spauskite ir pasirinkite failą. Jis bus nuskaitytas iš karto.
               </p>
-            </div>
+              <p className="mt-3 text-[13px]" style={{ color: '#b0aba4' }}>PDF, Word, Excel, nuotraukos</p>
+            </button>
           </div>
         ) : docLoading ? (
           <div className="flex-1 flex items-center justify-center">
@@ -2108,35 +2228,54 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                  <div className="flex-1 overflow-y-auto p-4 space-y-4" style={{ background: '#fbfaf8' }}>
 	                      {(canExtract || extractResult) && (
 	                        <div className="space-y-3">
-	                          <div className="flex items-start justify-between gap-3">
-	                            <div>
-		                              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Nustatymai</h3>
-		                              <p className="mt-0.5 text-[11px]" style={{ color: '#6b7280' }}>Pasirinkite, ką ir kaip ištraukti.</p>
+	                          <div className="flex items-start justify-between gap-3" style={{ display: 'none' }}>
+		                            <div>
+			                              <h3 className="text-sm font-semibold" style={{ color: '#111827' }}>Nustatymai</h3>
+		                              <p className="mt-0.5 text-[13px]" style={{ color: '#6b7280' }}>Pasirinkite, ką ir kaip ištraukti.</p>
 	                            </div>
-	                            <button
-	                              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-[11px] font-medium"
-	                              style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.1)', color: '#374151' }}
-	                            >
-		                              Šablonai
-	                              <ChevronDown className="h-3 w-3" />
-	                            </button>
+	                            <div className="relative shrink-0">
+                              <button
+                                onClick={() => setShowTemplates(open => !open)}
+                                disabled={!canStartExtract}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium disabled:opacity-50"
+                                style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.1)', color: '#374151' }}
+                              >
+                                Šablonai
+                                <ChevronDown className={`h-3 w-3 transition-transform ${showTemplates ? 'rotate-180' : ''}`} />
+                              </button>
+                              {showTemplates && (
+                                <>
+                                  <div className="fixed inset-0 z-20" onClick={() => setShowTemplates(false)} />
+                                  <div className="absolute right-0 top-9 z-30 w-72 overflow-hidden rounded-xl bg-white py-1"
+                                    style={{ border: '0.5px solid rgba(0,0,0,0.1)', boxShadow: '0 10px 30px rgba(0,0,0,0.12)' }}>
+                                    {EXTRACT_TEMPLATES.map(template => (
+                                      <button key={template.key} onClick={() => runTemplate(template)}
+                                        className="block w-full px-3 py-2 text-left transition-colors hover:bg-black/[0.03]">
+                                        <span className="block text-[13px] font-semibold" style={{ color: '#1f2937' }}>{template.label}</span>
+                                        <span className="block text-[13px]" style={{ color: '#6b7280' }}>{template.hint}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
 	                          </div>
-	                          <div className="grid grid-cols-2 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
+	                          <div className="grid grid-cols-3 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
 	                            <button
 	                              onClick={() => setExtractPanelTab('config')}
-	                              className="h-8 rounded-md text-[11px] font-semibold transition-all"
+	                              className="h-8 rounded-md text-[13px] font-semibold transition-all"
 	                              style={{
 	                                background: extractPanelTab === 'config' ? '#fff' : 'transparent',
 	                                color: extractPanelTab === 'config' ? '#1f2937' : '#6b655f',
 	                                boxShadow: extractPanelTab === 'config' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
 	                              }}
-	                            >
-		                              Nustatymai
-	                            </button>
+		                            >
+			                              Klausimas
+		                            </button>
 	                            <button
 	                              onClick={() => extractResult && setExtractPanelTab('results')}
 	                              disabled={!extractResult}
-	                              className="h-8 rounded-md text-[11px] font-semibold transition-all disabled:opacity-40"
+	                              className="h-8 rounded-md text-[13px] font-semibold transition-all disabled:opacity-40"
 	                              style={{
 	                                background: extractPanelTab === 'results' ? '#fff' : 'transparent',
 	                                color: extractPanelTab === 'results' ? '#1f2937' : '#6b655f',
@@ -2144,15 +2283,44 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 	                              }}
 	                            >
 	                              Rezultatai
-	                            </button>
-	                          </div>
-	                        </div>
-	                      )}
+		                            </button>
+		                            <button
+		                              onClick={() => setExtractPanelTab('text')}
+		                              disabled={!parsedDocumentText}
+		                              className="h-8 rounded-md text-[13px] font-semibold transition-all disabled:opacity-40"
+		                              style={{
+		                                background: extractPanelTab === 'text' ? '#fff' : 'transparent',
+		                                color: extractPanelTab === 'text' ? '#1f2937' : '#6b655f',
+		                                boxShadow: extractPanelTab === 'text' ? '0 1px 2px rgba(0,0,0,0.08)' : 'none',
+		                              }}
+		                            >
+		                              Nuskaitytas tekstas
+		                            </button>
+		                          </div>
+		                        </div>
+		                      )}
+
+                      {extractPanelTab === 'text' && parsedDocumentText && (
+                        <div className="rounded-xl bg-white p-4 shadow-sm" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <p className="text-[13px]" style={{ color: '#6b7280' }}>Taip sistema perskaitė dokumentą. Iš šio teksto atsakoma į klausimus.</p>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button onClick={() => navigator.clipboard.writeText(parsedDocumentText)} className="p-1.5 rounded-lg transition-colors hover:bg-black/5" title="Kopijuoti tekstą">
+                                <ClipboardCopy className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                              </button>
+                              <button onClick={downloadParsedText} className="p-1.5 rounded-lg transition-colors hover:bg-black/5" title="Atsisiųsti">
+                                <Download className="w-3.5 h-3.5" style={{ color: '#8a857f' }} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto" dangerouslySetInnerHTML={{ __html: sanitizeHtml(renderMarkdown(parsedDocumentText)) }} />
+                        </div>
+                      )}
 
                       {extractPanelTab === 'results' && extractResult && (
                         <div className="flex items-center gap-5 overflow-x-auto border-b" style={{ borderColor: 'rgba(0,0,0,0.08)' }}>
                           {([
-                            { key: 'markdown' as ViewTab, icon: Type, label: 'Suformatuota' },
+                            { key: 'markdown' as ViewTab, icon: Type, label: 'Atsakymas' },
                             { key: 'text' as ViewTab, icon: Code, label: 'Tekstas' },
                             { key: 'json' as ViewTab, icon: FileJson, label: 'JSON' },
                             { key: 'images' as ViewTab, icon: Image, label: 'Vaizdai' },
@@ -2160,7 +2328,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             <button
                               key={tab.key}
                               onClick={() => setResultViewTab(tab.key)}
-                              className="flex h-8 flex-1 items-center justify-center gap-1.5 px-1 text-[11px] font-semibold transition-all"
+                              className="flex h-8 flex-1 items-center justify-center gap-1.5 px-1 text-[13px] font-semibold transition-all"
                               style={{
                                 color: resultViewTab === tab.key ? '#007AFF' : '#8a857f',
                                 background: 'transparent',
@@ -2170,7 +2338,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               <tab.icon className="w-3.5 h-3.5" />
                               {tab.label}
                               {tab.key === 'images' && images.length > 0 && (
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(0,122,255,0.1)', color: '#007AFF' }}>
+                                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(0,122,255,0.1)', color: '#007AFF' }}>
                                   {images.length}
                                 </span>
                               )}
@@ -2183,11 +2351,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                         <div className="rounded-xl bg-white p-3 shadow-sm space-y-3" style={{ border: '0.5px solid rgba(0,0,0,0.08)' }}>
                           <div className="flex items-center gap-2">
                             <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-                            <span className="text-[11px] font-semibold" style={{ color: '#3d3935' }}>Dokumento apdorojimas</span>
+                            <span className="text-[13px] font-semibold" style={{ color: '#3d3935' }}>Dokumento apdorojimas</span>
                           </div>
 
                           <div>
-                            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apdorojimo lygis</label>
+                            <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apdorojimo lygis</label>
                             <div className="grid grid-cols-1 gap-1.5">
                               {TIERS.map(t => (
                                 <button
@@ -2196,7 +2364,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                     setParseTier(t.value);
                                     if (!supportsParseInstructions(t.value)) setShowPrompt(false);
                                   }}
-                                  className="rounded-lg px-3 py-2 text-left text-xs font-medium transition-all"
+                                  className="rounded-lg px-3 py-2 text-left text-[13px] font-medium transition-all"
                                   style={{
                                     background: parseTier === t.value ? 'rgba(0,122,255,0.08)' : '#faf9f7',
                                     color: parseTier === t.value ? '#007AFF' : '#3d3935',
@@ -2205,17 +2373,28 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                 >
                                   <span className="flex items-center justify-between gap-2">
                                     <span>{t.label}</span>
-                                    <span className="text-[10px] font-normal" style={{ color: parseTier === t.value ? '#007AFF' : '#8a857f' }}>{t.desc}</span>
+                                    <span className="text-[12px] font-normal" style={{ color: parseTier === t.value ? '#007AFF' : '#8a857f' }}>{t.desc}</span>
                                   </span>
                                 </button>
                               ))}
                             </div>
                           </div>
 
+                          <div>
+                            <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Puslapiai</label>
+                            <input
+                              value={parseTargetPages}
+                              onChange={e => setParseTargetPages(e.target.value.replace(/[^\d,\- ]/g, ''))}
+                              placeholder="Visi. Arba pvz. 1-3,7"
+                              className="h-8 w-full rounded-lg px-2 text-[13px] outline-none"
+                              style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
+                            />
+                          </div>
+
                           {canUseParseInstructions && (
                             <button
                               onClick={() => setShowPrompt(!showPrompt)}
-                              className="flex items-center gap-1 text-[10px] font-medium"
+                              className="flex items-center gap-1 text-[12px] font-medium"
                               style={{ color: '#8a857f' }}
                             >
                               <Settings2 className="w-3 h-3" />
@@ -2229,7 +2408,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               value={userPrompt}
                               onChange={e => setUserPrompt(e.target.value)}
                               placeholder="Pvz: Ištraukti tik lenteles ir skaičius..."
-                              className="w-full text-xs rounded-lg p-2 resize-none outline-none transition-all"
+                              className="w-full text-[13px] rounded-lg p-2 resize-none outline-none transition-all"
                               style={{
                                 background: 'rgba(0,0,0,0.03)',
                                 border: '0.5px solid rgba(0,0,0,0.08)',
@@ -2244,7 +2423,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           <button
                             onClick={selectedFile ? handleParse : handlePrepareStoredDocument}
                             disabled={parseStatus === 'uploading' || parseStatus === 'parsing'}
-                            className="h-10 w-full rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                            className="h-10 w-full rounded-lg text-[13px] font-semibold text-white transition-all disabled:opacity-60"
                             style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
                           >
                             {parseStatus === 'uploading' || parseStatus === 'parsing' ? (
@@ -2255,7 +2434,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             ) : (
                               <span className="flex items-center justify-center gap-1.5">
                                 <Sparkles className="w-3.5 h-3.5" />
-                                Paruošti dokumentą
+                                Nuskaityti dokumentą
                               </span>
                             )}
                           </button>
@@ -2279,13 +2458,13 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" style={{ color: workflowTone.color }} />
                           )}
                           <div className="min-w-0">
-                            <p className="text-xs font-semibold" style={{ color: workflowTone.color }}>{workflowStatus.title}</p>
-                            <p className="mt-0.5 text-[11px] leading-5" style={{ color: '#5a5550' }}>{workflowStatus.detail}</p>
+                            <p className="text-[13px] font-semibold" style={{ color: workflowTone.color }}>{workflowStatus.title}</p>
+                            <p className="mt-0.5 text-[13px] leading-5" style={{ color: '#5a5550' }}>{workflowStatus.detail}</p>
                             {selectedDocFull?.status === 'PENDING' && !selectedDocFull.job_id && (
                               <button
                                 onClick={handlePrepareStoredDocument}
                                 disabled={parseStatus === 'parsing' || parseStatus === 'uploading'}
-                                className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[11px] font-semibold text-white transition-all disabled:opacity-60"
+                                className="mt-3 inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[13px] font-semibold text-white transition-all disabled:opacity-60"
                                 style={{ background: '#1f2937', boxShadow: '0 1px 2px rgba(0,0,0,0.14)' }}
                               >
                                 {parseStatus === 'parsing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
@@ -2305,69 +2484,112 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             <Sparkles className="h-5 w-5" style={{ color: '#007AFF' }} />
                           </div>
                           <p className="text-sm font-semibold" style={{ color: '#3d3935' }}>Analizuojama</p>
-                          <p className="mt-1 min-h-5 text-xs transition-all" style={{ color: '#8a857f' }}>
+                          <p className="mt-1 min-h-5 text-[13px] transition-all" style={{ color: '#8a857f' }}>
                             {EXTRACT_LOADING_MESSAGES[extractLoadingMessageIndex]}
                           </p>
                         </div>
                       )}
 
 	                      <div
-	                        className="rounded-xl bg-white p-4 shadow-sm space-y-3"
+	                        className="rounded-2xl bg-white p-5 space-y-3.5"
 	                        style={{
-	                          border: '0.5px solid rgba(0,0,0,0.08)',
+	                          border: '1px solid rgba(0,122,255,0.22)',
+	                          boxShadow: '0 6px 24px rgba(0,122,255,0.08)',
 	                          display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
 	                        }}
 	                      >
 	                        <div>
-	                          <div className="flex items-center gap-2">
-	                            <Sparkles className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-		                            <span className="text-xs font-semibold" style={{ color: '#111827' }}>Instrukcijos</span>
-	                          </div>
-		                          <p className="mt-1 text-[11px]" style={{ color: '#6b7280' }}>Parašykite, ką rasti dokumente.</p>
-	                        </div>
+		                          <h3 className="text-[18px] font-semibold leading-tight" style={{ color: '#111827' }}>Ką norite sužinoti iš dokumento?</h3>
+		                          <p className="mt-1 text-[13px]" style={{ color: '#6b7280' }}>Parašykite savais žodžiais – atsakymas bus surinktas iš dokumento.</p>
+		                        </div>
 	                        <textarea
                           value={extractGoal}
                           onChange={e => setExtractGoal(e.target.value)}
-	                          className="w-full resize-none rounded-lg p-3 text-xs outline-none transition-all"
+	                          className="w-full resize-none rounded-xl p-3.5 text-[15px] leading-6 outline-none transition-all"
 	                          style={{
-	                            minHeight: '82px',
+	                            minHeight: '132px',
 	                            background: '#fff',
-	                            border: '1px solid rgba(0,0,0,0.1)',
+	                            border: '1px solid rgba(0,122,255,0.28)',
 	                            color: '#3d3935',
 	                            boxShadow: 'none',
                           }}
                           onFocus={e => {
-                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.42)';
-                            e.currentTarget.style.boxShadow = '0 0 0 3px rgba(0,122,255,0.08)';
+                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.7)';
+                            e.currentTarget.style.boxShadow = '0 0 0 4px rgba(0,122,255,0.10)';
                           }}
                           onBlur={e => {
-                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.16)';
+                            e.currentTarget.style.borderColor = 'rgba(0,122,255,0.28)';
                             e.currentTarget.style.boxShadow = 'none';
                           }}
-                          placeholder="Instrukcijos"
+                          placeholder="Pvz.: kokia talpos terpė ir temperatūra? Kokie pristatymo terminai?"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canStartExtract) {
+                              e.preventDefault();
+                              void handleRunExtract();
+                            }
+                          }}
                         />
+                        <div className="flex flex-wrap items-center gap-2">
+                          {EXTRACT_TEMPLATES.map(template => (
+                            <button
+                              key={template.key}
+                              onClick={() => runTemplate(template)}
+                              disabled={!canStartExtract}
+                              title={template.hint}
+                              className="h-8 rounded-full px-3 text-[12px] font-medium transition-colors hover:bg-[rgba(0,122,255,0.12)] disabled:opacity-50"
+                              style={{ background: 'rgba(0,122,255,0.06)', color: '#0a5fc2', border: '0.5px solid rgba(0,122,255,0.18)' }}
+                            >
+                              {template.label}
+                            </button>
+                          ))}
+                          {isAdmin && (
+                            <button
+                              onClick={handleRunExtract}
+                              disabled={!canStartExtract}
+                              className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl px-5 text-[14px] font-semibold text-white transition-all disabled:opacity-50"
+                              style={{ background: '#007AFF', boxShadow: '0 2px 8px rgba(0,122,255,0.3)' }}
+                            >
+                              <Sparkles className="w-4 h-4" />
+                              Analizuoti
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      <div
-                        className="rounded-xl bg-white p-4 shadow-sm space-y-4"
+                      <button
+                        onClick={() => setShowExtractOptions(open => !open)}
+                        className="flex items-center gap-1.5 px-1 text-[12px] font-medium"
                         style={{
-                          border: '0.5px solid rgba(0,0,0,0.08)',
+                          color: '#8a857f',
                           display: !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
+                        <Settings2 className="w-3.5 h-3.5" />
+                        Papildomi nustatymai
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showExtractOptions ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      <div
+                        className="rounded-xl p-4 space-y-4"
+                        style={{
+                          border: '0.5px solid rgba(0,0,0,0.08)',
+                          background: '#faf9f7',
+                          display: showExtractOptions && !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                        }}
+                      >
                         <div>
-                          <p className="text-xs font-semibold" style={{ color: '#111827' }}>Rezultatas</p>
-                          <p className="mt-1 text-[11px]" style={{ color: '#6b7280' }}>Nustatykite, iš kur imti duomenis ir kokia forma juos grąžinti.</p>
+                          <p className="text-[13px] font-semibold" style={{ color: '#111827' }}>Rezultatas</p>
+                          <p className="mt-1 text-[13px]" style={{ color: '#6b7280' }}>Nustatykite, iš kur imti duomenis ir kokia forma juos grąžinti.</p>
                         </div>
 
                         <div className="space-y-1.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apimtis</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Apimtis</p>
                           <div className="grid grid-cols-3 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
                             {EXTRACT_TARGETS.map(target => (
                               <button
                                 key={target.value}
                                 onClick={() => setExtractTarget(target.value)}
-                                className="h-7 rounded-md text-[10px] font-semibold transition-all"
+                                className="h-8 rounded-md text-[12px] font-semibold transition-all"
                                 style={{
                                   background: extractTarget === target.value ? '#fff' : 'transparent',
                                   color: extractTarget === target.value ? '#1f2937' : '#6b655f',
@@ -2381,7 +2603,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                         </div>
 
                         <div className="space-y-1.5">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Forma</p>
+                          <p className="text-[12px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>Forma</p>
                           <div className="grid grid-cols-3 gap-1 rounded-lg p-0.5" style={{ background: '#f4f2ef', border: '0.5px solid rgba(0,0,0,0.06)' }}>
                             {[
                               { mode: 'auto' as ExtractSchemaMode, label: 'Automatiškai' },
@@ -2391,7 +2613,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               <button
                                 key={option.mode}
                                 onClick={() => setExtractSchemaMode(option.mode)}
-                                className="h-7 rounded-md text-[10px] font-semibold transition-all"
+                                className="h-8 rounded-md text-[12px] font-semibold transition-all"
                                 style={{
                                   background: extractSchemaMode === option.mode ? '#fff' : 'transparent',
                                   color: extractSchemaMode === option.mode ? '#1f2937' : '#6b655f',
@@ -2406,7 +2628,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
                         {extractSchemaMode === 'fields' && (
                           <div className="space-y-2">
-                            <div className="grid grid-cols-[minmax(90px,0.9fr)_112px_minmax(140px,1.4fr)_32px] gap-2 px-1 text-[9px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>
+                            <div className="grid grid-cols-[minmax(90px,0.9fr)_112px_minmax(140px,1.4fr)_32px] gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: '#8a857f' }}>
                               <span>Laukas</span>
                               <span>Tipas</span>
                               <span>Aprašymas</span>
@@ -2426,16 +2648,16 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, name: value } : item));
                                     }}
                                     placeholder="lauko_pavadinimas"
-                                    className="h-7 min-w-0 rounded-md px-2 text-[11px] outline-none"
+                                    className="h-8 min-w-0 rounded-md px-2 text-[13px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   />
-                                  <select
+                                  <AppSelect
                                     value={field.type}
                                     onChange={e => {
                                       const value = e.target.value as ExtractFieldType;
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, type: value } : item));
                                     }}
-                                    className="h-7 w-full rounded-md px-2 text-[10px] outline-none"
+                                    className="h-8 w-full rounded-md px-2 text-[12px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   >
                                     <option value="string">Tekstas</option>
@@ -2443,7 +2665,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                     <option value="boolean">Taip / ne</option>
                                     <option value="array">Sąrašas</option>
                                     <option value="object">Objektas</option>
-                                  </select>
+                                  </AppSelect>
                                   <input
                                     value={field.description}
                                     onChange={e => {
@@ -2451,12 +2673,12 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                       setExtractFields(prev => prev.map(item => item.id === field.id ? { ...item, description: value } : item));
                                     }}
                                     placeholder={getFieldDescriptionPlaceholder(field.type)}
-                                    className="h-7 min-w-0 rounded-md px-2 text-[11px] outline-none"
+                                    className="h-8 min-w-0 rounded-md px-2 text-[13px] outline-none"
                                     style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                                   />
                                   <button
                                     onClick={() => setExtractFields(prev => prev.length === 1 ? [createExtractField()] : prev.filter(item => item.id !== field.id))}
-                                    className="h-7 w-7 rounded-md flex items-center justify-center transition-colors hover:bg-black/[0.04]"
+                                    className="h-8 w-8 rounded-md flex items-center justify-center transition-colors hover:bg-black/[0.04]"
                                     style={{ color: '#8a857f' }}
                                     title="Pašalinti lauką"
                                   >
@@ -2464,7 +2686,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                   </button>
                                 </div>
                                 {field.name.trim() && (
-                                  <p className="mt-1.5 text-[10px]" style={{ color: '#8a857f' }}>
+                                  <p className="mt-1.5 text-[12px]" style={{ color: '#8a857f' }}>
                                     Raktas: <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{normalizeSchemaKey(field.name) || `laukas_${index + 1}`}</span>
                                   </p>
                                 )}
@@ -2472,7 +2694,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             ))}
                             <button
                               onClick={() => setExtractFields(prev => [...prev, createExtractField()])}
-                              className="h-7 rounded-md px-3 text-[10px] font-semibold transition-colors hover:bg-black/[0.03]"
+                              className="h-8 rounded-md px-3 text-[12px] font-semibold transition-colors hover:bg-black/[0.03]"
                               style={{ background: '#fff', border: '0.5px solid rgba(0,0,0,0.08)', color: '#1f2937' }}
                             >
                               + Pridėti lauką
@@ -2485,7 +2707,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                             value={rawExtractSchemaText}
                             onChange={e => setRawExtractSchemaText(e.target.value)}
                             spellCheck={false}
-                            className="h-40 w-full resize-none rounded-lg p-3 text-[11px] outline-none transition-all"
+                            className="h-40 w-full resize-none rounded-lg p-3 text-[13px] outline-none transition-all"
                             style={{
                               background: '#faf9f7',
                               border: '0.5px solid rgba(0,0,0,0.08)',
@@ -2499,25 +2721,26 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                       </div>
 
                       <div
-                        className="rounded-xl bg-white p-4 shadow-sm space-y-3"
+                        className="rounded-xl p-4 space-y-3"
                         style={{
                           border: '0.5px solid rgba(0,0,0,0.08)',
-                          display: extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
+                          background: '#faf9f7',
+		                          display: showExtractOptions && !extractLoading && extractPanelTab === 'config' && (canExtract || extractResult) ? undefined : 'none',
                         }}
                       >
                         <div className="flex items-center gap-2">
                           <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: '#007AFF' }} />
-                          <span className="text-xs font-semibold" style={{ color: '#111827' }}>Parametrai</span>
+                          <span className="text-[13px] font-semibold" style={{ color: '#111827' }}>Parametrai</span>
                         </div>
 
                         <div>
-                          <label className="text-[10px] font-semibold uppercase tracking-[0.08em] block mb-1.5" style={{ color: '#8a857f' }}>Tikslumas</label>
+                          <label className="text-[12px] font-semibold uppercase tracking-[0.08em] block mb-1.5" style={{ color: '#8a857f' }}>Tikslumas</label>
                           <div className="grid grid-cols-2 gap-1">
                             {EXTRACT_TIERS.map(tier => (
                               <button
                                 key={tier.value}
                                 onClick={() => setExtractTier(tier.value)}
-                                className="h-7 rounded-md text-[11px] font-medium transition-all"
+                                className="h-8 rounded-md text-[13px] font-medium transition-all"
                                 style={{
                                   background: extractTier === tier.value ? 'rgba(0,122,255,0.1)' : 'rgba(0,0,0,0.03)',
                                   color: extractTier === tier.value ? '#007AFF' : '#5a5550',
@@ -2532,19 +2755,19 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
 
                         <button
                           onClick={() => setShowExtractAdvanced(!showExtractAdvanced)}
-                          className="flex items-center gap-1 text-[10px] font-medium"
+                          className="flex items-center gap-1 text-[12px] font-medium"
                           style={{ color: '#8a857f' }}
                         >
                           <Settings2 className="w-3 h-3" />
-                          Papildomi nustatymai
+                          Išplėstiniai
                           <ChevronDown className={`w-3 h-3 transition-transform ${showExtractAdvanced ? 'rotate-180' : ''}`} />
                         </button>
 
                         {showExtractAdvanced && (
                           <div className="space-y-3">
-                            <div>
+                            <div style={{ display: isAdmin ? undefined : 'none' }}>
                               <div className="mb-2 flex items-center justify-between">
-                                <span className="text-[10px] font-medium" style={{ color: '#8a857f' }}>Schemos peržiūra</span>
+                                <span className="text-[12px] font-medium" style={{ color: '#8a857f' }}>Schemos peržiūra</span>
                                 <button
                                   onClick={() => {
                                     setExtractSchemaMode('fields');
@@ -2555,7 +2778,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                       { id: 'tank_4', name: 'svarbios_pastabos', description: 'Svarbios techninės pastabos, sąlygos arba rizikos.', type: 'array', required: false },
                                     ]);
                                   }}
-                                  className="text-[10px] font-medium"
+                                  className="text-[12px] font-medium"
                                   style={{ color: '#007AFF' }}
                                 >
                                   Įkelti talpos laukus
@@ -2565,7 +2788,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                 value={activeExtractSchemaText}
                                 readOnly
                                 spellCheck={false}
-                                className="w-full h-40 resize-none rounded-lg p-3 text-[11px] outline-none"
+                                className="w-full h-40 resize-none rounded-lg p-3 text-[13px] outline-none"
                                 style={{
                                   background: '#faf9f7',
                                   border: '0.5px solid rgba(0,0,0,0.08)',
@@ -2575,11 +2798,11 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
-                              <label className="flex items-center gap-2 text-[11px]" style={{ color: '#5a5550' }}>
+                              <label className="flex items-center gap-2 text-[13px]" style={{ color: '#5a5550' }}>
                                 <input type="checkbox" checked={extractCitations} onChange={e => setExtractCitations(e.target.checked)} />
                                 Citatos
                               </label>
-                              <label className="flex items-center gap-2 text-[11px]" style={{ color: '#5a5550' }}>
+                              <label className="flex items-center gap-2 text-[13px]" style={{ color: '#5a5550' }}>
                                 <input type="checkbox" checked={extractConfidence} onChange={e => setExtractConfidence(e.target.checked)} />
                                 Patikimumas
                               </label>
@@ -2589,30 +2812,30 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                 value={extractTargetPages}
                                 onChange={e => setExtractTargetPages(e.target.value)}
                                 placeholder="Puslapiai: 1,3-5"
-                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                className="h-8 rounded-lg px-2 text-[13px] outline-none"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                               />
                               <input
                                 value={extractMaxPages}
                                 onChange={e => setExtractMaxPages(e.target.value.replace(/[^\d]/g, ''))}
                                 placeholder="Maks. puslapių"
-                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                className="h-8 rounded-lg px-2 text-[13px] outline-none"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                               />
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-2 gap-2" style={{ display: 'none' }}>
                               <input
                                 value={extractVersion}
                                 onChange={e => setExtractVersion(e.target.value)}
                                 placeholder="Versija: naujausia"
-                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                className="h-8 rounded-lg px-2 text-[13px] outline-none"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                               />
                               <input
                                 value={extractParseConfigId}
                                 onChange={e => setExtractParseConfigId(e.target.value)}
                                 placeholder="Paruošimo konfig. ID"
-                                className="h-8 rounded-lg px-2 text-xs outline-none"
+                                className="h-8 rounded-lg px-2 text-[13px] outline-none"
                                 style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                               />
                             </div>
@@ -2620,17 +2843,17 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                               value={extractSystemPrompt}
                               onChange={e => setExtractSystemPrompt(e.target.value)}
                               placeholder="Papildomos ištraukimo instrukcijos..."
-                              className="w-full h-20 rounded-lg p-2 text-xs resize-none outline-none"
+                              className="w-full h-20 rounded-lg p-2 text-[13px] resize-none outline-none"
                               style={{ background: '#faf9f7', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
                             />
                           </div>
                         )}
 
-                        {isAdmin && (
+                        {false && (
                           <button
                             onClick={handleRunExtract}
                             disabled={!canStartExtract}
-                            className="w-full h-9 rounded-lg text-xs font-semibold text-white transition-all disabled:opacity-60"
+                            className="w-full h-9 rounded-lg text-[13px] font-semibold text-white transition-all disabled:opacity-60"
                             style={{ background: '#1f2937', boxShadow: '0 1px 3px rgba(0,0,0,0.18)' }}
                           >
                             {extractLoading ? (
@@ -2649,7 +2872,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                       </div>
 
                       {extractError && (
-                        <div className="rounded-xl p-3 text-xs flex gap-2" style={{ background: 'rgba(239,68,68,0.07)', color: '#ef4444', border: '0.5px solid rgba(239,68,68,0.18)' }}>
+                        <div className="rounded-xl p-3 text-[13px] flex gap-2" style={{ background: 'rgba(239,68,68,0.07)', color: '#ef4444', border: '0.5px solid rgba(239,68,68,0.18)' }}>
                           <AlertCircle className="w-4 h-4 shrink-0" />
                           <span>{extractError}</span>
                         </div>
@@ -2674,9 +2897,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           </div>
 
                           {resultViewTab === 'markdown' && (
-                            <div className="whitespace-pre-wrap text-sm leading-7" style={{ color: '#3d3935' }}>
-                              {extractResultText || 'Rezultate nėra rodomų duomenų.'}
-                            </div>
+                            <ExtractResultView value={extractResultValue} metadata={extractResult.extract_metadata} />
                           )}
 
                           {resultViewTab === 'text' && (
@@ -2686,7 +2907,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                           )}
 
                           {resultViewTab === 'json' && (
-                            <pre className="max-h-[calc(100vh-320px)] overflow-auto text-[11px] whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                            <pre className="max-h-[calc(100vh-320px)] overflow-auto text-[13px] whitespace-pre-wrap" style={{ color: '#3d3935', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
                               {extractResultJson}
                             </pre>
                           )}
@@ -2708,7 +2929,7 @@ export default function AnalizeInterface({ user, projectId, mainSidebarCollapsed
                                       style={{ border: '0.5px solid rgba(0,0,0,0.06)' }}
                                     >
                                       <img src={img.url} alt={img.filename || `Vaizdas ${i + 1}`} className="h-32 w-full object-cover" />
-                                      <p className="truncate px-2 py-1.5 text-[10px]" style={{ color: '#5a5550' }}>
+                                      <p className="truncate px-2 py-1.5 text-[12px]" style={{ color: '#5a5550' }}>
                                         {img.filename || `vaizdas_${i + 1}`}
                                       </p>
                                     </button>

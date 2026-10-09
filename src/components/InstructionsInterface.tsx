@@ -1,3 +1,4 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -1241,7 +1242,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                   </div>
 
                   {editorTab === 'schema' ? (
-                    <select
+                    <AppSelect
                       value={schemaKey}
                       onChange={(e) => openSchemaEditor(e.target.value as 'sdk_chat_tool_schemas' | 'kainos_ai_tool_schemas')}
                       className="app-form-field h-8 text-xs py-1"
@@ -1249,9 +1250,9 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                     >
                       <option value="sdk_chat_tool_schemas">SDK schema</option>
                       <option value="kainos_ai_tool_schemas">Žaliavų schema</option>
-                    </select>
+                    </AppSelect>
                   ) : (
-                    <select
+                    <AppSelect
                       value={kainosPromptKey}
                       onChange={(e) => openPromptEditor(e.target.value as KainosPromptKey)}
                       className="app-form-field h-8 text-xs py-1"
@@ -1260,7 +1261,7 @@ export default function InstructionsInterface({ user }: InstructionsInterfacePro
                       {(Object.keys(KAINOS_PROMPTS) as KainosPromptKey[]).map((key) => (
                         <option key={key} value={key}>{KAINOS_PROMPTS[key].label}</option>
                       ))}
-                    </select>
+                    </AppSelect>
                   )}
                 </div>
 

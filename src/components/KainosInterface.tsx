@@ -19,6 +19,10 @@ import { sanitizeHtml } from '../lib/sanitizeHtml';
 import { AddMaterialModal, PriceModal } from './kainos/KainosModals';
 import { SablonaiTab } from './kainos/SablonaiTab';
 import { GrafaTab } from './kainos/GrafaTab';
+import { MarketOverview, analysisNarrative } from './kainos/MarketOverview';
+import { OilReport } from './kainos/OilReport';
+import { EventsReport } from './kainos/EventsReport';
+import { GenerationProgress } from './kainos/GenerationProgress';
 import {
   extractUrlCitationsFromText,
   getAnalysisMarkdownForDisplay,
@@ -34,12 +38,23 @@ import {
   type InternetAnalysisId,
   type InternetAnalysisRecord,
 } from '../lib/internetAnalysisService';
+import type { AnalysisLive } from '../lib/internetAnalysisService';
 
 interface KainosInterfaceProps { user: AppUser; }
 
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
+
+function OilReportOrText({ content, fallback }: { content: string; fallback: React.ReactNode }) {
+  const report = OilReport({ content });
+  return <>{report ?? fallback}</>;
+}
+
+function EventsReportOrText({ content, fallback }: { content: string; fallback: React.ReactNode }) {
+  const report = EventsReport({ content });
+  return <>{report ?? fallback}</>;
+}
 
 export default function KainosInterface({ user }: KainosInterfaceProps) {
   const isAdmin = Boolean(user.is_admin);
@@ -50,13 +65,17 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
   const [analytics, setAnalytics] = useState<PrognozėInternetas | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'lentele' | 'sablonai' | 'grafa' | 'analize'>(() => {
-    const hash = window.location.hash.replace('#', '') as 'lentele' | 'sablonai' | 'grafa' | 'analize';
-    return ['lentele', 'sablonai', 'grafa', 'analize'].includes(hash) ? hash : 'lentele';
+    // the URL hash wins (a shared link opens its tab); the remembered tab covers a refresh that lost the hash
+    const tabs = ['lentele', 'sablonai', 'grafa', 'analize'];
+    const hash = window.location.hash.replace('#', '');
+    const saved = localStorage.getItem('traidenis_kainos_tab') || '';
+    return (tabs.includes(hash) ? hash : tabs.includes(saved) ? saved : 'lentele') as 'lentele' | 'sablonai' | 'grafa' | 'analize';
   });
 
-  // Persist active tab in URL hash
+  // Persist active tab in URL hash and for the next visit
   useEffect(() => {
     window.location.hash = activeTab;
+    localStorage.setItem('traidenis_kainos_tab', activeTab);
   }, [activeTab]);
 
   // ---- Excel import state ----
@@ -105,7 +124,13 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     missingForecastCodes: [],
     error: null,
   });
-  const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>('analysis');
+  const [analysisFocus, setAnalysisFocus] = useState<AnalysisSectionKey>(() => {
+    const saved = localStorage.getItem('traidenis_kainos_analysis_section');
+    return saved === 'nafta' || saved === 'geo' || saved === 'analysis' ? saved : 'analysis';
+  });
+  useEffect(() => {
+    localStorage.setItem('traidenis_kainos_analysis_section', analysisFocus);
+  }, [analysisFocus]);
   const analysisFetchVersionRef = useRef(0);
   const [configWarning, setConfigWarning] = useState<{
     reason: string;
@@ -176,15 +201,42 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
     return () => window.clearInterval(interval);
   }, [loadInternetAnalysisState]);
 
+  // The price forecast is built from the oil and market-events analyses plus the entered prices.
+  // It may be generated only when those two are from the same day, and only if something it reads has changed.
+  const [liveAnalysis, setLiveAnalysis] = useState<AnalysisLive | null>(null);
+  const forecastBlockReason = useMemo<string | null>(() => {
+    const day = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('sv-SE') : null);
+    const oil = internetAnalyses.nafta?.date_updated;
+    const events = internetAnalyses.politika?.date_updated;
+    const forecast = internetAnalyses.kainos?.date_updated;
+    if (!oil && !events) return 'Pirma atnaujinkite „Nafta ir stirenas“ ir „Rinkos įvykiai“.';
+    if (!oil) return 'Pirma atnaujinkite „Nafta ir stirenas“.';
+    if (!events) return 'Pirma atnaujinkite „Rinkos įvykiai“.';
+    if (day(oil) !== day(events)) {
+      return `Pirma atnaujinkite „${new Date(oil).getTime() < new Date(events).getTime() ? 'Nafta ir stirenas' : 'Rinkos įvykiai'}“.`;
+    }
+    if (!forecast) return null;
+    const forecastTime = new Date(forecast).getTime();
+    const inputsChanged = new Date(oil).getTime() > forecastTime
+      || new Date(events).getTime() > forecastTime
+      || istorija.some(e => e.sukurta_at && new Date(e.sukurta_at).getTime() > forecastTime);
+    return inputsChanged ? null : 'Prognozė jau nauja. Pirma atnaujinkite kitas dvi analizes.';
+  }, [internetAnalyses, istorija]);
+
   const generateSingleAnalysis = useCallback(async (section: 'nafta' | 'geo' | 'analysis') => {
     if (!isAdmin) return;
     if (genLoading || runningSections[section]) return;
+    if (section === 'analysis' && forecastBlockReason) {
+      addNotif('error', 'Prognozės generuoti negalima', forecastBlockReason);
+      return;
+    }
     setGenLoading(true);
     setGenStep(section);
     setRunningSections((prev) => ({ ...prev, [section]: true }));
     try {
       const targetId: InternetAnalysisId = section === 'nafta' ? 'nafta' : section === 'geo' ? 'politika' : 'kainos';
-      await runInternetAnalysis(targetId);
+      setLiveAnalysis(null);
+      await runInternetAnalysis(targetId, setLiveAnalysis);
       await loadInternetAnalysisState(true);
       addNotif('success', 'Analizė atnaujinta', 'Sėkmingai sugeneruota');
     } catch (err: any) {
@@ -202,7 +254,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
       setGenStep('idle');
       setRunningSections((prev) => ({ ...prev, [section]: false }));
     }
-  }, [genLoading, isAdmin, loadInternetAnalysisState, runningSections]);
+  }, [genLoading, isAdmin, loadInternetAnalysisState, runningSections, forecastBlockReason]);
 
   // ---- load data on mount (no auto-generation — manual button only) ----
   useEffect(() => { loadData(); }, []);
@@ -681,17 +733,19 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
           <SablonaiTab canEdit={isAdmin} />
         ) : activeTab === 'grafa' ? (
           /* ---- GRAFA TAB ---- */
-          <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
+          <GrafaTab medziagas={medziagas} istorija={istorija} analysisContent={internetAnalyses.kainos?.content || ""} analysisDate={internetAnalyses.kainos?.date_updated} onError={(msg) => addNotif('error', 'DI prognozė', msg)} />
         ) : (
           /* ---- ANALYTICS TAB ---- */
           <div className="sdk-data-card overflow-hidden">
             <div className="px-5 pt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                 {([
-                  { key: 'nafta', label: 'Naftos analizė', sub: 'Žaliavos ir dervos ryšys', icon: BarChart2, confidence: 100 },
-                  { key: 'geo', label: 'Geopolitika', sub: 'Rinkos ir tiekimo sąlygos', icon: Globe, confidence: 100 },
-                  { key: 'analysis', label: 'Kainų prognozė', sub: 'Apibendrinta prognozė', icon: TrendingUp, confidence: 100 },
+                  { key: 'analysis', label: 'Kainų prognozė', sub: 'Kiek keisis medžiagų kainos', icon: TrendingUp, updated: internetAnalyses.kainos?.date_updated },
+                  { key: 'nafta', label: 'Nafta ir stirenas', sub: 'Žaliavos, nuo kurių priklauso dervos', icon: BarChart2, updated: internetAnalyses.nafta?.date_updated },
+                  { key: 'geo', label: 'Rinkos įvykiai', sub: 'Geopolitika ir tiekimas', icon: Globe, updated: internetAnalyses.politika?.date_updated },
                 ] as const).map((item) => {
+                  const ageDays = item.updated ? Math.floor((Date.now() - new Date(item.updated).getTime()) / 86400000) : null;
+                  const old = ageDays === null || ageDays > 30;
                   const active = analysisFocus === item.key;
                   const Icon = item.icon;
                   return (
@@ -708,8 +762,9 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                           <p className="text-xs font-semibold truncate text-base-content">{item.label}</p>
                           <p className="text-[10px] text-base-content/45">{item.sub}</p>
                         </div>
-                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-base-content/[0.04] text-base-content/55">
-                          ~{Math.round(item.confidence)}%
+                        <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap"
+                          style={{ background: old ? 'rgba(217,119,6,0.10)' : 'rgba(22,163,74,0.10)', color: old ? '#b45309' : '#15803d' }}>
+                          {item.updated ? item.updated.slice(0, 10) : 'nėra'}
                         </span>
                       </div>
                     </button>
@@ -732,22 +787,26 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                     </div>
                   </div>
                   {isAdmin && (
+                    <div className="flex items-center gap-3 min-w-0">
+                    {analysisFocus === 'analysis' && forecastBlockReason && (
+                      <span className="text-[11px] text-right leading-snug max-w-md" style={{ color: '#b45309' }}>{forecastBlockReason}</span>
+                    )}
                     <button
                       onClick={() => generateSingleAnalysis(analysisFocus)}
-                      disabled={isGenerationBlocked}
-                      className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs disabled:opacity-50"
+                      disabled={isGenerationBlocked || (analysisFocus === 'analysis' && !!forecastBlockReason)}
+                      title={analysisFocus === 'analysis' && forecastBlockReason ? forecastBlockReason : undefined}
+                      className="app-text-btn app-text-btn-primary h-9 min-h-0 px-4 text-xs shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isGenerationBlocked && genStep === analysisFocus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                       Generuoti
                     </button>
+                    </div>
                   )}
                 </div>
-                <div className="px-5 py-4 h-[520px] overflow-y-auto">
+                <div className="px-5 py-4 flex flex-col" style={{ height: 'calc(100vh - 285px)', minHeight: 420 }}>
+                  <div className="flex-1 min-h-0 overflow-y-auto">
                   {genLoading && genStep === analysisFocus ? (
-                    <div className="h-full min-h-[220px] flex flex-col items-center justify-center gap-2">
-                      <Loader2 className="w-7 h-7 animate-spin" style={{ color: '#2563eb' }} />
-                      <span className="text-xs" style={{ color: '#64748b' }}>Atnaujinamas pasirinktas etapas…</span>
-                    </div>
+                    <GenerationProgress section={analysisFocus} live={liveAnalysis} />
                   ) : (
                     <>
                       {(() => {
@@ -760,11 +819,31 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                             </div>
                           );
                         }
-                        const displayText = analysisFocus === 'analysis' ? replaceForecastJsonBlock(currentText) : currentText;
-                        return <div className="max-w-4xl">{renderMd(displayText)}</div>;
+                        if (analysisFocus === 'nafta') {
+                          // structured report when the text can be read as one; otherwise the text as written
+                          return <OilReportOrText content={currentText} fallback={<div className="max-w-4xl">{renderMd(currentText)}</div>} />;
+                        }
+                        if (analysisFocus === 'geo') {
+                          return <EventsReportOrText content={currentText} fallback={<div className="max-w-4xl">{renderMd(currentText)}</div>} />;
+                        }
+                        const narrative = analysisNarrative(currentText);
+                        return (
+                          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-x-8 gap-y-4 items-start">
+                            <MarketOverview medziagas={medziagas} istorija={istorija} content={currentText} dateUpdated={internetAnalyses.kainos?.date_updated} />
+                            <div className="min-w-0">
+                              {narrative ? (
+                                <>
+                                  <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: '#8a857f' }}>Kas lemia kainas</p>
+                                  {renderMd(narrative)}
+                                </>
+                              ) : renderMd(replaceForecastJsonBlock(currentText))}
+                            </div>
+                          </div>
+                        );
                       })()}
                     </>
                   )}
+                  </div>
                   {(() => {
                     const tokenData = analysisFocus === 'nafta'
                       ? parseTokenUsage(internetAnalyses.nafta?.tokens || null)
@@ -773,7 +852,7 @@ export default function KainosInterface({ user }: KainosInterfaceProps) {
                         : parseTokenUsage(internetAnalyses.kainos?.tokens || null);
                     if (!tokenData) return null;
                     return (
-                      <div className="mt-3 pt-2 border-t border-slate-200 text-[11px]" style={{ color: '#64748b' }}>
+                      <div className="shrink-0 mt-3 pt-2 border-t border-slate-200 text-[11px]" style={{ color: '#64748b' }}>
                         Input: {tokenData.input.toLocaleString('lt-LT')} · Output: {tokenData.output.toLocaleString('lt-LT')} · Total: {tokenData.total.toLocaleString('lt-LT')}
                       </div>
                     );

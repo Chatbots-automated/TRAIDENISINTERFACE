@@ -1,9 +1,14 @@
+import { MaterialTemplatePicker, type TankFacts } from './MaterialTemplatePicker';
+import { TankPartIcon } from './TankPartIcon';
+import { AppSelect } from './AppSelect';
+import { OfficePreview } from './OfficePreview';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
   LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check,
+  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown, MailCheck, HelpCircle, Copy,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiKainaByIds,
@@ -22,6 +27,7 @@ import type {
   NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
 } from '../lib/dokumentaiService';
 import { callWebhook } from '../lib/webhooksService';
+import { getCurrentUser } from '../lib/database';
 import { fetchMaterialPricesForEstimatePayload } from '../lib/kainosService';
 import type { MaterialEstimatePriceMode, MaterialPriceEstimatePayloadItem } from '../lib/kainosService';
 import { fetchSablonai } from '../lib/sablonaiService';
@@ -30,7 +36,6 @@ import MaterialSlateView from './MaterialSlateView';
 import {
   buildDirectusAssetUrl,
   buildDirectusDownloadUrl,
-  buildGoogleDocsViewerUrl,
 } from '../lib/filePreviewUrls';
 import {
   parseAtsakymas,
@@ -111,15 +116,15 @@ function useProcessing(recordId: number, key: ProcessKey) {
 type PriceEstimateModeMap = Partial<Record<MaterialEstimatePriceMode, string>>;
 
 const PRICE_ESTIMATE_MODE_LABELS: Record<MaterialEstimatePriceMode, string> = {
-  current: 'Dabartinė',
-  math: 'Matematinė',
+  current: 'Be DI',
+  math: 'Be DI', // no longer offered: it gave the same prices as 'current'
   ai: 'Su DI',
 };
 
 const PRICE_ESTIMATE_RESPONSE_LABELS: Record<MaterialEstimatePriceMode, string> = {
-  current: 'Įvertinimas pagal paskutinias turimas kainas',
-  math: 'Įvertinimas pagal matematinį kainų numatymą',
-  ai: 'Įvertinimas pagal DI kainų numatymą',
+  current: 'Įvertinimas tik pagal paskutines turimas kainas',
+  math: 'Įvertinimas tik pagal paskutines turimas kainas',
+  ai: 'Išsamus DI įvertinimas',
 };
 
 function parsePriceEstimateModeMap(value: unknown): PriceEstimateModeMap {
@@ -166,7 +171,21 @@ function buildPriceEstimateStorage(
       text: existingText,
     };
   }
-  return JSON.stringify({ version: 1, estimates });
+  // `latest` names the estimate made last, so the summary tile can show that one
+  return JSON.stringify({ version: 1, latest: mode, estimates });
+}
+
+/** The estimate to show in the summary: the one made last; for cards saved before that was recorded, Su DI if there is one. */
+function latestPriceEstimate(value: unknown): { mode: MaterialEstimatePriceMode; text: string } | null {
+  const texts = parsePriceEstimateModeMap(value);
+  let latest: unknown = null;
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    latest = parsed && typeof parsed === 'object' ? (parsed as { latest?: unknown }).latest : null;
+  } catch { /* plain text from before modes existed */ }
+  const order: MaterialEstimatePriceMode[] = ['ai', 'current', 'math'];
+  const mode = order.find(key => key === latest && texts[key]) ?? order.find(key => texts[key]);
+  return mode ? { mode, text: texts[mode] as string } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +353,32 @@ const SKIP_DISPLAY_KEYS = new Set(['products', 'talpos', 'gaminiai', 'items', 'p
 
 /** Keys excluded from the talpos key-value panel (shown elsewhere or internal) */
 const SKIP_TALPOS_KV_KEYS = new Set(['id', 'embedding', 'description', 'similar_talpos', 'kaina', 'quantity', 'created_at', 'project', 'json', 'material_slate']);
+
+/** Project-level keys copied into each tank's json — shown on the project, not in the tank's parameter list */
+const HIDDEN_JSON_ROOT_KEYS = new Set([
+  'projektas', 'klientas', 'uzsakovas', 'kontaktinis_asmuo', 'uzklausos_data', 'santrauka', 'quantity',
+  'atsakingas_vadybininkas', 'uzklausos_stadija', 'intake', 'patikrinta', 'tikrinti',
+]);
+/** Shown in the intake check banner instead of the parameter list */
+const TALPA_BANNER_KEYS = new Set(['Trūksta_duomenų', 'Prieštaravimai_ir_rizikos']);
+/** Parameter groups of the tank (`json.talpa`); keys not listed here fall into "Kita" */
+const TALPA_GROUPS: { label: string; keys: string[] }[] = [
+  { label: 'Matmenys', keys: ['Orientacija', 'Forma', 'Talpa_m3', 'Diametras_mm', 'Ilgis_mm', 'Aukštis_mm', 'Plotis_mm', 'Dugno_tipas', 'Sienelė'] },
+  { label: 'Montavimas', keys: ['Vieta', 'Įgilinimas_m', 'Po_važiuojama_dalimi'] },
+  { label: 'Terpė', keys: ['Paskirtis', 'Cheminė_aplinka_Terpė', 'Cheminė_aplinka_Koncentracija', 'Cheminė_aplinka_Tankis_kg_m3', 'Cheminė_aplinka_Temperatūra_°C', 'Cheminė_aplinka_Slėgis', 'Cheminė_aplinka_Slėgis_bar_g'] },
+  { label: 'Gamyba', keys: ['Medžiaga', 'derva_org', 'Apšiltinimas', 'Elektrinis_šildymas', 'Maišyklė', 'Maišyklė_aprašymas'] },
+  { label: 'Jungtys ir įranga', keys: ['Jungtys', 'fizines_savybes'] },
+];
+const TALPA_LABELS: Record<string, string> = {
+  Talpa_m3: 'Tūris, m³', Diametras_mm: 'Diametras, mm', Ilgis_mm: 'Ilgis, mm', 'Aukštis_mm': 'Aukštis, mm', Plotis_mm: 'Plotis, mm',
+  Dugno_tipas: 'Dugno tipas', 'Sienelė': 'Sienelė', 'Įgilinimas_m': 'Įgilinimas, m', 'Po_važiuojama_dalimi': 'Po važiuojama dalimi',
+  'Cheminė_aplinka_Terpė': 'Terpė', 'Cheminė_aplinka_Koncentracija': 'Koncentracija', 'Cheminė_aplinka_Tankis_kg_m3': 'Tankis, kg/m³',
+  'Cheminė_aplinka_Temperatūra_°C': 'Temperatūra, °C', 'Cheminė_aplinka_Slėgis': 'Slėgis', 'Cheminė_aplinka_Slėgis_bar_g': 'Slėgis, bar',
+  'Medžiaga': 'Medžiaga', derva_org: 'Kliento derva', 'Apšiltinimas': 'Apšiltinimas', 'Elektrinis_šildymas': 'Šildymas',
+  'Maišyklė': 'Maišyklė', 'Maišyklė_aprašymas': 'Maišyklės aprašymas', fizines_savybes: 'Ypatybės', pavadinimas: 'Pavadinimas',
+  pozicija: 'Pozicija', 'eilės_nr': 'Eilės nr.', kiekis: 'Kiekis',
+};
+const talpaLabel = (key: string): string => TALPA_LABELS[key] ?? formatMetaLabel(key);
 
 /** Keys that are shown as the product title — not in the grid */
 const TITLE_KEYS = new Set(['pavadinimas', 'eilės_nr', 'pozicija']);
@@ -603,8 +648,9 @@ function isOldFormat(meta: Record<string, any>): boolean {
 type TalposSubTab = 'parametrai' | 'derva' | 'medziagos';
 
 function TabTalpos({
-  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange, pendingMessages,
+  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange, pendingMessages, onOpenFiles,
 }: {
+  onOpenFiles?: () => void;
   record: NestandartiniaiRecord;
   products: Record<string, any>[];
   readOnly?: boolean;
@@ -704,12 +750,19 @@ function TabTalpos({
   const [similarSearching, setSimilarSearching] = useState<Record<number, boolean>>({});
   const [localSimilarResults, setLocalSimilarResults] = useState<Record<number, any[] | null>>({});
   const [similarError, setSimilarError] = useState<Record<number, string | null>>({});
+  // Similar-tank verdicts ("panaši" / "nepanaši") — collected to evaluate and tune the search
+  const [similarVoteSaving, setSimilarVoteSaving] = useState<Record<string, boolean>>({});
+  const [similarVoter, setSimilarVoter] = useState<{ id: string; name: string | null; email: string | null } | null>(null);
+  useEffect(() => {
+    getCurrentUser().then(({ user }: any) => {
+      if (user?.id) setSimilarVoter({ id: String(user.id), name: user.full_name || user.display_name || null, email: user.email || null });
+    }).catch(() => {});
+  }, []);
 
   // Price estimation state (per-idx)
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, PriceEstimateModeMap>>({});
-  const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number } | null>>({});
   const [descriptionRefreshing, setDescriptionRefreshing] = useState<Record<number, boolean>>({});
   const [descriptionRefreshError, setDescriptionRefreshError] = useState<Record<number, string | null>>({});
 
@@ -821,7 +874,7 @@ function TabTalpos({
   // fromJson=true means the entry lives inside the `json` column object, not a direct column.
   type KvEntry =
     | { type: 'scalar'; key: string; value: string; fromJson?: boolean }
-    | { type: 'nested'; key: string; obj: Record<string, any>; fromJson?: boolean };
+    | { type: 'nested'; key: string; obj: Record<string, any>; fromJson?: boolean; label?: string; keys?: string[] };
 
   const kvEntries = useMemo((): KvEntry[] => {
     if (!currentTalposRow) return [];
@@ -858,6 +911,169 @@ function TabTalpos({
     setEditingKvKey(null);
     setShowAddKv(false);
   }, [idx]);
+
+  // Intake checks: each one points at a row of the tank (`laukas`) and remembers the value seen at intake (`reiksme`).
+  // A check is resolved when the user ticks it off or changes that value (filling a gap counts).
+  // sprendimas: 'gerai' = the value is right as it stands; 'klausti' = ask the client (stays on the question list)
+  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; siulymas: string; klausimas: string; sena: string; sprendimas: 'gerai' | 'klausti' | null; changed: boolean };
+  const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
+  const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
+  const intakeIssues: IntakeIssue[] = useMemo(() => (Array.isArray(jsonRoot.tikrinti) ? jsonRoot.tikrinti : [])
+    .map((raw: any, index: number): IntakeIssue => ({
+      index, laukas: typeof raw?.laukas === 'string' ? raw.laukas : null, tipas: String(raw?.tipas || ''), tekstas: String(raw?.tekstas || ''),
+      reiksme: String(raw?.reiksme ?? ''), siulymas: String(raw?.siulymas ?? ''), klausimas: String(raw?.klausimas ?? ''), sena: String(raw?.sena ?? ''),
+      sprendimas: raw?.sprendimas === 'klausti' ? 'klausti' : (raw?.sprendimas === 'gerai' || raw?.isspresta) ? 'gerai' : null,
+      changed: typeof raw?.laukas === 'string' && String(talpaObj[raw.laukas] ?? '').trim() !== String(raw?.reiksme ?? '').trim(),
+    }))
+    .filter((issue: IntakeIssue) => issue.tekstas), [jsonRoot, talpaObj]);
+  // "pakeista" entries are changes already applied from the conversation: a record, not something to check
+  const checkIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => issue.tipas !== 'pakeista'), [intakeIssues]);
+  const openIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && !issue.sprendimas), [intakeIssues]);
+  const askIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && issue.sprendimas === 'klausti'), [intakeIssues]);
+  // rows that carry a marker: still open, or waiting for the client's answer
+  const flaggedKeys = useMemo(() => new Set([...openIssues, ...askIssues].map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues, askIssues]);
+  const [openBubble, setOpenBubble] = useState<number | null>(null);
+  const [bubblePos, setBubblePos] = useState<{ top: number; left: number; above: boolean }>({ top: 0, left: 0, above: false });
+  const [bubbleMenu, setBubbleMenu] = useState(false);
+  // "Duomenys teisingi" asks once more before it resolves everything; the initial concerns stay readable from the header
+  const [confirmArmed, setConfirmArmed] = useState(false);
+  useEffect(() => { setConfirmArmed(false); }, [idx]);
+  useEffect(() => {
+    if (!confirmArmed) return;
+    const timer = window.setTimeout(() => setConfirmArmed(false), 6000);
+    return () => window.clearTimeout(timer);
+  }, [confirmArmed]);
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setHeaderSlot(document.getElementById('pm-header-slot')); }, []);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyPos, setHistoryPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  useEffect(() => { setBubbleMenu(false); }, [openBubble]);
+  const BUBBLE_WIDTH = 300;
+  const placeBubble = (anchor: Element | null) => {
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    const above = rect.bottom > window.innerHeight - 220;
+    setBubblePos({
+      top: above ? rect.top - 8 : rect.bottom + 8,
+      left: Math.min(Math.max(8, rect.right - BUBBLE_WIDTH), window.innerWidth - BUBBLE_WIDTH - 8),
+      above,
+    });
+  };
+  useEffect(() => {
+    if (openBubble === null) return;
+    const close = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenBubble(null); };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [openBubble]);
+  const [questionsCopied, setQuestionsCopied] = useState(false);
+
+  // What the list shows: project-level keys hidden, the tank object split into groups, empty rows hidden by default
+  const [showEmptyKv, setShowEmptyKv] = useState(false);
+  const displayEntries = useMemo((): KvEntry[] => {
+    const out: KvEntry[] = [];
+    const filled = (v: any) => v !== null && v !== undefined && String(v).trim() !== '';
+    for (const entry of kvEntries) {
+      if (entry.type === 'scalar') {
+        if (entry.fromJson && HIDDEN_JSON_ROOT_KEYS.has(entry.key)) continue;
+        if (!showEmptyKv && !filled(entry.value) && editingKvKey !== entry.key) continue;
+        out.push(entry);
+        continue;
+      }
+      if (entry.fromJson && HIDDEN_JSON_ROOT_KEYS.has(entry.key)) continue;
+      if (!(entry.fromJson && entry.key === 'talpa')) { out.push(entry); continue; }
+      const visible = (k: string) => !TALPA_BANNER_KEYS.has(k) && (showEmptyKv || filled(entry.obj[k]) || flaggedKeys.has(k) || editingKvKey === `talpa::${k}`);
+      const grouped = new Set(TALPA_GROUPS.flatMap(g => g.keys));
+      for (const group of TALPA_GROUPS) {
+        const keys = group.keys.filter(k => (k in entry.obj || flaggedKeys.has(k)) && visible(k));
+        if (keys.length) out.push({ ...entry, label: group.label, keys });
+      }
+      const rest = [...new Set([...Object.keys(entry.obj), ...flaggedKeys])].filter(k => !grouped.has(k) && visible(k));
+      if (rest.length) out.push({ ...entry, label: 'Kita', keys: rest });
+    }
+    return out;
+  }, [kvEntries, showEmptyKv, editingKvKey, flaggedKeys]);
+
+  // Tank summary + intake check
+  const resolveIssue = async (issueIndex: number, sprendimas: 'gerai' | 'klausti' | null) => {
+    if (!currentTalposId || !Array.isArray(jsonRoot.tikrinti)) return;
+    const newJsonObj: Record<string, any> = {
+      ...jsonRoot,
+      tikrinti: jsonRoot.tikrinti.map((raw: any, i: number) => {
+        if (i !== issueIndex) return raw;
+        const { isspresta: _old, ...rest } = raw || {};
+        return { ...rest, sprendimas };
+      }),
+    };
+    setOpenBubble(null);
+    try {
+      await updateTalposField(currentTalposId, 'json', newJsonObj);
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r)));
+    } catch (e) {
+      console.error('Error resolving intake check:', e);
+    }
+  };
+  const copyQuestions = async () => {
+    const text = askIssues.map((issue, i) => `${i + 1}. ${issue.klausimas || issue.tekstas}`).join('\n');
+    try { await navigator.clipboard.writeText(text); setQuestionsCopied(true); setTimeout(() => setQuestionsCopied(false), 2500); } catch { /* clipboard unavailable */ }
+  };
+  const goToIssue = (issue: IntakeIssue) => {
+    if (!issue.laukas) return;
+    setSubTab('parametrai');
+    setTimeout(() => {
+      document.getElementById(`kv-talpa-${issue.laukas}`)?.scrollIntoView({ block: 'center' });
+      placeBubble(document.getElementById(`kv-mark-${issue.laukas}`));
+      setOpenBubble(issue.index);
+    }, 50);
+  };
+  const missingText: string = typeof talpaObj['Trūksta_duomenų'] === 'string' ? talpaObj['Trūksta_duomenų'] : '';
+  const riskText: string = typeof talpaObj['Prieštaravimai_ir_rizikos'] === 'string' ? talpaObj['Prieštaravimai_ir_rizikos'] : '';
+  const reviewed: { by?: string | null; at?: string } | null = jsonRoot.patikrinta && typeof jsonRoot.patikrinta === 'object' ? jsonRoot.patikrinta : null;
+  const showIntakeCheck = !!currentTalposRow && (jsonRoot.intake === 'direct' || !!missingText || !!riskText || checkIssues.length > 0);
+  const hasStructuredIssues = checkIssues.length > 0;
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const setReviewed = async (on: boolean) => {
+    if (!currentTalposId) return;
+    setReviewSaving(true);
+    try {
+      const newJsonObj: Record<string, any> = { ...jsonRoot };
+      const stillOpen = new Set(openIssues.map(issue => issue.index));
+      if (on) {
+        newJsonObj.patikrinta = { by: similarVoter?.name || similarVoter?.email || null, by_id: similarVoter?.id || null, at: new Date().toISOString() };
+        // everything still open is accepted as it stands; `kartu` remembers it was accepted in bulk so undo can reopen it
+        if (Array.isArray(jsonRoot.tikrinti)) {
+          newJsonObj.tikrinti = jsonRoot.tikrinti.map((raw: any, i: number) => (stillOpen.has(i) ? { ...raw, sprendimas: 'gerai', kartu: true } : raw));
+        }
+      } else {
+        delete newJsonObj.patikrinta;
+        if (Array.isArray(jsonRoot.tikrinti)) {
+          newJsonObj.tikrinti = jsonRoot.tikrinti.map((raw: any) => {
+            if (!raw?.kartu) return raw;
+            const { kartu: _k, sprendimas: _s, ...rest } = raw;
+            return rest;
+          });
+        }
+      }
+      setConfirmArmed(false);
+      await updateTalposField(currentTalposId, 'json', newJsonObj);
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r)));
+    } catch (e) {
+      console.error('Error saving intake review:', e);
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+  const summaryLength = talpaObj['Ilgis_mm'] ?? talpaObj['Aukštis_mm'];
+  const summaryDervaAi: string = (() => {
+    const text = typeof currentTalposRow?.derva_ai === 'string' ? currentTalposRow.derva_ai.trim() : '';
+    if (!text) return '';
+    const m = text.match(/^Tinka derva:\s*(.+?)\s*\(pagrindas/);
+    return m ? m[1] : text.split(/(?<=[.!?])\s/)[0].slice(0, 70);
+  })();
+  const summaryPriceAi: string = (() => {
+    const latest = latestPriceEstimate(currentTalposRow?.kaina_ai);
+    const m = latest?.text.match(/^\s*([\d\s.,]+)\s*€/);
+    return latest && m ? `${latest.mode === 'ai' ? 'DI' : 'Be DI'}: ${m[1].trim()} €` : '';
+  })();
 
   const saveKvField = async (key: string, value: string, fromJson?: boolean) => {
     if (!currentTalposId) return;
@@ -930,6 +1146,33 @@ function TabTalpos({
       console.error('Error adding talpos field:', e);
     } finally {
       setAddingKv(false);
+    }
+  };
+
+  const rateSimilar = async (candidateId: string, verdict: 'panasi' | 'nepanasi') => {
+    if (!currentTalposId || !candidateId || !displayedSimilar) return;
+    const previous = displayedSimilar;
+    const current = previous.find((r: any) => String(r.id) === String(candidateId))?.vertinimas ?? null;
+    const next = current === verdict ? null : verdict; // clicking the active button removes the verdict
+    const apply = (list: any[]) => {
+      setLocalSimilarResults(prev => ({ ...prev, [idx]: list }));
+      setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, similar_talpos: list } : r)));
+    };
+    apply(previous.map((r: any) => (String(r.id) === String(candidateId) ? { ...r, vertinimas: next } : r)));
+    setSimilarVoteSaving(prev => ({ ...prev, [candidateId]: true }));
+    try {
+      const saved: any = await callWebhook('similar_tanks_feedback', {
+        talpa_id: currentTalposId,
+        candidate_id: candidateId,
+        vertinimas: next,
+        user: similarVoter,
+      });
+      if (Array.isArray(saved?.similar_talpos) && saved.similar_talpos.length) apply(saved.similar_talpos);
+    } catch (e: any) {
+      apply(previous);
+      setSimilarError(prev => ({ ...prev, [idx]: 'Nepavyko išsaugoti vertinimo' }));
+    } finally {
+      setSimilarVoteSaving(prev => ({ ...prev, [candidateId]: false }));
     }
   };
 
@@ -1123,15 +1366,6 @@ function TabTalpos({
 
       let materialPrices: MaterialPriceEstimatePayloadItem[] = [];
       try { materialPrices = await fetchMaterialPricesForEstimatePayload(predictionMode); } catch { /* non-fatal */ }
-      const sourceSummary = materialPrices.reduce((acc, item) => {
-        acc.total += 1;
-        const src = item.price_source;
-        if (src === 'ai') acc.ai += 1;
-        else if (src === 'math') acc.math += 1;
-        else acc.none += 1;
-        return acc;
-      }, { ai: 0, math: 0, none: 0, total: 0 });
-      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: sourceSummary }));
 
       const respData = await callWebhook('n8n_price_estimation', {
         record_id: record.id,
@@ -1143,7 +1377,7 @@ function TabTalpos({
         current_tank_specs: currentTankSpecs,
         similar_tanks: similarTanksPayload,
         material_prices: materialPrices,
-        material_price_source: predictionMode === 'ai' ? 'Su DI' : predictionMode === 'math' ? 'Matematinė' : 'Dabartinė',
+        material_price_source: predictionMode === 'ai' ? 'Su DI' : 'Be DI',
       });
       const respText = typeof respData === 'string' ? respData : JSON.stringify(respData);
 
@@ -1179,7 +1413,6 @@ function TabTalpos({
       }
     } catch (e: any) {
       setPriceEstimateError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
-      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: null }));
     } finally {
       setPriceEstimating(prev => ({ ...prev, [idx]: false }));
     }
@@ -1200,6 +1433,96 @@ function TabTalpos({
 
   return (
     <div className="h-full flex flex-col">
+      {/* Header "!": what the system flagged at intake, kept for the record after the data is confirmed */}
+      {headerSlot && currentTalposRow && (intakeIssues.length > 0 || !!reviewed || !!missingText || !!riskText) && createPortal(
+        <button
+          type="button"
+          className="app-icon-btn"
+          title="Pradinės sistemos pastabos"
+          aria-label="Pradinės sistemos pastabos"
+          aria-expanded={historyOpen}
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setHistoryPos({ top: rect.bottom + 8, right: Math.max(8, window.innerWidth - rect.right) });
+            setHistoryOpen(open => !open);
+          }}
+        >
+          <AlertCircle className={`w-4 h-4 ${!reviewed && openIssues.length > 0 ? 'text-amber-500' : 'text-base-content/40'}`} />
+        </button>,
+        headerSlot,
+      )}
+      {historyOpen && createPortal(
+        <div>
+          <div className="fixed inset-0 z-[10010]" onClick={() => setHistoryOpen(false)} />
+          <div
+            role="dialog"
+            style={{ position: 'fixed', top: historyPos.top, right: historyPos.right, width: 360, maxHeight: '70vh' }}
+            className="z-[10011] overflow-y-auto rounded-2xl rounded-tr-sm border border-base-content/10 bg-white px-3.5 py-3 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]"
+          >
+            <p className="text-xs font-semibold text-base-content/80">Pradinės sistemos pastabos</p>
+            <p className="mt-0.5 text-[11px] text-base-content/45">Ką sistema pažymėjo nuskaičiusi laišką</p>
+            {reviewed && (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-emerald-500/5 px-2.5 py-1.5">
+                <p className="text-[11px] text-emerald-700 inline-flex items-center gap-1.5 min-w-0">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Patvirtino{reviewed.by ? ` ${reviewed.by}` : ''}{reviewed.at ? `, ${new Date(reviewed.at).toLocaleDateString('lt-LT')}` : ''}</span>
+                </p>
+                {!readOnly && (
+                  <button type="button" onClick={() => setReviewed(false)} disabled={reviewSaving} className="shrink-0 text-[11px] text-base-content/45 hover:text-base-content/80 disabled:opacity-40">
+                    Atšaukti
+                  </button>
+                )}
+              </div>
+            )}
+            {intakeIssues.length > 0 ? (
+              <ul className="mt-2 space-y-2">
+                {intakeIssues.map(issue => {
+                  const current = issue.laukas ? String(talpaObj[issue.laukas] ?? '').trim() : '';
+                  const state = issue.tipas === 'pakeista' && !issue.changed
+                    ? { label: 'pakeista pagal pokalbį', tone: 'text-sky-700 bg-sky-500/10' }
+                    : issue.changed
+                    ? { label: current ? `pakeista į „${current.length > 24 ? `${current.slice(0, 24)}…` : current}“` : 'reikšmė pašalinta', tone: 'text-emerald-700 bg-emerald-500/10' }
+                    : issue.sprendimas === 'klausti' ? { label: 'klausiama kliento', tone: 'text-sky-700 bg-sky-500/10' }
+                    : issue.sprendimas === 'gerai' ? { label: 'palikta kaip yra', tone: 'text-emerald-700 bg-emerald-500/10' }
+                    : { label: 'neperžiūrėta', tone: 'text-amber-800 bg-amber-500/15' };
+                  return (
+                    <li key={issue.index} className="text-[11px] leading-snug">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-base-content/75">{issue.laukas ? talpaLabel(issue.laukas) : 'Kita'}</span>
+                        <span className={`shrink-0 rounded-md px-1.5 py-px text-[10px] ${state.tone}`}>{state.label}</span>
+                      </div>
+                      <p className="mt-0.5 text-base-content/65">
+                        <span className="text-base-content/45">{issue.tipas === 'pakeista' ? 'Pokalbis: ' : issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: '}</span>
+                        {issue.tekstas}{issue.tipas === 'pakeista' ? ` (buvo: „${issue.sena || 'nenurodyta'}“)` : issue.reiksme ? ` (nuskaityta: „${issue.reiksme.length > 40 ? `${issue.reiksme.slice(0, 40)}…` : issue.reiksme}“)` : ''}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="mt-2 text-[11px] leading-snug text-base-content/65 space-y-1">
+                {missingText && <p><span className="text-base-content/45">Trūko: </span>{missingText}</p>}
+                {riskText && <p><span className="text-base-content/45">Prieštaravimai ir rizikos: </span>{riskText}</p>}
+                {!missingText && !riskText && <p>Sistema pastabų neturėjo.</p>}
+              </div>
+            )}
+            {askIssues.length > 0 && (
+              <div className="mt-2.5 rounded-lg border border-sky-500/20 px-2.5 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                  <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
+                    {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
+                  </button>
+                </div>
+                <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                  {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                </ol>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
       {/* Delete tank confirmation banner */}
       {confirmDeleteTalposId && (
         <div className="mb-3 px-3 py-2.5 rounded-xl border border-error/20 bg-error/5 shrink-0">
@@ -1233,7 +1556,7 @@ function TabTalpos({
                 <ChevronLeft className="w-4 h-4 text-base-content/40" />
               </button>
             )}
-            <select
+            <AppSelect
               value={idx}
               onChange={e => { setCurrentIdx(Number(e.target.value)); }}
               className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
@@ -1243,7 +1566,7 @@ function TabTalpos({
               ) : Array.from({ length: navCount }, (_, i) => (
                 <option key={i} value={i}>{i + 1}. {getNavLabel(i)}</option>
               ))}
-            </select>
+            </AppSelect>
             {navCount > 1 && (
               <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
                 <ChevronRight className="w-4 h-4 text-base-content/40" />
@@ -1287,6 +1610,134 @@ function TabTalpos({
           ))}
         </div>
       </div>
+
+      {/* Tank summary: what it is, what goes in it, resin and price (ours first, the system's suggestion below) */}
+      {!loadingTalpos && currentTalposRow && (
+        <div className="shrink-0 mb-3">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-2">
+            <div className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Talpa</p>
+                <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Talpa_m3'] ? `${talpaObj['Talpa_m3']} m³` : '—'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Diametras_mm'] ? `DN${talpaObj['Diametras_mm']}` : null, summaryLength ? `${talpaObj['Aukštis_mm'] ? 'H' : 'L'}${summaryLength}` : null, Number(currentTalposRow?.quantity) > 1 ? `×${currentTalposRow.quantity}` : null].filter(Boolean).join(' ') || '\u00a0'}</p>
+              </div>
+              <TankPartIcon part="talpa" vertical={Boolean(talpaObj['Aukštis_mm'])} />
+            </div>
+            <div className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Terpė</p>
+                <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Cheminė_aplinka_Terpė'] || '—'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Vieta'], talpaObj['Įgilinimas_m'] ? `įg. ${talpaObj['Įgilinimas_m']} m` : null].filter(Boolean).join(', ') || '\u00a0'}</p>
+              </div>
+              <TankPartIcon part="terpe" vertical={Boolean(talpaObj['Aukštis_mm'])} />
+            </div>
+            <button type="button" onClick={() => setSubTab('derva')} className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2 hover:border-primary/25 transition-colors">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Derva (mūsų)</p>
+                <p className="text-sm font-semibold text-base-content truncate">{currentTalposRow?.derva_musu || 'Nenustatyta'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryDervaAi ? `DI: ${summaryDervaAi}` : 'DI dar neparinko'}</p>
+              </div>
+              <TankPartIcon part="derva" vertical={Boolean(talpaObj['Aukštis_mm'])} />
+            </button>
+            <button type="button" onClick={() => setSubTab('medziagos')} className="text-left rounded-2xl border border-base-content/8 bg-white/65 px-3 py-2 min-w-0 flex items-center gap-2 hover:border-primary/25 transition-colors">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Kaina, 1 vnt.</p>
+                <p className="text-sm font-semibold text-base-content truncate">{currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nenustatyta'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi || 'Įvertinimo nėra'}</p>
+              </div>
+              <TankPartIcon part="kaina" vertical={Boolean(talpaObj['Aukštis_mm'])} />
+            </button>
+          </div>
+
+          {/* Intake check: confirm what was read from the email before relying on resin and price */}
+          {showIntakeCheck && (reviewed ? null: (
+            <div className="mt-2 rounded-xl border border-base-content/8 bg-white/50 px-3 py-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-medium text-base-content/55 inline-flex items-center gap-1.5">
+                  <MailCheck className="w-3.5 h-3.5 text-amber-500/80" />
+                  Patikrinkite, ką sistema nuskaitė iš laiško
+                  {hasStructuredIssues && (
+                    <span className="font-normal text-base-content/40">
+                      · {openIssues.length > 0 ? `liko ${openIssues.length} iš ${checkIssues.length}` : askIssues.length > 0 ? `${askIssues.length} laukia kliento atsakymo` : 'viskas peržiūrėta'}
+                    </span>
+                  )}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  {onOpenFiles && (
+                    <button type="button" onClick={onOpenFiles} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg text-base-content/45 hover:text-primary hover:bg-primary/5">
+                      <Paperclip className="w-3 h-3" /> Šaltiniai
+                    </button>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => (confirmArmed ? setReviewed(true) : setConfirmArmed(true))}
+                      disabled={reviewSaving}
+                      title={confirmArmed ? 'Spustelėkite dar kartą – visi pažymėti laukai bus laikomi patikrintais' : undefined}
+                      className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-lg border transition-colors disabled:opacity-40 ${confirmArmed
+                        ? 'border-emerald-600 bg-emerald-600 text-white font-medium hover:bg-emerald-700'
+                        : 'border-base-content/10 bg-white text-base-content/60 hover:text-emerald-700 hover:border-emerald-500/30'}`}
+                    >
+                      {reviewSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} {confirmArmed ? 'Patvirtinti?' : 'Duomenys teisingi'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {hasStructuredIssues && (
+                <div className="mt-1.5">
+                  <div className="flex flex-wrap gap-1">
+                    {checkIssues.map(issue => {
+                      const open = openIssues.some(o => o.index === issue.index);
+                      const asking = askIssues.some(o => o.index === issue.index);
+                      const label = issue.laukas ? talpaLabel(issue.laukas) : 'Kita';
+                      return (
+                        <span key={issue.index} className={`inline-flex items-center gap-1 rounded-lg border text-[11px] ${open ? 'border-base-content/10 bg-white text-base-content/65' : asking ? 'border-sky-500/20 bg-white text-sky-700/80' : 'border-transparent text-base-content/35'}`}>
+                          <button
+                            type="button"
+                            onClick={() => goToIssue(issue)}
+                            disabled={!issue.laukas}
+                            title={issue.tekstas}
+                            className={`pl-2 py-px ${issue.laukas ? 'hover:underline' : 'cursor-default'}`}
+                          >
+                            {open ? <span className="mr-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500 align-middle" /> : asking ? '? ' : '✓ '}{label}{issue.laukas ? '' : `: ${issue.tekstas}`}
+                          </button>
+                          {!readOnly && (issue.sprendimas || !issue.laukas) && !issue.changed ? (
+                            <button type="button" onClick={() => resolveIssue(issue.index, issue.sprendimas ? null : 'gerai')} className="pr-1.5 pl-0.5 text-base-content/40 hover:text-base-content/80" title={issue.sprendimas ? 'Grąžinti' : 'Pažymėti kaip patikrintą'}>
+                              {issue.sprendimas ? <X className="w-3 h-3" /> : <Check className="w-3 h-3" />}
+                            </button>
+                          ) : <span className="pr-2" />}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {askIssues.length > 0 && (
+                    <div className="mt-2 rounded-lg border border-sky-500/20 bg-white/70 px-2.5 py-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                        <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
+                          {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
+                        </button>
+                      </div>
+                      <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                        {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                      </ol>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!hasStructuredIssues && missingText && (
+                <p className="mt-1.5 text-[11px] text-base-content/70"><span className="font-semibold text-base-content/50">Trūksta: </span>{missingText}</p>
+              )}
+              {!hasStructuredIssues && riskText && (
+                <p className="mt-1 text-[11px] text-base-content/70"><span className="font-semibold text-base-content/50">Prieštaravimai ir rizikos: </span>{riskText}</p>
+              )}
+              {!hasStructuredIssues && !missingText && !riskText && (
+                <p className="mt-1 text-[11px] text-base-content/50">Trūkstamų duomenų ar prieštaravimų nerasta. Reikšmę pataisysite ją spustelėję parametrų sąraše.</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Parametrai sub-tab ── */}
       {subTab === 'parametrai' && (
@@ -1372,19 +1823,24 @@ function TabTalpos({
                   {/* Scrollable KV list */}
                   <div className="flex-1 overflow-y-auto min-h-0 pr-0.5">
                     <div className="flex flex-col gap-1">
-                      {kvEntries.map(entry => {
+                      {displayEntries.map(entry => {
                         if (entry.type === 'nested') {
                           return (
-                            <div key={entry.key} className="mt-1.5">
+                            <div key={`${entry.key}-${entry.label ?? ''}`} className="mt-1.5">
                               {/* Group header */}
                               <div className="px-2 pt-2 pb-0.5">
                                 <span className="text-[11px] font-semibold text-base-content/45 uppercase tracking-wider">
-                                  {formatMetaLabel(entry.key)}
+                                  {entry.label ?? formatMetaLabel(entry.key)}
                                 </span>
                               </div>
                               {/* Group rows */}
-                              {Object.entries(entry.obj).map(([ck, cv]) => {
+                              {(entry.keys ? entry.keys.map(k => [k, entry.obj[k]] as [string, any]) : Object.entries(entry.obj)).map(([ck, cv]) => {
                                 const editKey = `${entry.key}::${ck}`;
+                                const rowIssues = entry.key === 'talpa' ? [...openIssues, ...askIssues].filter(issue => issue.laukas === ck) : [];
+                                const rowAsking = rowIssues.length > 0 && rowIssues.every(issue => issue.sprendimas === 'klausti');
+                                // concerns already dealt with keep a quiet grey marker, so the record stays on the row
+                                const rowDone = entry.key === 'talpa' && rowIssues.length === 0 ? intakeIssues.filter(issue => issue.laukas === ck) : [];
+                                const rowMarks = rowIssues.length ? rowIssues : rowDone;
                                 const normalizedCv = normalizeDisplayData(cv);
                                 const displayVal = normalizedCv.kind === 'scalar'
                                   ? normalizedCv.value
@@ -1392,23 +1848,29 @@ function TabTalpos({
                                     ? normalizedCv.text
                                     : '';
                                 return (
-                                  <div key={editKey} className="group grid grid-cols-[92px_minmax(0,1fr)] gap-2 rounded-lg px-2.5 py-2 hover:bg-black/[0.025] transition-colors">
-                                    <span className="text-[11px] text-base-content/45 shrink-0 font-medium pt-px" title={formatMetaLabel(ck)}>
-                                      {formatMetaLabel(ck)}
+                                  <div key={editKey} id={entry.key === 'talpa' ? `kv-talpa-${ck}` : undefined} className={`group grid ${rowMarks.length ? 'grid-cols-[92px_minmax(0,1fr)_20px]' : 'grid-cols-[92px_minmax(0,1fr)]'} gap-2 rounded-lg px-2.5 py-2 transition-colors hover:bg-black/[0.025]`}>
+                                    <span className="text-[11px] shrink-0 font-medium pt-px text-base-content/45" title={entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}>
+                                      {entry.key === 'talpa' ? talpaLabel(ck) : formatMetaLabel(ck)}
                                     </span>
                                     {editingKvKey === editKey ? (
-                                      <div className="flex items-center gap-1 flex-1 min-w-0">
-                                        <input
+                                      <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                        <textarea
                                           autoFocus
-                                          type="text"
+                                          rows={1}
                                           value={editingKvValue}
                                           onChange={e => setEditingKvValue(e.target.value)}
+                                          onFocus={e => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+                                          ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; } }}
                                           onKeyDown={e => {
-                                            if (e.key === 'Enter') saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson);
+                                            // Enter saves; Shift+Enter starts a new line
+                                            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson); }
                                             if (e.key === 'Escape') setEditingKvKey(null);
                                           }}
-                                          className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                          className="w-full text-xs leading-snug bg-white rounded-md px-2 py-1.5 border border-primary/40 outline-none text-base-content resize-none overflow-hidden"
+                                          style={{ boxShadow: '0 0 0 3px rgba(0,122,255,0.08)' }}
                                         />
+                                        <div className="flex items-center justify-end gap-1">
+                                          <span className="mr-auto text-[10px] text-base-content/35">Enter – išsaugoti, Esc – atšaukti</span>
                                         <button onClick={() => saveNestedKvField(entry.key, ck, editingKvValue, entry.obj, entry.fromJson)} disabled={savingKvKey === editKey} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                           {savingKvKey === editKey ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
                                         </button>
@@ -1416,21 +1878,128 @@ function TabTalpos({
                                           <X className="w-3 h-3 text-base-content/40" />
                                         </button>
                                       </div>
+                                        </div>
                                     ) : (
                                       <div className="text-xs text-base-content font-medium flex-1 min-w-0 break-words leading-snug">
-                                        {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar') ? (
+                                        {(normalizedCv.kind === 'text' || normalizedCv.kind === 'scalar' || cv === undefined || cv === null || cv === '') ? (
                                           <span
                                             onClick={() => { if (!readOnly) { setEditingKvKey(editKey); setEditingKvValue(displayVal); } }}
                                             className={`${!readOnly ? 'cursor-pointer hover:text-primary' : ''}`}
                                             title={displayVal || undefined}
                                           >
-                                            {displayVal || <span className="text-base-content/25">—</span>}
+                                            {displayVal || (rowIssues.length
+                                              ? <span className="text-base-content/35 font-normal italic">nenurodyta</span>
+                                              : <span className="text-base-content/25">—</span>)}
                                           </span>
                                         ) : (
                                           <NormalizedDisplayRenderer value={cv} />
                                         )}
                                       </div>
                                     )}
+                                    {rowMarks.length > 0 && (
+                                      <button
+                                        type="button"
+                                        id={`kv-mark-${ck}`}
+                                        onClick={(e) => {
+                                          if (rowMarks.some(issue => issue.index === openBubble)) { setOpenBubble(null); return; }
+                                          placeBubble(e.currentTarget);
+                                          setOpenBubble(rowMarks[0].index);
+                                        }}
+                                        title={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        aria-label={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        aria-expanded={rowMarks.some(issue => issue.index === openBubble)}
+                                        className={`self-start justify-self-end rounded-full transition-colors ${rowDone.length ? 'text-base-content/25 hover:text-base-content/50' : rowAsking ? 'text-sky-500 hover:text-sky-600' : 'text-amber-500 hover:text-amber-600'}`}
+                                      >
+                                        {rowAsking ? <HelpCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                      </button>
+                                    )}
+                                    {rowMarks.filter(issue => issue.index === openBubble || rowMarks[0].index === openBubble).map(issue => {
+                                      const asking = issue.sprendimas === 'klausti';
+                                      const done = issue.changed || issue.sprendimas === 'gerai';
+                                      const empty = !String(cv ?? '').trim();
+                                      const action = 'flex items-center gap-2 w-full text-left text-xs pl-2.5 pr-4 py-1.5 whitespace-nowrap transition-colors hover:bg-base-content/5';
+                                      return createPortal(
+                                        <div key={issue.index}>
+                                        <div className="fixed inset-0 z-[10010]" onClick={() => setOpenBubble(null)} />
+                                        <div
+                                          role="dialog"
+                                          style={{ position: 'fixed', top: bubblePos.top, left: bubblePos.left, width: BUBBLE_WIDTH, transform: bubblePos.above ? 'translateY(-100%)' : undefined }}
+                                          className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${done ? 'border-base-content/15' : asking ? 'border-sky-500/40' : 'border-amber-500/50'}`}
+                                        >
+                                          <div className="flex items-start gap-2">
+                                          <p className="flex-1 min-w-0 text-xs leading-snug text-base-content/85">
+                                            <span className="font-semibold">{issue.tipas === 'pakeista' ? 'Pakeista pagal pokalbį: ' : done ? (issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: ') : asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
+                                            {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
+                                            {done && (
+                                              <span className="block mt-1 text-[11px] text-base-content/45">
+                                                {issue.tipas === 'pakeista'
+                                                  ? (issue.changed ? 'Vėliau reikšmė pakeista dar kartą' : `Buvo „${issue.sena || 'nenurodyta'}“`)
+                                                  : issue.changed ? `Pakeista (nuskaityta: „${issue.reiksme || 'nenurodyta'}“)` : 'Palikta kaip yra'}
+                                              </span>
+                                            )}
+                                            {!readOnly && !issue.changed && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setBubbleMenu(open => !open)}
+                                                title="Veiksmai"
+                                                aria-label="Veiksmai"
+                                                aria-expanded={bubbleMenu}
+                                                className={`inline-flex align-middle ml-1 p-0.5 rounded-md transition-colors ${bubbleMenu ? 'bg-base-content/10 text-base-content/80' : 'text-base-content/45 hover:text-base-content/80 hover:bg-base-content/5'}`}
+                                              >
+                                                <ChevronRight className={`w-3.5 h-3.5 transition-transform ${bubbleMenu ? 'rotate-90' : ''}`} />
+                                              </button>
+                                            )}
+                                          </p>
+                                          </div>
+                                          {!readOnly && bubbleMenu && (
+                                            <div role="menu" className={`absolute right-2 ${bubblePos.above ? 'bottom-full mb-1' : 'top-full mt-1'} z-[10012] w-max min-w-[8.5rem] max-w-[15rem] overflow-hidden rounded-xl border border-base-content/10 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)]`}>
+                                              {done && issue.tipas === 'pakeista' ? (
+                                                <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.sena, entry.obj, true); }} className={`${action} text-base-content/70`}>
+                                                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Grąžinti „{issue.sena.length > 18 ? `${issue.sena.slice(0, 18)}…` : (issue.sena || 'tuščią')}“
+                                                </button>
+                                              ) : done ? (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} text-base-content/70`}>
+                                                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Grąžinti į neperžiūrėtus
+                                                </button>
+                                              ) : (<>
+                                              {issue.siulymas && issue.siulymas !== String(cv ?? '') && (
+                                                <button type="button" onClick={() => { setOpenBubble(null); saveNestedKvField('talpa', ck, issue.siulymas, entry.obj, true); }} className={`${action} text-amber-900`}>
+                                                  <RefreshCw className="w-3.5 h-3.5 shrink-0" /> Pakeisti į „{issue.siulymas}“
+                                                </button>
+                                              )}
+                                              <button type="button" onClick={() => { setOpenBubble(null); setEditingKvKey(editKey); setEditingKvValue(displayVal); }} className={`${action} text-base-content/80`}>
+                                                <Pencil className="w-3.5 h-3.5 shrink-0" /> {empty ? 'Įvesti reikšmę' : 'Įvesti kitą'}
+                                              </button>
+                                              {!empty && !asking && (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} text-emerald-700`}>
+                                                  <Check className="w-3.5 h-3.5 shrink-0" /> Palikti „{displayVal.length > 18 ? `${displayVal.slice(0, 18)}…` : displayVal}“
+                                                </button>
+                                              )}
+                                              {!asking ? (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'klausti')} className={`${action} text-sky-700`}>
+                                                  <HelpCircle className="w-3.5 h-3.5 shrink-0" /> Klausti kliento
+                                                </button>
+                                              ) : (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, null)} className={`${action} text-base-content/60`}>
+                                                  <X className="w-3.5 h-3.5 shrink-0" /> Nebeklausti
+                                                </button>
+                                              )}
+                                              {empty && !asking && (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} text-base-content/60`}>
+                                                  <X className="w-3.5 h-3.5 shrink-0" /> Nereikia
+                                                </button>
+                                              )}
+                                              </>)}
+                                            </div>
+                                          )}
+                                          {readOnly && (
+                                            <p className="mt-1.5 text-[10px] text-base-content/40">Peržiūros režimas. Taisyti galima prisijungus ir atidarius kortelę iš paklausimų sąrašo.</p>
+                                          )}
+                                        </div>
+                                        </div>,
+                                        document.body,
+                                      );
+                                    })}
                                   </div>
                                 );
                               })}
@@ -1445,18 +2014,24 @@ function TabTalpos({
                               {formatMetaLabel(k)}
                             </span>
                             {editingKvKey === k ? (
-                              <div className="flex items-center gap-1 flex-1 min-w-0">
-                                <input
+                              <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                <textarea
                                   autoFocus
-                                  type="text"
+                                  rows={1}
                                   value={editingKvValue}
                                   onChange={e => setEditingKvValue(e.target.value)}
+                                  onFocus={e => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
+                                  ref={el => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; } }}
                                   onKeyDown={e => {
-                                    if (e.key === 'Enter') saveKvField(k, editingKvValue, entry.fromJson);
+                                    // Enter saves; Shift+Enter starts a new line
+                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveKvField(k, editingKvValue, entry.fromJson); }
                                     if (e.key === 'Escape') setEditingKvKey(null);
                                   }}
-                                  className="flex-1 min-w-0 text-xs bg-white rounded px-1.5 py-0.5 border border-primary/30 outline-none text-base-content"
+                                  className="w-full text-xs leading-snug bg-white rounded-md px-2 py-1.5 border border-primary/40 outline-none text-base-content resize-none overflow-hidden"
+                                  style={{ boxShadow: '0 0 0 3px rgba(0,122,255,0.08)' }}
                                 />
+                                <div className="flex items-center justify-end gap-1">
+                                  <span className="mr-auto text-[10px] text-base-content/35">Enter – išsaugoti, Esc – atšaukti</span>
                                 <button onClick={() => saveKvField(k, editingKvValue, entry.fromJson)} disabled={savingKvKey === k} className="p-0.5 rounded hover:bg-base-content/10 shrink-0">
                                   {savingKvKey === k ? <Loader2 className="w-3 h-3 animate-spin text-base-content/40" /> : <CheckCircle2 className="w-3 h-3 text-success" />}
                                 </button>
@@ -1464,6 +2039,7 @@ function TabTalpos({
                                   <X className="w-3 h-3 text-base-content/40" />
                                 </button>
                               </div>
+                                </div>
                             ) : (
                               <span
                                 onClick={() => { if (!readOnly) { setEditingKvKey(k); setEditingKvValue(v); } }}
@@ -1528,6 +2104,13 @@ function TabTalpos({
                       )}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmptyKv(v => !v)}
+                    className="mt-1.5 self-start text-[11px] text-base-content/35 hover:text-primary transition-colors"
+                  >
+                    {showEmptyKv ? 'Slėpti tuščius laukus' : 'Rodyti tuščius laukus'}
+                  </button>
                   {currentTalposId && (
                     <p className="mt-2 truncate text-xs text-base-content/35 select-none" title={currentTalposId}>
                       Talpos UUID: {currentTalposId}
@@ -1611,6 +2194,31 @@ function TabTalpos({
                           const projectId = item.project || item.project_id || null;
                           const talposUuid = item.id || null;
                           const kaina = item.kaina != null ? Number(item.kaina) : null;
+                          const sizeText = [item.turis_m3 ? `${item.turis_m3} m³` : null, item.skersmuo_mm ? `DN${item.skersmuo_mm}` : null].filter(Boolean).join(' · ');
+                          const verdict: string | null = item.vertinimas ?? null;
+                          const whyText: string = item.comment || (Array.isArray(item.reasons) ? item.reasons.join('; ') : '');
+                          const voteButton = (value: 'panasi' | 'nepanasi') => {
+                            const active = verdict === value;
+                            const Icon = value === 'panasi' ? ThumbsUp : ThumbsDown;
+                            const activeClass = value === 'panasi'
+                              ? 'bg-emerald-500/15 text-emerald-600 border-emerald-500/30'
+                              : 'bg-rose-500/15 text-rose-600 border-rose-500/30';
+                            return (
+                              <button
+                                type="button"
+                                title={value === 'panasi' ? 'Panaši talpa' : 'Nepanaši talpa'}
+                                aria-label={value === 'panasi' ? 'Panaši talpa' : 'Nepanaši talpa'}
+                                aria-pressed={active}
+                                disabled={!talposUuid || !!similarVoteSaving[talposUuid]}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (talposUuid) rateSimilar(talposUuid, value); }}
+                                className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-md border transition-colors disabled:opacity-40 ${
+                                  active ? activeClass : 'border-base-content/10 text-base-content/30 hover:text-base-content/70 hover:border-base-content/25'
+                                }`}
+                              >
+                                <Icon className="w-3 h-3" />
+                              </button>
+                            );
+                          };
                           const href = projectId && talposUuid
                             ? `/paklausimas/${projectId}?talpa=${talposUuid}`
                             : projectId ? `/paklausimas/${projectId}` : null;
@@ -1621,12 +2229,19 @@ function TabTalpos({
                                   {Math.round(Number(score) * 100)}%
                                 </span>
                               )}
-                              <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0">
+                              <p className="flex-1 text-[11px] font-medium text-base-content/80 truncate min-w-0" title={whyText || undefined}>
                                 {displayName || `Talpa ${i + 1}`}
                               </p>
+                              {sizeText && <span className="shrink-0 text-[10px] text-base-content/45 tabular-nums">{sizeText}</span>}
                               {kaina !== null && !isNaN(kaina) && (
                                 <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600">
                                   <Euro className="w-2.5 h-2.5" />{kaina.toLocaleString('lt-LT')}
+                                </span>
+                              )}
+                              {talposUuid && (
+                                <span className="shrink-0 inline-flex items-center gap-1">
+                                  {voteButton('panasi')}
+                                  {voteButton('nepanasi')}
                                 </span>
                               )}
                               {href && <ExternalLink className="w-3 h-3 shrink-0 text-base-content/25" />}
@@ -1697,7 +2312,6 @@ function TabTalpos({
           priceEstimating={!!priceEstimating[idx]}
           priceEstimateError={priceEstimateError[idx] || null}
           localKainaAiText={localKainaAiText[idx] ?? null}
-          priceSourceBreakdown={priceSourceBreakdown[idx] ?? null}
           onTalposRowUpdated={(id, field, value) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
           }}
@@ -1931,7 +2545,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
               <ChevronLeft className="w-4 h-4 text-base-content/40" />
             </button>
           )}
-          <select
+          <AppSelect
             value={groupIdx}
             onChange={e => { setEditing(false); setCurrentIdx(Number(e.target.value)); }}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
@@ -1942,7 +2556,7 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
                 {g.quantity > 1 ? ` (×${g.quantity})` : ''}
               </option>
             ))}
-          </select>
+          </AppSelect>
           {hasMultiple && (
             <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
               <ChevronRight className="w-4 h-4 text-base-content/40" />
@@ -2268,7 +2882,9 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel }: {
+function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel, onSaveAll }: {
+  /** Saves pending messages / files and reloads the record, before the conversation is applied to the tank */
+  onSaveAll?: () => Promise<void>;
   record: NestandartiniaiRecord;
   readOnly?: boolean;
   pendingMessages?: AtsakymasMessage[];
@@ -2299,6 +2915,40 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
     onMessagesChange?.(updated);
   };
 
+  // Apply what the conversation says to the tank's fields
+  const [ctxUpdating, setCtxUpdating] = useState(false);
+  const [ctxAppliedKey, setCtxAppliedKey] = useState<string | null>(null);
+  const messagesKey = JSON.stringify(messages.map(m => [m.role, m.text]));
+  const needsContextUpdate = ctxAppliedKey !== messagesKey;
+  const [ctxError, setCtxError] = useState<string | null>(null);
+  const [ctxResult, setCtxResult] = useState<{
+    changes: { laukas: string; sena: string; nauja: string }[]; note: string; files: string[];
+    others: { pavadinimas: string | null; pakeitimai: { laukas: string; sena: string; nauja: string }[] }[];
+  } | null>(null);
+  const updateContext = async () => {
+    if (!currentTalposId || ctxUpdating) return;
+    setCtxUpdating(true);
+    setCtxError(null);
+    setCtxResult(null);
+    try {
+      const toSend = messages;
+      const sentKey = messagesKey;
+      await onSaveAll?.();
+      const res: any = await callWebhook('tank_context_update', { talpa_id: currentTalposId, messages: toSend });
+      setCtxResult({
+        changes: Array.isArray(res?.pakeitimai) ? res.pakeitimai : [],
+        note: typeof res?.komentaras === 'string' ? res.komentaras : '',
+        files: Array.isArray(res?.nauji_priedai) ? res.nauji_priedai : [],
+        others: Array.isArray(res?.kitos_talpos) ? res.kitos_talpos : [],
+      });
+      setCtxAppliedKey(sentKey);
+    } catch (e: any) {
+      setCtxError(e?.message || 'Nepavyko atnaujinti konteksto');
+    } finally {
+      setCtxUpdating(false);
+    }
+  };
+
   const handleAdd = (text: string, side: 'left' | 'right') => {
     const msg: AtsakymasMessage = {
       text,
@@ -2327,12 +2977,60 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-xs text-base-content/40">
-          {messages.length > 0 ? `${messages.length} žinutės` : 'Nėra žinučių'}
-          {tankLabel ? <span className="ml-2 text-base-content/30">· {tankLabel}</span> : null}
-        </p>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 mb-4">
+        <span className="text-sm font-semibold text-base-content/85">{tankLabel || (messages.length > 0 ? 'Pokalbis' : 'Nėra žinučių')}</span>
+        {!readOnly && currentTalposId && (
+          <>
+            {needsContextUpdate && messages.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-base-content/45">
+                <span className="relative flex h-2 w-2" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                </span>
+                Kontekstą reikalinga atnaujinti norint įgalinti pokyčius
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={updateContext}
+              disabled={ctxUpdating}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg text-base-content/60 hover:text-primary hover:bg-primary/5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {ctxUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {ctxUpdating ? 'Atnaujinama...' : 'Atnaujinti'}
+            </button>
+          </>
+        )}
       </div>
+      {ctxError && (
+        <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-3">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{ctxError}</span>
+        </div>
+      )}
+      {ctxResult && (
+        <div className="mb-3 rounded-lg border border-base-content/8 bg-white/60 px-3 py-2 text-[11px] text-base-content/70">
+          {ctxResult.changes.length > 0 ? (
+            <>
+              <p className="font-medium text-emerald-700 inline-flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> Talpos duomenys atnaujinti</p>
+              <ul className="mt-1 space-y-0.5">
+                {ctxResult.changes.map((change, i) => (
+                  <li key={i}><span className="text-base-content/45">{talpaLabel(change.laukas)}: </span>{change.sena || 'nenurodyta'} → <span className="font-medium text-base-content/85">{change.nauja}</span></li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p>Nerasta nieko, ką reikėtų pakeisti šios talpos duomenyse.</p>
+          )}
+          {ctxResult.files.length > 0 && <p className="mt-1 text-base-content/50">Perskaityti nauji priedai: {ctxResult.files.join(', ')}</p>}
+          {ctxResult.others.map((other, i) => (
+            <p key={i} className="mt-1 text-base-content/60">
+              Taip pat atnaujinta „{other.pavadinimas || 'kita talpa'}“: {other.pakeitimai.map(c => `${talpaLabel(c.laukas)} ${c.sena || 'nenurodyta'} → ${c.nauja}`).join('; ')}
+            </p>
+          ))}
+          {ctxResult.note && <p className="mt-1 text-base-content/50">{ctxResult.note}</p>}
+        </div>
+      )}
 
       {messages.map((msg, i) => {
         const side = msg.role === 'team' ? 'right' as const : 'left' as const;
@@ -2906,11 +3604,7 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                   </div>
                 );
                 if (isOffice) return (
-                  <iframe
-                    src={buildGoogleDocsViewerUrl(viewUrl)}
-                    className="w-full h-full border-0"
-                    title={previewFile.file_name}
-                  />
+                  <OfficePreview url={viewUrl} fileName={previewFile.file_name} />
                 );
                 if (isText) return <iframe src={viewUrl} className="w-full h-full border-0" title={previewFile.file_name} style={{ background: '#fff' }} />;
 
@@ -3110,7 +3804,6 @@ class SlateRenderErrorBoundary extends React.Component<
 function TabMedziagos({
   record, currentTalposId, currentTalposRow, idx, sablonai, sablonaiLoading,
   estimatePrice, priceEstimating, priceEstimateError, localKainaAiText,
-  priceSourceBreakdown,
   onTalposRowUpdated,
 }: {
   record: NestandartiniaiRecord;
@@ -3123,7 +3816,6 @@ function TabMedziagos({
   priceEstimating: boolean;
   priceEstimateError: string | null;
   localKainaAiText: PriceEstimateModeMap | null;
-  priceSourceBreakdown: { ai: number; math: number; none: number; total: number } | null;
   onTalposRowUpdated?: (id: string, field: string, value: any) => void;
 }) {
   const normalizeStructuredSlate = (input: unknown): Record<string, any> | null => {
@@ -3172,56 +3864,15 @@ function TabMedziagos({
     if (currentTalposRow?.material_slate) return 'template';
     return 'prompt';
   });
-  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [, setSelectedTemplateId] = useState<number | null>(null);
   const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
   const [savingSlate, setSavingSlate] = useState(false);
   const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
   const [predictionMode, setPredictionMode] = useState<MaterialEstimatePriceMode>('current');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [templateCapacityFilter, setTemplateCapacityFilter] = useState('');
   const [isSlateEditing, setIsSlateEditing] = useState(false);
   const [slateRawTextDraft, setSlateRawTextDraft] = useState('');
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
-
-  const sanitizeCapacityFilter = useCallback((value: string) => {
-    const cleaned = value.replace(/[^\d.,]/g, '');
-    const firstSeparatorIndex = cleaned.search(/[.,]/);
-    if (firstSeparatorIndex === -1) return cleaned;
-
-    return cleaned.slice(0, firstSeparatorIndex + 1)
-      + cleaned.slice(firstSeparatorIndex + 1).replace(/[.,]/g, '');
-  }, []);
-
-  const getTemplateCapacity = useCallback((template: MedziaguSablonas) => {
-    const haystack = `${template.name || ''}\n${template.raw_text || ''}`
-      .normalize('NFKC')
-      .replace(/[–—]/g, '-');
-    const match = haystack.match(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/i);
-    if (!match) return null;
-    const value = Number(match[1].replace(',', '.'));
-    return Number.isFinite(value) ? value : null;
-  }, []);
-
-  const matchesTemplateCapacity = useCallback((template: MedziaguSablonas, rawFilter: string) => {
-    const normalized = sanitizeCapacityFilter(rawFilter.trim()).replace(',', '.');
-    if (!normalized) return true;
-
-    const wantedCapacity = Number(normalized);
-    const parsedCapacity = getTemplateCapacity(template);
-    if (Number.isFinite(wantedCapacity) && parsedCapacity === wantedCapacity) return true;
-
-    const haystack = `${template.name || ''}\n${template.raw_text || ''}`
-      .normalize('NFKC')
-      .replace(/[–—]/g, '-')
-      .replace(',', '.');
-    const vMatches = Array.from(haystack.matchAll(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/gi))
-      .map(m => Number(m[1].replace(',', '.')))
-      .filter(Number.isFinite);
-    if (Number.isFinite(wantedCapacity) && vMatches.includes(wantedCapacity)) return true;
-
-    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(^|[^\\d.,])${escaped}([^\\d.,]|$)`).test(haystack);
-  }, [getTemplateCapacity, sanitizeCapacityFilter]);
 
   // Manual entry rows
   const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
@@ -3244,6 +3895,36 @@ function TabMedziagos({
     setIsSlateEditing(false);
     setSlateRawTextDraft('');
   }, [currentTalposRow?.material_slate, idx]);
+
+  // what the template picker compares each template with
+  const templateTankFacts = useMemo<TankFacts>(() => {
+    let talpa: Record<string, any> = {};
+    try {
+      const root = typeof currentTalposRow?.json === 'string' ? JSON.parse(currentTalposRow.json) : currentTalposRow?.json;
+      const raw = root?.talpa;
+      talpa = (typeof raw === 'string' ? JSON.parse(raw) : raw) || {};
+    } catch { /* an unreadable card simply gives no facts to compare */ }
+    const num = (value: unknown): number | null => {
+      const parsed = Number(String(value ?? '').replace(/\s/g, '').replace(',', '.').replace(/[^\d.]/g, ''));
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    };
+    const above = `${talpa['Aplinka_virš_talpos'] ?? ''} ${talpa['Aplinka_viršus'] ?? ''}`.toLowerCase();
+    const resin = `${currentTalposRow?.derva_musu ?? ''}`.toLowerCase();
+    const volume = num(talpa['Talpa_m3']);
+    const diameter = num(talpa['Diametras_mm']);
+    const length = num(talpa['Ilgis_mm']) ?? num(talpa['Aukštis_mm']);
+    const depth = num(talpa['Įgilinimas_m']);
+    const road = /važiuoj/.test(above) ? true : /vej|žal/.test(above) ? false : null;
+    return {
+      volume, diameter, length, depth, road,
+      chemical: resin ? /derakane|vinil|chem/.test(resin) : null,
+      label: [
+        volume ? `${volume} m³` : null, diameter ? `DN${diameter}` : null,
+        length ? `${talpa['Aukštis_mm'] ? 'H' : 'L'}${length}` : null,
+        depth ? `įg. ${depth} m` : null, road === null ? null : road ? 'važiuojama dalis' : 'žalia veja',
+      ].filter(Boolean).join(' · '),
+    };
+  }, [currentTalposRow?.json, currentTalposRow?.derva_musu]);
 
   const handleSelectTemplate = async (templateId: number): Promise<boolean> => {
     const template = sablonai.find(s => s.id === templateId);
@@ -3351,12 +4032,14 @@ function TabMedziagos({
     () => parsePriceEstimateModeMap(currentTalposRow?.kaina_ai),
     [currentTalposRow?.kaina_ai],
   );
-  const activeEstimateText = localKainaAiText?.[predictionMode] ?? persistedEstimateMap[predictionMode] ?? null;
+  // estimates saved earlier under the removed 'Matematinė' mode are shown under 'Be DI'
+  const activeEstimateText = localKainaAiText?.[predictionMode] ?? persistedEstimateMap[predictionMode]
+    ?? (predictionMode === 'current' ? persistedEstimateMap.math ?? null : null);
   const legacyJsonEstimate = (() => {
     const v = tryParseJsonObject(currentTalposRow?.json)?.kaina_ai_text;
     return typeof v === 'string' && v.trim() ? v.trim() : null;
   })();
-  const aiText: unknown = activeEstimateText ?? (predictionMode === 'math' ? legacyJsonEstimate : null);
+  const aiText: unknown = activeEstimateText ?? (predictionMode === 'current' ? legacyJsonEstimate : null);
 
   /** Render material slate data. New template selections keep the raw template text. */
   const renderSlateData = (data: Record<string, any>) => {
@@ -3376,143 +4059,6 @@ function TabMedziagos({
       <SlateRenderErrorBoundary resetKey={normalized?._template_id ?? 'material-slate'}>
         <MaterialSlateView data={normalized} />
       </SlateRenderErrorBoundary>
-    );
-  };
-
-  /** Template card — used in template picker overlay; compact domain-aware display */
-  const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
-    const plainPreview = typeof template.raw_text === 'string'
-      ? template.raw_text.trim()
-      : (template.raw_text == null ? '' : String(template.raw_text));
-
-    return (
-      <div
-        onClick={onClick}
-        className={`rounded-xl border p-3.5 transition-all ${onClick ? 'cursor-pointer hover:border-primary/40 hover:shadow-sm' : ''}`}
-        style={{
-          borderColor: selected ? '#007AFF' : 'rgba(0,0,0,0.06)',
-          background: selected ? 'rgba(0,122,255,0.03)' : '#fff',
-          boxShadow: selected ? '0 0 0 1px rgba(0,122,255,0.2)' : undefined,
-        }}
-      >
-        {/* Card header */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <h4 className="text-xs font-semibold text-base-content truncate">{template.name}</h4>
-            {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-          </div>
-        </div>
-
-        {/* Body: plain-text preview */}
-        <div className="rounded-lg p-2.5" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
-          {plainPreview ? (
-            <p
-              className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-              style={{
-                color: '#5a5550',
-                display: '-webkit-box',
-                WebkitLineClamp: 8,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-            >
-              {plainPreview}
-            </p>
-          ) : (
-            <span className="text-[10px] italic text-base-content/30">Nėra teksto</span>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  /** Template picker overlay */
-  const TemplatePicker = () => {
-    const baseAvailable = sablonai.filter(s => String(s.raw_text || '').trim());
-    const available = baseAvailable.filter(s => matchesTemplateCapacity(s, templateCapacityFilter));
-    return (
-      <div
-        className="fixed inset-0 z-[10000] flex items-center justify-center"
-        style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
-        onClick={() => setShowTemplatePicker(false)}
-      >
-        <div
-          className="bg-base-100 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-          style={{ width: '90vw', maxWidth: 720, height: '80vh', maxHeight: 700 }}
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <div>
-              <h3 className="text-sm font-semibold text-base-content">Medžiagų šablonai</h3>
-              <p className="text-[11px] text-base-content/40 mt-0.5">
-                {available.length} iš {baseAvailable.length} šablonų
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 rounded-xl border border-base-content/10 bg-base-100 px-2.5 py-1.5 shadow-sm">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-base-content/35">V</span>
-                <input
-                  value={templateCapacityFilter}
-                  onChange={e => setTemplateCapacityFilter(sanitizeCapacityFilter(e.target.value))}
-                  inputMode="decimal"
-                  pattern="[0-9]*[.,]?[0-9]*"
-                  placeholder="talpa"
-                  className="w-16 bg-transparent text-xs font-medium text-base-content outline-none placeholder:text-base-content/25"
-                  aria-label="Filtruoti pagal talpą"
-                />
-                <span className="text-[10px] text-base-content/35">m3</span>
-                {templateCapacityFilter && (
-                  <button
-                    onClick={() => setTemplateCapacityFilter('')}
-                    className="rounded-md p-0.5 text-base-content/30 hover:bg-base-content/5 hover:text-base-content/55"
-                    title="Išvalyti filtrą"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              <button onClick={() => setShowTemplatePicker(false)} className="p-1.5 rounded-lg hover:bg-base-content/5 transition-colors">
-                <X className="w-4 h-4 text-base-content/40" />
-              </button>
-            </div>
-          </div>
-
-          {/* Scrollable card grid */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {available.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <FileText className="w-10 h-10 mb-3 text-base-content/15" />
-                <p className="text-sm font-medium text-base-content/40">
-                  {templateCapacityFilter ? 'Nėra šablonų pagal šią talpą' : 'Nėra šablonų'}
-                </p>
-                <p className="text-xs text-base-content/30 mt-1">
-                  {templateCapacityFilter ? 'Pakeiskite V filtro reikšmę' : 'Sukurkite šablonus Žaliavos → Medžiagų šablonai'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {available.map(t => (
-                  <TemplateCard
-                    key={t.id}
-                    template={t}
-                    selected={selectedTemplateId === t.id || localSlate?._template_id === t.id}
-                    onClick={async () => {
-                      const ok = await handleSelectTemplate(t.id);
-                      if (ok) setShowTemplatePicker(false);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-          {templateSelectError && (
-            <div className="px-4 py-2.5 text-xs" style={{ color: '#FF3B30', borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(255,59,48,0.04)' }}>
-              {templateSelectError}
-            </div>
-          )}
-        </div>
-      </div>
     );
   };
 
@@ -3675,29 +4221,20 @@ function TabMedziagos({
           </div>
 
           {/* Price source mode toggle */}
-          <div className="flex items-center gap-1 mb-2 shrink-0">
+          <div className="flex items-center justify-center gap-1 mb-2 shrink-0">
             <div className="inline-flex rounded-xl p-1 border border-base-content/10 bg-base-100 shadow-sm">
-              {(['current', 'math', 'ai'] as const).map(m => (
+              {(['current', 'ai'] as const).map(m => (
                 <button
                   key={m}
                   onClick={() => setPredictionMode(m)}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${predictionMode === m ? 'text-base-content border border-base-content/10' : 'text-base-content/45 hover:text-base-content/70'}`}
                   style={predictionMode === m ? { background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' } : undefined}
                 >
-                  {m === 'current' ? 'Dabartinė' : m === 'math' ? 'Matematinė' : 'Su DI'}
+                  {m === 'current' ? 'Be DI' : 'Su DI'}
                 </button>
               ))}
             </div>
           </div>
-          {predictionMode !== 'current' && priceSourceBreakdown && (
-            <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
-              {predictionMode === 'ai' ? (
-                <>DI prognozė {priceSourceBreakdown.ai}/{priceSourceBreakdown.total} · Be prognozės {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
-              ) : (
-                <>Matematinė prognozė {priceSourceBreakdown.math}/{priceSourceBreakdown.total} · Dabartinė {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
-              )}
-            </div>
-          )}
 
           {/* Estimate button */}
           <button
@@ -3724,7 +4261,7 @@ function TabMedziagos({
             <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01]">
               <div className="sticky top-0 z-10 flex justify-center border-b border-base-content/8 bg-base-100/90 px-3 py-2 backdrop-blur-xl">
                 <span
-                  className="rounded-full border px-3 py-1 text-[10px] font-medium text-base-content/55 shadow-sm"
+                  className="rounded-full border px-3 py-1 text-[10px] font-medium text-base-content/55 shadow-sm text-center"
                   style={{
                     background: 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(246,246,244,0.9))',
                     borderColor: 'rgba(0,0,0,0.08)',
@@ -3749,7 +4286,16 @@ function TabMedziagos({
       </div>
 
       {/* Template picker overlay */}
-      {showTemplatePicker && <TemplatePicker />}
+      {showTemplatePicker && (
+        <MaterialTemplatePicker
+          templates={sablonai}
+          tank={templateTankFacts}
+          currentTemplateId={localSlate?._template_id ?? null}
+          onApply={handleSelectTemplate}
+          onClose={() => setShowTemplatePicker(false)}
+          error={templateSelectError}
+        />
+      )}
     </div>
   );
 }
@@ -4151,7 +4697,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
           <button onClick={goPrev} className="p-1 rounded-md hover:bg-base-content/8" title="Ankstesnė talpa">
             <ChevronLeft className="w-4 h-4 text-base-content/40" />
           </button>
-          <select
+          <AppSelect
             value={idx}
             onChange={e => setCurrentIdx(Number(e.target.value))}
             className="flex-1 min-w-0 text-xs font-medium bg-base-content/[0.03] text-base-content/80 border border-base-content/8 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/30 cursor-pointer truncate"
@@ -4164,7 +4710,7 @@ function TabDerva({ record, products, readOnly, onRecordUpdated, externalIdx, hi
                 </option>
               );
             })}
-          </select>
+          </AppSelect>
           <button onClick={goNext} className="p-1 rounded-md hover:bg-base-content/8" title="Kita talpa">
             <ChevronRight className="w-4 h-4 text-base-content/40" />
           </button>
@@ -4535,6 +5081,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
               </div>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              <span id="pm-header-slot" className="inline-flex items-center" />
               <button onClick={refreshRecord} disabled={refreshing} className="app-icon-btn" title="Atnaujinti duomenis">
                 <RefreshCw className={`w-4 h-4 text-base-content/40 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
@@ -4621,6 +5168,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                 initialTankIdx={talposIdx}
                 onTankIdxChange={setTalposIdx}
                 pendingMessages={pendingMessages}
+                onOpenFiles={() => setActiveTab('failai')}
               />
             )}
             {activeTab === 'susirasinejimas' && (
@@ -4633,6 +5181,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                 currentTankIndex={talposIdx}
                 talposCount={modalTalposIds.length}
                 tankLabel={currentModalTankLabel}
+                onSaveAll={async () => { await executeSaveAndProcess(); await refreshRecord(); }}
               />
             )}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
@@ -4800,6 +5349,7 @@ export default function PaklausimoKortelePage() {
                 >
                   {record.status ? 'Aktyvus' : 'Neaktyvus'}
                 </span>
+                <span id="pm-header-slot" className="inline-flex items-center" />
               </div>
             </div>
           </div>

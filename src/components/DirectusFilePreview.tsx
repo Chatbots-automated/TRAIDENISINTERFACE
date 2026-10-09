@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, FileText, Image as ImageIcon } from 'lucide-react';
+import { OfficePreview } from './OfficePreview';
 import {
   buildDirectusAssetUrl,
   buildDirectusDownloadUrl,
@@ -132,12 +133,7 @@ export function DirectusFilePreview({
           title={label}
         />
       ) : kind === 'office' ? (
-        <iframe
-          key={`office:${fileId}`}
-          src={urls.office}
-          className="block h-full w-full border-0 bg-white"
-          title={label}
-        />
+        <OfficePreview key={`office:${fileId}`} url={urls.asset} fileName={fileName || ''} downloadUrl={urls.download} />
       ) : (
         <div className="flex h-full items-center justify-center p-6 text-center">
           <div>

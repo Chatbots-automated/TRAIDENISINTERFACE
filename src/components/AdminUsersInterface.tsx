@@ -1,3 +1,4 @@
+import { AppSelect } from './AppSelect';
 import React, { useState, useEffect } from 'react';
 import { Users, Plus, CreditCard as Edit3, Trash2, User as UserIcon, Save, X, AlertCircle, Check, Filter, ChevronDown, UserPlus, Hash, Mail, Lock, Briefcase, ArrowLeft } from 'lucide-react';
 import { createUserByAdmin, getAllUsers, updateUserByAdmin, deleteUserByAdmin, getVadybininkai, createVadybininkas, updateVadybininkas, deleteVadybininkas } from '../lib/database';
@@ -473,18 +474,17 @@ export default function AdminUsersInterface({ user }: AdminUsersInterfaceProps) 
                     <label className="block text-sm font-medium mb-1.5" style={{ color: colors.text.secondary }}>Rolė</label>
                     <div className="relative">
                       <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: colors.text.tertiary }} />
-                      <select
+                      <AppSelect
                         value={newUserData.role}
                         onChange={(e) => setNewUserData(prev => ({ ...prev, role: e.target.value }))}
-                        className="app-form-field w-full pl-10 pr-8 appearance-none"
+                        className="app-form-field w-full pl-10 pr-3"
                         style={{ color: newUserData.role ? colors.text.primary : colors.text.tertiary }}
                       >
                         <option value="">Be rolės (neprivaloma)</option>
                         {availableRoles.map((role) => (
                           <option key={role} value={role}>{role}</option>
                         ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: colors.text.tertiary }} />
+                      </AppSelect>
                     </div>
                   </div>
 

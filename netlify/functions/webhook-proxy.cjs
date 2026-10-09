@@ -9,12 +9,20 @@ const {
 } = require('./_shared/http.cjs');
 const { requireCloudflareAccess } = require('./_shared/cloudflare-access.cjs');
 
+const CATALOG_WEBHOOK_PATHS = new Set([
+  '/webhook/91307d0b-16c6-4de5-b349-ea274dd9259d',
+  '/webhook/60d19a37-65b1-492f-ad35-3bbb474f3cd9',
+  '/webhook/77887f94-dfa2-48fe-8b13-8798b693a55a',
+]);
+
 const ALLOWED_WEBHOOK_KEYS = new Set([
   'n8n_get_products',
   'n8n_get_prices',
   'n8n_get_multiplier',
   'n8n_derva_vectorize',
   'n8n_similar_tanks',
+  'similar_tanks_feedback',
+  'tank_context_update',
   'n8n_update_talpos_description',
   'n8n_price_estimation',
   'n8n_derva_select',
@@ -34,6 +42,24 @@ function getWebhookKey(eventPath) {
   return decodeURIComponent(key || '').trim();
 }
 
+function maybeRewriteCatalogApiUrl(url) {
+  const catalogApiBase = getEnv('CATALOG_API_BASE');
+  if (!catalogApiBase) return url;
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return url;
+  }
+
+  if (parsed.hostname !== 'n8n.traidenis.org') return url;
+  if (!CATALOG_WEBHOOK_PATHS.has(parsed.pathname)) return url;
+
+  const base = catalogApiBase.replace(/\/+$/, '');
+  return `${base}${parsed.pathname}${parsed.search}`;
+}
+
 async function readWebhookUrl(webhookKey) {
   const directusToken = getDirectusToken();
   if (!directusToken) throw new Error('DIRECTUS_ADMIN_TOKEN or DIRECTUS_TOKEN is not configured in Netlify.');
@@ -51,7 +77,7 @@ async function readWebhookUrl(webhookKey) {
   const json = await response.json();
   const url = String(json?.data?.[0]?.url || '').trim();
   if (!url) throw new Error(`Webhook "${webhookKey}" not found or inactive.`);
-  return url;
+  return maybeRewriteCatalogApiUrl(url);
 }
 
 async function forwardWebhook(url, payload) {

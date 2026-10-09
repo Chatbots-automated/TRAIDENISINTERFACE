@@ -57,8 +57,8 @@ const PROMPT_KEYS: Record<InternetAnalysisId, string> = {
 
 const ALLOWED_PROMPT_VARS = new Set(['today', 'oilAnalysis', 'geoPolitical', 'latestPrices', 'materialList']);
 const inFlightAnalyses = new Set<InternetAnalysisId>();
-const WEB_SEARCH_MAX_USES_DEFAULT = 3;
-const WEB_SEARCH_MAX_USES_LIMIT = 3;
+const WEB_SEARCH_MAX_USES_DEFAULT = 8;
+const WEB_SEARCH_MAX_USES_LIMIT = 8;
 
 interface PriceHistoryRowLite {
   artikulas: string;
@@ -115,11 +115,11 @@ function extractResponseText(content: unknown): string {
   if (!Array.isArray(content)) return '';
   const textBlocks = content
     .filter((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    .map((block: any) => String(block.text).trim())
-    .filter(Boolean);
+    .map((block: any) => String(block.text));
 
-  // Deterministic join: preserve paragraph-level spacing between text blocks.
-  return textBlocks.join('\n\n').trim();
+  // With web search a sentence arrives split into several blocks (one per citation). The blocks carry their own
+  // spacing, so they are joined as they are: adding blank lines between them broke sentences and JSON apart.
+  return textBlocks.join('').trim();
 }
 
 function findTemplateVars(template: string): string[] {
@@ -353,7 +353,65 @@ function getToolResultErrors(content: unknown): string[] {
     .filter(Boolean);
 }
 
-export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promise<void> {
+/** What the model is doing right now, read from the live stream of its answer. */
+export interface AnalysisLive {
+  searches: string[]; // web search queries, in the order they were made
+  sources: string[];  // sites the searches returned
+  text: string;       // the answer written so far
+}
+
+function hostOf(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return null; }
+}
+
+/** Follows the stream, reporting searches, sources and the growing answer; resolves with the complete message. */
+/** What the proxy's stream offers: events to iterate and the complete message at the end. */
+type MessageStreamLike = AsyncIterable<any> & { finalMessage: () => Promise<Anthropic.Message> };
+
+async function followStream(stream: MessageStreamLike, onLive?: (live: AnalysisLive) => void): Promise<Anthropic.Message> {
+  const live: AnalysisLive = { searches: [], sources: [], text: '' };
+  const toolInput: Record<number, string> = {};
+  let lastEmit = 0;
+  const emit = (force = false) => {
+    if (!onLive) return;
+    const now = Date.now();
+    if (!force && now - lastEmit < 120) return;
+    lastEmit = now;
+    onLive({ searches: [...live.searches], sources: [...live.sources], text: live.text });
+  };
+  const addUnique = (list: string[], value: string | null) => {
+    if (value && !list.includes(value)) list.push(value);
+  };
+
+  for await (const raw of stream) {
+    if (raw.type === 'content_block_start') {
+      const block = raw.content_block || {};
+      if (block.type === 'server_tool_use') {
+        toolInput[raw.index] = '';
+        if (typeof block.input?.query === 'string') addUnique(live.searches, block.input.query.trim());
+      } else if (block.type === 'web_search_tool_result' && Array.isArray(block.content)) {
+        for (const result of block.content) addUnique(live.sources, hostOf(result?.url));
+      }
+      emit(true);
+    } else if (raw.type === 'content_block_delta') {
+      const delta = raw.delta || {};
+      if (delta.type === 'text_delta') live.text += delta.text || '';
+      else if (delta.type === 'input_json_delta' && raw.index in toolInput) toolInput[raw.index] += delta.partial_json || '';
+      emit();
+    } else if (raw.type === 'content_block_stop' && toolInput[raw.index]) {
+      const json = toolInput[raw.index];
+      delete toolInput[raw.index];
+      // a search made directly carries {query}; searches made from the model's own code carry it inside that code
+      for (const match of json.matchAll(/query\\?["']?\s*[:=]\s*\\?["']([^"'\\]{3,200})/g)) addUnique(live.searches, match[1].trim());
+      emit(true);
+    }
+  }
+  emit(true);
+  return stream.finalMessage();
+}
+
+export async function runInternetAnalysis(analysisId: InternetAnalysisId, onLive?: (live: AnalysisLive) => void): Promise<void> {
   if (inFlightAnalyses.has(analysisId)) {
     throw new Error('Ši analizė jau vykdoma. Palaukite kol baigsis.');
   }
@@ -362,7 +420,11 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
   try {
     const promptVar = await getInstructionVariable(PROMPT_KEYS[analysisId]);
     const toolsVar = await getInstructionVariable('kainos_ai_tool_schemas');
-    const promptContent = promptVar?.content ?? '';
+    // a failed read comes back as null; without this it was reported as "the prompt is empty"
+    if (!promptVar) {
+      throw new Error('Nepavyko nuskaityti analizės nurodymų (ryšio klaida). Pabandykite dar kartą.');
+    }
+    const promptContent = promptVar.content ?? '';
     const toolSchemaContent = toolsVar?.content ?? '';
     const prompt = await getRuntimePrompt(analysisId, promptContent, toolSchemaContent);
     const tools = await getDynamicTools(promptContent, toolSchemaContent);
@@ -370,14 +432,14 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId): Promi
 
     const model = await getClaudeModel();
 
-    const maxTokens = analysisId === 'kainos' ? 6000 : 2500;
+    const maxTokens = 8000; // the limit also covers the model's reasoning; at 4000 the events report was cut off mid-JSON
 
-    const response = await client.messages.create({
+    const response = await followStream(client.messages.stream({
       model,
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
       ...(tools.length > 0 ? { tools } : {}),
-    });
+    }) as unknown as MessageStreamLike, onLive);
 
     const toolErrors = getToolResultErrors(response.content);
     if (toolErrors.length > 0) {

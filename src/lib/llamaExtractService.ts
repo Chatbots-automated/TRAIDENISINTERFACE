@@ -129,6 +129,27 @@ export async function uploadExtractText(content: string, fileName = 'document.md
   return data.id;
 }
 
+/**
+ * Turns a plain request ("what I want from this document") into a data schema, so the answer comes back as
+ * named fields and tables instead of one block of text. Returns null when the service gives nothing usable.
+ */
+export async function generateExtractSchema(prompt: string): Promise<Record<string, unknown> | null> {
+  const res = await fetch(`${API_BASE}/api/v2/extract/schema/generate`, {
+    method: 'POST',
+    headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: `${prompt}\n\nLaukų pavadinimus rašyk lietuviškai, mažosiomis raidėmis su pabraukimais (pvz. turis_m3), be lietuviškų diakritinių ženklų; aprašymus rašyk lietuviškai.`,
+    }),
+  });
+  if (!res.ok) throw new Error(`Schema generation failed (${res.status}): ${await readError(res)}`);
+  const data = await res.json();
+  const schema = data?.parameters?.data_schema ?? data?.data_schema;
+  if (!schema || typeof schema !== 'object' || !schema.properties || Object.keys(schema.properties).length === 0) return null;
+  // nothing is mandatory: a field the document does not mention must stay empty, not be invented
+  const { required: _required, ...rest } = schema as Record<string, unknown>;
+  return rest;
+}
+
 export async function createExtractJob(fileInput: string, configuration: ExtractConfiguration): Promise<ExtractJob> {
   const res = await fetch(`${API_BASE}/api/v2/extract`, {
     method: 'POST',

@@ -47,9 +47,17 @@ export interface AnalysisGenerationLock {
 /** Computed prediction (not stored in DB — calculated on-the-fly). */
 export interface ComputedPrediction {
   data: string;           // predicted-for date YYYY-MM-DD
-  kaina_min: number;
+  kaina: number;          // forecast = last known price (midpoint of its min–max)
+  kaina_min: number;      // the last entry's own min/max, carried forward
   kaina_max: number;
-  confidence: number;     // 0.0–1.0
+  nuo: number;            // range that held ~80 % of the time in the backtest
+  iki: number;
+  paklaida_proc: number;  // half-width of that range, %
+  tendencija: 'kyla' | 'krenta' | 'stabili';
+  pokytis_proc: number;   // last price vs the price on pokytis_nuo, %
+  pokytis_nuo: string;
+  paskutine_data: string; // date of the last known price
+  dienu_nuo_paskutines: number;
 }
 
 // Returned from fetchLatestMaterialPrices for tool/webhook integration
@@ -408,7 +416,7 @@ export async function releaseAnalysisGenerationLock(runId?: string): Promise<voi
 }
 
 // ---------------------------------------------------------------------------
-// Price prediction — computed on-the-fly using weighted linear regression
+// Price prediction — computed on-the-fly: last known price carried forward, with a measured error range
 // ---------------------------------------------------------------------------
 
 const DAY_MS = 86400000;
@@ -423,100 +431,59 @@ function daysToDate(days: number): string {
   return new Date(days * DAY_MS).toISOString().split('T')[0];
 }
 
-/**
- * Weighted linear regression.
- * More recent data points get exponentially higher weight.
- * Returns { slope, intercept } or null if not enough data.
- */
-function weightedLinearRegression(
-  points: { x: number; y: number }[],
-  halfLife: number = 180, // days — weight halves every 180 days into the past
-): { slope: number; intercept: number } | null {
-  if (points.length < 2) return null;
-
-  const maxX = Math.max(...points.map(p => p.x));
-  // Compute weights: w = 2^((x - maxX) / halfLife)
-  const weighted = points.map(p => ({
-    ...p,
-    w: Math.pow(2, (p.x - maxX) / halfLife),
-  }));
-
-  const sumW = weighted.reduce((s, p) => s + p.w, 0);
-  const sumWx = weighted.reduce((s, p) => s + p.w * p.x, 0);
-  const sumWy = weighted.reduce((s, p) => s + p.w * p.y, 0);
-  const sumWxx = weighted.reduce((s, p) => s + p.w * p.x * p.x, 0);
-  const sumWxy = weighted.reduce((s, p) => s + p.w * p.x * p.y, 0);
-
-  const denom = sumW * sumWxx - sumWx * sumWx;
-  if (Math.abs(denom) < 1e-10) return null;
-
-  const slope = (sumW * sumWxy - sumWx * sumWy) / denom;
-  const intercept = (sumWy - slope * sumWx) / sumW;
-
-  return { slope, intercept };
-}
+// Backtest on the price history (139 forecasts, 9 materials, 2022–2026): carrying the last price forward was off by
+// 3.9 % on average; the weighted linear regression used before by 7.4 %; damped-trend and mean-reversion variants by
+// 4.7–7.1 %. Prices move in steps a few times a year, so a trend line overshoots. The forecast is therefore the last
+// price, with a range that held 80 % of the time in that backtest and widens with the square root of elapsed time.
+const RANGE_PER_SQRT_MONTH = 0.045;
+const RANGE_CAP = 0.25;
+const TREND_LOOKBACK_DAYS = 90;
+const TREND_THRESHOLD = 0.03;
 
 /**
- * Compute a price prediction for a material based on its price history.
+ * Forecast for a material from its price history.
  *
- * Logic:
- * - If latest price is ≤30 days old → predict 1 month from today
- * - If latest price is >30 days old → predict for today
- * - Needs ≥2 data points with numeric prices
- * - Uses weighted linear regression (recent data weighted more)
- * - Confidence is based on R² and data density
+ * - Price = the last known price, carried forward.
+ * - Target date: 1 month from today when the last price is ≤30 days old, otherwise today.
+ * - Range (nuo–iki): ±4.5 % × √(months since the last price), capped at ±25 % — about 80 % of past cases fell inside.
+ * - Trend: the last price against the price at least 90 days before it; shown as a label, not projected.
  */
 export function computePrediction(entries: KainuIrašas[]): ComputedPrediction | null {
-  // Filter to entries with numeric prices
   const valid = entries
     .filter(e => e.kaina_min !== null)
     .sort((a, b) => a.data.localeCompare(b.data));
 
   if (valid.length < 2) return null;
 
+  const mid = (e: KainuIrašas) => (e.kaina_min! + (e.kaina_max ?? e.kaina_min!)) / 2;
+  const last = valid[valid.length - 1];
   const today = dateToDays(new Date().toISOString().split('T')[0]);
-  const latestDate = dateToDays(valid[valid.length - 1].data);
-  const daysSinceLatest = today - latestDate;
-
-  // Target date: if data is fresh (≤30 days), predict 1 month out; otherwise predict today
+  const latestDate = dateToDays(last.data);
+  const daysSinceLatest = Math.max(0, today - latestDate);
   const targetDays = daysSinceLatest <= 30 ? today + 30 : today;
 
-  // Build points for min price
-  const pointsMin = valid.map(e => ({ x: dateToDays(e.data), y: e.kaina_min! }));
-  const regMin = weightedLinearRegression(pointsMin);
-  if (!regMin) return null;
+  const price = mid(last);
+  const months = Math.max(1, (targetDays - latestDate) / 30);
+  const range = Math.min(RANGE_CAP, RANGE_PER_SQRT_MONTH * Math.sqrt(months));
 
-  // Build points for max price (use kaina_max if available, otherwise kaina_min)
-  const pointsMax = valid.map(e => ({
-    x: dateToDays(e.data),
-    y: e.kaina_max ?? e.kaina_min!,
-  }));
-  const regMax = weightedLinearRegression(pointsMax);
-  if (!regMax) return null;
-
-  let predMin = regMin.slope * targetDays + regMin.intercept;
-  let predMax = regMax.slope * targetDays + regMax.intercept;
-
-  // Ensure predictions are non-negative
-  predMin = Math.max(0, predMin);
-  predMax = Math.max(0, predMax);
-
-  // Ensure min ≤ max
-  if (predMin > predMax) [predMin, predMax] = [predMax, predMin];
-
-  // Confidence: based on data points count, time span, and extrapolation distance
-  const timeSpanDays = dateToDays(valid[valid.length - 1].data) - dateToDays(valid[0].data);
-  const extrapolationDays = targetDays - latestDate;
-  const densityScore = Math.min(1, valid.length / 8);       // more points = better
-  const spanScore = Math.min(1, timeSpanDays / 365);        // wider history = better
-  const extrapPenalty = Math.max(0.3, 1 - extrapolationDays / (timeSpanDays || 1)); // extrapolating far = worse
-  const confidence = Math.round(densityScore * spanScore * extrapPenalty * 100) / 100;
+  const earlier = [...valid].reverse().find(e => latestDate - dateToDays(e.data) >= TREND_LOOKBACK_DAYS) ?? valid[0];
+  const earlierPrice = mid(earlier);
+  const change = earlierPrice > 0 ? (price - earlierPrice) / earlierPrice : 0;
+  const round2 = (v: number) => Math.round(v * 100) / 100;
 
   return {
     data: daysToDate(targetDays),
-    kaina_min: Math.round(predMin * 100) / 100,
-    kaina_max: Math.round(predMax * 100) / 100,
-    confidence: Math.max(0.1, Math.min(1, confidence)),
+    kaina: round2(price),
+    kaina_min: last.kaina_min!,
+    kaina_max: last.kaina_max ?? last.kaina_min!,
+    nuo: round2(price * (1 - range)),
+    iki: round2(price * (1 + range)),
+    paklaida_proc: Math.round(range * 100),
+    tendencija: change > TREND_THRESHOLD ? 'kyla' : change < -TREND_THRESHOLD ? 'krenta' : 'stabili',
+    pokytis_proc: Math.round(change * 1000) / 10,
+    pokytis_nuo: earlier.data,
+    paskutine_data: last.data,
+    dienu_nuo_paskutines: daysSinceLatest,
   };
 }
 
@@ -526,8 +493,7 @@ export function computePrediction(entries: KainuIrašas[]): ComputedPrediction |
 
 /**
  * Returns every material with its 3 most recent historical prices
- * plus an on-the-fly computed prediction. The LLM in n8n uses
- * the price history + prediction to estimate tank prices.
+ * plus an on-the-fly computed prediction (the last price with an error range and a trend label).
  */
 export async function fetchLatestMaterialPrices(): Promise<LatestMaterialPrice[]> {
   try {
