@@ -750,7 +750,7 @@ function TabTalpos({
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, PriceEstimateModeMap>>({});
-  const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number } | null>>({});
+  const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number; mode?: string } | null>>({});
   const [descriptionRefreshing, setDescriptionRefreshing] = useState<Record<number, boolean>>({});
   const [descriptionRefreshError, setDescriptionRefreshError] = useState<Record<number, string | null>>({});
 
@@ -1362,7 +1362,8 @@ function TabTalpos({
         else acc.none += 1;
         return acc;
       }, { ai: 0, math: 0, none: 0, total: 0 });
-      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: sourceSummary }));
+      // remembered with the mode it was counted in: counted in Be DI, it must not be shown as the Su DI result
+      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: { ...sourceSummary, mode: predictionMode } }));
 
       const respData = await callWebhook('n8n_price_estimation', {
         record_id: record.id,
@@ -3816,7 +3817,7 @@ function TabMedziagos({
   priceEstimating: boolean;
   priceEstimateError: string | null;
   localKainaAiText: PriceEstimateModeMap | null;
-  priceSourceBreakdown: { ai: number; math: number; none: number; total: number } | null;
+  priceSourceBreakdown: { ai: number; math: number; none: number; total: number; mode?: string } | null;
   onTalposRowUpdated?: (id: string, field: string, value: any) => void;
 }) {
   const normalizeStructuredSlate = (input: unknown): Record<string, any> | null => {
@@ -4414,10 +4415,10 @@ function TabMedziagos({
               ))}
             </div>
           </div>
-          {predictionMode !== 'current' && priceSourceBreakdown && (
+          {predictionMode === 'ai' && priceSourceBreakdown && priceSourceBreakdown.mode === 'ai' && (
             <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
               {predictionMode === 'ai' ? (
-                <>DI prognozė {priceSourceBreakdown.ai}/{priceSourceBreakdown.total} · Be prognozės {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
+                <>DI prognozuotos kainos panaudotos {priceSourceBreakdown.ai} iš {priceSourceBreakdown.total} medžiagų{priceSourceBreakdown.none > 0 ?  : ''}</>
               ) : (
                 <>Matematinė prognozė {priceSourceBreakdown.math}/{priceSourceBreakdown.total} · Dabartinė {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
               )}
