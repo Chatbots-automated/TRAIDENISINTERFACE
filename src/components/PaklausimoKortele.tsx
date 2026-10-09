@@ -123,9 +123,9 @@ const PRICE_ESTIMATE_MODE_LABELS: Record<MaterialEstimatePriceMode, string> = {
 };
 
 const PRICE_ESTIMATE_RESPONSE_LABELS: Record<MaterialEstimatePriceMode, string> = {
-  current: 'Įvertinimas pagal paskutinias turimas kainas',
-  math: 'Įvertinimas pagal paskutinias turimas kainas',
-  ai: 'Įvertinimas pagal DI kainų numatymą',
+  current: 'Įvertinimas tik pagal paskutines turimas kainas',
+  math: 'Įvertinimas tik pagal paskutines turimas kainas',
+  ai: 'Išsamus DI įvertinimas',
 };
 
 function parsePriceEstimateModeMap(value: unknown): PriceEstimateModeMap {
