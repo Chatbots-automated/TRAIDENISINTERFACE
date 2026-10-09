@@ -172,7 +172,21 @@ function buildPriceEstimateStorage(
       text: existingText,
     };
   }
-  return JSON.stringify({ version: 1, estimates });
+  // `latest` names the estimate made last, so the summary tile can show that one
+  return JSON.stringify({ version: 1, latest: mode, estimates });
+}
+
+/** The estimate to show in the summary: the one made last; for cards saved before that was recorded, Su DI if there is one. */
+function latestPriceEstimate(value: unknown): { mode: MaterialEstimatePriceMode; text: string } | null {
+  const texts = parsePriceEstimateModeMap(value);
+  let latest: unknown = null;
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    latest = parsed && typeof parsed === 'object' ? (parsed as { latest?: unknown }).latest : null;
+  } catch { /* plain text from before modes existed */ }
+  const order: MaterialEstimatePriceMode[] = ['ai', 'current', 'math'];
+  const mode = order.find(key => key === latest && texts[key]) ?? order.find(key => texts[key]);
+  return mode ? { mode, text: texts[mode] as string } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1058,9 +1072,9 @@ function TabTalpos({
     return m ? m[1] : text.split(/(?<=[.!?])\s/)[0].slice(0, 70);
   })();
   const summaryPriceAi: string = (() => {
-    const text = parsePriceEstimateModeMap(currentTalposRow?.kaina_ai).current || '';
-    const m = text.match(/^\s*([\d\s.,]+)\s*€/);
-    return m ? `${m[1].trim()} €` : '';
+    const latest = latestPriceEstimate(currentTalposRow?.kaina_ai);
+    const m = latest?.text.match(/^\s*([\d\s.,]+)\s*€/);
+    return latest && m ? `${latest.mode === 'ai' ? 'Su DI' : 'Be DI'}: ${m[1].trim()} €` : '';
   })();
 
   const saveKvField = async (key: string, value: string, fromJson?: boolean) => {
@@ -1642,7 +1656,7 @@ function TabTalpos({
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Kaina, 1 vnt.</p>
                 <p className="text-sm font-semibold text-base-content truncate">{currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nenustatyta'}</p>
-                <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi ? `DI: ${summaryPriceAi}` : 'DI įvertinimo dar nėra'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi || 'Įvertinimo dar nėra'}</p>
               </div>
               <TankPartIcon part="kaina" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </button>
