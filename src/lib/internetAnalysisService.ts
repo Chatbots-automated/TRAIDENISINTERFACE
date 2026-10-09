@@ -366,7 +366,10 @@ function hostOf(url: unknown): string | null {
 }
 
 /** Follows the stream, reporting searches, sources and the growing answer; resolves with the complete message. */
-async function followStream(stream: Anthropic.MessageStream, onLive?: (live: AnalysisLive) => void): Promise<Anthropic.Message> {
+/** What the proxy's stream offers: events to iterate and the complete message at the end. */
+type MessageStreamLike = AsyncIterable<any> & { finalMessage: () => Promise<Anthropic.Message> };
+
+async function followStream(stream: MessageStreamLike, onLive?: (live: AnalysisLive) => void): Promise<Anthropic.Message> {
   const live: AnalysisLive = { searches: [], sources: [], text: '' };
   const toolInput: Record<number, string> = {};
   let lastEmit = 0;
@@ -381,7 +384,7 @@ async function followStream(stream: Anthropic.MessageStream, onLive?: (live: Ana
     if (value && !list.includes(value)) list.push(value);
   };
 
-  for await (const raw of stream as unknown as AsyncIterable<any>) {
+  for await (const raw of stream) {
     if (raw.type === 'content_block_start') {
       const block = raw.content_block || {};
       if (block.type === 'server_tool_use') {
@@ -436,7 +439,7 @@ export async function runInternetAnalysis(analysisId: InternetAnalysisId, onLive
       max_tokens: maxTokens,
       messages: [{ role: 'user', content: prompt }],
       ...(tools.length > 0 ? { tools } : {}),
-    }), onLive);
+    }) as unknown as MessageStreamLike, onLive);
 
     const toolErrors = getToolResultErrors(response.content);
     if (toolErrors.length > 0) {

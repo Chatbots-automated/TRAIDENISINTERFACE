@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Globe, PenLine, Search } from 'lucide-react';
 import type { AnalysisLive } from '../../lib/internetAnalysisService';
 

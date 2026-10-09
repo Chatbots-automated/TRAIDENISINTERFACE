@@ -1,4 +1,3 @@
-import React from 'react';
 
 type Meta = Record<string, any> | null | undefined;
 

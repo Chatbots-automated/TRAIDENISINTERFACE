@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from 'lucide-react';
 import type { KainuIrašas, Medžiaga } from '../../lib/kainosService';
 import { extractJsonPayload, normalizeAnalysisForecasts } from './forecastParsing';

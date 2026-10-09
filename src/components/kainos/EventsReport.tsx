@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ArrowDownRight, ArrowUpRight, HelpCircle, ShieldAlert } from 'lucide-react';
 
 // For a buyer an event that pushes prices up is the bad news: up is red, down is green.

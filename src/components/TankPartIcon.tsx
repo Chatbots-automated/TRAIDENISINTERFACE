@@ -1,4 +1,4 @@
-import React, { useId } from 'react';
+import { useId } from 'react';
 
 // One small tank drawing, four ways: each summary tile highlights the part of the tank it talks about.
 //   talpa  – the space inside (volume)

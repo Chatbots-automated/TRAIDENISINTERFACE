@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Droplet, FlaskConical } from 'lucide-react';
 
 // Rising oil is the bad news for a resin buyer: up is red, down is green.

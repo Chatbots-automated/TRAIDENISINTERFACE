@@ -921,7 +921,7 @@ function TabTalpos({
   const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
   const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
   const intakeIssues: IntakeIssue[] = useMemo(() => (Array.isArray(jsonRoot.tikrinti) ? jsonRoot.tikrinti : [])
-    .map((raw: any, index: number) => ({
+    .map((raw: any, index: number): IntakeIssue => ({
       index, laukas: typeof raw?.laukas === 'string' ? raw.laukas : null, tipas: String(raw?.tipas || ''), tekstas: String(raw?.tekstas || ''),
       reiksme: String(raw?.reiksme ?? ''), siulymas: String(raw?.siulymas ?? ''), klausimas: String(raw?.klausimas ?? ''), sena: String(raw?.sena ?? ''),
       sprendimas: raw?.sprendimas === 'klausti' ? 'klausti' : (raw?.sprendimas === 'gerai' || raw?.isspresta) ? 'gerai' : null,
@@ -4429,8 +4429,6 @@ function TabMedziagos({
               ))}
             </div>
           </div>
-            </div>
-          )}
 
           {/* Estimate button */}
           <button
