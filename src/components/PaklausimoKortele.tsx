@@ -4418,7 +4418,7 @@ function TabMedziagos({
           {predictionMode === 'ai' && priceSourceBreakdown && priceSourceBreakdown.mode === 'ai' && (
             <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
               {predictionMode === 'ai' ? (
-                <>DI prognozuotos kainos panaudotos {priceSourceBreakdown.ai} iš {priceSourceBreakdown.total} medžiagų{priceSourceBreakdown.none > 0 ?  : ''}</>
+                <>DI prognozuotos kainos panaudotos {priceSourceBreakdown.ai} iš {priceSourceBreakdown.total} medžiagų{priceSourceBreakdown.none > 0 ? `; ${priceSourceBreakdown.none} – be prognozės` : ''}</>
               ) : (
                 <>Matematinė prognozė {priceSourceBreakdown.math}/{priceSourceBreakdown.total} · Dabartinė {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
               )}
