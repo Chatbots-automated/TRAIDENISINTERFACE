@@ -1074,7 +1074,7 @@ function TabTalpos({
   const summaryPriceAi: string = (() => {
     const latest = latestPriceEstimate(currentTalposRow?.kaina_ai);
     const m = latest?.text.match(/^\s*([\d\s.,]+)\s*€/);
-    return latest && m ? `${latest.mode === 'ai' ? 'Su DI' : 'Be DI'}: ${m[1].trim()} €` : '';
+    return latest && m ? `${latest.mode === 'ai' ? 'DI' : 'Be DI'}: ${m[1].trim()} €` : '';
   })();
 
   const saveKvField = async (key: string, value: string, fromJson?: boolean) => {
@@ -1632,7 +1632,7 @@ function TabTalpos({
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Talpa</p>
                 <p className="text-sm font-semibold text-base-content truncate">{talpaObj['Talpa_m3'] ? `${talpaObj['Talpa_m3']} m³` : '—'}</p>
-                <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Diametras_mm'] ? `DN${talpaObj['Diametras_mm']}` : null, summaryLength ? `${talpaObj['Aukštis_mm'] ? 'H' : 'L'}${summaryLength}` : null, currentTalposRow?.quantity ? `${currentTalposRow.quantity} vnt.` : null].filter(Boolean).join(' · ') || '\u00a0'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{[talpaObj['Diametras_mm'] ? `DN${talpaObj['Diametras_mm']}` : null, summaryLength ? `${talpaObj['Aukštis_mm'] ? 'H' : 'L'}${summaryLength}` : null, Number(currentTalposRow?.quantity) > 1 ? `×${currentTalposRow.quantity}` : null].filter(Boolean).join(' ') || '\u00a0'}</p>
               </div>
               <TankPartIcon part="talpa" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </div>
@@ -1648,7 +1648,7 @@ function TabTalpos({
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Derva (mūsų)</p>
                 <p className="text-sm font-semibold text-base-content truncate">{currentTalposRow?.derva_musu || 'Nenustatyta'}</p>
-                <p className="text-[11px] text-base-content/45 truncate">{summaryDervaAi ? `DI: ${summaryDervaAi}` : 'DI rekomendacijos dar nėra'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryDervaAi ? `DI: ${summaryDervaAi}` : 'DI dar neparinko'}</p>
               </div>
               <TankPartIcon part="derva" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </button>
@@ -1656,7 +1656,7 @@ function TabTalpos({
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-base-content/40">Kaina, 1 vnt.</p>
                 <p className="text-sm font-semibold text-base-content truncate">{currentKaina != null ? `${Number(currentKaina).toLocaleString('lt-LT')} €` : 'Nenustatyta'}</p>
-                <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi || 'Įvertinimo dar nėra'}</p>
+                <p className="text-[11px] text-base-content/45 truncate">{summaryPriceAi || 'Įvertinimo nėra'}</p>
               </div>
               <TankPartIcon part="kaina" vertical={Boolean(talpaObj['Aukštis_mm'])} />
             </button>
