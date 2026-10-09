@@ -4429,13 +4429,6 @@ function TabMedziagos({
               ))}
             </div>
           </div>
-          {predictionMode === 'ai' && priceSourceBreakdown && priceSourceBreakdown.mode === 'ai' && (
-            <div className="mb-2 rounded-lg border border-base-content/10 bg-base-content/[0.02] px-2.5 py-2 text-[10px] text-base-content/60">
-              {predictionMode === 'ai' ? (
-                <>DI prognozuotos kainos panaudotos {priceSourceBreakdown.ai} iš {priceSourceBreakdown.total} medžiagų{priceSourceBreakdown.none > 0 ? `; ${priceSourceBreakdown.none} – be prognozės` : ''}</>
-              ) : (
-                <>Matematinė prognozė {priceSourceBreakdown.math}/{priceSourceBreakdown.total} · Dabartinė {priceSourceBreakdown.none}/{priceSourceBreakdown.total}</>
-              )}
             </div>
           )}
 
@@ -4464,7 +4457,7 @@ function TabMedziagos({
             <div className="flex-1 overflow-y-auto rounded-xl border border-base-content/8 bg-base-content/[0.01]">
               <div className="sticky top-0 z-10 flex justify-center border-b border-base-content/8 bg-base-100/90 px-3 py-2 backdrop-blur-xl">
                 <span
-                  className="rounded-full border px-3 py-1 text-[10px] font-medium text-base-content/55 shadow-sm"
+                  className="rounded-full border px-3 py-1 text-[10px] font-medium text-base-content/55 shadow-sm text-center"
                   style={{
                     background: 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(246,246,244,0.9))',
                     borderColor: 'rgba(0,0,0,0.08)',
