@@ -22,14 +22,6 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-interface MetadataFilters {
-  orientacija: string;
-  derva: string;
-  talpa_tipas: string;
-  DN: string;
-  metadataSearch: string;
-}
-
 // Filters on the cleaned tank data. A project is shown when at least one of its tanks meets all of them.
 interface TankFilters {
   turisMin: string; turisMax: string; dnMin: string; dnMax: string;
@@ -79,14 +71,6 @@ function tankSearchText(talpa: any, spec: Record<string, any> | undefined): stri
   }
   return parts.filter(Boolean).join(' ');
 }
-
-const EMPTY_FILTERS: MetadataFilters = {
-  orientacija: '',
-  derva: '',
-  talpa_tipas: '',
-  DN: '',
-  metadataSearch: '',
-};
 
 // ---------------------------------------------------------------------------
 // Column config interface (shared by standartiniai)
@@ -489,16 +473,6 @@ function formatColumnLabel(key: string): string {
   return label.replace(/^./, c => c.toUpperCase());
 }
 
-function extractUniqueMetaValues(records: NestandartiniaiRecord[], key: string): string[] {
-  const set = new Set<string>();
-  for (const r of records) {
-    const meta = parseMetadata(r.metadata);
-    const val = getMetaValue(meta, key);
-    if (val) set.add(val);
-  }
-  return Array.from(set).sort();
-}
-
 function getMetaValueByDynamicKey(meta: Record<string, any> | null, key: string): string | undefined {
   if (!meta) return undefined;
   if (meta[key] !== undefined && meta[key] !== null && meta[key] !== '') return String(meta[key]);
@@ -620,67 +594,6 @@ function FilterDropdown({ label, value, options, onChange }: {
 }
 
 // ---------------------------------------------------------------------------
-// FilterBar
-// ---------------------------------------------------------------------------
-
-function FilterBar({ filters, onChange, options }: {
-  filters: MetadataFilters;
-  onChange: (f: MetadataFilters) => void;
-  options: { orientacija: string[]; derva: string[]; talpa_tipas: string[]; DN: string[] };
-}) {
-  const hasActive = Object.values(filters).some(v => v !== '');
-  const update = (key: keyof MetadataFilters, value: string) => onChange({ ...filters, [key]: value });
-  const activeCount = [filters.orientacija, filters.derva, filters.talpa_tipas, filters.DN, filters.metadataSearch].filter(Boolean).length;
-
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1.5 text-xs shrink-0 mr-1" style={{ color: '#8a857f' }}>
-        <Filter className="w-3.5 h-3.5" />
-        <span className="font-medium">Filtrai</span>
-        {activeCount > 0 && (
-          <span
-            className="inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-bold"
-            style={{ background: '#007AFF' }}
-          >
-            {activeCount}
-          </span>
-        )}
-      </div>
-
-      <FilterDropdown label="Orientacija" value={filters.orientacija} options={options.orientacija} onChange={v => update('orientacija', v)} />
-      <FilterDropdown label="Derva" value={filters.derva} options={options.derva} onChange={v => update('derva', v)} />
-      <FilterDropdown label="Talpa tipas" value={filters.talpa_tipas} options={options.talpa_tipas} onChange={v => update('talpa_tipas', v)} />
-      <FilterDropdown label="DN" value={filters.DN} options={options.DN} onChange={v => update('DN', v)} />
-
-      <div className="relative">
-        <Search className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: '#8a857f' }} />
-        <input
-          type="text"
-          placeholder="Ieškoti metadata..."
-          value={filters.metadataSearch}
-          onChange={e => update('metadataSearch', e.target.value)}
-          className="h-7 text-xs rounded-full pl-7 pr-3 w-[170px] outline-none transition-all"
-          style={{ background: 'rgba(0,0,0,0.04)', border: '0.5px solid rgba(0,0,0,0.08)', color: '#3d3935' }}
-          onFocus={e => { e.currentTarget.style.borderColor = 'rgba(0,122,255,0.4)'; e.currentTarget.style.background = '#fff'; }}
-          onBlur={e => { e.currentTarget.style.borderColor = 'rgba(0,0,0,0.08)'; e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; }}
-        />
-      </div>
-
-      {hasActive && (
-        <button
-          onClick={() => onChange({ ...EMPTY_FILTERS })}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-medium transition-all"
-          style={{ color: '#FF3B30' }}
-        >
-          <X className="w-3 h-3" />
-          Išvalyti
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // TankFilterBar – a few plain filters on the cleaned tank data
 // ---------------------------------------------------------------------------
 
@@ -758,7 +671,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const [errorTalpos, setErrorTalpos] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig>({ column: '', direction: 'asc' });
-  const [metadataFilters, setMetadataFilters] = useState<MetadataFilters>({ ...EMPTY_FILTERS });
   const [selectedCard, setSelectedCard] = useState<NestandartiniaiRecord | null>(null);
   const [showManualProjectModal, setShowManualProjectModal] = useState(false);
   const [htmlPreview, setHtmlPreview] = useState<string | null>(null);
@@ -820,13 +732,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   const talposCols = useMemo(() => {
     return buildTalposColumns(talposData);
   }, [talposData]);
-
-  const filterOptions = useMemo(() => ({
-    orientacija: extractUniqueMetaValues(nestandartiniaiData, 'orientacija'),
-    derva: extractUniqueMetaValues(nestandartiniaiData, 'derva'),
-    talpa_tipas: extractUniqueMetaValues(nestandartiniaiData, 'talpa_tipas'),
-    DN: extractUniqueMetaValues(nestandartiniaiData, 'DN'),
-  }), [nestandartiniaiData]);
 
   const talposById = useMemo(() => {
     const map = new Map<string, any>();
@@ -971,25 +876,6 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
       }
     }
 
-    if (!isTalpos && isNestandartiniai) {
-      const { orientacija, derva, talpa_tipas, DN, metadataSearch } = metadataFilters;
-      if (orientacija || derva || talpa_tipas || DN || metadataSearch) {
-        rows = rows.filter((row: NestandartiniaiRecord) => {
-          const meta = parseMetadata(row.metadata);
-          if (!meta) return false;
-          if (orientacija && getMetaValue(meta, 'orientacija') !== orientacija) return false;
-          if (derva && getMetaValue(meta, 'derva') !== derva) return false;
-          if (talpa_tipas && getMetaValue(meta, 'talpa_tipas') !== talpa_tipas) return false;
-          if (DN && getMetaValue(meta, 'DN') !== DN) return false;
-          if (metadataSearch) {
-            const mq = metadataSearch.toLowerCase();
-            if (!Object.entries(meta).some(([k, v]) => k.toLowerCase().includes(mq) || String(v).toLowerCase().includes(mq))) return false;
-          }
-          return true;
-        });
-      }
-    }
-
     if (isNestandartiniai && Object.values(tankFilters).some(Boolean)) {
       rows = rows.filter((row: NestandartiniaiRecord) => (
         getTalposIdsFromRecord(row).some(id => tankMatchesFilters(tankSpecs.get(id), tankFilters))
@@ -997,7 +883,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     }
 
     return rows;
-  }, [isTalpos, isNestandartiniai, talposData, talposById, nestandartiniaiData, standartiniaiData, searchQuery, metadataFilters, paramSearchKey, paramSearchValue, tankFilters, tankSpecs]);
+  }, [isTalpos, isNestandartiniai, talposData, talposById, nestandartiniaiData, standartiniaiData, searchQuery, paramSearchKey, paramSearchValue, tankFilters, tankSpecs]);
 
   const tankFilterOptions = useMemo(() => {
     const collect = (key: string) => {
@@ -1041,7 +927,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
   }, [filteredData, isNestandartiniai, sortConfig, talposById]);
 
   // Reset to page 1 when filters, search, sort, or table change
-  useEffect(() => { setCurrentPage(1); }, [searchQuery, metadataFilters, sortConfig, selectedTable]);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, tankFilters, paramSearchKey, paramSearchValue, sortConfig, selectedTable]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
@@ -1059,7 +945,7 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
     setSelectedTable(table);
     setSearchQuery('');
     setSortConfig({ column: '', direction: 'asc' });
-    setMetadataFilters({ ...EMPTY_FILTERS });
+    setTankFilters({ ...EMPTY_TANK_FILTERS });
     setParamSearchKey('');
     setParamSearchValue('');
     setSelectedIds(new Set());
@@ -1276,10 +1162,10 @@ export default function DocumentsInterface({ user, projectId: _projectId }: Docu
           <div className="flex items-center justify-center h-64 text-center">
             <div>
               <p className="text-base font-medium mb-1" style={{ color: '#3d3935' }}>
-                {searchQuery || paramSearchKey || paramSearchValue || Object.values(metadataFilters).some(v => v) ? 'Nieko nerasta' : 'Nėra duomenų'}
+                {searchQuery || paramSearchKey || paramSearchValue || Object.values(tankFilters).some(Boolean) ? 'Nieko nerasta' : 'Nėra duomenų'}
               </p>
               <p className="text-sm" style={{ color: '#8a857f' }}>
-                {searchQuery || paramSearchKey || paramSearchValue || Object.values(metadataFilters).some(v => v) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
+                {searchQuery || paramSearchKey || paramSearchValue || Object.values(tankFilters).some(Boolean) ? 'Pakeiskite paieškos užklausą arba filtrus' : 'Lentelė tuščia'}
               </p>
             </div>
           </div>

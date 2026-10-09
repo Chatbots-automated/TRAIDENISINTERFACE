@@ -36,7 +36,6 @@ import MaterialSlateView from './MaterialSlateView';
 import {
   buildDirectusAssetUrl,
   buildDirectusDownloadUrl,
-  buildGoogleDocsViewerUrl,
 } from '../lib/filePreviewUrls';
 import {
   parseAtsakymas,
@@ -764,7 +763,6 @@ function TabTalpos({
   const [priceEstimating, setPriceEstimating] = useState<Record<number, boolean>>({});
   const [priceEstimateError, setPriceEstimateError] = useState<Record<number, string | null>>({});
   const [localKainaAiText, setLocalKainaAiText] = useState<Record<number, PriceEstimateModeMap>>({});
-  const [priceSourceBreakdown, setPriceSourceBreakdown] = useState<Record<number, { ai: number; math: number; none: number; total: number; mode?: string } | null>>({});
   const [descriptionRefreshing, setDescriptionRefreshing] = useState<Record<number, boolean>>({});
   const [descriptionRefreshError, setDescriptionRefreshError] = useState<Record<number, string | null>>({});
 
@@ -1368,16 +1366,6 @@ function TabTalpos({
 
       let materialPrices: MaterialPriceEstimatePayloadItem[] = [];
       try { materialPrices = await fetchMaterialPricesForEstimatePayload(predictionMode); } catch { /* non-fatal */ }
-      const sourceSummary = materialPrices.reduce((acc, item) => {
-        acc.total += 1;
-        const src = item.price_source;
-        if (src === 'ai') acc.ai += 1;
-        else if (src === 'math') acc.math += 1;
-        else acc.none += 1;
-        return acc;
-      }, { ai: 0, math: 0, none: 0, total: 0 });
-      // remembered with the mode it was counted in: counted in Be DI, it must not be shown as the Su DI result
-      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: { ...sourceSummary, mode: predictionMode } }));
 
       const respData = await callWebhook('n8n_price_estimation', {
         record_id: record.id,
@@ -1425,7 +1413,6 @@ function TabTalpos({
       }
     } catch (e: any) {
       setPriceEstimateError(prev => ({ ...prev, [idx]: e?.message || 'Klaida' }));
-      setPriceSourceBreakdown(prev => ({ ...prev, [idx]: null }));
     } finally {
       setPriceEstimating(prev => ({ ...prev, [idx]: false }));
     }
@@ -2325,7 +2312,6 @@ function TabTalpos({
           priceEstimating={!!priceEstimating[idx]}
           priceEstimateError={priceEstimateError[idx] || null}
           localKainaAiText={localKainaAiText[idx] ?? null}
-          priceSourceBreakdown={priceSourceBreakdown[idx] ?? null}
           onTalposRowUpdated={(id, field, value) => {
             setTalposRows(prev => prev.map(r => String(r.id) === id ? { ...r, [field]: value } : r));
           }}
@@ -3818,7 +3804,6 @@ class SlateRenderErrorBoundary extends React.Component<
 function TabMedziagos({
   record, currentTalposId, currentTalposRow, idx, sablonai, sablonaiLoading,
   estimatePrice, priceEstimating, priceEstimateError, localKainaAiText,
-  priceSourceBreakdown,
   onTalposRowUpdated,
 }: {
   record: NestandartiniaiRecord;
@@ -3831,7 +3816,6 @@ function TabMedziagos({
   priceEstimating: boolean;
   priceEstimateError: string | null;
   localKainaAiText: PriceEstimateModeMap | null;
-  priceSourceBreakdown: { ai: number; math: number; none: number; total: number; mode?: string } | null;
   onTalposRowUpdated?: (id: string, field: string, value: any) => void;
 }) {
   const normalizeStructuredSlate = (input: unknown): Record<string, any> | null => {
@@ -3880,56 +3864,15 @@ function TabMedziagos({
     if (currentTalposRow?.material_slate) return 'template';
     return 'prompt';
   });
-  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [, setSelectedTemplateId] = useState<number | null>(null);
   const [localSlate, setLocalSlate] = useState<Record<string, any> | null>(() => currentTalposRow?.material_slate ?? null);
   const [savingSlate, setSavingSlate] = useState(false);
   const [templateSelectError, setTemplateSelectError] = useState<string | null>(null);
   const [predictionMode, setPredictionMode] = useState<MaterialEstimatePriceMode>('current');
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [templateCapacityFilter, setTemplateCapacityFilter] = useState('');
   const [isSlateEditing, setIsSlateEditing] = useState(false);
   const [slateRawTextDraft, setSlateRawTextDraft] = useState('');
   const [slateEditError, setSlateEditError] = useState<string | null>(null);
-
-  const sanitizeCapacityFilter = useCallback((value: string) => {
-    const cleaned = value.replace(/[^\d.,]/g, '');
-    const firstSeparatorIndex = cleaned.search(/[.,]/);
-    if (firstSeparatorIndex === -1) return cleaned;
-
-    return cleaned.slice(0, firstSeparatorIndex + 1)
-      + cleaned.slice(firstSeparatorIndex + 1).replace(/[.,]/g, '');
-  }, []);
-
-  const getTemplateCapacity = useCallback((template: MedziaguSablonas) => {
-    const haystack = `${template.name || ''}\n${template.raw_text || ''}`
-      .normalize('NFKC')
-      .replace(/[–—]/g, '-');
-    const match = haystack.match(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/i);
-    if (!match) return null;
-    const value = Number(match[1].replace(',', '.'));
-    return Number.isFinite(value) ? value : null;
-  }, []);
-
-  const matchesTemplateCapacity = useCallback((template: MedziaguSablonas, rawFilter: string) => {
-    const normalized = sanitizeCapacityFilter(rawFilter.trim()).replace(',', '.');
-    if (!normalized) return true;
-
-    const wantedCapacity = Number(normalized);
-    const parsedCapacity = getTemplateCapacity(template);
-    if (Number.isFinite(wantedCapacity) && parsedCapacity === wantedCapacity) return true;
-
-    const haystack = `${template.name || ''}\n${template.raw_text || ''}`
-      .normalize('NFKC')
-      .replace(/[–—]/g, '-')
-      .replace(',', '.');
-    const vMatches = Array.from(haystack.matchAll(/v\s*[-]?\s*(\d+(?:[.,]\d+)?)/gi))
-      .map(m => Number(m[1].replace(',', '.')))
-      .filter(Number.isFinite);
-    if (Number.isFinite(wantedCapacity) && vMatches.includes(wantedCapacity)) return true;
-
-    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return new RegExp(`(^|[^\\d.,])${escaped}([^\\d.,]|$)`).test(haystack);
-  }, [getTemplateCapacity, sanitizeCapacityFilter]);
 
   // Manual entry rows
   const [manualRows, setManualRows] = useState<{ name: string; amount: string; unit: string }[]>([
@@ -4116,143 +4059,6 @@ function TabMedziagos({
       <SlateRenderErrorBoundary resetKey={normalized?._template_id ?? 'material-slate'}>
         <MaterialSlateView data={normalized} />
       </SlateRenderErrorBoundary>
-    );
-  };
-
-  /** Template card — used in template picker overlay; compact domain-aware display */
-  const TemplateCard = ({ template, selected, onClick }: { template: MedziaguSablonas; selected?: boolean; onClick?: () => void }) => {
-    const plainPreview = typeof template.raw_text === 'string'
-      ? template.raw_text.trim()
-      : (template.raw_text == null ? '' : String(template.raw_text));
-
-    return (
-      <div
-        onClick={onClick}
-        className={`rounded-xl border p-3.5 transition-all ${onClick ? 'cursor-pointer hover:border-primary/40 hover:shadow-sm' : ''}`}
-        style={{
-          borderColor: selected ? '#007AFF' : 'rgba(0,0,0,0.06)',
-          background: selected ? 'rgba(0,122,255,0.03)' : '#fff',
-          boxShadow: selected ? '0 0 0 1px rgba(0,122,255,0.2)' : undefined,
-        }}
-      >
-        {/* Card header */}
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <h4 className="text-xs font-semibold text-base-content truncate">{template.name}</h4>
-            {selected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-          </div>
-        </div>
-
-        {/* Body: plain-text preview */}
-        <div className="rounded-lg p-2.5" style={{ background: '#fafaf8', border: '1px solid #f0ede8' }}>
-          {plainPreview ? (
-            <p
-              className="text-[11px] whitespace-pre-wrap break-words leading-relaxed"
-              style={{
-                color: '#5a5550',
-                display: '-webkit-box',
-                WebkitLineClamp: 8,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-            >
-              {plainPreview}
-            </p>
-          ) : (
-            <span className="text-[10px] italic text-base-content/30">Nėra teksto</span>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  /** Template picker overlay */
-  const TemplatePicker = () => {
-    const baseAvailable = sablonai.filter(s => String(s.raw_text || '').trim());
-    const available = baseAvailable.filter(s => matchesTemplateCapacity(s, templateCapacityFilter));
-    return (
-      <div
-        className="fixed inset-0 z-[10000] flex items-center justify-center"
-        style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
-        onClick={() => setShowTemplatePicker(false)}
-      >
-        <div
-          className="bg-base-100 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-          style={{ width: '90vw', maxWidth: 720, height: '80vh', maxHeight: 700 }}
-          onClick={e => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3.5 shrink-0" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <div>
-              <h3 className="text-sm font-semibold text-base-content">Medžiagų šablonai</h3>
-              <p className="text-[11px] text-base-content/40 mt-0.5">
-                {available.length} iš {baseAvailable.length} šablonų
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 rounded-xl border border-base-content/10 bg-base-100 px-2.5 py-1.5 shadow-sm">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-base-content/35">V</span>
-                <input
-                  value={templateCapacityFilter}
-                  onChange={e => setTemplateCapacityFilter(sanitizeCapacityFilter(e.target.value))}
-                  inputMode="decimal"
-                  pattern="[0-9]*[.,]?[0-9]*"
-                  placeholder="talpa"
-                  className="w-16 bg-transparent text-xs font-medium text-base-content outline-none placeholder:text-base-content/25"
-                  aria-label="Filtruoti pagal talpą"
-                />
-                <span className="text-[10px] text-base-content/35">m3</span>
-                {templateCapacityFilter && (
-                  <button
-                    onClick={() => setTemplateCapacityFilter('')}
-                    className="rounded-md p-0.5 text-base-content/30 hover:bg-base-content/5 hover:text-base-content/55"
-                    title="Išvalyti filtrą"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-              <button onClick={() => setShowTemplatePicker(false)} className="p-1.5 rounded-lg hover:bg-base-content/5 transition-colors">
-                <X className="w-4 h-4 text-base-content/40" />
-              </button>
-            </div>
-          </div>
-
-          {/* Scrollable card grid */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {available.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center">
-                <FileText className="w-10 h-10 mb-3 text-base-content/15" />
-                <p className="text-sm font-medium text-base-content/40">
-                  {templateCapacityFilter ? 'Nėra šablonų pagal šią talpą' : 'Nėra šablonų'}
-                </p>
-                <p className="text-xs text-base-content/30 mt-1">
-                  {templateCapacityFilter ? 'Pakeiskite V filtro reikšmę' : 'Sukurkite šablonus Žaliavos → Medžiagų šablonai'}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {available.map(t => (
-                  <TemplateCard
-                    key={t.id}
-                    template={t}
-                    selected={selectedTemplateId === t.id || localSlate?._template_id === t.id}
-                    onClick={async () => {
-                      const ok = await handleSelectTemplate(t.id);
-                      if (ok) setShowTemplatePicker(false);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-          {templateSelectError && (
-            <div className="px-4 py-2.5 text-xs" style={{ color: '#FF3B30', borderTop: '1px solid rgba(0,0,0,0.06)', background: 'rgba(255,59,48,0.04)' }}>
-              {templateSelectError}
-            </div>
-          )}
-        </div>
-      </div>
     );
   };
 
