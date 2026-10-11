@@ -1584,13 +1584,15 @@ function TabTalpos({
             )}
             {askIssues.length > 0 && (
               <div className="mt-2.5 rounded-lg border border-sky-500/20 px-2.5 py-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 py-0.5">
+                    <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                    <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                      {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                    </ol>
+                  </div>
                   {askActions()}
                 </div>
-                <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
-                  {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
-                </ol>
               </div>
             )}
           </div>
@@ -1786,13 +1788,15 @@ function TabTalpos({
                   </div>
                   {askIssues.length > 0 && (
                     <div className="mt-2 rounded-lg border border-sky-500/20 bg-white/70 px-2.5 py-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 py-0.5">
+                          <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                          <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                            {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                          </ol>
+                        </div>
                         {askActions()}
                       </div>
-                      <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
-                        {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
-                      </ol>
                     </div>
                   )}
                 </div>
