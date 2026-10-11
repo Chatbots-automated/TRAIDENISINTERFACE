@@ -3039,6 +3039,24 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
   const waitingIds = new Set(dataStatus?.neapdorotos_zinutes ?? []);
   const isWaiting = (m: AtsakymasMessage) => !!m.id && !m.apdorota && (waitingIds.has(m.id) || pendingMessages !== undefined);
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
+
+  // Questions for the client that are marked on the tank but not sent yet: shown as a pending bubble
+  const [pendingQuestions, setPendingQuestions] = useState<string[]>([]);
+  useEffect(() => {
+    if (!currentTalposId) { setPendingQuestions([]); return; }
+    let cancelled = false;
+    fetchTalposByIds([currentTalposId]).then(rows => {
+      if (cancelled) return;
+      const root = tryParseJsonObject(rows[0]?.json) || {};
+      const talpa = tryParseJsonObject(root.talpa) || {};
+      setPendingQuestions((Array.isArray(root.tikrinti) ? root.tikrinti : [])
+        .filter((raw: any) => raw?.sprendimas === 'klausti' && !raw?.issiusta
+          && !(typeof raw?.laukas === 'string' && String(talpa[raw.laukas] ?? '').trim() !== String(raw?.reiksme ?? '').trim()))
+        .map((raw: any) => String(raw?.klausimas || raw?.tekstas || '').trim())
+        .filter(Boolean));
+    }).catch(() => { if (!cancelled) setPendingQuestions([]); });
+    return () => { cancelled = true; };
+  }, [currentTalposId, dataStatus]);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
 
@@ -3265,6 +3283,26 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
           />
         );
       })}
+
+      {pendingQuestions.length > 0 && (
+        <div className="flex justify-end mb-2.5">
+          <div className="max-w-[80%] rounded-3xl px-4 py-2.5 border border-dashed border-sky-400/70 bg-sky-50 text-sky-900">
+            <p className="text-xs mb-1 flex items-center gap-1.5 text-sky-700">
+              <HelpCircle className="w-3 h-3 shrink-0" />
+              <span className="font-medium">{pendingQuestions.length === 1 ? 'Klausimas klientui' : 'Klausimai klientui'}</span>
+              <span className="text-sky-700/70">· Laukiama naudotojo</span>
+            </p>
+            {pendingQuestions.length === 1 ? (
+              <p className="text-[15px] leading-relaxed">{pendingQuestions[0]}</p>
+            ) : (
+              <ol className="list-decimal pl-5 text-[15px] leading-relaxed space-y-0.5">
+                {pendingQuestions.map((question, i) => <li key={i}>{question}</li>)}
+              </ol>
+            )}
+            <p className="mt-1.5 text-[11px] text-sky-700/70">Dar neišsiųsta. Siunčiama iš talpos kortelės – „Klausimai klientui“.</p>
+          </div>
+        </div>
+      )}
 
       {!readOnly && addingSide && (
         <NewMessageBubble side={addingSide} onSave={t => handleAdd(t, addingSide)} onCancel={() => setAddingSide(null)} />
