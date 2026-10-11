@@ -24,6 +24,8 @@ const ALLOWED_WEBHOOK_KEYS = new Set([
   'similar_tanks_feedback',
   'tank_context_update',
   'project_ask_sender',
+  'project_status',
+  'tank_rollback',
   'n8n_update_talpos_description',
   'n8n_price_estimation',
   'n8n_derva_select',

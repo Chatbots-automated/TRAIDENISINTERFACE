@@ -25,7 +25,10 @@ export async function callWebhook<T = unknown>(webhookKey: string, payload: unkn
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
-    throw new Error(`Webhook "${webhookKey}" failed (${response.status}): ${errorText}`);
+    // the backend explains failures in plain Lithuanian: show that, not the transport details
+    let explained = '';
+    try { const parsed = JSON.parse(errorText); if (typeof parsed?.error === 'string') explained = parsed.error; } catch { /* not JSON */ }
+    throw new Error(explained || `Webhook "${webhookKey}" failed (${response.status}): ${errorText}`);
   }
 
   const contentType = response.headers.get('content-type') || '';
