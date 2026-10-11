@@ -670,9 +670,12 @@ function isOldFormat(meta: Record<string, any>): boolean {
 type TalposSubTab = 'parametrai' | 'derva' | 'medziagos';
 
 function TabTalpos({
-  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange, pendingMessages, onOpenFiles,
+  record, products, readOnly, onRecordUpdated, initialTalposId, initialSubTab, onSubTabChange, initialTankIdx, onTankIdxChange, pendingMessages, onOpenFiles, dataStatus, onOpenChat,
 }: {
   onOpenFiles?: () => void;
+  /** Tells whether an email reply is waiting to be taken into the card */
+  dataStatus?: ProjectDataStatus | null;
+  onOpenChat?: () => void;
   record: NestandartiniaiRecord;
   products: Record<string, any>[];
   readOnly?: boolean;
@@ -937,7 +940,7 @@ function TabTalpos({
   // Intake checks: each one points at a row of the tank (`laukas`) and remembers the value seen at intake (`reiksme`).
   // A check is resolved when the user ticks it off or changes that value (filling a gap counts).
   // sprendimas: 'gerai' = the value is right as it stands; 'klausti' = ask the client (stays on the question list)
-  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; siulymas: string; klausimas: string; sena: string; sprendimas: 'gerai' | 'klausti' | null; changed: boolean };
+  type IntakeIssue = { index: number; laukas: string | null; tipas: string; tekstas: string; reiksme: string; siulymas: string; klausimas: string; sena: string; sprendimas: 'gerai' | 'klausti' | null; changed: boolean; issiusta: string; neatsakyta: string };
   const jsonRoot: Record<string, any> = useMemo(() => tryParseJsonObject(currentTalposRow?.json) || {}, [currentTalposRow]);
   const talpaObj: Record<string, any> = useMemo(() => tryParseJsonObject(jsonRoot.talpa) || {}, [jsonRoot]);
   const intakeIssues: IntakeIssue[] = useMemo(() => (Array.isArray(jsonRoot.tikrinti) ? jsonRoot.tikrinti : [])
@@ -945,6 +948,7 @@ function TabTalpos({
       index, laukas: typeof raw?.laukas === 'string' ? raw.laukas : null, tipas: String(raw?.tipas || ''), tekstas: String(raw?.tekstas || ''),
       reiksme: String(raw?.reiksme ?? ''), siulymas: String(raw?.siulymas ?? ''), klausimas: String(raw?.klausimas ?? ''), sena: String(raw?.sena ?? ''),
       sprendimas: raw?.sprendimas === 'klausti' ? 'klausti' : (raw?.sprendimas === 'gerai' || raw?.isspresta) ? 'gerai' : null,
+      issiusta: typeof raw?.issiusta === 'string' ? raw.issiusta : '', neatsakyta: typeof raw?.neatsakyta === 'string' ? raw.neatsakyta : '',
       changed: typeof raw?.laukas === 'string' && String(talpaObj[raw.laukas] ?? '').trim() !== String(raw?.reiksme ?? '').trim(),
     }))
     .filter((issue: IntakeIssue) => issue.tekstas), [jsonRoot, talpaObj]);
@@ -954,6 +958,18 @@ function TabTalpos({
   const askIssues: IntakeIssue[] = useMemo(() => intakeIssues.filter(issue => !issue.changed && issue.sprendimas === 'klausti'), [intakeIssues]);
   // rows that carry a marker: still open, or waiting for the client's answer
   const flaggedKeys = useMemo(() => new Set([...openIssues, ...askIssues].map(issue => issue.laukas).filter(Boolean) as string[]), [openIssues, askIssues]);
+  // Where a question for the client stands: not sent -> sent -> a reply came (not yet read into the card) -> read, still unanswered.
+  // An answered question is closed by the update itself and is no longer on this list.
+  const askState = (issue: IntakeIssue): 'neissiusta' | 'issiusta' | 'gauta' | 'neatsakyta' => {
+    const sent = Date.parse(issue.issiusta) || 0;
+    if (!sent) return 'neissiusta';
+    if ((Date.parse(dataStatus?.naujausias_laiskas || '') || 0) > sent) return 'gauta';
+    return (Date.parse(issue.neatsakyta) || 0) > sent ? 'neatsakyta' : 'issiusta';
+  };
+  const askLabel = (issue: IntakeIssue) => ({
+    neissiusta: 'Klausimas klientui: neišsiųsta', issiusta: 'Klausimas klientui: išsiųsta, laukiama atsakymo',
+    gauta: 'Gautas atsakymas. Projektas dar neatnaujintas', neatsakyta: 'Klausimas klientui: atsakyme neatsakyta',
+  }[askState(issue)]);
   const [openBubble, setOpenBubble] = useState<number | null>(null);
   const [bubblePos, setBubblePos] = useState<{ top: number; left: number; above: boolean }>({ top: 0, left: 0, above: false });
   const [bubbleMenu, setBubbleMenu] = useState(false);
@@ -1063,6 +1079,25 @@ function TabTalpos({
       });
       if (!res?.sent) throw new Error(res?.reason || res?.message || 'Laiškas neišsiųstas');
       setAskSend({ state: 'sent', note: `Išsiųsta: ${res.email}` });
+      // remember on each question that it went out, so its marker says "waiting for the answer"
+      if (currentTalposId && Array.isArray(jsonRoot.tikrinti)) {
+        const sentNow = new Set(askIssues.map(issue => issue.index));
+        const at = new Date().toISOString();
+        const newJsonObj: Record<string, any> = {
+          ...jsonRoot,
+          tikrinti: jsonRoot.tikrinti.map((raw: any, i: number) => {
+            if (!sentNow.has(i)) return raw;
+            const { neatsakyta: _n, ...rest } = raw || {};
+            return { ...rest, issiusta: at };
+          }),
+        };
+        try {
+          await updateTalposField(currentTalposId, 'json', newJsonObj);
+          setTalposRows(prev => prev.map(r => (String(r.id) === String(currentTalposId) ? { ...r, json: newJsonObj } : r)));
+        } catch (e) {
+          console.error('Error marking questions as sent:', e);
+        }
+      }
     } catch (e: any) {
       setAskSend({ state: 'error', note: e?.message || 'Nepavyko išsiųsti' });
     }
@@ -1584,13 +1619,15 @@ function TabTalpos({
             )}
             {askIssues.length > 0 && (
               <div className="mt-2.5 rounded-lg border border-sky-500/20 px-2.5 py-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 py-0.5">
+                    <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                    <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                      {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                    </ol>
+                  </div>
                   {askActions()}
                 </div>
-                <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
-                  {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
-                </ol>
               </div>
             )}
           </div>
@@ -1786,13 +1823,15 @@ function TabTalpos({
                   </div>
                   {askIssues.length > 0 && (
                     <div className="mt-2 rounded-lg border border-sky-500/20 bg-white/70 px-2.5 py-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 py-0.5">
+                          <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
+                          <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
+                            {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
+                          </ol>
+                        </div>
                         {askActions()}
                       </div>
-                      <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
-                        {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
-                      </ol>
                     </div>
                   )}
                 </div>
@@ -1910,6 +1949,8 @@ function TabTalpos({
                                 const editKey = `${entry.key}::${ck}`;
                                 const rowIssues = entry.key === 'talpa' ? [...openIssues, ...askIssues].filter(issue => issue.laukas === ck) : [];
                                 const rowAsking = rowIssues.length > 0 && rowIssues.every(issue => issue.sprendimas === 'klausti');
+                                // an answer has arrived by email and waits to be read into the card
+                                const rowAnswered = rowAsking && rowIssues.some(issue => askState(issue) === 'gauta');
                                 // concerns already dealt with keep a quiet grey marker, so the record stays on the row
                                 const rowDone = entry.key === 'talpa' && rowIssues.length === 0 ? intakeIssues.filter(issue => issue.laukas === ck) : [];
                                 const rowMarks = rowIssues.length ? rowIssues : rowDone;
@@ -1977,17 +2018,18 @@ function TabTalpos({
                                           placeBubble(e.currentTarget);
                                           setOpenBubble(rowMarks[0].index);
                                         }}
-                                        title={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
-                                        aria-label={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? 'Laukiama kliento atsakymo' : 'Reikia patikrinti'}
+                                        title={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? askLabel(rowMarks[0]) : 'Reikia patikrinti'}
+                                        aria-label={rowDone.length ? 'Patikrinta – rodyti pradinę pastabą' : rowAsking ? askLabel(rowMarks[0]) : 'Reikia patikrinti'}
                                         aria-expanded={rowMarks.some(issue => issue.index === openBubble)}
-                                        className={`self-start justify-self-end rounded-full transition-colors ${rowDone.length ? 'text-base-content/25 hover:text-base-content/50' : rowAsking ? 'text-sky-500 hover:text-sky-600' : 'text-amber-500 hover:text-amber-600'}`}
+                                        className={`self-start justify-self-end rounded-full transition-colors ${rowDone.length ? 'text-base-content/25 hover:text-base-content/50' : rowAsking && !rowAnswered ? 'text-sky-500 hover:text-sky-600' : 'text-amber-500 hover:text-amber-600'}`}
                                       >
-                                        {rowAsking ? <HelpCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                        {rowAsking && !rowAnswered ? <HelpCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                                       </button>
                                     )}
                                     {rowMarks.filter(issue => issue.index === openBubble || rowMarks[0].index === openBubble).map(issue => {
                                       const asking = issue.sprendimas === 'klausti';
                                       const done = issue.changed || issue.sprendimas === 'gerai';
+                                      const answerWaiting = asking && !done && askState(issue) === 'gauta';
                                       const empty = !String(cv ?? '').trim();
                                       const action = 'flex items-center gap-2 w-full text-left text-xs pl-2.5 pr-4 py-1.5 whitespace-nowrap transition-colors hover:bg-base-content/5';
                                       return createPortal(
@@ -1996,11 +2038,11 @@ function TabTalpos({
                                         <div
                                           role="dialog"
                                           style={{ position: 'fixed', top: bubblePos.top, left: bubblePos.left, width: BUBBLE_WIDTH, transform: bubblePos.above ? 'translateY(-100%)' : undefined }}
-                                          className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${done ? 'border-base-content/15' : asking ? 'border-sky-500/40' : 'border-amber-500/50'}`}
+                                          className={`z-[10011] rounded-2xl ${bubblePos.above ? 'rounded-br-sm' : 'rounded-tr-sm'} border bg-white px-3 py-2.5 shadow-[0_12px_32px_-12px_rgba(15,23,42,0.35)] ${done ? 'border-base-content/15' : asking && !answerWaiting ? 'border-sky-500/40' : 'border-amber-500/50'}`}
                                         >
                                           <div className="flex items-start gap-2">
                                           <p className="flex-1 min-w-0 text-xs leading-snug text-base-content/85">
-                                            <span className="font-semibold">{issue.tipas === 'pakeista' ? 'Pakeista pagal pokalbį: ' : done ? (issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: ') : asking ? 'Laukiama kliento atsakymo: ' : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
+                                            <span className="font-semibold">{issue.tipas === 'pakeista' ? 'Pakeista pagal pokalbį: ' : done ? (issue.tipas === 'trūksta' ? 'Trūko: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutapo: ') : asking ? <span className="block mb-0.5">{askLabel(issue)}</span> : issue.tipas === 'trūksta' ? 'Trūksta: ' : issue.tipas === 'rizika' ? 'Rizika: ' : 'Nesutampa: '}</span>
                                             {asking && issue.klausimas ? issue.klausimas : issue.tekstas}
                                             {done && (
                                               <span className="block mt-1 text-[11px] text-base-content/45">
@@ -2042,9 +2084,19 @@ function TabTalpos({
                                               <button type="button" onClick={() => { setOpenBubble(null); setEditingKvKey(editKey); setEditingKvValue(displayVal); }} className={`${action} text-base-content/80`}>
                                                 <Pencil className="w-3.5 h-3.5 shrink-0" /> {empty ? 'Įvesti reikšmę' : 'Įvesti kitą'}
                                               </button>
-                                              {!empty && !asking && (
+                                              {answerWaiting && onOpenChat && (
+                                                <button type="button" onClick={() => { setOpenBubble(null); onOpenChat(); }} className={`${action} text-amber-800`}>
+                                                  <Mail className="w-3.5 h-3.5 shrink-0" /> Skaityti atsakymą
+                                                </button>
+                                              )}
+                                              {!empty && (
                                                 <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} text-emerald-700`}>
-                                                  <Check className="w-3.5 h-3.5 shrink-0" /> Palikti „{displayVal.length > 18 ? `${displayVal.slice(0, 18)}…` : displayVal}“
+                                                  <Check className="w-3.5 h-3.5 shrink-0" /> {asking ? 'Atsakyta – palikti' : 'Palikti'} „{displayVal.length > 18 ? `${displayVal.slice(0, 18)}…` : displayVal}“
+                                                </button>
+                                              )}
+                                              {empty && asking && (
+                                                <button type="button" onClick={() => resolveIssue(issue.index, 'gerai')} className={`${action} text-emerald-700`}>
+                                                  <Check className="w-3.5 h-3.5 shrink-0" /> Atsakyta
                                                 </button>
                                               )}
                                               {!asking ? (
@@ -3031,6 +3083,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
   const [ctxError, setCtxError] = useState<string | null>(null);
   const [ctxResult, setCtxResult] = useState<{
     changes: { laukas: string; sena: string; nauja: string }[]; note: string; files: string[];
+    questions: { klausimas: string; atsakyta: boolean }[];
     others: { pavadinimas: string | null; pakeitimai: { laukas: string; sena: string; nauja: string }[] }[];
   } | null>(null);
   const updateContext = async () => {
@@ -3050,6 +3103,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
         changes: Array.isArray(res?.pakeitimai) ? res.pakeitimai : [],
         note: typeof res?.komentaras === 'string' ? res.komentaras : '',
         files: Array.isArray(res?.nauji_priedai) ? res.nauji_priedai : [],
+        questions: Array.isArray(res?.klausimai) ? res.klausimai : [],
         others: Array.isArray(res?.kitos_talpos) ? res.kitos_talpos : [],
       });
       setCtxAppliedKey(sentKey);
@@ -3141,7 +3195,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
                         <li key={i}><span className="text-base-content/45">{talpaLabel(change.laukas)}: </span>{change.sena || 'nenurodyta'} → <span className="font-medium text-base-content/85">{change.nauja || 'nenurodyta'}</span></li>
                       ))}
                     </ul>
-                  ) : <p className="mt-0.5">Pakeitimų sąrašas neišsaugotas.</p>}
+                  ) : <p className="mt-0.5">Reikšmės nekeistos – atnaujinta klausimų klientui būsena.</p>}
                   {mine && rollback.state === 'error' && <p className="mt-1 text-error">{rollback.note}</p>}
                 </div>
                 <button
@@ -3179,6 +3233,11 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
           ) : (
             <p>Nerasta nieko, ką reikėtų pakeisti šios talpos duomenyse.</p>
           )}
+          {ctxResult.questions.map((q, i) => (
+            <p key={i} className={`mt-1 ${q.atsakyta ? 'text-emerald-700' : 'text-sky-800'}`}>
+              {q.atsakyta ? 'Klausimas uždarytas – klientas atsakė: ' : 'Į klausimą atsakyme neatsakyta: '}<span className="text-base-content/70">{q.klausimas}</span>
+            </p>
+          ))}
           {ctxResult.files.length > 0 && <p className="mt-1 text-base-content/50">Perskaityti nauji priedai: {ctxResult.files.join(', ')}</p>}
           {ctxResult.others.map((other, i) => (
             <p key={i} className="mt-1 text-base-content/60">
@@ -5353,6 +5412,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                 onTankIdxChange={setTalposIdx}
                 pendingMessages={pendingMessages}
                 onOpenFiles={() => setActiveTab('failai')}
+                dataStatus={dataStatus}
+                onOpenChat={() => setActiveTab('susirasinejimas')}
               />
             )}
             {activeTab === 'susirasinejimas' && (
