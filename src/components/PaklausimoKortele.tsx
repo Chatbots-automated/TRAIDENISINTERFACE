@@ -3299,7 +3299,6 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
                 {pendingQuestions.map((question, i) => <li key={i}>{question}</li>)}
               </ol>
             )}
-            <p className="mt-1.5 text-[11px] text-sky-700/70">Dar neišsiųsta. Siunčiama iš talpos kortelės – „Klausimai klientui“.</p>
           </div>
         </div>
       )}
