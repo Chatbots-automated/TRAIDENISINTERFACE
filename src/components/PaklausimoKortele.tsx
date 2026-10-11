@@ -6,7 +6,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
-  X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
+  X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus, Mail,
   LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
   Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown, MailCheck, HelpCircle, Copy,
 } from 'lucide-react';
@@ -1016,6 +1016,60 @@ function TabTalpos({
     const text = askIssues.map((issue, i) => `${i + 1}. ${issue.klausimas || issue.tekstas}`).join('\n');
     try { await navigator.clipboard.writeText(text); setQuestionsCopied(true); setTimeout(() => setQuestionsCopied(false), 2500); } catch { /* clipboard unavailable */ }
   };
+  // "Ask the client" questions can be emailed to whoever forwarded the inquiry, as a reply to their email
+  const [askSender, setAskSender] = useState<{ available: boolean; email?: string; name?: string; can_send?: boolean; reason?: string } | null>(null);
+  const [askSend, setAskSend] = useState<{ state: 'idle' | 'confirm' | 'sending' | 'sent' | 'error'; note?: string }>({ state: 'idle' });
+  const hasAskIssues = askIssues.length > 0;
+  useEffect(() => {
+    // looked up once per project, and only when there is something to ask
+    if (!hasAskIssues || readOnly || askSender) return;
+    let cancelled = false;
+    callWebhook('project_ask_sender', { project_id: record.id, action: 'info' })
+      .then((res: any) => { if (!cancelled) setAskSender(res && typeof res === 'object' ? res : { available: false }); })
+      .catch(() => { if (!cancelled) setAskSender({ available: false }); });
+    return () => { cancelled = true; };
+  }, [hasAskIssues, readOnly, record.id, askSender]);
+  useEffect(() => { setAskSend({ state: 'idle' }); }, [idx, askIssues.length]);
+  const sendQuestions = async () => {
+    if (askSend.state !== 'confirm') { setAskSend({ state: 'confirm' }); return; }
+    setAskSend({ state: 'sending' });
+    try {
+      const res: any = await callWebhook('project_ask_sender', {
+        project_id: record.id, action: 'send', tank: getNavLabel(idx),
+        questions: askIssues.map(issue => issue.klausimas || issue.tekstas),
+        user_name: similarVoter?.name || similarVoter?.email || null,
+      });
+      if (!res?.sent) throw new Error(res?.reason || res?.message || 'Laiškas neišsiųstas');
+      setAskSend({ state: 'sent', note: `Išsiųsta: ${res.email}` });
+    } catch (e: any) {
+      setAskSend({ state: 'error', note: e?.message || 'Nepavyko išsiųsti' });
+    }
+  };
+  const askActions = () => (
+    <div className="flex flex-col items-end gap-1 shrink-0">
+      <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
+                    {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
+                  </button>
+      {askSender?.available && askSender.can_send && (
+        askSend.state === 'sent' ? (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700"><Check className="w-3 h-3" />{askSend.note}</span>
+        ) : (
+          <button
+            type="button"
+            onClick={sendQuestions}
+            disabled={askSend.state === 'sending'}
+            onBlur={() => setAskSend(prev => (prev.state === 'confirm' ? { state: 'idle' } : prev))}
+            title={`Klausimai bus išsiųsti kaip atsakymas į ${askSender.name || askSender.email} laišką`}
+            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors disabled:opacity-60 ${askSend.state === 'confirm' ? 'border-sky-600 bg-sky-600 text-white' : 'border-sky-500/30 text-sky-800 hover:bg-sky-500/10'}`}
+          >
+            {askSend.state === 'sending' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+            {askSend.state === 'confirm' ? `Tikrai siųsti ${askSender.email}?` : askSend.state === 'sending' ? 'Siunčiama…' : `Siųsti: ${askSender.email}`}
+          </button>
+        )
+      )}
+      {askSend.state === 'error' && <span className="text-[10px] text-red-600 max-w-[220px] text-right">{askSend.note}</span>}
+    </div>
+  );
   const goToIssue = (issue: IntakeIssue) => {
     if (!issue.laukas) return;
     setSubTab('parametrai');
@@ -1510,9 +1564,7 @@ function TabTalpos({
               <div className="mt-2.5 rounded-lg border border-sky-500/20 px-2.5 py-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
-                  <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
-                    {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
-                  </button>
+                  {askActions()}
                 </div>
                 <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
                   {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
@@ -1714,9 +1766,7 @@ function TabTalpos({
                     <div className="mt-2 rounded-lg border border-sky-500/20 bg-white/70 px-2.5 py-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
-                        <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
-                          {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
-                        </button>
+                        {askActions()}
                       </div>
                       <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
                         {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
