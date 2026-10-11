@@ -6,9 +6,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
-  X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus,
-  LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip,
-  Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown, MailCheck, HelpCircle, Copy,
+  X, ExternalLink, Link2, ChevronDown, ChevronLeft, ChevronRight, Plus, Mail, LayoutList, MessageSquare, CheckSquare, Beaker, Paperclip, Upload, FileText, Trash2, Download, Loader2, RefreshCw, CheckCircle2, AlertCircle, Eye, Pencil, Save, Euro, Sparkles, ArrowUp, Check, ThumbsUp, ThumbsDown, MailCheck, HelpCircle, Copy, History, Undo2, Lock,
 } from 'lucide-react';
 import {
   fetchNestandartiniaiKainaByIds,
@@ -24,7 +22,7 @@ import {
   deleteTalpa,
 } from '../lib/dokumentaiService';
 import type {
-  NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage,
+  NestandartiniaiRecord, AtsakymasMessage, TaskItem, AiConversationMessage, ProjectDataStatus,
 } from '../lib/dokumentaiService';
 import { callWebhook } from '../lib/webhooksService';
 import { getCurrentUser } from '../lib/database';
@@ -510,14 +508,19 @@ function NestedObjectField({ label, obj }: { label: string; obj: Record<string, 
 // Chat bubble
 // ---------------------------------------------------------------------------
 
-function ChatBubble({ message, side, readOnly, onEdit, onDelete }: {
+function ChatBubble({ message, side, readOnly: readOnlyProp, onEdit, onDelete, waiting }: {
   message: AtsakymasMessage;
   side: 'left' | 'right';
   readOnly?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Not yet taken into the card's data */
+  waiting?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
+  const isEmail = message.saltinis === 'laiskas';
+  const readOnly = readOnlyProp || !!message.uzrakinta;   // an email is a record of what was said: it stays as it is
+  const muted = side === 'right' ? 'text-white/60' : 'text-base-content/40';
   return (
     <div
       className={`flex ${side === 'right' ? 'justify-end' : 'justify-start'} mb-2.5 group`}
@@ -542,15 +545,34 @@ function ChatBubble({ message, side, readOnly, onEdit, onDelete }: {
           : { background: '#f8f8f9', border: '1px solid #e5e5e6' }
         }
       >
-        {(message.from || message.date) && (
-          <p className={`text-xs mb-1 ${side === 'right' ? 'text-white/60' : 'text-base-content/40'}`}>
-            {message.from && <span className="font-medium">{message.from}</span>}
-            {message.from && message.date && ' · '}{message.date}
+        {(message.from || message.date || isEmail) && (
+          <p className={`text-xs mb-1 flex items-center gap-1 ${muted}`}>
+            {isEmail && <Mail className="w-3 h-3 shrink-0" aria-label="Laiškas" />}
+            <span className="truncate">
+              {message.from && <span className="font-medium">{message.from}</span>}
+              {message.from && message.date && ' · '}{message.date}
+            </span>
+            {isEmail && <span title="Laiško negalima keisti ar ištrinti" className="shrink-0"><Lock className="w-2.5 h-2.5" /></span>}
           </p>
         )}
-        <div className="text-[15px] leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: 'calc(1.625rem * 4)' }}>
+        <div className="text-[15px] leading-relaxed whitespace-pre-wrap overflow-y-auto" style={{ maxHeight: isEmail ? 'calc(1.625rem * 8)' : 'calc(1.625rem * 4)' }}>
           {message.text}
         </div>
+        {!!message.priedai?.length && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {message.priedai.map((name, i) => (
+              <span key={i} className={`inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-md ${side === 'right' ? 'bg-white/15 text-white/85' : 'bg-base-content/[0.05] text-base-content/60'}`} title="Priedas įkeltas į „Failai“">
+                <Paperclip className="w-2.5 h-2.5" />{name}
+              </span>
+            ))}
+          </div>
+        )}
+        {waiting && (
+          <p className={`mt-1.5 text-[11px] flex items-center gap-1 ${side === 'right' ? 'text-white/75' : 'text-amber-600'}`}>
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${side === 'right' ? 'bg-white/80' : 'bg-amber-500'}`} />
+            Dar neįtraukta į kortelę
+          </p>
+        )}
       </div>
       {/* Action buttons for left-side bubbles */}
       {!readOnly && hovered && side === 'left' && (
@@ -1016,6 +1038,60 @@ function TabTalpos({
     const text = askIssues.map((issue, i) => `${i + 1}. ${issue.klausimas || issue.tekstas}`).join('\n');
     try { await navigator.clipboard.writeText(text); setQuestionsCopied(true); setTimeout(() => setQuestionsCopied(false), 2500); } catch { /* clipboard unavailable */ }
   };
+  // "Ask the client" questions can be emailed to whoever forwarded the inquiry, as a reply to their email
+  const [askSender, setAskSender] = useState<{ available: boolean; email?: string; name?: string; can_send?: boolean; reason?: string } | null>(null);
+  const [askSend, setAskSend] = useState<{ state: 'idle' | 'confirm' | 'sending' | 'sent' | 'error'; note?: string }>({ state: 'idle' });
+  const hasAskIssues = askIssues.length > 0;
+  useEffect(() => {
+    // looked up once per project, and only when there is something to ask
+    if (!hasAskIssues || readOnly || askSender) return;
+    let cancelled = false;
+    callWebhook('project_ask_sender', { project_id: record.id, action: 'info' })
+      .then((res: any) => { if (!cancelled) setAskSender(res && typeof res === 'object' ? res : { available: false }); })
+      .catch(() => { if (!cancelled) setAskSender({ available: false }); });
+    return () => { cancelled = true; };
+  }, [hasAskIssues, readOnly, record.id, askSender]);
+  useEffect(() => { setAskSend({ state: 'idle' }); }, [idx, askIssues.length]);
+  const sendQuestions = async () => {
+    if (askSend.state !== 'confirm') { setAskSend({ state: 'confirm' }); return; }
+    setAskSend({ state: 'sending' });
+    try {
+      const res: any = await callWebhook('project_ask_sender', {
+        project_id: record.id, action: 'send', tank: getNavLabel(idx), talpa_id: currentTalposId || null,
+        questions: askIssues.map(issue => issue.klausimas || issue.tekstas),
+        user_name: similarVoter?.name || similarVoter?.email || null,
+      });
+      if (!res?.sent) throw new Error(res?.reason || res?.message || 'Laiškas neišsiųstas');
+      setAskSend({ state: 'sent', note: `Išsiųsta: ${res.email}` });
+    } catch (e: any) {
+      setAskSend({ state: 'error', note: e?.message || 'Nepavyko išsiųsti' });
+    }
+  };
+  const askActions = () => (
+    <div className="flex flex-col items-end gap-1 shrink-0">
+      <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
+                    {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
+                  </button>
+      {askSender?.available && askSender.can_send && (
+        askSend.state === 'sent' ? (
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700"><Check className="w-3 h-3" />{askSend.note}</span>
+        ) : (
+          <button
+            type="button"
+            onClick={sendQuestions}
+            disabled={askSend.state === 'sending'}
+            onBlur={() => setAskSend(prev => (prev.state === 'confirm' ? { state: 'idle' } : prev))}
+            title={`Klausimai bus išsiųsti kaip atsakymas į ${askSender.name || askSender.email} laišką`}
+            className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors disabled:opacity-60 ${askSend.state === 'confirm' ? 'border-sky-600 bg-sky-600 text-white' : 'border-sky-500/30 text-sky-800 hover:bg-sky-500/10'}`}
+          >
+            {askSend.state === 'sending' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+            {askSend.state === 'confirm' ? `Tikrai siųsti ${askSender.email}?` : askSend.state === 'sending' ? 'Siunčiama…' : `Siųsti: ${askSender.email}`}
+          </button>
+        )
+      )}
+      {askSend.state === 'error' && <span className="text-[10px] text-red-600 max-w-[220px] text-right">{askSend.note}</span>}
+    </div>
+  );
   const goToIssue = (issue: IntakeIssue) => {
     if (!issue.laukas) return;
     setSubTab('parametrai');
@@ -1510,9 +1586,7 @@ function TabTalpos({
               <div className="mt-2.5 rounded-lg border border-sky-500/20 px-2.5 py-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
-                  <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
-                    {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
-                  </button>
+                  {askActions()}
                 </div>
                 <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
                   {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
@@ -1714,9 +1788,7 @@ function TabTalpos({
                     <div className="mt-2 rounded-lg border border-sky-500/20 bg-white/70 px-2.5 py-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-[11px] font-semibold text-sky-800">Klausimai klientui ({askIssues.length})</p>
-                        <button type="button" onClick={copyQuestions} className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border border-sky-500/30 text-sky-700 hover:bg-sky-500/10">
-                          {questionsCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} {questionsCopied ? 'Nukopijuota' : 'Kopijuoti'}
-                        </button>
+                        {askActions()}
                       </div>
                       <ol className="mt-1 list-decimal pl-4 text-[11px] text-base-content/75 space-y-0.5">
                         {askIssues.map(issue => <li key={issue.index}>{issue.klausimas || issue.tekstas}</li>)}
@@ -2882,9 +2954,13 @@ function TabBendra({ record, products, readOnly, onRecordUpdated, kainaMap, onKa
 // Tab: Susirašinėjimas
 // ---------------------------------------------------------------------------
 
-function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel, onSaveAll }: {
+function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChange, currentTalposId, currentTankIndex, talposCount, tankLabel, onSaveAll, dataStatus, onDataChanged }: {
   /** Saves pending messages / files and reloads the record, before the conversation is applied to the tank */
   onSaveAll?: () => Promise<void>;
+  /** What the card has not caught up with, and the versions to go back to */
+  dataStatus?: ProjectDataStatus | null;
+  /** The server changed the conversation or the tanks: reload the record and the status */
+  onDataChanged?: () => Promise<void>;
   record: NestandartiniaiRecord;
   readOnly?: boolean;
   pendingMessages?: AtsakymasMessage[];
@@ -2903,10 +2979,13 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
       if (currentTalposId && typeof messageTalposId === 'string' && messageTalposId.trim()) {
         return messageTalposId.trim() === currentTalposId;
       }
+      if (message.saltinis === 'laiskas') return true;   // an email not tied to one tank concerns the whole project
       if (currentTalposId) return (talposCount ?? 0) <= 1;
       return true;
     });
   const messages = messagesWithIndex.map(item => item.message);
+  const waitingIds = new Set(dataStatus?.neapdorotos_zinutes ?? []);
+  const isWaiting = (m: AtsakymasMessage) => !!m.id && !m.apdorota && (waitingIds.has(m.id) || pendingMessages !== undefined);
   const [addingSide, setAddingSide] = useState<'left' | 'right' | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [confirmDeleteIdx, setConfirmDeleteIdx] = useState<number | null>(null);
@@ -2919,7 +2998,36 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
   const [ctxUpdating, setCtxUpdating] = useState(false);
   const [ctxAppliedKey, setCtxAppliedKey] = useState<string | null>(null);
   const messagesKey = JSON.stringify(messages.map(m => [m.role, m.text]));
-  const needsContextUpdate = ctxAppliedKey !== messagesKey;
+  const waitingEmails = dataStatus?.neapdoroti_laiskai ?? 0;
+  const waitingFiles = dataStatus?.neapdoroti_failai.length ?? 0;
+  const waitingMessages = messages.filter(isWaiting).length;
+  // before tracking existed nothing can be known: fall back to "something was typed here since the last update"
+  const needsContextUpdate = dataStatus
+    ? dataStatus.pasenusi || waitingMessages > 0 || (pendingMessages !== undefined && ctxAppliedKey !== messagesKey)
+    : ctxAppliedKey !== messagesKey;
+  const waitingParts = [
+    waitingEmails > 0 ? `${waitingEmails} ${waitingEmails === 1 ? 'laiškas' : 'laiškai'}` : '',
+    waitingMessages - waitingEmails > 0 ? `${waitingMessages - waitingEmails} ${waitingMessages - waitingEmails === 1 ? 'žinutė' : 'žinutės'}` : '',
+    waitingFiles > 0 ? `${waitingFiles} ${waitingFiles === 1 ? 'failas' : 'failai'}` : '',
+  ].filter(Boolean);
+
+  // Versions of this tank, and going back to one
+  const tankVersions = (dataStatus?.versijos ?? []).filter(v => !currentTalposId || v.talpa_id === currentTalposId);
+  const [showVersions, setShowVersions] = useState(false);
+  const [rollback, setRollback] = useState<{ id: number | null; state: 'idle' | 'confirm' | 'working' | 'error'; note?: string }>({ id: null, state: 'idle' });
+  const restoreVersion = async (versionId: number) => {
+    if (rollback.id !== versionId || rollback.state !== 'confirm') { setRollback({ id: versionId, state: 'confirm' }); return; }
+    setRollback({ id: versionId, state: 'working' });
+    try {
+      const { user }: any = await getCurrentUser().catch(() => ({ user: null }));
+      await callWebhook('tank_rollback', { version_id: versionId, user_name: user?.full_name || user?.display_name || user?.email || null });
+      setCtxResult(null);
+      await onDataChanged?.();
+      setRollback({ id: null, state: 'idle' });
+    } catch (e: any) {
+      setRollback({ id: versionId, state: 'error', note: e?.message || 'Nepavyko grąžinti' });
+    }
+  };
   const [ctxError, setCtxError] = useState<string | null>(null);
   const [ctxResult, setCtxResult] = useState<{
     changes: { laukas: string; sena: string; nauja: string }[]; note: string; files: string[];
@@ -2934,7 +3042,10 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
       const toSend = messages;
       const sentKey = messagesKey;
       await onSaveAll?.();
-      const res: any = await callWebhook('tank_context_update', { talpa_id: currentTalposId, messages: toSend });
+      const { user }: any = await getCurrentUser().catch(() => ({ user: null }));
+      const res: any = await callWebhook('tank_context_update', {
+        talpa_id: currentTalposId, messages: toSend, user_name: user?.full_name || user?.display_name || user?.email || null,
+      });
       setCtxResult({
         changes: Array.isArray(res?.pakeitimai) ? res.pakeitimai : [],
         note: typeof res?.komentaras === 'string' ? res.komentaras : '',
@@ -2942,6 +3053,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
         others: Array.isArray(res?.kitos_talpos) ? res.kitos_talpos : [],
       });
       setCtxAppliedKey(sentKey);
+      await onDataChanged?.();
     } catch (e: any) {
       setCtxError(e?.message || 'Nepavyko atnaujinti konteksto');
     } finally {
@@ -2951,6 +3063,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
 
   const handleAdd = (text: string, side: 'left' | 'right') => {
     const msg: AtsakymasMessage = {
+      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `m-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
       text,
       role: side === 'left' ? 'recipient' : 'team',
       date: new Date().toISOString().slice(0, 10),
@@ -2987,7 +3100,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
                 </span>
-                Kontekstą reikalinga atnaujinti norint įgalinti pokyčius
+                {waitingParts.length > 0 ? `Dar neįtraukta į kortelę: ${waitingParts.join(', ')}` : 'Kontekstą reikalinga atnaujinti norint įgalinti pokyčius'}
               </span>
             )}
             <button
@@ -2999,9 +3112,53 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
               {ctxUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               {ctxUpdating ? 'Atnaujinama...' : 'Atnaujinti'}
             </button>
+            {tankVersions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowVersions(v => !v)}
+                className={`ml-auto inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-lg transition-colors ${showVersions ? 'text-primary bg-primary/5' : 'text-base-content/60 hover:text-primary hover:bg-primary/5'}`}
+              >
+                <History className="w-3.5 h-3.5" /> Istorija ({tankVersions.length})
+              </button>
+            )}
           </>
         )}
       </div>
+      {showVersions && tankVersions.length > 0 && (
+        <div className="mb-3 rounded-lg border border-base-content/8 bg-white/60 divide-y divide-base-content/5 max-h-64 overflow-y-auto">
+          {tankVersions.map(version => {
+            const mine = rollback.id === version.id;
+            return (
+              <div key={version.id} className="px-3 py-2 text-[11px] text-base-content/70 flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-base-content/45">
+                    {new Date(version.kada).toLocaleString('lt-LT', { dateStyle: 'short', timeStyle: 'short' })}
+                    {version.kas ? ` · ${version.kas}` : ''} · {version.priezastis === 'atstatymas' ? 'grąžinta ankstesnė versija' : 'atnaujinta iš pokalbio ir failų'}
+                  </p>
+                  {version.pakeitimai.length > 0 ? (
+                    <ul className="mt-0.5 space-y-0.5">
+                      {version.pakeitimai.map((change, i) => (
+                        <li key={i}><span className="text-base-content/45">{talpaLabel(change.laukas)}: </span>{change.sena || 'nenurodyta'} → <span className="font-medium text-base-content/85">{change.nauja || 'nenurodyta'}</span></li>
+                      ))}
+                    </ul>
+                  ) : <p className="mt-0.5">Pakeitimų sąrašas neišsaugotas.</p>}
+                  {mine && rollback.state === 'error' && <p className="mt-1 text-error">{rollback.note}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => restoreVersion(version.id)}
+                  disabled={rollback.state === 'working'}
+                  title="Grąžinti talpos duomenis į būseną prieš šį pakeitimą"
+                  className={`shrink-0 inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md border transition-colors disabled:opacity-50 ${mine && rollback.state === 'confirm' ? 'border-amber-500/50 text-amber-700 bg-amber-500/10' : 'border-base-content/15 text-base-content/60 hover:bg-base-content/[0.04]'}`}
+                >
+                  {mine && rollback.state === 'working' ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />}
+                  {mine && rollback.state === 'confirm' ? 'Tikrai grąžinti?' : mine && rollback.state === 'working' ? 'Grąžinama...' : 'Grąžinti'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {ctxError && (
         <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-error/10 text-error text-xs mb-3">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -3043,6 +3200,7 @@ function TabSusirasinejimas({ record, readOnly, pendingMessages, onMessagesChang
             message={msg}
             side={side}
             readOnly={readOnly}
+            waiting={isWaiting(msg)}
             onEdit={() => setEditingIdx(i)}
             onDelete={() => setConfirmDeleteIdx(i)}
           />
@@ -3265,7 +3423,9 @@ function getMessagesForTalpa(messages: AtsakymasMessage[], talposId: string | nu
   });
 }
 
-function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePendingFile, onDeleteFile }: {
+function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePendingFile, onDeleteFile, unreadFileIds }: {
+  /** Files no card update has read yet */
+  unreadFileIds?: string[];
   record: NestandartiniaiRecord;
   readOnly?: boolean;
   pendingFiles?: PendingFile[];
@@ -3403,6 +3563,9 @@ function TabFailai({ record, readOnly, pendingFiles, onAddFiles, onRemovePending
                     >
                       <FileText className="w-3.5 h-3.5 shrink-0 text-primary" />
                       <span className="text-sm text-base-content truncate max-w-[200px]" title={file.file_name}>{file.file_name}</span>
+                      {unreadFileIds?.includes(file.directus_file_id) && (
+                        <span className="shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-700" title="Šio failo turinys dar neįtrauktas į kortelę. Pokalbis → Atnaujinti">Neįtrauktas</span>
+                      )}
                     </button>
                   </td>
                   <td className="px-3 py-2 text-xs text-base-content/40">{formatFileSize(file.file_size)}</td>
@@ -4796,6 +4959,23 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
   // Pending data: stored locally until Atnaujinti is pressed
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [pendingMessages, setPendingMessages] = useState<AtsakymasMessage[] | null>(null);
+
+  // What the card has not caught up with (email replies, messages, files) and the tank versions
+  const [dataStatus, setDataStatus] = useState<ProjectDataStatus | null>(null);
+  const loadDataStatus = useCallback(async () => {
+    try {
+      const res: any = await callWebhook('project_status', { project_id: record.id });
+      if (!res?.ok) return;
+      setDataStatus(res as ProjectDataStatus);
+      // an email that arrived after this card was loaded: show it
+      const known = new Set(parseAtsakymas(record.atsakymas).map(m => m.id).filter(Boolean));
+      if ((res.neapdorotos_zinutes as string[]).some(id => id.startsWith('laiskas-') && !known.has(id))) {
+        const updated = await fetchNestandartiniaiById(record.id);
+        if (updated) onRefresh?.(updated);
+      }
+    } catch { /* the card works without it */ }
+  }, [record.id, record.atsakymas, onRefresh]);
+  useEffect(() => { loadDataStatus(); }, [record.id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const modalTalposValue = (effectiveRecord as any).talpos;
   const modalTalposIds = useMemo(() => {
     const raw = modalTalposValue;
@@ -5113,7 +5293,11 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="truncate flex-1">{tab.label}</span>
-                  {dirtyTabs.has(tab.id) && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+                  {dirtyTabs.has(tab.id)
+                    ? <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                    : ((tab.id === 'susirasinejimas' && (dataStatus?.neapdorotos_zinutes.length ?? 0) > 0) || (tab.id === 'failai' && (dataStatus?.neapdoroti_failai.length ?? 0) > 0)) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Yra duomenų, dar neįtrauktų į kortelę" />
+                    )}
                 </button>
               );
             })}
@@ -5182,6 +5366,8 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                 talposCount={modalTalposIds.length}
                 tankLabel={currentModalTankLabel}
                 onSaveAll={async () => { await executeSaveAndProcess(); await refreshRecord(); }}
+                dataStatus={dataStatus}
+                onDataChanged={async () => { await refreshRecord(); await loadDataStatus(); }}
               />
             )}
             {activeTab === 'uzduotys' && <TabUzduotys record={record} readOnly={isLocked} />}
@@ -5192,7 +5378,7 @@ export function PaklausimoModal({ record, onClose, onDeleted, onRefresh, canDele
                     {fileSizeError}
                   </div>
                 )}
-                <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} />
+                <TabFailai record={effectiveRecord} readOnly={isLocked} pendingFiles={pendingFiles} onAddFiles={addPendingFiles} onRemovePendingFile={removePendingFile} onDeleteFile={setLocalFiles} unreadFileIds={dataStatus?.neapdoroti_failai} />
               </>
             )}
           </div>

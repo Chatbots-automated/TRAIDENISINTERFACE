@@ -368,6 +368,17 @@ export interface AtsakymasMessage {
   role?: 'recipient' | 'team';
   talpos_id?: string | null;
   tank_index?: number | null;
+  /** Present on messages written since tracking began; lets the server tell which ones a card update has read */
+  id?: string;
+  /** 'laiskas' = arrived (or was sent) by email */
+  saltinis?: string;
+  /** Email messages cannot be edited or deleted */
+  uzrakinta?: boolean;
+  laisko_id?: number;
+  /** Attachment file names of an email */
+  priedai?: string[];
+  /** When a card update took this message into account; empty = not yet */
+  apdorota?: string | null;
 }
 
 export interface TaskItem {
@@ -501,6 +512,18 @@ export const updateNestandartiniaiField = async (
     metadata: { id, field }
   });
 };
+
+/** What the card has not caught up with, and the tank versions it can go back to (backend /v1/projects/status) */
+export interface ProjectDataStatus {
+  neapdorotos_zinutes: string[];
+  neapdoroti_laiskai: number;
+  neapdoroti_failai: string[];
+  pasenusi: boolean;
+  versijos: {
+    id: number; talpa_id: string; pavadinimas: string | null; priezastis: string; kas: string | null; kada: string;
+    pakeitimai: { laukas: string; sena: string; nauja: string }[]; grazinta_is: number | null;
+  }[];
+}
 
 export const updateNestandartiniaiAtsakymas = async (
   id: number,
