@@ -518,6 +518,8 @@ export interface ProjectDataStatus {
   neapdorotos_zinutes: string[];
   neapdoroti_laiskai: number;
   neapdoroti_failai: string[];
+  /** When the newest email reply that no update has read arrived */
+  naujausias_laiskas?: string | null;
   pasenusi: boolean;
   versijos: {
     id: number; talpa_id: string; pavadinimas: string | null; priezastis: string; kas: string | null; kada: string;
