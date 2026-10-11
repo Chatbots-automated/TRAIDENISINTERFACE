@@ -14,7 +14,9 @@ const FEW_ENTRIES = 6; // below this the chart says little and the forecast is a
 export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, onError }: { medziagas: Medžiaga[]; istorija: KainuIrašas[]; analysisContent: string; analysisDate?: string | null; onError?: (msg: string) => void }) {
   const [showInfo, setShowInfo] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
-  const [aiToggle, setAiToggle] = useState(false);
+  // On by default. Until the person touches the switch, a missing forecast is not an error: the chart just opens without it.
+  const [aiToggle, setAiToggle] = useState(true);
+  const aiChosen = useRef(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [projectionsVisible, setProjectionsVisible] = useState(false);
@@ -33,6 +35,7 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
   // Fetch AI predictions when toggle is enabled
   const fetchAiPredictions = useCallback(async () => {
     if (aiLoading || medziagas.length === 0) return;
+    if (!aiChosen.current && !analysisContent) return;   // the saved analysis may still be loading
     setAiLoading(true);
     try {
       // Primary source of truth: third-step analysis content from medziagos_analize_internetas (id = "kainos").
@@ -59,7 +62,7 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
       }
 
       if (loaded.length === 0) {
-        onError?.('Nerasta validžių AI prognozių tarp 3-ios analizės JSON/teksto duomenų.');
+        if (aiChosen.current) onError?.('Nerasta validžių AI prognozių tarp 3-ios analizės JSON/teksto duomenų.');
         setAiToggle(false);
         return;
       }
@@ -68,12 +71,15 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
       setAiResponseCitations([]);
     } catch (err: any) {
       console.error('AI prediction error:', err);
-      onError?.(err.message || 'Nepavyko gauti DI prognozės');
+      if (aiChosen.current) onError?.(err.message || 'Nepavyko gauti DI prognozės');
       setAiToggle(false);
     } finally {
       setAiLoading(false);
     }
   }, [aiLoading, medziagas, onError, analysisContent]);
+
+  // what the switch shows: on by default counts only once there is a forecast to show
+  const aiShown = aiToggle && (aiChosen.current || aiLoading || aiPredictions.length > 0);
 
   useEffect(() => {
     if (aiToggle && aiPredictions.length === 0 && !aiLoading) {
@@ -298,17 +304,23 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
       {/* Controls row — centered toggle + info */}
       <div className="flex items-center justify-center gap-2 relative" ref={infoRef}>
         <button
-          onClick={() => { if (!aiLoading) setAiToggle(!aiToggle); }}
+          onClick={() => {
+            if (aiLoading) return;
+            aiChosen.current = true;
+            // on by default but nothing to show yet: the click asks for the forecast and now reports why there is none
+            if (aiToggle && !aiShown) fetchAiPredictions();
+            else setAiToggle(!aiShown);
+          }}
           disabled={aiLoading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-60"
           style={{
-            background: aiToggle ? 'linear-gradient(135deg,#7c3aed 0%,#a855f7 100%)' : 'rgba(0,0,0,0.04)',
-            color: aiToggle ? 'white' : '#5a5550',
-            border: `0.5px solid ${aiToggle ? 'transparent' : 'rgba(0,0,0,0.08)'}`,
+            background: aiShown ? 'linear-gradient(135deg,#7c3aed 0%,#a855f7 100%)' : 'rgba(0,0,0,0.04)',
+            color: aiShown ? 'white' : '#5a5550',
+            border: `0.5px solid ${aiShown ? 'transparent' : 'rgba(0,0,0,0.08)'}`,
           }}>
           {aiLoading ? (
             <><Loader2 className="w-3 h-3 animate-spin" />Generuojama...</>
-          ) : aiToggle ? 'Su DI' : 'Be DI'}
+          ) : aiShown ? 'Su DI' : 'Be DI'}
         </button>
         <div
           className="relative cursor-help"
