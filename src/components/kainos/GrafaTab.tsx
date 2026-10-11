@@ -304,7 +304,13 @@ export function GrafaTab({ medziagas, istorija, analysisContent, analysisDate, o
       {/* Controls row — centered toggle + info */}
       <div className="flex items-center justify-center gap-2 relative" ref={infoRef}>
         <button
-          onClick={() => { if (!aiLoading) { aiChosen.current = true; setAiToggle(!aiShown); } }}
+          onClick={() => {
+            if (aiLoading) return;
+            aiChosen.current = true;
+            // on by default but nothing to show yet: the click asks for the forecast and now reports why there is none
+            if (aiToggle && !aiShown) fetchAiPredictions();
+            else setAiToggle(!aiShown);
+          }}
           disabled={aiLoading}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-60"
           style={{
